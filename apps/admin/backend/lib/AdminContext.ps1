@@ -1,6 +1,8 @@
 # Initializes shared backend context variables.
 $repoRoot = (Get-Item -Path $scriptDir).Parent.Parent.Parent.FullName
 $configPath = Join-Path -Path $scriptDir -ChildPath "admin-config.psd1"
+$frontendRoot = Join-Path -Path $repoRoot -ChildPath "apps/admin/frontend"
+$frontendDefaultDocument = Join-Path -Path $frontendRoot -ChildPath "index.html"
 
 $config = @{}
 if (Test-Path -Path $configPath) {

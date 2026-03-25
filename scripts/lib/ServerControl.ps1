@@ -25,6 +25,29 @@ function Get-PowerShellExecutable {
     throw "Unable to find a PowerShell executable. Install PowerShell and make sure 'pwsh' or 'powershell' is available on PATH."
 }
 
+function Open-UriInDefaultBrowser {
+    param([Parameter(Mandatory = $true)][string]$Uri)
+
+    if (Test-IsWindowsHost) {
+        Start-Process -FilePath $Uri | Out-Null
+        return
+    }
+
+    $openCommand = Get-Command -Name "open" -ErrorAction SilentlyContinue
+    if ($null -ne $openCommand) {
+        & $openCommand.Source $Uri | Out-Null
+        return
+    }
+
+    $xdgOpen = Get-Command -Name "xdg-open" -ErrorAction SilentlyContinue
+    if ($null -ne $xdgOpen) {
+        & $xdgOpen.Source $Uri | Out-Null
+        return
+    }
+
+    throw "Unable to open the browser automatically. Open this URL manually: $Uri"
+}
+
 function Ensure-Directory {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -203,8 +226,13 @@ function Start-ManagedService {
 
     $status = Get-ServiceStatus -Name $Name -DisplayName $DisplayName -Port $Port -PidFile $PidFile
     if ($status.IsRunning -and -not $Force) {
-        Write-Host "$DisplayName is already running on port $Port (PID $($status.PortOwnerId))."
-        return $status
+        $isManagedInstance = $status.Metadata -and $status.Metadata.scriptPath -and ([string]$status.Metadata.scriptPath -eq $ServerScript) -and $status.TrackedProcessId -and ($status.PortOwnerId -eq $status.TrackedProcessId)
+        if ($isManagedInstance) {
+            Write-Host "$DisplayName is already running on port $Port (PID $($status.PortOwnerId))."
+            return $status
+        }
+
+        throw "$DisplayName could not start because port $Port is already in use by PID $($status.PortOwnerId). Stop that process or run the stop script first."
     }
 
     if ($Force) {

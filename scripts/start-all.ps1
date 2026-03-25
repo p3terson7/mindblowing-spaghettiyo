@@ -15,6 +15,6 @@ Start-ManagedService -Name $service.Name -DisplayName $service.DisplayName -Serv
 
 Write-Host ""
 Write-Host "Unified app backend is up."
-Write-Host "Frontend: $($service.FrontendPath)"
+Write-Host "Frontend URL: $($service.FrontendUrl)"
 Write-Host "Use ./scripts/status-all.ps1 to see status."
 Write-Host "Use ./scripts/stop-all.ps1 to stop the backend."

@@ -1,8 +1,18 @@
-{
-  "username": "admin",
-  "role": "admin",
-  "employeeCode": "",
-  "tokenHash": "0c9f518b7bd368227fe1ddbfe8943d5e0b4ecde6e21ff7ec2ce69122dfcb89b6",
-  "issuedAtUtc": "2026-03-25T12:57:09.0395370Z",
-  "expiresAtUtc": "2026-03-26T00:57:09.0395370Z"
-}
+[
+  {
+    "username": "admin",
+    "role": "admin",
+    "employeeCode": "",
+    "tokenHash": "0c9f518b7bd368227fe1ddbfe8943d5e0b4ecde6e21ff7ec2ce69122dfcb89b6",
+    "issuedAtUtc": "2026-03-25T12:57:09.039537Z",
+    "expiresAtUtc": "2026-03-26T00:57:09.039537Z"
+  },
+  {
+    "username": "admin",
+    "role": "admin",
+    "employeeCode": "",
+    "tokenHash": "745c1bd4f24eb039bdd16a92e9780bdb1a7179e0ae2f3ec8181054567a6a7370",
+    "issuedAtUtc": "2026-03-25T14:32:04.0114670Z",
+    "expiresAtUtc": "2026-03-26T02:32:04.0114670Z"
+  }
+]

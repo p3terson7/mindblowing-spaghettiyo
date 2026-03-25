@@ -39,6 +39,7 @@ while ($true) {
         }
 
         # Route handlers (continue in dot-sourced files returns to loop)
+        . (Join-Path -Path $scriptDir -ChildPath "routes/frontend.routes.ps1")
         . (Join-Path -Path $scriptDir -ChildPath "routes/auth.routes.ps1")
         . (Join-Path -Path $scriptDir -ChildPath "routes/sync.routes.ps1")
         . (Join-Path -Path $scriptDir -ChildPath "routes/self.routes.ps1")

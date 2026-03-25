@@ -24,8 +24,8 @@
   --radius-lg: 5px;
   --radius-md: 4px;
   --radius-sm: 3px;
-  --mono-font: "JetBrains Mono", monospace;
-  --sans-font: "IBM Plex Sans", sans-serif;
+  --mono-font: "JetBrains Mono", "Cascadia Code", Consolas, Menlo, Monaco, monospace;
+  --sans-font: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
 }
 
 *,

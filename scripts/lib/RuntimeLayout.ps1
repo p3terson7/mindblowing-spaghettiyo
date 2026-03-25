@@ -23,6 +23,7 @@ function Get-ManagedServiceConfig {
         StdOutLog        = Join-Path -Path $logRoot -ChildPath "app.stdout.log"
         StdErrLog        = Join-Path -Path $logRoot -ChildPath "app.stderr.log"
         WorkingDirectory = $repoRoot
+        FrontendUrl      = "http://localhost:8081/"
         FrontendPath     = Join-Path -Path $repoRoot -ChildPath "apps/admin/frontend/index.html"
     }
 }
