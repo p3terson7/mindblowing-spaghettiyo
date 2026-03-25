@@ -1,0 +1,35 @@
+[
+  {
+    "name": "Jane Smith",
+    "date": "2026-02-25",
+    "punchIn": "18:10:00",
+    "punchOut": "19:40:00",
+    "overtime": "01:30:00",
+    "status": "approved",
+    "message": "",
+    "projectCode": "CLT-120",
+    "overtimeCode": "OT-OPS"
+  },
+  {
+    "name": "Jane Smith",
+    "date": "2026-03-13",
+    "punchIn": "18:00:00",
+    "punchOut": "20:30:00",
+    "overtime": "02:30:00",
+    "status": "approved",
+    "message": "",
+    "projectCode": "APP-220",
+    "overtimeCode": "OT-REL"
+  },
+  {
+    "name": "Jane Smith",
+    "date": "2026-03-18",
+    "punchIn": "17:30:00",
+    "punchOut": "19:15:00",
+    "overtime": "01:45:00",
+    "status": "pending",
+    "message": "Month-end reconciliation and report validation.",
+    "projectCode": "OPS-410",
+    "overtimeCode": "OT-CLS"
+  }
+]

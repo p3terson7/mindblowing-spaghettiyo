@@ -1,0 +1,46 @@
+[
+  {
+    "name": "Alice Johnson",
+    "date": "2026-03-03",
+    "punchIn": "18:20:00",
+    "punchOut": "21:10:00",
+    "overtime": "02:50:00",
+    "status": "approved",
+    "message": "After-hours deployment support.",
+    "projectCode": "APP-220",
+    "overtimeCode": "OT-REL"
+  },
+  {
+    "name": "Alice Johnson",
+    "date": "2026-03-17",
+    "punchIn": "17:45:00",
+    "punchOut": "18:30:00",
+    "overtime": "00:45:00",
+    "status": "approved",
+    "message": "",
+    "projectCode": "OPS-410",
+    "overtimeCode": "OT-CLS"
+  },
+  {
+    "name": "Alice Johnson",
+    "date": "2026-03-19",
+    "punchIn": "16:20:00",
+    "punchOut": "17:40:00",
+    "overtime": "01:20:00",
+    "status": "pending",
+    "message": "",
+    "projectCode": "INF-330",
+    "overtimeCode": "OT-MNT"
+  },
+  {
+    "name": "Alice Johnson",
+    "date": "2026-03-19",
+    "punchIn": "17:40:00",
+    "punchOut": null,
+    "overtime": null,
+    "status": "pending",
+    "message": "",
+    "projectCode": "APP-220",
+    "overtimeCode": "OT-OPS"
+  }
+]

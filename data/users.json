@@ -1,0 +1,80 @@
+[
+  {
+    "username": "admin",
+    "displayName": "Administrator",
+    "role": "admin",
+    "employeeCode": "",
+    "disabled": false,
+    "mustChangePassword": false,
+    "createdAtUtc": "2026-03-19T21:35:52.78486Z",
+    "passwordSalt": "DS7m+9DY/mxkm721eWscgg==",
+    "passwordHash": "lr/F6a8edkY8YTqdyAb8w9CExycBTg+OoTEr1lwLBn0=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1"
+  },
+  {
+    "username": "000123070",
+    "displayName": "Alice Johnson",
+    "role": "employee",
+    "employeeCode": "000123070",
+    "disabled": false,
+    "mustChangePassword": false,
+    "createdAtUtc": "2026-03-19T21:35:52.940845Z",
+    "passwordSalt": "o7GzcYCVuSOVGL+cELBUqg==",
+    "passwordHash": "Nm/DcabOQMv4WegnNwb5TEr6bnUqy0z6NS5xVFd3TOY=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1"
+  },
+  {
+    "username": "000123456",
+    "displayName": "Jane Smith",
+    "role": "employee",
+    "employeeCode": "000123456",
+    "disabled": false,
+    "mustChangePassword": true,
+    "createdAtUtc": "2026-03-19T21:35:53.097209Z",
+    "passwordSalt": "e/PJmw++eRAQBP+s5WSCJQ==",
+    "passwordHash": "NwxjEc7znb0R5BS0nrmS6AIYZZofeLmuiTjyD2VHKR8=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1"
+  },
+  {
+    "username": "000379070",
+    "displayName": "Peter-Nicholas Sarateanu",
+    "role": "employee",
+    "employeeCode": "000379070",
+    "disabled": false,
+    "mustChangePassword": true,
+    "createdAtUtc": "2026-03-19T21:35:53.242317Z",
+    "passwordSalt": "9qdHl3oNS9yGEKPniz9ZOA==",
+    "passwordHash": "X7pm5QueMsUfblMaLxUvLaGNTWKvRUprVQTzcbLxUTw=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1"
+  },
+  {
+    "username": "000456123",
+    "displayName": "Michael Chen",
+    "role": "employee",
+    "employeeCode": "000456123",
+    "disabled": false,
+    "mustChangePassword": true,
+    "createdAtUtc": "2026-03-19T21:35:53.385345Z",
+    "passwordSalt": "+tdzxWYKPBscHHiOQBVUMw==",
+    "passwordHash": "XtDAMvtfLwcv4n25zKvMMunIYyOD9UklZDP6baHzyW4=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1"
+  },
+  {
+    "username": "000789123",
+    "displayName": "Priya Patel",
+    "role": "employee",
+    "employeeCode": "000789123",
+    "disabled": false,
+    "mustChangePassword": true,
+    "createdAtUtc": "2026-03-19T21:35:53.530916Z",
+    "passwordSalt": "min01srQ3+GivU0uTE4mOA==",
+    "passwordHash": "3bjrWfn1jBGKV+7oAfW2vjDxEEio0ZELIlyJha03P/E=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1"
+  }
+]

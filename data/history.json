@@ -1,0 +1,44 @@
+[
+  {
+    "action": "Add",
+    "employee": "Alice Johnson",
+    "message": "Added an active overtime entry on March 19, 2026, starting at <strong>16h20</strong> for project <strong>INF-330</strong>.",
+    "timestamp": "2026-03-19 16:20:00"
+  },
+  {
+    "action": "Approved",
+    "employee": "Priya Patel",
+    "message": "Approved an entry on March 18, 2026 starting at <strong>20h00</strong>.",
+    "timestamp": "2026-03-18 22:10:00"
+  },
+  {
+    "action": "Add",
+    "employee": "Jane Smith",
+    "message": "Added an entry on March 18, 2026, starting at <strong>17h30</strong> and finishing at <strong>19h15</strong> for project <strong>OPS-410</strong>.",
+    "timestamp": "2026-03-18 19:20:00"
+  },
+  {
+    "action": "Add",
+    "employee": "Michael Chen",
+    "message": "Added an entry on March 18, 2026, starting at <strong>06h30</strong> and finishing at <strong>08h00</strong> for project <strong>INF-330</strong>.",
+    "timestamp": "2026-03-18 08:05:00"
+  },
+  {
+    "action": "Approved",
+    "employee": "Jane Smith",
+    "message": "Approved an entry on March 13, 2026 starting at <strong>18h00</strong>.",
+    "timestamp": "2026-03-13 20:40:00"
+  },
+  {
+    "action": "Update",
+    "employee": "Peter-Nicholas Sarateanu",
+    "message": "Updated an entry on March 16, 2026, Project Code updated.",
+    "timestamp": "2026-03-16 20:24:00"
+  },
+  {
+    "action": "Rejected",
+    "employee": "Peter-Nicholas Sarateanu",
+    "message": "Rejected an entry on March 16, 2026 starting at <strong>18h05</strong>.",
+    "timestamp": "2026-03-16 20:27:00"
+  }
+]

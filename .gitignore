@@ -1,0 +1,13 @@
+.DS_Store
+Thumbs.db
+
+# Local/editor files
+.vscode/
+.idea/
+*.log
+
+# Keep legacy metadata out of new unified repo by default
+legacy/git-metadata/
+
+# Managed runtime files
+runtime/

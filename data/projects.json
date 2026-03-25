@@ -1,0 +1,18 @@
+[
+  {
+    "projectCode": "OPS-410",
+    "projectName": "Month-End Close"
+  },
+  {
+    "projectCode": "APP-220",
+    "projectName": "Portal Upgrade"
+  },
+  {
+    "projectCode": "INF-330",
+    "projectName": "Infrastructure Maintenance"
+  },
+  {
+    "projectCode": "CLT-120",
+    "projectName": "Client Rollout"
+  }
+]

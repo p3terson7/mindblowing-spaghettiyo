@@ -1,0 +1,35 @@
+[
+  {
+    "name": "Peter-Nicholas Sarateanu",
+    "date": "2026-02-10",
+    "punchIn": "18:10:00",
+    "punchOut": "21:00:00",
+    "overtime": "02:50:00",
+    "status": "approved",
+    "message": "",
+    "projectCode": "CLT-120",
+    "overtimeCode": "OT-OPS"
+  },
+  {
+    "name": "Peter-Nicholas Sarateanu",
+    "date": "2026-03-11",
+    "punchIn": "18:00:00",
+    "punchOut": "19:30:00",
+    "overtime": "01:30:00",
+    "status": "approved",
+    "message": "",
+    "projectCode": "APP-220",
+    "overtimeCode": "OT-OPS"
+  },
+  {
+    "name": "Peter-Nicholas Sarateanu",
+    "date": "2026-03-16",
+    "punchIn": "18:05:00",
+    "punchOut": "20:20:00",
+    "overtime": "02:15:00",
+    "status": "rejected",
+    "message": "Split support and build work into separate entries.",
+    "projectCode": "APP-220",
+    "overtimeCode": "OT-REL"
+  }
+]

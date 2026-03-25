@@ -1,0 +1,18 @@
+[
+  {
+    "code": "OT-OPS",
+    "label": "Operational Support"
+  },
+  {
+    "code": "OT-MNT",
+    "label": "Maintenance Window"
+  },
+  {
+    "code": "OT-REL",
+    "label": "Release / Deployment"
+  },
+  {
+    "code": "OT-CLS",
+    "label": "Month-End / Closeout"
+  }
+]
