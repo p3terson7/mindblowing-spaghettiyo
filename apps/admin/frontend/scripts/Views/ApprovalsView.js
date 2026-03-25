@@ -77,7 +77,7 @@ function renderApprovalsList(containerId, entries, showActions) {
 }
 
 function renderApprovalTabsFromFiltered(entries) {
-  const pendingEntries = entries.filter(entry => String(entry.status || "pending").toLowerCase() === "pending");
+  const pendingEntries = entries.filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry));
   const rejectedEntries = entries.filter(entry => String(entry.status || "").toLowerCase() === "rejected");
   const approvedEntries = entries.filter(entry => String(entry.status || "").toLowerCase() === "approved");
 

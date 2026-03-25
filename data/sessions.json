@@ -1,8 +1,8 @@
 {
-  "username": "000123070",
-  "role": "employee",
-  "employeeCode": "000123070",
-  "tokenHash": "d1711bb863e1ef5e4b32940d2def38ddee7449db76d094cb5efd8fe76ec3908c",
-  "issuedAtUtc": "2026-03-19T21:40:17.52889Z",
-  "expiresAtUtc": "2026-03-20T09:40:17.52889Z"
+  "username": "admin",
+  "role": "admin",
+  "employeeCode": "",
+  "tokenHash": "0c9f518b7bd368227fe1ddbfe8943d5e0b4ecde6e21ff7ec2ce69122dfcb89b6",
+  "issuedAtUtc": "2026-03-25T12:57:09.0395370Z",
+  "expiresAtUtc": "2026-03-26T00:57:09.0395370Z"
 }

@@ -19,12 +19,21 @@
             try {
                 $existingData = Read-JsonArrayFile -Path $dataFile
                 $found = $false
+                $blockedOpenEntry = $false
                 foreach ($entry in $existingData) {
                     if ($entry.date -eq $payload.date -and $entry.punchIn -eq $payload.punchIn) {
+                        if (-not $entry.punchOut) {
+                            $blockedOpenEntry = $true
+                            break
+                        }
                         $entry.status = $payload.status
                         $found = $true
                         break
                     }
+                }
+                if ($blockedOpenEntry) {
+                    respondWithError $response 400 "Open overtime sessions must be completed before they can be approved or rejected."
+                    continue
                 }
                 if (-not $found) {
                     respondWithError $response 404 "Error: Overtime entry not found"

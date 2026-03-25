@@ -743,8 +743,12 @@ code,
 .auth-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   flex-wrap: wrap;
+}
+
+.auth-actions {
+  padding-top: 4px;
 }
 
 .auth-advanced-panel {

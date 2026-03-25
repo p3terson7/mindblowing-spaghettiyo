@@ -309,7 +309,7 @@ async function refreshActiveView() {
     return;
   }
 
-  const activeViewId = resolvePreferredView(user);
+  const activeViewId = document.querySelector(".view.active")?.id || localStorage.getItem("activeView") || resolvePreferredView(user);
   await refreshViewById(activeViewId);
 }
 
@@ -333,6 +333,9 @@ async function pollSyncState() {
 
     if (nextVersion !== appShellState.lastSyncVersion) {
       appShellState.lastSyncVersion = nextVersion;
+      if (typeof window.handleSyncStateChange === "function") {
+        window.handleSyncStateChange(syncState);
+      }
       setSyncStatus(`Updated | rev ${nextVersion}`);
       await refreshActiveView();
       return;
@@ -349,7 +352,7 @@ function startSyncPolling() {
   stopSyncPolling();
   appShellState.syncTimerId = window.setInterval(() => {
     pollSyncState();
-  }, 2500);
+  }, 1000);
 }
 
 async function bootstrapApplication() {

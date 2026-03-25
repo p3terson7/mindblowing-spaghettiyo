@@ -40,5 +40,23 @@
     "employee": "Peter-Nicholas Sarateanu",
     "message": "Rejected an entry on March 16, 2026 starting at <strong>18h05</strong>.",
     "timestamp": "2026-03-16 20:27:00"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on March 19, 2026 starting at <strong>16h20</strong>.",
+    "employee": "Alice Johnson",
+    "timestamp": "2026-03-25 08:57:47"
+  },
+  {
+    "action": "Update",
+    "message": "Updated an entry on March 19, 2026, Punch Out recorded at <strong>18h30</strong>. Project Code updated. Overtime Code updated.",
+    "employee": "Alice Johnson",
+    "timestamp": "2026-03-25 08:58:00"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on March 19, 2026 starting at <strong>17h40</strong>.",
+    "employee": "Alice Johnson",
+    "timestamp": "2026-03-25 08:58:02"
   }
 ]

@@ -1,6 +1,7 @@
 const projectDetailCache = {};
 let currentProjectFilter = "6M";
 let currentProjectCode = null;
+let pendingProjectChartFrameId = null;
 
 function clearProjectDetailCache() {
   Object.keys(projectDetailCache).forEach(cacheKey => {
@@ -252,7 +253,24 @@ function renderProjectDetail(detail) {
 }
 
 function renderProjectMultiLineChart(trendData) {
-  const ctx = document.getElementById("projectMultiLineChart").getContext("2d");
+  const canvas = document.getElementById("projectMultiLineChart");
+  if (!canvas) {
+    return;
+  }
+
+  if (typeof Chart !== "function") {
+    const chartContainer = document.getElementById("projectChartContainer");
+    if (chartContainer) {
+      chartContainer.querySelector(".chart-stage").innerHTML = createEmptyState("Chart library failed to load.");
+    }
+    return;
+  }
+
+  if (pendingProjectChartFrameId) {
+    window.cancelAnimationFrame(pendingProjectChartFrameId);
+    pendingProjectChartFrameId = null;
+  }
+
   const labelSet = new Set();
   Object.keys(trendData || {}).forEach(projectCode => {
     trendData[projectCode].forEach(item => labelSet.add(item.month));
@@ -281,54 +299,68 @@ function renderProjectMultiLineChart(trendData) {
     };
   });
 
-  if (window.projectChartInstance) {
-    window.projectChartInstance.destroy();
-  }
+  pendingProjectChartFrameId = window.requestAnimationFrame(() => {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      pendingProjectChartFrameId = null;
+      return;
+    }
 
-  window.projectChartInstance = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: formattedLabels,
-      datasets,
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: "top",
-          labels: {
-            color: "#5f6673",
-            usePointStyle: true,
-            boxWidth: 8,
+    if (window.projectChartInstance) {
+      window.projectChartInstance.destroy();
+    }
+
+    window.projectChartInstance = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: formattedLabels,
+        datasets,
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: "top",
+            labels: {
+              color: "#5f6673",
+              usePointStyle: true,
+              boxWidth: 8,
+            },
+          },
+          tooltip: {
+            backgroundColor: "rgba(31, 35, 41, 0.92)",
+            titleColor: "#ffffff",
+            bodyColor: "#ffffff",
           },
         },
-        tooltip: {
-          backgroundColor: "rgba(31, 35, 41, 0.92)",
-          titleColor: "#ffffff",
-          bodyColor: "#ffffff",
+        scales: {
+          x: {
+            ticks: {
+              color: "#7f8796",
+            },
+            grid: {
+              color: "rgba(31, 35, 41, 0.06)",
+            },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              color: "#7f8796",
+            },
+            grid: {
+              color: "rgba(31, 35, 41, 0.08)",
+            },
+          },
         },
       },
-      scales: {
-        x: {
-          ticks: {
-            color: "#7f8796",
-          },
-          grid: {
-            color: "rgba(31, 35, 41, 0.06)",
-          },
-        },
-        y: {
-          beginAtZero: true,
-          ticks: {
-            color: "#7f8796",
-          },
-          grid: {
-            color: "rgba(31, 35, 41, 0.08)",
-          },
-        },
-      },
-    },
+    });
+
+    if (window.projectChartInstance && typeof window.projectChartInstance.resize === "function") {
+      window.projectChartInstance.resize();
+    }
+
+    pendingProjectChartFrameId = null;
   });
 }
 

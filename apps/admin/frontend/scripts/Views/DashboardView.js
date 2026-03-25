@@ -2,6 +2,7 @@ const dashboardState = {
   employees: [],
   entriesByEmployee: {},
   history: [],
+  historyLoaded: false,
 };
 
 function buildEmployeeOptions(employees) {
@@ -60,7 +61,7 @@ function formatQueueTitle(entry) {
 function renderDashboardApprovalQueue(entries) {
   const container = document.getElementById("dashboardApprovalQueue");
   const queueEntries = entries
-    .filter(entry => String(entry.status || "pending").toLowerCase() === "pending")
+    .filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry))
     .sort((left, right) => toEntryDateTime(right) - toEntryDateTime(left))
     .slice(0, 6);
 
@@ -219,31 +220,45 @@ async function fetchEmployeeEntries(employeeCode) {
 }
 
 async function loadDashboardCollections() {
-  const employees = await fetchEmployees();
-  const historyPromise = fetch(apiUrl + "history")
-    .then(parseResponse)
-    .catch(error => {
-      console.error("Unable to load history for dashboard:", error);
-      return [];
-    });
+  const employees = dashboardState.employees.length > 0
+    ? dashboardState.employees
+    : await fetchEmployees();
 
-  const employeeEntryPromises = employees.map(employee => fetchEmployeeEntries(employee.code).catch(error => {
-    console.error(`Unable to load entries for ${employee.code}:`, error);
+  const employeeCodesToRefresh = employees
+    .filter(employee => !Array.isArray(dashboardState.entriesByEmployee[employee.code]))
+    .map(employee => employee.code);
+
+  const historyPromise = dashboardState.historyLoaded
+    ? Promise.resolve(dashboardState.history)
+    : fetch(apiUrl + "history")
+      .then(parseResponse)
+      .catch(error => {
+        console.error("Unable to load history for dashboard:", error);
+        return [];
+      });
+
+  const employeeEntryPromises = employeeCodesToRefresh.map(employeeCode => fetchEmployeeEntries(employeeCode).catch(error => {
+    console.error(`Unable to load entries for ${employeeCode}:`, error);
     return [];
   }));
 
   const [historyEntries, employeeEntrySets] = await Promise.all([historyPromise, Promise.all(employeeEntryPromises)]);
   dashboardState.history = Array.isArray(historyEntries) ? historyEntries : [];
-  dashboardState.entriesByEmployee = {};
-  employees.forEach((employee, index) => {
-    dashboardState.entriesByEmployee[employee.code] = employeeEntrySets[index] || [];
+  dashboardState.historyLoaded = true;
+  employeeCodesToRefresh.forEach((employeeCode, index) => {
+    dashboardState.entriesByEmployee[employeeCode] = employeeEntrySets[index] || [];
+  });
+  employees.forEach(employee => {
+    if (!Array.isArray(dashboardState.entriesByEmployee[employee.code])) {
+      dashboardState.entriesByEmployee[employee.code] = [];
+    }
   });
 
   const employeeSelect = document.getElementById("employeeSelect");
   if (employees.length > 0 && !employeeSelect.value) {
     const preferredPendingEntry = employees
       .flatMap(employee => (dashboardState.entriesByEmployee[employee.code] || []).map(entry => enrichEntry(employee, entry)))
-      .filter(entry => String(entry.status || "pending").toLowerCase() === "pending")
+      .filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry))
       .sort((left, right) => toEntryDateTime(right) - toEntryDateTime(left))[0];
     const fallbackEmployeeCode = preferredPendingEntry ? preferredPendingEntry.employeeCode : employees[0].code;
     employeeSelect.value = fallbackEmployeeCode;
@@ -280,42 +295,28 @@ function renderEmployeeEntries(employeeCode, entries) {
       dayEntries.forEach(entry => {
         const statusTone = getStatusTone(entry.status);
         const isOpen = isEntryOpen(entry);
+        const isPending = String(entry.status || "pending").toLowerCase() === "pending";
         const card = document.createElement("article");
         card.className = `worklog-card${statusTone === "pending" ? " is-pending" : ""}${isOpen ? " is-open" : ""}`;
 
-        let actionHtml = "";
-        if (String(entry.status || "pending").toLowerCase() === "pending") {
-          actionHtml = `
-            <button class="btn btn-success btn-sm action-btn approve-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="Approve">
-              <i class="fa-solid fa-check"></i>
-            </button>
-            <button class="btn btn-danger btn-sm action-btn reject-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="Reject">
-              <i class="fa-solid fa-ban"></i>
-            </button>
-          `;
-        } else {
-          actionHtml = `
-            <button class="btn btn-outline-secondary btn-sm action-btn update-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}" title="Update">
-              <i class="fa-solid fa-pen"></i>
-            </button>
-            <button class="btn btn-outline-secondary btn-sm action-btn delete-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="Delete">
-              <i class="fa-solid fa-trash"></i>
-            </button>
-          `;
-        }
-
         const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
-
-        if (String(entry.status || "pending").toLowerCase() !== "pending") {
-          actionHtml = `
-            <button class="btn btn-outline-secondary btn-sm action-btn update-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute} title="Update">
-              <i class="fa-solid fa-pen"></i>
-            </button>
-            <button class="btn btn-outline-secondary btn-sm action-btn delete-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="Delete">
-              <i class="fa-solid fa-trash"></i>
-            </button>
-          `;
-        }
+        const reviewButtons = isPending && !isOpen ? `
+          <button class="btn btn-success btn-sm action-btn approve-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="Approve">
+            <i class="fa-solid fa-check"></i>
+          </button>
+          <button class="btn btn-danger btn-sm action-btn reject-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="Reject">
+            <i class="fa-solid fa-ban"></i>
+          </button>
+        ` : "";
+        const actionHtml = `
+          ${reviewButtons}
+          <button class="btn btn-outline-secondary btn-sm action-btn update-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute} title="Update">
+            <i class="fa-solid fa-pen"></i>
+          </button>
+          <button class="btn btn-outline-secondary btn-sm action-btn delete-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="Delete">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        `;
 
         card.innerHTML = `
           <div class="worklog-main">
@@ -398,6 +399,39 @@ async function refreshDashboardView() {
 
 window.refreshDashboardView = refreshDashboardView;
 
+window.handleSyncStateChange = function (syncState) {
+  const category = String(syncState && syncState.category || "").toLowerCase();
+  const resource = String(syncState && syncState.resource || "");
+
+  if (category === "seed") {
+    dashboardState.employees = [];
+    dashboardState.entriesByEmployee = {};
+    dashboardState.history = [];
+    dashboardState.historyLoaded = false;
+    if (typeof clearProjectDetailCache === "function") {
+      clearProjectDetailCache();
+    }
+    return;
+  }
+
+  if (category === "employee" && resource) {
+    dashboardState.entriesByEmployee[resource] = undefined;
+    dashboardState.historyLoaded = false;
+    return;
+  }
+
+  if (category === "project") {
+    if (typeof clearProjectDetailCache === "function") {
+      clearProjectDetailCache();
+    }
+    return;
+  }
+
+  if (category === "history") {
+    dashboardState.historyLoaded = false;
+  }
+};
+
 async function populateEntryLookups(projectSelectId, overtimeCodeSelectId, selectedProjectCode = "", selectedOvertimeCode = "") {
   const lookups = await fetchOvertimeEntryLookups();
   document.getElementById(projectSelectId).innerHTML = buildProjectOptions(lookups.projects, "Select project", selectedProjectCode);
@@ -475,6 +509,7 @@ async function deleteEntry(button) {
     });
     await parseResponse(response);
     dashboardState.entriesByEmployee[employeeCode] = undefined;
+    dashboardState.historyLoaded = false;
     showToast("Entry deleted successfully.", "success");
     await refreshDashboardView();
   } catch (error) {
@@ -496,6 +531,7 @@ async function updateApprovalAction(button, newStatus) {
     });
     await parseResponse(response);
     dashboardState.entriesByEmployee[employeeCode] = undefined;
+    dashboardState.historyLoaded = false;
     showToast("Entry updated successfully.", "success");
     await refreshDashboardView();
   } catch (error) {
@@ -514,7 +550,10 @@ async function updateApprovalActionInApprovals(button, employeeCode, newStatus) 
       body: JSON.stringify({ date, punchIn, status: newStatus }),
     });
     await parseResponse(response);
+    dashboardState.entriesByEmployee[employeeCode] = undefined;
+    dashboardState.historyLoaded = false;
     showToast("Entry updated successfully.", "success");
+    await refreshDashboardView();
     await loadApprovalsView();
   } catch (error) {
     console.error("Approval update error in Approvals view:", error);
@@ -533,6 +572,7 @@ async function updateApprovalActionInDashboardQueue(button, employeeCode, newSta
     });
     await parseResponse(response);
     dashboardState.entriesByEmployee[employeeCode] = undefined;
+    dashboardState.historyLoaded = false;
     showToast("Entry updated successfully.", "success");
     await refreshDashboardView();
   } catch (error) {
@@ -622,6 +662,7 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async () =>
     const data = await parseResponse(response);
     bootstrap.Modal.getInstance(document.getElementById("addEntryModal")).hide();
     dashboardState.entriesByEmployee[employeeCode] = undefined;
+    dashboardState.historyLoaded = false;
     showToast(data.message || "Entry added successfully.", "success");
     await refreshDashboardView();
   } catch (error) {
@@ -663,7 +704,8 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
     return;
   }
 
-  if (newPunchInBackend === originalPunchIn && (originalPunchOut === null || punchOutBackend === originalPunchOut) && projectCode === originalProjectCode && overtimeCode === originalOvertimeCode) {
+  const punchOutUnchanged = (originalPunchOut || "") === punchOutBackend;
+  if (newPunchInBackend === originalPunchIn && punchOutUnchanged && projectCode === originalProjectCode && overtimeCode === originalOvertimeCode) {
     showToast("No changes detected.", "info");
     return;
   }
@@ -682,6 +724,7 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
     const data = await parseResponse(response);
     bootstrap.Modal.getInstance(document.getElementById("updateEntryModal")).hide();
     dashboardState.entriesByEmployee[employeeCode] = undefined;
+    dashboardState.historyLoaded = false;
     showToast(data.message || "Entry updated successfully.", "success");
     await refreshDashboardView();
   } catch (error) {
@@ -765,6 +808,7 @@ document.addEventListener("click", event => {
     .then(parseResponse)
     .then(data => {
       dashboardState.entriesByEmployee[employeeCode] = undefined;
+      dashboardState.historyLoaded = false;
       showToast(data.message || "Message updated successfully.", "success");
       refreshDashboardView();
     })

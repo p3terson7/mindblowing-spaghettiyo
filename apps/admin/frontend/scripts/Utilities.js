@@ -282,6 +282,13 @@ async function fetchOvertimeEntryLookups(forceRefresh = false) {
   return normalizedPayload;
 }
 
+function normalizeToastMessage(message) {
+  const rawMessage = String(message == null ? "" : message).replace(/<br\s*\/?>/gi, " | ");
+  const scratch = document.createElement("div");
+  scratch.innerHTML = rawMessage;
+  return scratch.textContent.replace(/\s+/g, " ").trim();
+}
+
 function showToast(message, type = "success") {
   const toastContainer = document.getElementById("toastContainer");
   if (!toastContainer) {
@@ -304,11 +311,11 @@ function showToast(message, type = "success") {
   toast.innerHTML = `
     <div class="toast-header">
       <i class="fa-solid ${iconClass} me-2 text-${tone}"></i>
-      <strong class="me-auto">Overtime Manager</strong>
+      <strong class="me-auto">GÉEM Overtime Manager</strong>
       <small class="text-muted">Now</small>
       <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
     </div>
-    <div class="toast-body">${escapeHtml(message)}</div>
+    <div class="toast-body">${escapeHtml(normalizeToastMessage(message))}</div>
   `;
 
   toastContainer.appendChild(toast);

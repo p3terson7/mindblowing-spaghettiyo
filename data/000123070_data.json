@@ -27,7 +27,7 @@
     "punchIn": "16:20:00",
     "punchOut": "17:40:00",
     "overtime": "01:20:00",
-    "status": "pending",
+    "status": "approved",
     "message": "",
     "projectCode": "INF-330",
     "overtimeCode": "OT-MNT"
@@ -36,9 +36,9 @@
     "name": "Alice Johnson",
     "date": "2026-03-19",
     "punchIn": "17:40:00",
-    "punchOut": null,
-    "overtime": null,
-    "status": "pending",
+    "punchOut": "18:30:00",
+    "overtime": "00:50:00",
+    "status": "approved",
     "message": "",
     "projectCode": "APP-220",
     "overtimeCode": "OT-OPS"
