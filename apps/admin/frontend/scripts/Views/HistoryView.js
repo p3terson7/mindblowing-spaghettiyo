@@ -8,22 +8,12 @@ async function fetchHistory() {
     renderHistoryTabs(allHistoryEntries);
   } catch (error) {
     console.error("Error fetching history:", error);
-    showToast("Error fetching history", "error");
+    showToast(t("history.fetchError"), "error");
   }
 }
 
 function formatHistoryTimestamp(timestamp) {
-  if (!timestamp) {
-    return "Unknown time";
-  }
-
-  const normalized = String(timestamp).replace(" ", "T");
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) {
-    return String(timestamp);
-  }
-
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) + " | " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return formatDateTimeStamp(timestamp);
 }
 
 function filterHistoryEntries(entries, searchTerm) {
@@ -33,7 +23,7 @@ function filterHistoryEntries(entries, searchTerm) {
   }
 
   return entries.filter(entry => {
-    const combinedText = [entry.timestamp, entry.action, entry.employee, entry.message].join(" ").toLowerCase();
+    const combinedText = [entry.timestamp, entry.action, translateHistoryAction(entry.action), entry.employee, auditMessageToText(entry.message)].join(" ").toLowerCase();
     return tokens.every(token => combinedText.includes(token));
   });
 }
@@ -51,21 +41,21 @@ function getActionBadgeHtml(action) {
           : normalizedAction === "delete"
             ? "delete"
             : "update";
-  return `<span class="action-badge ${tone}">${escapeHtml(action || "Event")}</span>`;
+  return `<span class="action-badge ${tone}">${escapeHtml(translateHistoryAction(action || "event"))}</span>`;
 }
 
 function updateHistoryTabLabels(allEntries, addedEntries, updatedEntries, approvalEntries, deletedEntries) {
-  document.getElementById("all-history-tab").textContent = `All (${allEntries.length})`;
-  document.getElementById("add-history-tab").textContent = `Added (${addedEntries.length})`;
-  document.getElementById("edit-history-tab").textContent = `Updated (${updatedEntries.length})`;
-  document.getElementById("approve-history-tab").textContent = `Approved / Rejected (${approvalEntries.length})`;
-  document.getElementById("delete-history-tab").textContent = `Deleted (${deletedEntries.length})`;
+  document.getElementById("all-history-tab").textContent = t("history.all", { count: allEntries.length });
+  document.getElementById("add-history-tab").textContent = t("history.added", { count: addedEntries.length });
+  document.getElementById("edit-history-tab").textContent = t("history.updated", { count: updatedEntries.length });
+  document.getElementById("approve-history-tab").textContent = t("history.approvedRejected", { count: approvalEntries.length });
+  document.getElementById("delete-history-tab").textContent = t("history.deleted", { count: deletedEntries.length });
 }
 
 function renderHistoryList(container, entries) {
   const sortedEntries = (entries || []).slice().sort((left, right) => new Date(right.timestamp) - new Date(left.timestamp));
   if (sortedEntries.length === 0) {
-    container.innerHTML = createEmptyState("No history entries match this filter.");
+    container.innerHTML = createEmptyState(t("history.none"));
     return;
   }
 
@@ -73,12 +63,12 @@ function renderHistoryList(container, entries) {
     <article class="timeline-card">
       <div class="review-card-header">
         <div>
-          <strong>${escapeHtml(entry.employee || "System")}</strong>
+          <strong>${escapeHtml(entry.employee || t("shared.system"))}</strong>
           <div class="worklog-secondary">${escapeHtml(formatHistoryTimestamp(entry.timestamp))} | ${escapeHtml(formatRelativeTime(entry.timestamp))}</div>
         </div>
         ${getActionBadgeHtml(entry.action)}
       </div>
-      <div class="timeline-card-message">${entry.message || "No message provided."}</div>
+      <div class="timeline-card-message">${renderAuditMessage(entry.message || t("shared.noMessage"))}</div>
     </article>
   `).join("")}</div>`;
 }
@@ -113,3 +103,4 @@ document.getElementById("historySearchInput").addEventListener("input", function
 });
 
 document.getElementById("refreshHistoryBtn").addEventListener("click", fetchHistory);
+updateHistoryTabLabels([], [], [], [], []);

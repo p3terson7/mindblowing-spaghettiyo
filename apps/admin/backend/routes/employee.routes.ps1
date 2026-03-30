@@ -9,6 +9,9 @@ if (-not (Test-CurrentUserRole -CurrentUser $currentUser -AllowedRoles @("admin"
 }
 
 . (Join-Path -Path $scriptDir -ChildPath "routes/employee/list.routes.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "routes/employee/create-record.routes.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "routes/employee/update-record.routes.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "routes/employee/delete-record.routes.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "routes/employee/password.routes.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "routes/employee/get.routes.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "routes/employee/add.routes.ps1")

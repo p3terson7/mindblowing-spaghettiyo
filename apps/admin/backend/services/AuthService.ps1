@@ -381,6 +381,167 @@ function Set-EmployeeUserPassword {
     }
 }
 
+function Ensure-EmployeeUser {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)][string]$DisplayName,
+        [string]$InitialPassword,
+        [bool]$MustChangePassword = $true
+    )
+
+    $effectivePassword = if ([string]::IsNullOrWhiteSpace($InitialPassword)) {
+        "Temp!$EmployeeCode"
+    }
+    else {
+        $InitialPassword
+    }
+
+    $policyError = Test-NewPasswordPolicy -Password $effectivePassword
+    if ($policyError) {
+        return [PSCustomObject]@{
+            updated           = $false
+            created           = $false
+            reactivated       = $false
+            error             = $policyError
+            temporaryPassword = $null
+        }
+    }
+
+    $secret = New-PasswordCredential -Password $effectivePassword
+    $updated = $false
+    $created = $false
+    $reactivated = $false
+
+    $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
+    try {
+        $users = Read-JsonArrayFile -Path $usersFile
+        $targetUser = $users | Where-Object { $_.username -eq $EmployeeCode } | Select-Object -First 1
+
+        if ($null -eq $targetUser) {
+            $users += [PSCustomObject]@{
+                username           = $EmployeeCode
+                displayName        = [string]$DisplayName
+                role               = "employee"
+                employeeCode       = $EmployeeCode
+                disabled           = $false
+                mustChangePassword = $MustChangePassword
+                createdAtUtc       = (Get-Date).ToUniversalTime().ToString("o")
+                passwordSalt       = $secret.passwordSalt
+                passwordHash       = $secret.passwordHash
+                passwordIterations = $secret.passwordIterations
+                passwordAlgorithm  = $secret.passwordAlgorithm
+            }
+            $updated = $true
+            $created = $true
+        }
+        elseif ([string]$targetUser.role -ne "employee") {
+            return [PSCustomObject]@{
+                updated           = $false
+                created           = $false
+                reactivated       = $false
+                error             = "The target account is not an employee account."
+                temporaryPassword = $null
+            }
+        }
+        elseif (-not [bool]$targetUser.disabled) {
+            return [PSCustomObject]@{
+                updated           = $false
+                created           = $false
+                reactivated       = $false
+                error             = "An active employee account already exists for this code."
+                temporaryPassword = $null
+            }
+        }
+        else {
+            $targetUser.displayName = [string]$DisplayName
+            $targetUser.employeeCode = $EmployeeCode
+            $targetUser.disabled = $false
+            $targetUser.passwordSalt = $secret.passwordSalt
+            $targetUser.passwordHash = $secret.passwordHash
+            $targetUser.passwordIterations = $secret.passwordIterations
+            $targetUser.passwordAlgorithm = $secret.passwordAlgorithm
+            $targetUser.mustChangePassword = $MustChangePassword
+            $updated = $true
+            $reactivated = $true
+        }
+
+        if ($updated) {
+            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+        }
+    }
+    finally {
+        Release-ResourceLock -LockHandle $lockHandle
+    }
+
+    return [PSCustomObject]@{
+        updated           = $updated
+        created           = $created
+        reactivated       = $reactivated
+        error             = $null
+        temporaryPassword = $effectivePassword
+    }
+}
+
+function Set-EmployeeUserDisplayName {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)][string]$DisplayName
+    )
+
+    $updated = $false
+
+    $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
+    try {
+        $users = Read-JsonArrayFile -Path $usersFile
+        foreach ($user in $users) {
+            if ($user.username -eq $EmployeeCode -and [string]$user.role -eq "employee") {
+                $user.displayName = [string]$DisplayName
+                $user.employeeCode = $EmployeeCode
+                $updated = $true
+                break
+            }
+        }
+
+        if ($updated) {
+            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+        }
+    }
+    finally {
+        Release-ResourceLock -LockHandle $lockHandle
+    }
+
+    return $updated
+}
+
+function Disable-EmployeeUser {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode
+    )
+
+    $updated = $false
+
+    $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
+    try {
+        $users = Read-JsonArrayFile -Path $usersFile
+        foreach ($user in $users) {
+            if ($user.username -eq $EmployeeCode -and [string]$user.role -eq "employee") {
+                $user.disabled = $true
+                $updated = $true
+                break
+            }
+        }
+
+        if ($updated) {
+            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+        }
+    }
+    finally {
+        Release-ResourceLock -LockHandle $lockHandle
+    }
+
+    return $updated
+}
+
 function Test-NewPasswordPolicy {
     param([string]$Password)
 

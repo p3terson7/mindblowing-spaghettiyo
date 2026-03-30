@@ -6,7 +6,7 @@ const dashboardState = {
 };
 
 function buildEmployeeOptions(employees) {
-  return `<option value="">Select an employee</option>${employees.map(emp => `<option value="${escapeHtml(emp.code)}">${escapeHtml(emp.name)}</option>`).join("")}`;
+  return `<option value="">${escapeHtml(t("shared.selectEmployee"))}</option>${employees.map(emp => `<option value="${escapeHtml(emp.code)}">${escapeHtml(emp.name)}</option>`).join("")}`;
 }
 
 function groupEntriesByDate(entries) {
@@ -44,7 +44,7 @@ function createEmptyState(message) {
 }
 
 function buildInspectorMeta(entryCount, selectedMonth, selectedYear) {
-  const parts = [`${entryCount} ${entryCount === 1 ? "entry" : "entries"}`];
+  const parts = [tn("shared.entry", entryCount)];
   if (selectedMonth || selectedYear) {
     const monthLabel = selectedMonth ? String(selectedMonth).padStart(2, "0") : "--";
     const yearLabel = selectedYear || "----";
@@ -54,7 +54,7 @@ function buildInspectorMeta(entryCount, selectedMonth, selectedYear) {
 }
 
 function formatQueueTitle(entry) {
-  const punchOut = entry.punchOut ? ` -> ${formatTimeString(entry.punchOut)}` : " -> In progress";
+  const punchOut = entry.punchOut ? ` -> ${formatTimeString(entry.punchOut)}` : ` -> ${t("shared.inProgress")}`;
   return `${formatTimeString(entry.punchIn)}${punchOut}`;
 }
 
@@ -66,11 +66,11 @@ function renderDashboardApprovalQueue(entries) {
     .slice(0, 6);
 
   document.getElementById("dashboardPendingQueueMeta").textContent = queueEntries.length > 0
-    ? `${queueEntries.length} item${queueEntries.length === 1 ? "" : "s"} waiting`
-    : "Nothing waiting right now";
+    ? `${tn("shared.item", queueEntries.length)} ${t("shared.waiting").toLowerCase()}`
+    : t("dashboard.pendingQueueMetaEmpty");
 
   if (queueEntries.length === 0) {
-    container.innerHTML = createEmptyState("No pending approvals. The queue is clear.");
+    container.innerHTML = createEmptyState(t("dashboard.noPending"));
     return;
   }
 
@@ -81,18 +81,18 @@ function renderDashboardApprovalQueue(entries) {
           <div class="queue-card-title">${escapeHtml(entry.employeeName)}</div>
           <div class="worklog-secondary">${escapeHtml(formatDateLabel(entry.date))} | ${escapeHtml(formatQueueTitle(entry))}</div>
         </div>
-        <span class="status-badge pending">Pending</span>
+        <span class="status-badge pending">${escapeHtml(t("status.pending"))}</span>
       </div>
       <div class="queue-card-meta">
-        <span class="inline-code-pill">${escapeHtml(entry.projectCode || "No project")}</span>
+        <span class="inline-code-pill">${escapeHtml(entry.projectCode || t("shared.noProject"))}</span>
         ${entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : ""}
-        <span class="meta-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : "Waiting for punch out")}</span>
+        <span class="meta-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
       </div>
       ${entry.message ? `<div class="review-card-message">${escapeHtml(entry.message)}</div>` : ""}
       <div class="queue-card-actions">
-        <button type="button" class="btn btn-success btn-sm dashboard-approve-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> Approve</button>
-        <button type="button" class="btn btn-danger btn-sm dashboard-reject-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-ban"></i> Reject</button>
-        <button type="button" class="btn btn-outline-secondary btn-sm dashboard-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}">Open Employee</button>
+        <button type="button" class="btn btn-success btn-sm dashboard-approve-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}</button>
+        <button type="button" class="btn btn-danger btn-sm dashboard-reject-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm dashboard-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}">${escapeHtml(t("action.openEmployee"))}</button>
       </div>
     </article>
   `).join("");
@@ -106,11 +106,11 @@ function renderDashboardActiveSessions(entries) {
     .slice(0, 6);
 
   document.getElementById("dashboardActiveQueueMeta").textContent = activeEntries.length > 0
-    ? `${activeEntries.length} live session${activeEntries.length === 1 ? "" : "s"}`
-    : "No active overtime sessions";
+    ? tn("shared.session", activeEntries.length)
+    : t("dashboard.activeQueueMetaEmpty");
 
   if (activeEntries.length === 0) {
-    container.innerHTML = createEmptyState("Nobody is currently clocked in for overtime.");
+    container.innerHTML = createEmptyState(t("dashboard.noActive"));
     return;
   }
 
@@ -121,17 +121,17 @@ function renderDashboardActiveSessions(entries) {
         <div class="queue-card-header">
           <div>
             <div class="queue-card-title">${escapeHtml(entry.employeeName)}</div>
-            <div class="worklog-secondary">Started ${escapeHtml(formatDateLabel(entry.date))} | ${escapeHtml(formatTimeString(entry.punchIn))}</div>
+            <div class="worklog-secondary">${escapeHtml(t("dashboard.started", { date: formatDateLabel(entry.date), time: formatTimeString(entry.punchIn) }))}</div>
           </div>
-          <span class="status-badge approved">Live</span>
+          <span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>
         </div>
         <div class="queue-card-meta">
           <span class="inline-code-pill">${escapeHtml(secondsToDurationLabel(elapsed))}</span>
-          <span class="meta-pill">${escapeHtml(entry.projectCode || "No project")}</span>
+          <span class="meta-pill">${escapeHtml(entry.projectCode || t("shared.noProject"))}</span>
           ${entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : ""}
         </div>
         <div class="queue-card-actions">
-          <button type="button" class="btn btn-outline-secondary btn-sm dashboard-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}">Open Employee</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm dashboard-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}">${escapeHtml(t("action.openEmployee"))}</button>
         </div>
       </article>
     `;
@@ -146,7 +146,7 @@ function renderDashboardRecentActivity() {
     .slice(0, 7);
 
   if (entries.length === 0) {
-    container.innerHTML = createEmptyState("No recent history yet.");
+    container.innerHTML = createEmptyState(t("dashboard.noRecentHistory"));
     return;
   }
 
@@ -156,12 +156,12 @@ function renderDashboardRecentActivity() {
       <article class="activity-card">
         <div class="review-card-header">
           <div>
-            <strong>${escapeHtml(entry.employee || "System")}</strong>
+            <strong>${escapeHtml(entry.employee || t("shared.system"))}</strong>
             <div class="worklog-secondary">${escapeHtml(formatRelativeTime(entry.timestamp))} | ${escapeHtml(formatDateToWords(String(entry.timestamp || "").split(" ")[0] || ""))}</div>
           </div>
-          <span class="action-badge ${escapeHtml(actionTone)}">${escapeHtml(entry.action || "Event")}</span>
+          <span class="action-badge ${escapeHtml(actionTone)}">${escapeHtml(translateHistoryAction(entry.action || "event"))}</span>
         </div>
-        <div class="timeline-card-message">${entry.message || "No message provided."}</div>
+        <div class="timeline-card-message">${renderAuditMessage(entry.message || t("shared.noMessage"))}</div>
       </article>
     `;
   }).join("");
@@ -186,8 +186,8 @@ function renderDashboardOverview() {
   const summary = document.getElementById("dashboardSummaryText");
   if (summary) {
     summary.textContent = pendingCount > 0
-      ? `${pendingCount} approval${pendingCount === 1 ? "" : "s"} | ${activeCount} live`
-      : `${activeCount} live`;
+      ? `${tn("shared.approval", pendingCount)} | ${tn("shared.session", activeCount)}`
+      : tn("shared.session", activeCount);
   }
 
   renderDashboardApprovalQueue(flattenedEntries);
@@ -273,7 +273,7 @@ function renderEmployeeEntries(employeeCode, entries) {
   container.innerHTML = "";
 
   if (!entries || entries.length === 0) {
-    container.innerHTML = createEmptyState("No overtime entries found for the current filters.");
+    container.innerHTML = createEmptyState(t("dashboard.noEntriesFiltered"));
     return;
   }
 
@@ -301,19 +301,19 @@ function renderEmployeeEntries(employeeCode, entries) {
 
         const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
         const reviewButtons = isPending && !isOpen ? `
-          <button class="btn btn-success btn-sm action-btn approve-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="Approve">
+          <button class="btn btn-success btn-sm action-btn approve-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="${escapeHtml(t("action.approve"))}">
             <i class="fa-solid fa-check"></i>
           </button>
-          <button class="btn btn-danger btn-sm action-btn reject-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="Reject">
+          <button class="btn btn-danger btn-sm action-btn reject-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="${escapeHtml(t("action.reject"))}">
             <i class="fa-solid fa-ban"></i>
           </button>
         ` : "";
         const actionHtml = `
           ${reviewButtons}
-          <button class="btn btn-outline-secondary btn-sm action-btn update-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute} title="Update">
+          <button class="btn btn-outline-secondary btn-sm action-btn update-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute} title="${escapeHtml(t("modal.updateEntry"))}">
             <i class="fa-solid fa-pen"></i>
           </button>
-          <button class="btn btn-outline-secondary btn-sm action-btn delete-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="Delete">
+          <button class="btn btn-outline-secondary btn-sm action-btn delete-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="${escapeHtml(t("action.delete"))}">
             <i class="fa-solid fa-trash"></i>
           </button>
         `;
@@ -322,20 +322,20 @@ function renderEmployeeEntries(employeeCode, entries) {
           <div class="worklog-main">
             <div>
               <div class="worklog-title">${escapeHtml(formatQueueTitle(entry))}</div>
-              <div class="worklog-secondary">${escapeHtml(getEntryContextLabel(entry))}</div>
-            </div>
-            <div class="meta-row">
-              <span class="inline-code-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : "In progress")}</span>
-              <span class="status-badge ${statusTone}">${escapeHtml(entry.status || "pending")}</span>
-            </div>
+            <div class="worklog-secondary">${escapeHtml(getEntryContextLabel(entry))}</div>
           </div>
-          ${entry.message ? `<div class="worklog-message">${escapeHtml(entry.message)}</div>` : ""}
-          <div class="worklog-actions">${actionHtml}</div>
-          <div class="worklog-message-editor">
-            <input type="text" class="form-control message-input" placeholder="Manager message" value="${escapeHtml(entry.message || "")}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}">
-            <button class="btn btn-outline-secondary btn-sm save-message-btn" type="button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}">Save Note</button>
+          <div class="meta-row">
+              <span class="inline-code-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.inProgress"))}</span>
+              <span class="status-badge ${statusTone}">${escapeHtml(translateStatus(entry.status || "pending"))}</span>
           </div>
-        `;
+        </div>
+        ${entry.message ? `<div class="worklog-message">${escapeHtml(entry.message)}</div>` : ""}
+        <div class="worklog-actions">${actionHtml}</div>
+        <div class="worklog-message-editor">
+            <input type="text" class="form-control message-input" placeholder="${escapeHtml(t("shared.managerMessage"))}" value="${escapeHtml(entry.message || "")}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}">
+            <button class="btn btn-outline-secondary btn-sm save-message-btn" type="button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}">${escapeHtml(t("action.saveNote"))}</button>
+        </div>
+      `;
         dateGroup.appendChild(card);
       });
 
@@ -356,9 +356,11 @@ async function fetchEmployeeData() {
   addButton.disabled = !employeeCode;
 
   if (!employeeCode) {
-    title.textContent = "Timeline";
+    if (title) {
+      title.textContent = t("dashboard.timeline");
+    }
     hint.textContent = "";
-    container.innerHTML = createEmptyState("No employee selected.");
+    container.innerHTML = createEmptyState(t("dashboard.noEmployeeSelected"));
     return;
   }
 
@@ -383,7 +385,7 @@ async function fetchEmployeeData() {
     renderEmployeeEntries(employeeCode, filteredEntries);
   } catch (error) {
     console.error("Error fetching employee data:", error);
-    showToast("Unable to load the employee timeline.", "error");
+    showToast(t("dashboard.timelineLoadError"), "error");
   }
 }
 
@@ -393,7 +395,7 @@ async function refreshDashboardView() {
     await fetchEmployeeData();
   } catch (error) {
     console.error("Error refreshing dashboard:", error);
-    showToast("Unable to load dashboard.", "error");
+    showToast(t("dashboard.loadError"), "error");
   }
 }
 
@@ -427,6 +429,13 @@ window.handleSyncStateChange = function (syncState) {
     return;
   }
 
+  if (category === "employee-directory") {
+    dashboardState.employees = [];
+    dashboardState.entriesByEmployee = {};
+    dashboardState.historyLoaded = false;
+    return;
+  }
+
   if (category === "history") {
     dashboardState.historyLoaded = false;
   }
@@ -434,14 +443,14 @@ window.handleSyncStateChange = function (syncState) {
 
 async function populateEntryLookups(projectSelectId, overtimeCodeSelectId, selectedProjectCode = "", selectedOvertimeCode = "") {
   const lookups = await fetchOvertimeEntryLookups();
-  document.getElementById(projectSelectId).innerHTML = buildProjectOptions(lookups.projects, "Select project", selectedProjectCode);
-  document.getElementById(overtimeCodeSelectId).innerHTML = buildOvertimeCodeOptions(lookups.overtimeCodes, "Select overtime code", selectedOvertimeCode);
+  document.getElementById(projectSelectId).innerHTML = buildProjectOptions(lookups.projects, t("shared.selectProject"), selectedProjectCode);
+  document.getElementById(overtimeCodeSelectId).innerHTML = buildOvertimeCodeOptions(lookups.overtimeCodes, t("shared.selectOvertimeCode"), selectedOvertimeCode);
 }
 
 async function openAddEntryModal() {
   const employeeCode = document.getElementById("employeeSelect").value;
   if (!employeeCode) {
-    showToast("Select an employee before adding an entry.", "info");
+    showToast(t("dashboard.selectEmployeeBeforeNote"), "info");
     return;
   }
 
@@ -489,7 +498,7 @@ function openUpdateModal(button) {
     updateModal.show();
   }).catch(error => {
     console.error("Error fetching entry lookups:", error);
-    showToast("Unable to load entry options.", "error");
+    showToast(t("dashboard.entryOptionsError"), "error");
   });
 }
 
@@ -498,7 +507,7 @@ async function deleteEntry(button) {
   const date = button.getAttribute("data-date");
   const punchIn = button.getAttribute("data-punchin");
 
-  if (!window.confirm("Delete this entry?")) {
+  if (!window.confirm(t("dashboard.deleteConfirm"))) {
     return;
   }
 
@@ -510,11 +519,11 @@ async function deleteEntry(button) {
     await parseResponse(response);
     dashboardState.entriesByEmployee[employeeCode] = undefined;
     dashboardState.historyLoaded = false;
-    showToast("Entry deleted successfully.", "success");
+    showToast(t("dashboard.entryDeleted"), "success");
     await refreshDashboardView();
   } catch (error) {
     console.error("Error deleting entry:", error);
-    showToast("Error deleting entry: " + error.message, "error");
+    showToast(t("dashboard.entryDeleteError", { message: error.message }), "error");
   }
 }
 
@@ -532,11 +541,11 @@ async function updateApprovalAction(button, newStatus) {
     await parseResponse(response);
     dashboardState.entriesByEmployee[employeeCode] = undefined;
     dashboardState.historyLoaded = false;
-    showToast("Entry updated successfully.", "success");
+    showToast(t("dashboard.entryUpdated"), "success");
     await refreshDashboardView();
   } catch (error) {
     console.error("Approval update error:", error);
-    showToast("Error updating entry: " + error.message, "error");
+    showToast(t("dashboard.approvalError", { message: error.message }), "error");
   }
 }
 
@@ -552,12 +561,12 @@ async function updateApprovalActionInApprovals(button, employeeCode, newStatus) 
     await parseResponse(response);
     dashboardState.entriesByEmployee[employeeCode] = undefined;
     dashboardState.historyLoaded = false;
-    showToast("Entry updated successfully.", "success");
+    showToast(t("dashboard.entryUpdated"), "success");
     await refreshDashboardView();
     await loadApprovalsView();
   } catch (error) {
     console.error("Approval update error in Approvals view:", error);
-    showToast("Error updating entry", "error");
+    showToast(t("dashboard.genericApprovalError"), "error");
   }
 }
 
@@ -573,11 +582,11 @@ async function updateApprovalActionInDashboardQueue(button, employeeCode, newSta
     await parseResponse(response);
     dashboardState.entriesByEmployee[employeeCode] = undefined;
     dashboardState.historyLoaded = false;
-    showToast("Entry updated successfully.", "success");
+    showToast(t("dashboard.entryUpdated"), "success");
     await refreshDashboardView();
   } catch (error) {
     console.error("Dashboard queue approval error:", error);
-    showToast("Error updating entry", "error");
+    showToast(t("dashboard.genericApprovalError"), "error");
   }
 }
 
@@ -607,7 +616,7 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async () =>
   const employeeCode = document.getElementById("employeeSelect").value;
   const date = document.getElementById("addEntryDate").value;
   if (!employeeCode || !date) {
-    showToast("Please select an employee and a date.", "error");
+    showToast(t("dashboard.selectEmployeeAndDate"), "error");
     return;
   }
 
@@ -619,30 +628,30 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async () =>
   const overtimeCode = document.getElementById("addOvertimeCode").value;
 
   if (!punchInHours || !punchInMinutes || !punchOutHours || !punchOutMinutes) {
-    showToast("Please fill in all hour and minute fields.", "error");
+    showToast(t("dashboard.fillAllTimeFields"), "error");
     return;
   }
 
   if (!projectCode) {
-    showToast("Please select a project.", "error");
+    showToast(t("dashboard.selectProject"), "error");
     return;
   }
 
   if (!overtimeCode) {
-    showToast("Please select an overtime code.", "error");
+    showToast(t("dashboard.selectOvertimeCode"), "error");
     return;
   }
 
   const twoDigitRegex = /^[0-9]{1,2}$/;
   if (!twoDigitRegex.test(punchInHours) || !twoDigitRegex.test(punchInMinutes) || !twoDigitRegex.test(punchOutHours) || !twoDigitRegex.test(punchOutMinutes)) {
-    showToast("Hours and minutes must be numeric and up to 2 digits.", "error");
+    showToast(t("dashboard.numericTimeValidation"), "error");
     return;
   }
 
   const punchInTime = `${punchInHours.padStart(2, "0")}:${punchInMinutes.padStart(2, "0")}:00`;
   const punchOutTime = `${punchOutHours.padStart(2, "0")}:${punchOutMinutes.padStart(2, "0")}:00`;
   if (new Date(`${date}T${punchOutTime}`) <= new Date(`${date}T${punchInTime}`)) {
-    showToast("Punch Out must be after Punch In.", "error");
+    showToast(t("dashboard.punchOutAfterPunchIn"), "error");
     return;
   }
 
@@ -663,11 +672,11 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async () =>
     bootstrap.Modal.getInstance(document.getElementById("addEntryModal")).hide();
     dashboardState.entriesByEmployee[employeeCode] = undefined;
     dashboardState.historyLoaded = false;
-    showToast(data.message || "Entry added successfully.", "success");
+    showToast(t("dashboard.entryAdded"), "success");
     await refreshDashboardView();
   } catch (error) {
     console.error("Error adding entry:", error);
-    showToast("Error adding entry: " + error.message, "error");
+    showToast(t("dashboard.entryAddError", { message: error.message }), "error");
   }
 });
 
@@ -686,13 +695,13 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
   const originalOvertimeCode = document.getElementById("originalOvertimeCode").value;
 
   if (!punchInHours || !punchInMinutes || !punchOutHours || !punchOutMinutes) {
-    showToast("Please fill in all hour and minute fields.", "error");
+    showToast(t("dashboard.fillAllTimeFields"), "error");
     return;
   }
 
   const twoDigitRegex = /^[0-9]{1,2}$/;
   if (!twoDigitRegex.test(punchInHours) || !twoDigitRegex.test(punchInMinutes) || !twoDigitRegex.test(punchOutHours) || !twoDigitRegex.test(punchOutMinutes)) {
-    showToast("Hours and minutes must be numeric and up to 2 digits.", "error");
+    showToast(t("dashboard.numericTimeValidation"), "error");
     return;
   }
 
@@ -700,18 +709,18 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
   const punchOutBackend = `${punchOutHours.padStart(2, "0")}:${punchOutMinutes.padStart(2, "0")}:00`;
 
   if (!projectCode || !overtimeCode) {
-    showToast("Project and overtime code are required.", "error");
+    showToast(t("dashboard.projectAndCodeRequired"), "error");
     return;
   }
 
   const punchOutUnchanged = (originalPunchOut || "") === punchOutBackend;
   if (newPunchInBackend === originalPunchIn && punchOutUnchanged && projectCode === originalProjectCode && overtimeCode === originalOvertimeCode) {
-    showToast("No changes detected.", "info");
+    showToast(t("dashboard.noChanges"), "info");
     return;
   }
 
   if (new Date(`${date}T${punchOutBackend}`) <= new Date(`${date}T${newPunchInBackend}`)) {
-    showToast("Punch Out must be after Punch In.", "error");
+    showToast(t("dashboard.punchOutAfterPunchIn"), "error");
     return;
   }
 
@@ -725,11 +734,11 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
     bootstrap.Modal.getInstance(document.getElementById("updateEntryModal")).hide();
     dashboardState.entriesByEmployee[employeeCode] = undefined;
     dashboardState.historyLoaded = false;
-    showToast(data.message || "Entry updated successfully.", "success");
+    showToast(t("dashboard.entryUpdated"), "success");
     await refreshDashboardView();
   } catch (error) {
     console.error("Error updating entry:", error);
-    showToast("Error updating entry: " + error.message, "error");
+    showToast(t("dashboard.entryUpdateError", { message: error.message }), "error");
   }
 });
 
@@ -796,7 +805,7 @@ document.addEventListener("click", event => {
   const punchIn = saveButton.getAttribute("data-punchin") || input.getAttribute("data-punchin");
   const employeeCode = document.getElementById("employeeSelect").value;
   if (!employeeCode) {
-    showToast("Select an employee before saving a note.", "info");
+    showToast(t("dashboard.selectEmployeeBeforeNote"), "info");
     return;
   }
 
@@ -809,11 +818,11 @@ document.addEventListener("click", event => {
     .then(data => {
       dashboardState.entriesByEmployee[employeeCode] = undefined;
       dashboardState.historyLoaded = false;
-      showToast(data.message || "Message updated successfully.", "success");
+      showToast(t("dashboard.managerMessageSaved"), "success");
       refreshDashboardView();
     })
     .catch(error => {
       console.error("Error updating message:", error);
-      showToast("Error updating message: " + error.message, "error");
+      showToast(t("dashboard.managerMessageError"), "error");
     });
 });

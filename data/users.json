@@ -70,10 +70,10 @@
     "role": "employee",
     "employeeCode": "000789123",
     "disabled": false,
-    "mustChangePassword": true,
+    "mustChangePassword": false,
     "createdAtUtc": "2026-03-19T21:35:53.530916Z",
-    "passwordSalt": "min01srQ3+GivU0uTE4mOA==",
-    "passwordHash": "3bjrWfn1jBGKV+7oAfW2vjDxEEio0ZELIlyJha03P/E=",
+    "passwordSalt": "UYZzco3MFgVcEsqpvME24w==",
+    "passwordHash": "v9vtihlbR2f60o13CmCamKSBTkoSXwncdVVaZtMfeYU=",
     "passwordIterations": 120000,
     "passwordAlgorithm": "PBKDF2-HMACSHA1"
   }

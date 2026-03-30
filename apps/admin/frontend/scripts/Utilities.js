@@ -7,6 +7,13 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function getCurrentLocale() {
+  if (typeof window.getI18nLocale === "function") {
+    return window.getI18nLocale();
+  }
+  return undefined;
+}
+
 function filterEntries(entries, searchTerm) {
   const tokens = String(searchTerm || "").toLowerCase().split(/\s+/).filter(token => token.length > 0);
   if (tokens.length === 0) {
@@ -21,7 +28,7 @@ function filterEntries(entries, searchTerm) {
       formatDateToWords(entry.date),
       entry.projectCode,
       entry.overtimeCode,
-      entry.status,
+      translateStatus(entry.status || "pending"),
       entry.message,
     ].join(" ").toLowerCase();
 
@@ -46,37 +53,45 @@ function normalizeTime(timeString) {
   return timeString ? String(timeString).slice(0, 5) : "";
 }
 
-function formatDateToWords(dateString) {
-  if (!dateString) {
-    return "Unknown date";
+function parseLocalDate(dateString) {
+  const parts = String(dateString || "").split("-").map(Number);
+  if (parts.length < 3 || parts.some(Number.isNaN)) {
+    return null;
   }
 
-  const parts = String(dateString).split("-");
   const date = new Date(parts[0], parts[1] - 1, parts[2]);
-  if (Number.isNaN(date.getTime())) {
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDateToWords(dateString) {
+  if (!dateString) {
+    return t("shared.unknownDate");
+  }
+
+  const date = parseLocalDate(dateString);
+  if (!date) {
     return String(dateString);
   }
 
-  return date.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  return date.toLocaleDateString(getCurrentLocale(), { year: "numeric", month: "long", day: "numeric" });
 }
 
 function formatDateLabel(dateString) {
   if (!dateString) {
-    return "Unknown date";
+    return t("shared.unknownDate");
   }
 
-  const parts = String(dateString).split("-");
-  const date = new Date(parts[0], parts[1] - 1, parts[2]);
-  if (Number.isNaN(date.getTime())) {
+  const date = parseLocalDate(dateString);
+  if (!date) {
     return String(dateString);
   }
 
-  return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return date.toLocaleDateString(getCurrentLocale(), { weekday: "short", month: "short", day: "numeric" });
 }
 
 function formatYMToWords(dateStr) {
   if (!dateStr) {
-    return "Unknown";
+    return t("shared.unknown");
   }
 
   const [year, month] = String(dateStr).split("-");
@@ -85,7 +100,21 @@ function formatYMToWords(dateStr) {
     return String(dateStr);
   }
 
-  return date.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  return date.toLocaleDateString(getCurrentLocale(), { month: "short", year: "numeric" });
+}
+
+function formatDateTimeStamp(timestamp) {
+  if (!timestamp) {
+    return t("shared.unknownTime");
+  }
+
+  const normalized = String(timestamp).replace(" ", "T");
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    return String(timestamp);
+  }
+
+  return `${date.toLocaleDateString(getCurrentLocale(), { month: "short", day: "numeric", year: "numeric" })} | ${date.toLocaleTimeString(getCurrentLocale(), { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 function convertFormattedTimeToBackend(timeStr) {
@@ -142,7 +171,7 @@ function parseResponse(response) {
   if (!response.ok) {
     return response.text().then(text => {
       if (!text) {
-        throw new Error(`Request failed with status ${response.status}.`);
+        throw new Error(t("error.requestFailedStatus", { status: response.status }));
       }
 
       try {
@@ -178,7 +207,7 @@ function getStatusTone(status) {
 
 function formatRelativeTime(timestamp) {
   if (!timestamp) {
-    return "Just now";
+    return t("date.justNow");
   }
 
   const normalized = String(timestamp).replace(" ", "T");
@@ -189,19 +218,16 @@ function formatRelativeTime(timestamp) {
 
   const deltaSeconds = Math.round((Date.now() - date.getTime()) / 1000);
   if (deltaSeconds < 60) {
-    return "Just now";
+    return t("date.justNow");
   }
   if (deltaSeconds < 3600) {
-    const minutes = Math.floor(deltaSeconds / 60);
-    return `${minutes}m ago`;
+    return t("date.minutesAgo", { count: Math.floor(deltaSeconds / 60) });
   }
   if (deltaSeconds < 86400) {
-    const hours = Math.floor(deltaSeconds / 3600);
-    return `${hours}h ago`;
+    return t("date.hoursAgo", { count: Math.floor(deltaSeconds / 3600) });
   }
 
-  const days = Math.floor(deltaSeconds / 86400);
-  return `${days}d ago`;
+  return t("date.daysAgo", { count: Math.floor(deltaSeconds / 86400) });
 }
 
 function sortEntriesByDateTime(entries, latestFirst) {
@@ -237,28 +263,32 @@ function getEntryContextLabel(entry) {
     parts.push(String(entry.overtimeCode));
   }
 
-  return parts.length > 0 ? parts.join(" | ") : "Uncoded";
+  return parts.length > 0 ? parts.join(" | ") : t("shared.uncoded");
 }
 
-function buildProjectOptions(projects, placeholder = "Project", selectedValue = "") {
+function buildProjectOptions(projects, placeholder, selectedValue) {
   const options = Array.isArray(projects) ? projects : [];
-  return [`<option value="">${escapeHtml(placeholder)}</option>`]
+  const placeholderText = placeholder || t("shared.project");
+  const nextSelectedValue = selectedValue || "";
+  return [`<option value="">${escapeHtml(placeholderText)}</option>`]
     .concat(options.map(project => {
       const code = String(project.projectCode || "");
       const name = String(project.projectName || code);
-      const selected = code === selectedValue ? " selected" : "";
+      const selected = code === nextSelectedValue ? " selected" : "";
       return `<option value="${escapeHtml(code)}"${selected}>${escapeHtml(code)} | ${escapeHtml(name)}</option>`;
     }))
     .join("");
 }
 
-function buildOvertimeCodeOptions(overtimeCodes, placeholder = "Overtime Code", selectedValue = "") {
+function buildOvertimeCodeOptions(overtimeCodes, placeholder, selectedValue) {
   const options = Array.isArray(overtimeCodes) ? overtimeCodes : [];
-  return [`<option value="">${escapeHtml(placeholder)}</option>`]
+  const placeholderText = placeholder || t("shared.overtimeCode");
+  const nextSelectedValue = selectedValue || "";
+  return [`<option value="">${escapeHtml(placeholderText)}</option>`]
     .concat(options.map(item => {
       const code = String(item.code || "");
       const label = String(item.label || code);
-      const selected = code === selectedValue ? " selected" : "";
+      const selected = code === nextSelectedValue ? " selected" : "";
       return `<option value="${escapeHtml(code)}"${selected}>${escapeHtml(code)} | ${escapeHtml(label)}</option>`;
     }))
     .join("");
@@ -289,6 +319,201 @@ function normalizeToastMessage(message) {
   return scratch.textContent.replace(/\s+/g, " ").trim();
 }
 
+function localizeAuditHumanDate(dateLabel) {
+  const rawDate = String(dateLabel || "").trim();
+  if (!rawDate) {
+    return t("shared.unknownDate");
+  }
+
+  const parsedDate = new Date(rawDate);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return rawDate;
+  }
+
+  return parsedDate.toLocaleDateString(getCurrentLocale(), { year: "numeric", month: "long", day: "numeric" });
+}
+
+function buildTranslatedAuditUpdateFragments(message) {
+  const rawMessage = String(message || "");
+  const fragments = [];
+  const punchInMatch = rawMessage.match(/Punch In from <strong>(.*?)<\/strong> to <strong>(.*?)<\/strong>\./i);
+  const punchOutMatch = rawMessage.match(/Punch Out from <strong>(.*?)<\/strong> to <strong>(.*?)<\/strong>\./i);
+  const punchOutRecordedMatch = rawMessage.match(/Punch Out recorded at <strong>(.*?)<\/strong>\./i);
+  const projectUpdatedMatch = /Project Code updated\./i.test(rawMessage);
+  const overtimeUpdatedMatch = /Overtime Code updated\./i.test(rawMessage);
+
+  if (punchInMatch) {
+    fragments.push(t("history.fragment.punchInFromTo", { from: punchInMatch[1], to: punchInMatch[2] }));
+  }
+  if (punchOutMatch) {
+    fragments.push(t("history.fragment.punchOutFromTo", { from: punchOutMatch[1], to: punchOutMatch[2] }));
+  }
+  if (punchOutRecordedMatch) {
+    fragments.push(t("history.fragment.punchOutRecorded", { time: punchOutRecordedMatch[1] }));
+  }
+  if (projectUpdatedMatch) {
+    fragments.push(t("history.fragment.projectCodeUpdated"));
+  }
+  if (overtimeUpdatedMatch) {
+    fragments.push(t("history.fragment.overtimeCodeUpdated"));
+  }
+
+  return fragments.join(" ");
+}
+
+function translateAuditMessage(message) {
+  const rawMessage = String(message == null ? "" : message).trim();
+  if (!rawMessage) {
+    return t("shared.noMessage");
+  }
+
+  let match = rawMessage.match(/^Added an entry on ([A-Za-z]+ \d{1,2}, \d{4}), starting at <strong>(.*?)<\/strong> and finishing at <strong>(.*?)<\/strong> for project <strong>(.*?)<\/strong> and overtime code <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.addedEntry", {
+      date: localizeAuditHumanDate(match[1]),
+      start: match[2],
+      end: match[3],
+      projectCode: match[4],
+      overtimeCode: match[5],
+    });
+  }
+
+  match = rawMessage.match(/^Updated an entry on ([A-Za-z]+ \d{1,2}, \d{4}),\s*(.*)$/i);
+  if (match) {
+    const translatedFragments = buildTranslatedAuditUpdateFragments(match[2]);
+    if (translatedFragments) {
+      return t("history.message.updatedEntry", {
+        date: localizeAuditHumanDate(match[1]),
+        details: translatedFragments,
+      });
+    }
+  }
+
+  match = rawMessage.match(/^Entry on ([A-Za-z]+ \d{1,2}, \d{4}) updated successfully\.$/i);
+  if (match) {
+    return t("history.message.updatedEntrySimple", {
+      date: localizeAuditHumanDate(match[1]),
+    });
+  }
+
+  match = rawMessage.match(/^Deleted an entry on ([A-Za-z]+ \d{1,2}, \d{4}) starting at <strong>(.*?)<\/strong>\.(?: Reason: (.*))?$/i);
+  if (match) {
+    if (match[3]) {
+      return t("history.message.deletedEntryReason", {
+        date: localizeAuditHumanDate(match[1]),
+        time: match[2],
+        reason: match[3],
+      });
+    }
+    return t("history.message.deletedEntry", {
+      date: localizeAuditHumanDate(match[1]),
+      time: match[2],
+    });
+  }
+
+  match = rawMessage.match(/^Approved an entry on ([A-Za-z]+ \d{1,2}, \d{4}) starting at <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.approvedEntry", {
+      date: localizeAuditHumanDate(match[1]),
+      time: match[2],
+    });
+  }
+
+  match = rawMessage.match(/^Rejected an entry on ([A-Za-z]+ \d{1,2}, \d{4}) starting at <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.rejectedEntry", {
+      date: localizeAuditHumanDate(match[1]),
+      time: match[2],
+    });
+  }
+
+  match = rawMessage.match(/^Created a sign-in account and set a password for <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.createdAccount", { name: match[1] });
+  }
+
+  match = rawMessage.match(/^Reset the password for <strong>(.*?)<\/strong> and required a password change at next sign-in\.$/i);
+  if (match) {
+    return t("history.message.resetPasswordRequireChange", { name: match[1] });
+  }
+
+  match = rawMessage.match(/^Reset the password for <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.resetPassword", { name: match[1] });
+  }
+
+  match = rawMessage.match(/^Created an employee profile for <strong>(.*?)<\/strong> with code <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.employeeCreated", { name: match[1], code: match[2] });
+  }
+
+  match = rawMessage.match(/^Updated the employee profile for <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.employeeUpdated", { name: match[1] });
+  }
+
+  match = rawMessage.match(/^Removed employee access for <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.employeeRemoved", { name: match[1] });
+  }
+
+  match = rawMessage.match(/^Created a project named <strong>(.*?)<\/strong> with code <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.projectCreated", { name: match[1], code: match[2] });
+  }
+
+  match = rawMessage.match(/^Updated the project <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.projectUpdated", { code: match[1] });
+  }
+
+  match = rawMessage.match(/^Removed the project <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.projectRemoved", { code: match[1] });
+  }
+
+  return rawMessage;
+}
+
+function sanitizeAuditHtml(message) {
+  const scratch = document.createElement("div");
+  scratch.innerHTML = String(message == null ? "" : message);
+
+  function renderNode(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return escapeHtml(node.textContent || "").replace(/\r?\n/g, "<br>");
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return "";
+    }
+
+    const tagName = String(node.tagName || "").toLowerCase();
+    if (tagName === "br") {
+      return "<br>";
+    }
+
+    const childHtml = Array.from(node.childNodes || []).map(renderNode).join("");
+    if (tagName === "strong") {
+      return `<strong>${childHtml}</strong>`;
+    }
+
+    return childHtml;
+  }
+
+  return Array.from(scratch.childNodes || []).map(renderNode).join("");
+}
+
+function renderAuditMessage(message) {
+  return sanitizeAuditHtml(translateAuditMessage(message));
+}
+
+function auditMessageToText(message) {
+  const scratch = document.createElement("div");
+  scratch.innerHTML = renderAuditMessage(message);
+  return scratch.textContent.replace(/\s+/g, " ").trim();
+}
+
 function showToast(message, type = "success") {
   const toastContainer = document.getElementById("toastContainer");
   if (!toastContainer) {
@@ -311,9 +536,9 @@ function showToast(message, type = "success") {
   toast.innerHTML = `
     <div class="toast-header">
       <i class="fa-solid ${iconClass} me-2 text-${tone}"></i>
-      <strong class="me-auto">GÉEM Overtime Manager</strong>
-      <small class="text-muted">Now</small>
-      <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+      <strong class="me-auto">${escapeHtml(t("app.name"))}</strong>
+      <small class="text-muted">${escapeHtml(t("shared.now"))}</small>
+      <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="${escapeHtml(t("shared.close"))}"></button>
     </div>
     <div class="toast-body">${escapeHtml(normalizeToastMessage(message))}</div>
   `;

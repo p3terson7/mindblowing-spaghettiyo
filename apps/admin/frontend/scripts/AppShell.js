@@ -63,13 +63,9 @@ function getStoredApiUrl() {
 
 function updateConnectionDisplay() {
   const apiInput = document.getElementById("apiUrlInput");
-  const sidebarValue = document.getElementById("appConnectionValue");
 
   if (apiInput) {
     apiInput.value = window.apiUrl;
-  }
-  if (sidebarValue) {
-    sidebarValue.textContent = window.apiUrl || "Not configured";
   }
 }
 
@@ -135,7 +131,7 @@ function updateSessionSummary() {
   const user = getCurrentUser();
 
   if (!user) {
-    summary.textContent = "Not signed in";
+    summary.textContent = t("session.notSignedIn");
     changePasswordButton.classList.add("d-none");
     logoutButton.classList.add("d-none");
     return;
@@ -143,8 +139,8 @@ function updateSessionSummary() {
 
   const identity = user.displayName || user.username;
   const suffix = user.role === "employee" && user.employeeCode
-    ? `EMP ${user.employeeCode}`
-    : user.role.toUpperCase();
+    ? t("session.employeeCode", { code: user.employeeCode })
+    : t(`session.role.${user.role}`);
 
   summary.textContent = `${identity} | ${suffix}`;
   changePasswordButton.classList.remove("d-none");
@@ -316,7 +312,7 @@ async function refreshActiveView() {
 async function pollSyncState() {
   const sessionToken = getSessionToken();
   if (!sessionToken) {
-    setSyncStatus("Waiting for sign-in");
+    setSyncStatus(t("status.waitingForSignIn"));
     return;
   }
 
@@ -327,7 +323,7 @@ async function pollSyncState() {
 
     if (appShellState.lastSyncVersion === null) {
       appShellState.lastSyncVersion = nextVersion;
-      setSyncStatus(`Live | rev ${nextVersion}`);
+      setSyncStatus(t("status.liveRev", { version: nextVersion }));
       return;
     }
 
@@ -336,15 +332,15 @@ async function pollSyncState() {
       if (typeof window.handleSyncStateChange === "function") {
         window.handleSyncStateChange(syncState);
       }
-      setSyncStatus(`Updated | rev ${nextVersion}`);
+      setSyncStatus(t("status.updatedRev", { version: nextVersion }));
       await refreshActiveView();
       return;
     }
 
-    setSyncStatus(`Live | rev ${nextVersion}`);
+    setSyncStatus(t("status.liveRev", { version: nextVersion }));
   } catch (error) {
     console.error("Unable to refresh sync state:", error);
-    setSyncStatus("Sync paused");
+    setSyncStatus(t("status.syncPaused"));
   }
 }
 
@@ -407,14 +403,14 @@ function handleSessionExpired() {
   clearStoredSession();
   clearRoleUi();
   updateSessionSummary();
-  setSyncStatus("Session expired");
+  setSyncStatus(t("status.sessionExpired"));
   showAuthOverlay(false);
-  setAuthMessage("Your session expired. Sign in again to continue.", "warning");
+  setAuthMessage(t("auth.sessionExpired"), "warning");
 }
 
 function validateAuthenticatedUser(user) {
   if (!user || !user.role) {
-    throw new Error("Authentication response was incomplete.");
+    throw new Error(t("auth.authenticationIncomplete"));
   }
 
   if (!ROLE_VIEW_MAP[user.role]) {
@@ -422,13 +418,13 @@ function validateAuthenticatedUser(user) {
   }
 
   if (user.role === "employee" && !user.employeeCode) {
-    throw new Error("Employee access requires an employee code.");
+    throw new Error(t("auth.employeeCodeRequired"));
   }
 }
 
 async function applySession(authResult) {
   if (!authResult || !authResult.token || !authResult.user) {
-    throw new Error("Authentication response was incomplete.");
+    throw new Error(t("auth.authenticationIncomplete"));
   }
 
   validateAuthenticatedUser(authResult.user);
@@ -443,8 +439,8 @@ async function applySession(authResult) {
 
   if (authResult.user.mustChangePassword) {
     showAuthOverlay(true);
-    setAuthMessage("Password change required before continuing.", "warning");
-    setSyncStatus("Password update required");
+    setAuthMessage(t("auth.passwordChangeRequired"), "warning");
+    setSyncStatus(t("status.passwordUpdateRequired"));
     return;
   }
 
@@ -469,7 +465,7 @@ async function submitLogin(event) {
   const password = document.getElementById("passwordInput").value;
 
   if (!username || !password) {
-    setAuthMessage("Username and password are required.", "danger");
+    setAuthMessage(t("auth.usernamePasswordRequired"), "danger");
     return;
   }
 
@@ -485,7 +481,7 @@ async function submitLogin(event) {
     const authResult = await parseResponse(response);
     await applySession(authResult);
   } catch (error) {
-    setAuthMessage(error.message || "Unable to sign in.", "danger");
+    setAuthMessage(error.message || t("auth.signInError"), "danger");
   }
 }
 
@@ -497,12 +493,12 @@ async function submitPasswordChange() {
   const confirmPassword = document.getElementById("confirmPasswordInput").value;
 
   if (!currentPassword || !newPassword || !confirmPassword) {
-    setAuthMessage("Current password and both new password fields are required.", "danger");
+    setAuthMessage(t("auth.passwordFieldsRequired"), "danger");
     return;
   }
 
   if (newPassword !== confirmPassword) {
-    setAuthMessage("The new passwords do not match.", "danger");
+    setAuthMessage(t("auth.newPasswordsMismatch"), "danger");
     return;
   }
 
@@ -539,9 +535,9 @@ async function submitPasswordChange() {
       startSyncPolling();
     }
 
-    showToast("Password updated successfully.", "success");
+    showToast(t("auth.passwordUpdated"), "success");
   } catch (error) {
-    setAuthMessage(error.message || "Unable to update password.", "danger");
+    setAuthMessage(error.message || t("auth.passwordUpdateError"), "danger");
   }
 }
 
@@ -553,12 +549,12 @@ async function submitModalPasswordChange() {
   const confirmPassword = document.getElementById("selfConfirmPasswordInput").value;
 
   if (!currentPassword || !newPassword || !confirmPassword) {
-    setModalPasswordMessage("Current password and both new password fields are required.", "danger");
+    setModalPasswordMessage(t("auth.passwordFieldsRequired"), "danger");
     return;
   }
 
   if (newPassword !== confirmPassword) {
-    setModalPasswordMessage("The new passwords do not match.", "danger");
+    setModalPasswordMessage(t("auth.newPasswordsMismatch"), "danger");
     return;
   }
 
@@ -585,9 +581,9 @@ async function submitModalPasswordChange() {
     updateSessionSummary();
     bootstrap.Modal.getInstance(document.getElementById("selfPasswordModal")).hide();
     resetModalPasswordForm();
-    showToast("Password updated successfully.", "success");
+    showToast(t("auth.passwordUpdated"), "success");
   } catch (error) {
-    setModalPasswordMessage(error.message || "Unable to update password.", "danger");
+    setModalPasswordMessage(error.message || t("auth.passwordUpdateError"), "danger");
   }
 }
 
@@ -612,9 +608,9 @@ async function submitLogout() {
   clearStoredSession();
   clearRoleUi();
   updateSessionSummary();
-  setSyncStatus("Signed out");
+  setSyncStatus(t("status.signedOut"));
   showAuthOverlay(false);
-  setAuthMessage("Signed out successfully.", "success");
+  setAuthMessage(t("auth.signOutSuccess"), "success");
 }
 
 async function restoreSession() {
@@ -623,7 +619,7 @@ async function restoreSession() {
     clearRoleUi();
     updateSessionSummary();
     showAuthOverlay(false);
-    setSyncStatus("Waiting for sign-in");
+    setSyncStatus(t("status.waitingForSignIn"));
     return;
   }
 
@@ -639,10 +635,12 @@ async function restoreSession() {
     clearRoleUi();
     updateSessionSummary();
     showAuthOverlay(false);
-    setAuthMessage("Sign in to continue.", "warning");
-    setSyncStatus("Waiting for sign-in");
+    setAuthMessage(t("auth.signInToContinue"), "warning");
+    setSyncStatus(t("status.waitingForSignIn"));
   }
 }
+
+window.refreshActiveAppView = refreshActiveView;
 
 document.addEventListener("DOMContentLoaded", () => {
   window.apiUrl = getStoredApiUrl();
@@ -660,7 +658,41 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("authAdvancedToggle").addEventListener("click", () => toggleAuthAdvancedPanel());
   clearRoleUi();
   updateSessionSummary();
-  setSyncStatus("Waiting for sign-in");
+  setSyncStatus(t("status.waitingForSignIn"));
   installFetchWrapper();
   restoreSession();
+});
+
+window.addEventListener("app:language-changed", event => {
+  updateConnectionDisplay();
+  updateSessionSummary();
+
+  const user = getCurrentUser();
+  if (!user) {
+    setSyncStatus(t("status.waitingForSignIn"));
+    return;
+  }
+
+  if (appShellState.lastSyncVersion === null) {
+    if (user.mustChangePassword) {
+      setSyncStatus(t("status.passwordUpdateRequired"));
+    } else {
+      setSyncStatus(t("status.waitingForSignIn"));
+    }
+  } else {
+    setSyncStatus(t("status.liveRev", { version: appShellState.lastSyncVersion }));
+  }
+
+  if (typeof window.updateWorkspaceHeading === "function") {
+    const activeViewId = document.querySelector(".view.active")?.id || resolvePreferredView(user);
+    window.updateWorkspaceHeading(activeViewId);
+  }
+
+  if (event.detail && event.detail.refresh === false) {
+    return;
+  }
+
+  refreshActiveView().catch(error => {
+    console.error("Unable to refresh active view after language change:", error);
+  });
 });

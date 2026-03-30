@@ -176,6 +176,21 @@ The frontend also lets users override the API URL at sign-in time.
 - OS/share permissions still matter.
 - For network deployment, plain HTTP is still weaker than HTTPS.
 
+Recommended shared-folder deployment:
+
+- do not give regular employees direct write access to the `DataFolderPath`
+- run the backend under a dedicated service account
+- grant `Modify` only to that service account on both the SMB share and the NTFS folder
+- give admins/users access only through the app URL, not through the data share
+- if users need the share for other reasons, give them a separate share path that does not expose the JSON store
+
+In practice, the safest model is:
+
+1. one machine runs the PowerShell backend
+2. that machine has write access to the shared data folder
+3. users access the app over HTTP/HTTPS only
+4. users do not browse the JSON files directly
+
 ## Legacy Repo Metadata
 
 Previous nested repository metadata was moved to:

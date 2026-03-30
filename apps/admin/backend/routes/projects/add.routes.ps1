@@ -29,6 +29,7 @@
                 Release-ResourceLock -LockHandle $lockHandle
             }
 
+            logHistory "Add" "Created a project named <strong>$([string]$payload.projectName)</strong> with code <strong>$([string]$payload.projectCode)</strong>." ([string]$currentUser.displayName)
             Publish-DataChange -Category "project" -Resource ([string]$payload.projectCode)
             respondWithSuccess $response '{ "message": "Project added successfully." }'
             continue

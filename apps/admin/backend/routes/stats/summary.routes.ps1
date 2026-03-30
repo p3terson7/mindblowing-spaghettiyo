@@ -10,7 +10,12 @@
                     $count = $allStats[$projCode].entryCount
                     $totalTS = New-TimeSpan -Seconds $totalSec
                     $totalOvertime = $totalTS.ToString("hh\:mm\:ss")
-                    $avgSec = ($count -gt 0) ? [math]::Round($totalSec / $count) : 0
+                    if ($count -gt 0) {
+                        $avgSec = [math]::Round($totalSec / $count)
+                    }
+                    else {
+                        $avgSec = 0
+                    }
                     $avgTS = New-TimeSpan -Seconds $avgSec
                     $averageOvertime = $avgTS.ToString("hh\:mm\:ss")
                     

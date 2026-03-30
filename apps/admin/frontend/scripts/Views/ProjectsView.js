@@ -2,6 +2,66 @@ const projectDetailCache = {};
 let currentProjectFilter = "6M";
 let currentProjectCode = null;
 let pendingProjectChartFrameId = null;
+const projectsViewState = {
+  projects: [],
+};
+
+function setProjectEditorMessage(message, type) {
+  const messageBox = document.getElementById("projectEditorMessage");
+  if (!message) {
+    messageBox.className = "alert d-none";
+    messageBox.textContent = "";
+    return;
+  }
+
+  messageBox.className = `alert alert-${type || "danger"}`;
+  messageBox.textContent = message;
+}
+
+function resetProjectEditorForm() {
+  document.getElementById("projectEditorMode").value = "create";
+  document.getElementById("projectEditorModalLabel").textContent = t("projects.addProject");
+  document.getElementById("projectEditorCodeInput").value = "";
+  document.getElementById("projectEditorCodeInput").readOnly = false;
+  document.getElementById("projectEditorNameInput").value = "";
+  document.getElementById("projectEditorRemoveButton").classList.add("d-none");
+  setProjectEditorMessage("");
+}
+
+function openProjectEditorModal(mode, project) {
+  resetProjectEditorForm();
+
+  if (mode === "edit" && project) {
+    document.getElementById("projectEditorMode").value = "edit";
+    document.getElementById("projectEditorModalLabel").textContent = t("projects.editProject");
+    document.getElementById("projectEditorCodeInput").value = project.projectCode || "";
+    document.getElementById("projectEditorCodeInput").readOnly = true;
+    document.getElementById("projectEditorNameInput").value = project.projectName || "";
+    document.getElementById("projectEditorRemoveButton").classList.remove("d-none");
+  }
+
+  const modal = new bootstrap.Modal(document.getElementById("projectEditorModal"));
+  modal.show();
+}
+
+function getProjectByCode(projectCode) {
+  return projectsViewState.projects.find(project => project.projectCode === projectCode) || null;
+}
+
+function ensureProjectChartCanvas() {
+  const chartStage = document.querySelector("#projectChartContainer .chart-stage");
+  if (!chartStage) {
+    return null;
+  }
+
+  let canvas = document.getElementById("projectMultiLineChart");
+  if (!canvas) {
+    chartStage.innerHTML = '<canvas id="projectMultiLineChart"></canvas>';
+    canvas = document.getElementById("projectMultiLineChart");
+  }
+
+  return canvas;
+}
 
 function clearProjectDetailCache() {
   Object.keys(projectDetailCache).forEach(cacheKey => {
@@ -40,9 +100,12 @@ function calculateDateRange(filterPeriod) {
 async function fetchProjects() {
   try {
     const response = await fetch(apiUrl + "projects");
-    return await parseResponse(response);
+    const projects = await parseResponse(response);
+    projectsViewState.projects = Array.isArray(projects) ? projects : [];
+    return projectsViewState.projects;
   } catch (error) {
     console.error("Error fetching projects:", error);
+    projectsViewState.projects = [];
     return [];
   }
 }
@@ -70,7 +133,7 @@ async function loadProjectDetailStats(projectCode, filterPeriod = "all") {
     renderProjectDetail(data);
   } catch (error) {
     console.error("Error loading project detail stats:", error);
-    document.getElementById("projectDetailContainer").innerHTML = createEmptyState("Unable to load project statistics.");
+    document.getElementById("projectDetailContainer").innerHTML = createEmptyState(t("projects.statsUnavailable"));
   }
 }
 
@@ -118,11 +181,11 @@ async function loadAllProjectSummaryStats(filterPeriod = "all") {
         renderProjectDetail(validDetails[0]);
       }
     } else {
-      document.getElementById("projectDetailContainer").innerHTML = createEmptyState("Choose a project to inspect its trend and employee breakdown.");
+      document.getElementById("projectDetailContainer").innerHTML = createEmptyState(t("projects.selectToInspect"));
     }
   } catch (error) {
     console.error("Error loading all project summary stats:", error);
-    document.getElementById("projectsSummaryContainer").innerHTML = createEmptyState("Unable to load projects.");
+    document.getElementById("projectsSummaryContainer").innerHTML = createEmptyState(t("projects.unableToLoad"));
   }
 }
 
@@ -138,7 +201,7 @@ async function refreshProjectsView() {
 function renderProjectSummaryCards(projectDetails) {
   const container = document.getElementById("projectsSummaryContainer");
   if (!projectDetails || projectDetails.length === 0) {
-    container.innerHTML = createEmptyState("No project statistics available yet.");
+    container.innerHTML = createEmptyState(t("projects.noStats"));
     return;
   }
 
@@ -152,8 +215,11 @@ function renderProjectSummaryCards(projectDetails) {
         <span class="inline-code-pill">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(detail.totalOvertime)))}</span>
       </div>
       <div class="project-card-meta">
-        <span class="meta-pill">Entries ${escapeHtml(detail.entryCount)}</span>
-        <span class="meta-pill">Average ${escapeHtml(secondsToDurationLabel(timeStringToSeconds(detail.averageOvertime)))}</span>
+        <span class="meta-pill">${escapeHtml(t("projects.entries", { count: detail.entryCount }))}</span>
+        <span class="meta-pill">${escapeHtml(t("projects.average", { value: secondsToDurationLabel(timeStringToSeconds(detail.averageOvertime)) }))}</span>
+      </div>
+      <div class="employee-card-actions">
+        <button type="button" class="btn btn-outline-secondary btn-sm project-edit-button" data-project-code="${escapeHtml(detail.projectCode)}">${escapeHtml(t("action.edit"))}</button>
       </div>
     </article>
   `).join("");
@@ -161,37 +227,31 @@ function renderProjectSummaryCards(projectDetails) {
 
 function renderProjectEmployeeEntries(entries) {
   if (!entries || entries.length === 0) {
-    return createEmptyState("No entries for this employee in the selected period.");
+    return createEmptyState(t("projects.noEntriesForEmployee"));
   }
 
   return `
-    <table class="table table-sm align-middle">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Punch In</th>
-          <th>Punch Out</th>
-          <th>Overtime</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${entries.map(entry => `
-          <tr>
-            <td>${escapeHtml(formatDateLabel(entry.date))}</td>
-            <td>${escapeHtml(formatTimeString(entry.punchIn))}</td>
-            <td>${escapeHtml(formatTimeString(entry.punchOut))}</td>
-            <td>${escapeHtml(secondsToDurationLabel(timeStringToSeconds(entry.overtime)))}</td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>
+    <div class="project-entry-list">
+      <div class="project-entry-list-header">
+        <span>${escapeHtml(t("modal.date"))}</span>
+        <span>${escapeHtml(t("projects.timeRange"))}</span>
+        <span>${escapeHtml(t("projects.overtimeLabel"))}</span>
+      </div>
+      ${entries.map(entry => `
+        <div class="project-entry-row">
+          <span class="project-entry-date">${escapeHtml(formatDateLabel(entry.date))}</span>
+          <span class="project-entry-time mono">${escapeHtml(formatTimeString(entry.punchIn))} -> ${escapeHtml(entry.punchOut ? formatTimeString(entry.punchOut) : t("shared.inProgress"))}</span>
+          <span class="project-entry-overtime mono">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(entry.overtime)))}</span>
+        </div>
+      `).join("")}
+    </div>
   `;
 }
 
 function renderProjectDetail(detail) {
   const container = document.getElementById("projectDetailContainer");
   if (!detail) {
-    container.innerHTML = createEmptyState("Choose a project to inspect its detail.");
+    container.innerHTML = createEmptyState(t("projects.selectToInspect"));
     return;
   }
 
@@ -207,34 +267,39 @@ function renderProjectDetail(detail) {
       </div>
       <div class="project-summary">
         <div class="project-summary-item">
-          <span class="metric-label">Total Overtime</span>
+          <span class="metric-label">${escapeHtml(t("projects.totalOvertime"))}</span>
           <strong class="metric-value mono">${escapeHtml(total)}</strong>
         </div>
         <div class="project-summary-item">
-          <span class="metric-label">Entries</span>
+          <span class="metric-label">${escapeHtml(t("projects.entriesLabel"))}</span>
           <strong class="metric-value mono">${escapeHtml(detail.entryCount)}</strong>
         </div>
         <div class="project-summary-item">
-          <span class="metric-label">Average</span>
+          <span class="metric-label">${escapeHtml(t("projects.averageLabel"))}</span>
           <strong class="metric-value mono">${escapeHtml(average)}</strong>
         </div>
         <div class="project-summary-item">
-          <span class="metric-label">Contributors</span>
+          <span class="metric-label">${escapeHtml(t("projects.contributors"))}</span>
           <strong class="metric-value mono">${escapeHtml(touchedBy)}</strong>
         </div>
       </div>
       <div class="employee-breakdown">
-        <h5>Employee Breakdown</h5>
+        <h5>${escapeHtml(t("projects.employeeBreakdown"))}</h5>
         ${detail.breakdownByEmployee && detail.breakdownByEmployee.length > 0 ? `
-          <div class="accordion" id="employeeAccordion">
+          <div class="accordion project-breakdown-accordion" id="employeeAccordion">
             ${detail.breakdownByEmployee.map((employee, index) => {
               const collapseId = `projectEmployeeCollapse${index}`;
               return `
                 <div class="accordion-item">
                   <h2 class="accordion-header" id="projectHeading${index}">
                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
-                      <span>${escapeHtml(employee.employee)}</span>
-                      <span class="ms-auto me-4 employee-card-note">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(employee.overtime)))} across ${escapeHtml(employee.entryCount)} entries</span>
+                      <span class="project-breakdown-heading">
+                        <span class="project-breakdown-name">${escapeHtml(employee.employee)}</span>
+                        <span class="project-breakdown-meta">
+                          <span class="meta-pill">${escapeHtml(t("projects.entries", { count: employee.entryCount }))}</span>
+                          <span class="inline-code-pill">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(employee.overtime)))}</span>
+                        </span>
+                      </span>
                     </button>
                   </h2>
                   <div id="${collapseId}" class="accordion-collapse collapse" aria-labelledby="projectHeading${index}" data-bs-parent="#employeeAccordion">
@@ -246,14 +311,78 @@ function renderProjectDetail(detail) {
               `;
             }).join("")}
           </div>
-        ` : createEmptyState("No overtime entries recorded for this project.")}
+        ` : createEmptyState(t("projects.noEntriesForProject"))}
       </div>
     </article>
   `;
 }
 
+async function submitProjectEditor() {
+  setProjectEditorMessage("");
+
+  const mode = document.getElementById("projectEditorMode").value;
+  const projectCode = document.getElementById("projectEditorCodeInput").value.trim();
+  const projectName = document.getElementById("projectEditorNameInput").value.trim();
+
+  if (!projectCode || !projectName) {
+    setProjectEditorMessage(t("projects.codeAndNameRequired"), "danger");
+    return;
+  }
+
+  try {
+    const response = await fetch(mode === "create" ? apiUrl + "projects" : apiUrl + "projects/" + encodeURIComponent(projectCode), {
+      method: mode === "create" ? "POST" : "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        projectCode,
+        projectName,
+      }),
+    });
+
+    await parseResponse(response);
+    const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
+    if (modal) {
+      modal.hide();
+    }
+    resetProjectEditorForm();
+    showToast(t(mode === "create" ? "projects.projectCreated" : "projects.projectUpdated"), "success");
+    await refreshProjectsView();
+  } catch (error) {
+    console.error("Error saving project:", error);
+    setProjectEditorMessage(error.message || t(mode === "create" ? "projects.createError" : "projects.updateError"), "danger");
+  }
+}
+
+async function removeProject(project) {
+  if (!project || !project.projectCode) {
+    return;
+  }
+
+  const confirmed = window.confirm(t("projects.removeConfirm", { name: project.projectName, code: project.projectCode }));
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    const response = await fetch(apiUrl + "projects/" + encodeURIComponent(project.projectCode), {
+      method: "DELETE",
+    });
+    await parseResponse(response);
+    if (currentProjectCode === project.projectCode) {
+      currentProjectCode = null;
+    }
+    showToast(t("projects.projectRemoved"), "success");
+    await refreshProjectsView();
+  } catch (error) {
+    console.error("Error removing project:", error);
+    showToast(error.message || t("projects.removeError"), "error");
+  }
+}
+
 function renderProjectMultiLineChart(trendData) {
-  const canvas = document.getElementById("projectMultiLineChart");
+  const canvas = ensureProjectChartCanvas();
   if (!canvas) {
     return;
   }
@@ -261,7 +390,7 @@ function renderProjectMultiLineChart(trendData) {
   if (typeof Chart !== "function") {
     const chartContainer = document.getElementById("projectChartContainer");
     if (chartContainer) {
-      chartContainer.querySelector(".chart-stage").innerHTML = createEmptyState("Chart library failed to load.");
+      chartContainer.querySelector(".chart-stage").innerHTML = createEmptyState(t("projects.chartLibraryFailed"));
     }
     return;
   }
@@ -377,10 +506,24 @@ async function loadProjectTrendChart(filterPeriod = "all") {
     renderProjectMultiLineChart(trendData || {});
   } catch (error) {
     console.error("Error fetching project trend data:", error);
+    const chartStage = document.querySelector("#projectChartContainer .chart-stage");
+    if (chartStage) {
+      chartStage.innerHTML = createEmptyState(t("projects.chartLoadError"));
+    }
   }
 }
 
 document.getElementById("projectsSummaryContainer").addEventListener("click", event => {
+  const editButton = event.target.closest(".project-edit-button");
+  if (editButton) {
+    event.stopPropagation();
+    const project = getProjectByCode(editButton.getAttribute("data-project-code"));
+    if (project) {
+      openProjectEditorModal("edit", project);
+    }
+    return;
+  }
+
   const projectCard = event.target.closest(".project-summary-card");
   if (!projectCard) {
     return;
@@ -397,4 +540,21 @@ document.getElementById("projectsSummaryContainer").addEventListener("click", ev
 document.getElementById("projectRangeSelect").addEventListener("change", event => {
   currentProjectFilter = event.target.value;
   refreshProjectsView();
+});
+
+document.getElementById("addProjectButton").addEventListener("click", () => {
+  openProjectEditorModal("create");
+});
+document.getElementById("projectEditorRemoveButton").addEventListener("click", async () => {
+  const project = getProjectByCode(document.getElementById("projectEditorCodeInput").value.trim());
+  const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
+  if (modal) {
+    modal.hide();
+  }
+  await removeProject(project);
+});
+document.getElementById("projectEditorSaveButton").addEventListener("click", submitProjectEditor);
+document.getElementById("projectEditorForm").addEventListener("submit", event => {
+  event.preventDefault();
+  submitProjectEditor();
 });

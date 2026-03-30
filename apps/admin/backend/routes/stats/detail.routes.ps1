@@ -9,9 +9,28 @@
             try {
                 $allStats = Get-ProjectStatistics -startDate $startDate -endDate $endDate
                 $projects = Get-Projects
+                $projObj = $projects | Where-Object { $_.projectCode -eq $projectCode } | Select-Object -First 1
+
+                if ($null -eq $projObj) {
+                    respondWithError $response 404 "Project with code $projectCode was not found."
+                    continue
+                }
                 
                 if (-not $allStats.ContainsKey($projectCode)) {
-                    respondWithError $response 404 "Project with code $projectCode has no overtime entries."
+                    $result = [PSCustomObject]@{
+                        projectCode         = $projectCode
+                        projectName         = [string]$projObj.projectName
+                        totalOvertime       = "00:00:00"
+                        entryCount          = 0
+                        averageOvertime     = "00:00:00"
+                        breakdownByEmployee = @()
+                    }
+
+                    $jsonResult = $result | ConvertTo-Json -Depth 4
+                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonResult)
+                    $response.ContentType = "application/json"
+                    $response.StatusCode = 200
+                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
                     continue
                 }
                 
@@ -20,7 +39,12 @@
                 $count = $projStats.entryCount
                 $totalTS = New-TimeSpan -Seconds $totalSec
                 $totalOvertime = $totalTS.ToString("hh\:mm\:ss")
-                $avgSec = ($count -gt 0) ? [math]::Round($totalSec / $count) : 0
+                if ($count -gt 0) {
+                    $avgSec = [math]::Round($totalSec / $count)
+                }
+                else {
+                    $avgSec = 0
+                }
                 $avgTS = New-TimeSpan -Seconds $avgSec
                 $averageOvertime = $avgTS.ToString("hh\:mm\:ss")
                 
@@ -37,7 +61,6 @@
                     }
                 }
                 
-                $projObj = $projects | Where-Object { $_.projectCode -eq $projectCode } | Select-Object -First 1
                 $projectName = if ($projObj) { $projObj.projectName } else { "N/A" }
                 
                 $result = [PSCustomObject]@{

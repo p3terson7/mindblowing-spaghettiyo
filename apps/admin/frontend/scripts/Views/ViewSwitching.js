@@ -8,28 +8,28 @@ const NAV_VIEW_MAP = {
 
 const VIEW_METADATA = {
   selfView: {
-    kicker: "Employee Workspace",
-    title: "My Overtime",
+    kickerKey: "workspace.employee",
+    titleKey: "workspace.myOvertime",
     subtitle: "",
   },
   dashboardView: {
-    kicker: "Admin Workspace",
-    title: "Command Center",
+    kickerKey: "workspace.admin",
+    titleKey: "workspace.commandCenter",
     subtitle: "",
   },
   employeesView: {
-    kicker: "Admin Workspace",
-    title: "People",
+    kickerKey: "workspace.admin",
+    titleKey: "workspace.people",
     subtitle: "",
   },
   adminView: {
-    kicker: "Admin Workspace",
-    title: "Review",
+    kickerKey: "workspace.admin",
+    titleKey: "workspace.review",
     subtitle: "",
   },
   projectsView: {
-    kicker: "Admin Workspace",
-    title: "Projects",
+    kickerKey: "workspace.admin",
+    titleKey: "workspace.projects",
     subtitle: "",
   },
 };
@@ -58,10 +58,10 @@ function updateWorkspaceHeading(viewId) {
   const subtitle = document.getElementById("workspaceSubtitle");
 
   if (kicker) {
-    kicker.textContent = metadata.kicker;
+    kicker.textContent = t(metadata.kickerKey);
   }
   if (title) {
-    title.textContent = metadata.title;
+    title.textContent = t(metadata.titleKey);
   }
   if (subtitle) {
     subtitle.textContent = metadata.subtitle;

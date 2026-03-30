@@ -15,43 +15,39 @@
         <img src="assets/crest.png" class="brand-crest" alt="GÉEM crest">
         <div>
           <div class="brand-eyebrow">GÉEM</div>
-          <div class="brand-title">Overtime Manager</div>
+          <div class="brand-title" data-i18n="brand.overtimeManager">Overtime Manager</div>
         </div>
       </div>
 
       <nav class="app-navigation">
-        <div class="nav-section-label">Workspace</div>
+        <div class="nav-section-label" data-i18n="nav.workspace">Workspace</div>
         <a class="app-nav-link d-none" href="#" id="navSelf" data-role-scope="employee">
           <i class="fa-solid fa-play-circle"></i>
-          <span>My Overtime</span>
+          <span data-i18n="nav.myOvertime">My Overtime</span>
         </a>
         <a class="app-nav-link d-none" href="#" id="navDashboard" data-role-scope="admin">
           <i class="fa-solid fa-gauge-high"></i>
-          <span>Command Center</span>
+          <span data-i18n="nav.commandCenter">Command Center</span>
         </a>
         <a class="app-nav-link d-none" href="#" id="navEmployees" data-role-scope="admin">
           <i class="fa-solid fa-users"></i>
-          <span>People</span>
+          <span data-i18n="nav.people">People</span>
         </a>
         <a class="app-nav-link d-none" href="#" id="navAdmin" data-role-scope="admin">
           <i class="fa-solid fa-list-check"></i>
-          <span>Review</span>
+          <span data-i18n="nav.review">Review</span>
         </a>
         <a class="app-nav-link d-none" href="#" id="navProjects" data-role-scope="admin">
           <i class="fa-solid fa-chart-line"></i>
-          <span>Projects</span>
+          <span data-i18n="nav.projects">Projects</span>
         </a>
       </nav>
 
       <div class="sidebar-footer">
         <div class="status-stack">
           <div class="status-card">
-            <span class="status-label">Connection</span>
-            <span class="status-value mono" id="appConnectionValue">http://localhost:8081/</span>
-          </div>
-          <div class="status-card">
-            <span class="status-label">Sync</span>
-            <span class="status-value" id="appSyncStatus">Waiting for sign-in</span>
+            <span class="status-label" data-i18n="status.sync">Sync</span>
+            <span class="status-value" id="appSyncStatus" data-i18n="status.waitingForSignIn">Waiting for sign-in</span>
           </div>
         </div>
       </div>
@@ -60,14 +56,21 @@
     <div class="app-main">
       <header class="workspace-header">
         <div>
-          <div class="workspace-kicker" id="workspaceKicker">Workspace</div>
-          <h1 class="workspace-title" id="workspaceTitle">GÉEM Overtime Manager</h1>
+          <div class="workspace-kicker" id="workspaceKicker" data-i18n="nav.workspace">Workspace</div>
+          <h1 class="workspace-title" id="workspaceTitle" data-i18n="app.name">GÉEM Overtime Manager</h1>
           <p class="workspace-subtitle" id="workspaceSubtitle"></p>
         </div>
         <div class="workspace-actions">
-          <div class="session-chip" id="appSessionSummary">Not signed in</div>
-          <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="appChangePasswordButton">Change Password</button>
-          <button type="button" class="btn btn-primary btn-sm d-none" id="appLogoutButton">Log Out</button>
+          <div class="session-chip" id="appSessionSummary" data-i18n="session.notSignedIn">Not signed in</div>
+          <div class="language-picker">
+            <label class="visually-hidden" for="appLanguageSelect" data-i18n="language.label">Language</label>
+            <select id="appLanguageSelect" class="form-select form-select-sm language-select" data-language-select data-i18n-aria-label="language.label">
+              <option value="en" data-i18n="language.english">English</option>
+              <option value="fr" data-i18n="language.french">Français</option>
+            </select>
+          </div>
+          <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="appChangePasswordButton" data-i18n="action.changePassword">Change Password</button>
+          <button type="button" class="btn btn-primary btn-sm d-none" id="appLogoutButton" data-i18n="action.logOut">Log Out</button>
         </div>
       </header>
 
@@ -77,77 +80,75 @@
         <div id="selfView" class="view workspace-view">
           <section class="panel-shell action-strip">
             <div class="action-strip-main">
-              <button id="selfPrimaryPunchButton" class="btn btn-primary btn-lg">Start Overtime</button>
+              <button id="selfPrimaryPunchButton" class="btn btn-primary btn-lg" data-i18n="self.startOvertime">Start Overtime</button>
               <div class="self-punch-selectors" id="selfPunchSelectors">
-                <select id="selfProjectCodeSelect" class="form-select form-select-sm" aria-label="Project selection">
-                  <option value="">Project</option>
+                <select id="selfProjectCodeSelect" class="form-select form-select-sm" aria-label="Project selection" data-i18n-aria-label="shared.project">
+                  <option value="" data-i18n="shared.project">Project</option>
                 </select>
-                <select id="selfOvertimeCodeSelect" class="form-select form-select-sm" aria-label="Overtime code selection">
-                  <option value="">Overtime Code</option>
+                <select id="selfOvertimeCodeSelect" class="form-select form-select-sm" aria-label="Overtime code selection" data-i18n-aria-label="shared.overtimeCode">
+                  <option value="" data-i18n="shared.overtimeCode">Overtime Code</option>
                 </select>
               </div>
               <div>
-                <div class="hero-status mono" id="selfPunchStateText">Not currently clocked in</div>
-                <div class="panel-note" id="selfStatusMessage">Idle</div>
+                <div class="hero-status mono" id="selfPunchStateText" data-i18n="status.notCurrentlyClockedIn">Not currently clocked in</div>
+                <div class="panel-note" id="selfStatusMessage" data-i18n="status.idle">Idle</div>
                 <div class="panel-note" id="selfSelectionSummary"></div>
               </div>
             </div>
             <div class="action-strip-meta">
-              <span class="count-chip" id="selfHeroText">Idle</span>
+              <span class="count-chip" id="selfHeroText" data-i18n="status.idle">Idle</span>
             </div>
           </section>
 
           <section class="metrics-grid metrics-grid-three">
             <article class="metric-card">
-              <span class="metric-label">This Month</span>
+              <span class="metric-label" data-i18n="self.thisMonth">This Month</span>
               <strong class="metric-value mono" id="selfTotalOvertime">00h 00m</strong>
-              <span class="metric-hint">Approved and pending overtime combined</span>
+              <span class="metric-hint" data-i18n="self.approvedPendingCombined">Approved and pending overtime combined</span>
             </article>
             <article class="metric-card">
-              <span class="metric-label">Pending Approvals</span>
+              <span class="metric-label" data-i18n="self.pendingApprovals">Pending Approvals</span>
               <strong class="metric-value mono" id="selfPendingApprovals">0</strong>
-              <span class="metric-hint">Entries waiting for manager review</span>
+              <span class="metric-hint" data-i18n="self.entriesWaitingReview">Entries waiting for manager review</span>
             </article>
             <article class="metric-card metric-card-emphasis">
-              <span class="metric-label">Current Status</span>
-              <strong class="metric-value" id="selfCurrentStatusValue">Off the clock</strong>
-              <span class="metric-hint" id="selfCurrentStatusHint">Start overtime when you are ready to track extra hours.</span>
+              <span class="metric-label" data-i18n="self.currentStatus">Current Status</span>
+              <strong class="metric-value" id="selfCurrentStatusValue" data-i18n="status.offClock">Off the clock</strong>
+              <span class="metric-hint" id="selfCurrentStatusHint" data-i18n="status.readyToTrack">Start overtime when you are ready to track extra hours.</span>
             </article>
           </section>
 
           <section class="panel-shell">
             <div class="panel-header-row">
               <div>
-                <div class="panel-kicker">Timeline</div>
-                <h3>Recent Activity</h3>
+                <div class="panel-kicker" data-i18n="self.timeline">Timeline</div>
               </div>
               <div class="panel-header-actions">
                 <div class="chip-group" id="selfPresetFilters">
-                  <button type="button" class="chip-button active" data-range="today">Today</button>
-                  <button type="button" class="chip-button" data-range="week">This Week</button>
-                  <button type="button" class="chip-button" data-range="month">This Month</button>
-                  <button type="button" class="chip-button" data-range="all">All</button>
-                  <button type="button" class="chip-button" data-range="custom">Custom</button>
+                  <button type="button" class="chip-button active" data-range="today" data-i18n="self.range.today">Today</button>
+                  <button type="button" class="chip-button" data-range="week" data-i18n="self.range.week">This Week</button>
+                  <button type="button" class="chip-button" data-range="month" data-i18n="self.range.month">This Month</button>
+                  <button type="button" class="chip-button" data-range="all" data-i18n="self.range.all">All</button>
+                  <button type="button" class="chip-button" data-range="custom" data-i18n="self.range.custom">Custom</button>
                 </div>
               </div>
             </div>
 
             <div class="filter-row d-none" id="selfCustomFilterPanel">
               <div class="field-block compact-field">
-                <label for="selfMonthFilter" class="form-label">Month</label>
+                <label for="selfMonthFilter" class="form-label" data-i18n="filters.month">Month</label>
                 <input type="number" id="selfMonthFilter" class="form-control" placeholder="MM" min="1" max="12" />
               </div>
               <div class="field-block compact-field">
-                <label for="selfYearFilter" class="form-label">Year</label>
+                <label for="selfYearFilter" class="form-label" data-i18n="filters.year">Year</label>
                 <input type="number" id="selfYearFilter" class="form-control" placeholder="YYYY" min="2000" />
               </div>
               <div class="filter-actions">
-                <button id="selfApplyFilterButton" class="btn btn-primary">Apply</button>
-                <button id="selfClearFilterButton" class="btn btn-outline-secondary">Reset</button>
+                <button id="selfApplyFilterButton" class="btn btn-primary" data-i18n="action.apply">Apply</button>
+                <button id="selfClearFilterButton" class="btn btn-outline-secondary" data-i18n="action.reset">Reset</button>
               </div>
             </div>
 
-            <div class="panel-note" id="selfRangeSummary">Today</div>
             <div id="selfEntriesContainer" class="entry-stack"></div>
           </section>
         </div>
@@ -155,24 +156,24 @@
         <div id="dashboardView" class="view workspace-view active">
           <section class="metrics-grid metrics-grid-four">
             <article class="metric-card">
-              <span class="metric-label">Org Overtime This Month</span>
+              <span class="metric-label" data-i18n="dashboard.orgOvertime">Org Overtime This Month</span>
               <strong class="metric-value mono" id="totalOvertime">00h 00m</strong>
-              <span class="metric-hint">Across all tracked employees</span>
+              <span class="metric-hint" data-i18n="dashboard.acrossEmployees">Across all tracked employees</span>
             </article>
             <article class="metric-card metric-card-attention">
-              <span class="metric-label">Pending Approvals</span>
+              <span class="metric-label" data-i18n="dashboard.pendingApprovals">Pending Approvals</span>
               <strong class="metric-value mono" id="pendingApprovals">0</strong>
-              <span class="metric-hint">Entries waiting for action</span>
+              <span class="metric-hint" data-i18n="dashboard.waitingForAction">Entries waiting for action</span>
             </article>
             <article class="metric-card">
-              <span class="metric-label">Clocked In Right Now</span>
+              <span class="metric-label" data-i18n="dashboard.clockedInNow">Clocked In Right Now</span>
               <strong class="metric-value mono" id="activeEmployees">0</strong>
-              <span class="metric-hint">Open overtime sessions</span>
+              <span class="metric-hint" data-i18n="dashboard.openSessions">Open overtime sessions</span>
             </article>
             <article class="metric-card">
-              <span class="metric-label">Tracked Employees</span>
+              <span class="metric-label" data-i18n="dashboard.trackedEmployees">Tracked Employees</span>
               <strong class="metric-value mono" id="trackedEmployeesCount">0</strong>
-              <span class="metric-hint">Known employee records</span>
+              <span class="metric-hint" data-i18n="dashboard.knownEmployees">Known employee records</span>
             </article>
           </section>
 
@@ -180,31 +181,29 @@
             <section class="panel-shell">
               <div class="panel-header-row">
                 <div>
-                  <div class="panel-kicker">Needs Attention</div>
-                  <h3>Action Queues</h3>
+                  <div class="panel-kicker" data-i18n="dashboard.needsAttention">Needs Attention</div>
                 </div>
               </div>
 
               <div class="queue-section">
                 <div class="queue-header">
-                  <h4>Pending Approvals</h4>
-                  <span class="panel-note" id="dashboardPendingQueueMeta">Waiting for review</span>
+                  <h4 data-i18n="dashboard.pendingApprovals">Pending Approvals</h4>
+                  <span class="panel-note" id="dashboardPendingQueueMeta" data-i18n="dashboard.pendingQueueMetaWaiting">Waiting for review</span>
                 </div>
                 <div id="dashboardApprovalQueue" class="queue-list"></div>
               </div>
 
               <div class="queue-section">
                 <div class="queue-header">
-                  <h4>Currently Clocked In</h4>
-                  <span class="panel-note" id="dashboardActiveQueueMeta">Live overtime sessions</span>
+                  <h4 data-i18n="dashboard.activeQueueTitle">Currently Clocked In</h4>
+                  <span class="panel-note" id="dashboardActiveQueueMeta" data-i18n="dashboard.activeQueueMeta">Live overtime sessions</span>
                 </div>
                 <div id="dashboardActiveList" class="queue-list"></div>
               </div>
 
               <div class="queue-section">
                 <div class="queue-header">
-                  <h4>Recent Activity</h4>
-                  <span class="panel-note">Latest audit trail entries</span>
+                  <h4 data-i18n="dashboard.recentActivity">Recent Activity</h4>
                 </div>
                 <div id="dashboardRecentActivity" class="activity-feed"></div>
               </div>
@@ -213,34 +212,34 @@
             <section class="panel-shell panel-shell-sticky">
               <div class="panel-header-row">
                 <div>
-                  <div class="panel-kicker">Inspector</div>
-                  <h3 id="dashboardInspectorTitle">Timeline</h3>
+                  <div class="panel-kicker" data-i18n="dashboard.inspector">Inspector</div>
+                  <h3 id="dashboardInspectorTitle" data-i18n="dashboard.timeline">Timeline</h3>
                 </div>
                 <div class="panel-header-actions">
-                  <button id="addEntryButton" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Add Entry</button>
+                  <button id="addEntryButton" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> <span data-i18n="dashboard.addEntry">Add Entry</span></button>
                 </div>
               </div>
 
               <div class="filter-grid filter-grid-admin">
                 <div class="field-block">
-                  <label for="employeeSelect" class="form-label">Employee</label>
+                  <label for="employeeSelect" class="form-label" data-i18n="dashboard.employee">Employee</label>
                   <select id="employeeSelect" class="form-select">
-                    <option value="">Loading employees...</option>
+                    <option value="" data-i18n="shared.loadingEmployees">Loading employees...</option>
                   </select>
                 </div>
                 <div class="field-block compact-field">
-                  <label for="monthFilter" class="form-label">Month</label>
+                  <label for="monthFilter" class="form-label" data-i18n="filters.month">Month</label>
                   <input type="number" id="monthFilter" class="form-control" placeholder="MM" min="1" max="12" />
                 </div>
                 <div class="field-block compact-field">
-                  <label for="yearFilter" class="form-label">Year</label>
+                  <label for="yearFilter" class="form-label" data-i18n="filters.year">Year</label>
                   <input type="number" id="yearFilter" class="form-control" placeholder="YYYY" min="2000" />
                 </div>
                 <div class="field-block field-block-checkbox">
-                  <label class="form-label">Sort</label>
+                  <label class="form-label" data-i18n="dashboard.sort">Sort</label>
                   <label class="checkbox-chip" for="latestCheck">
                     <input class="form-check-input" type="checkbox" id="latestCheck" checked>
-                    <span>Newest first</span>
+                    <span data-i18n="dashboard.newestFirst">Newest first</span>
                   </label>
                 </div>
               </div>
@@ -255,16 +254,21 @@
           <section class="panel-shell">
             <div class="panel-header-row">
               <div>
-                <div class="panel-kicker">People & Access</div>
-                <h3>Employee Directory</h3>
+                <div class="panel-kicker" data-i18n="employees.peopleAccess">People & Access</div>
               </div>
-              <div class="count-chip" id="employeesDirectoryCount">0 employees</div>
+              <div class="panel-header-actions">
+                <div class="count-chip" id="employeesDirectoryCount">0 employees</div>
+                <button type="button" class="btn btn-primary btn-sm" id="addEmployeeButton">
+                  <i class="fa-solid fa-user-plus"></i>
+                  <span data-i18n="employees.addEmployee">Add Employee</span>
+                </button>
+              </div>
             </div>
 
             <div class="filter-row filter-row-inline">
               <div class="field-block field-block-wide">
-                <label for="employeesSearchInput" class="form-label">Search employees</label>
-                <input type="text" id="employeesSearchInput" class="form-control" placeholder="Search by name or employee code">
+                <label for="employeesSearchInput" class="form-label" data-i18n="employees.search">Search employees</label>
+                <input type="text" id="employeesSearchInput" class="form-control" data-i18n-placeholder="employees.searchPlaceholder" placeholder="Search by name or employee code">
               </div>
             </div>
 
@@ -277,8 +281,7 @@
             <section id="approvalsSection" class="panel-shell">
               <div class="panel-header-row">
                 <div>
-                  <div class="panel-kicker">Review Flow</div>
-                  <h3>Approvals</h3>
+                  <div class="panel-kicker" data-i18n="review.reviewFlow">Review Flow</div>
                 </div>
               </div>
               <ul class="nav nav-tabs ide-tabs" id="approvalTabs" role="tablist">
@@ -293,7 +296,7 @@
                 </li>
               </ul>
               <div id="approvalsSearchContainer" class="search-row">
-                <input type="text" id="approvalsSearchInput" class="form-control" placeholder="Filter approvals by employee or date"/>
+                <input type="text" id="approvalsSearchInput" class="form-control" data-i18n-placeholder="review.searchApprovals" placeholder="Filter approvals by employee or date"/>
               </div>
               <div class="tab-content review-tab-content" id="approvalTabsContent">
                 <div class="tab-pane fade show active" id="pendingContainer" role="tabpanel" aria-labelledby="pending-tab"></div>
@@ -305,11 +308,10 @@
             <section id="historySection" class="panel-shell">
               <div class="panel-header-row">
                 <div>
-                  <div class="panel-kicker">Audit Trail</div>
-                  <h3>History</h3>
+                  <div class="panel-kicker" data-i18n="history.auditTrail">Audit Trail</div>
                 </div>
                 <div class="panel-header-actions">
-                  <button id="refreshHistoryBtn" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                  <button id="refreshHistoryBtn" class="btn btn-outline-secondary btn-sm" data-i18n="action.refresh">Refresh</button>
                 </div>
               </div>
               <ul class="nav nav-tabs ide-tabs" id="historyTabs" role="tablist">
@@ -330,7 +332,7 @@
                 </li>
               </ul>
               <div id="historySearchContainer" class="search-row">
-                <input type="text" id="historySearchInput" class="form-control" placeholder="Filter audit history by employee, action, or message"/>
+                <input type="text" id="historySearchInput" class="form-control" data-i18n-placeholder="history.search" placeholder="Filter audit history by employee, action, or message"/>
               </div>
               <div class="tab-content review-tab-content" id="historyTabsContent">
                 <div class="tab-pane fade show active" id="allHistoryContainer" role="tabpanel" aria-labelledby="all-history-tab"></div>
@@ -347,17 +349,22 @@
           <div id="projectChartContainer" class="panel-shell chart-shell">
             <div class="panel-header-row">
               <div>
-                <div class="panel-kicker">Trends</div>
-                <h3>Monthly Overtime by Project</h3>
+                <div class="panel-kicker" data-i18n="projects.trends">Trends</div>
               </div>
-              <div class="field-block compact-field field-block-standalone">
-                <label for="projectRangeSelect" class="form-label">Range</label>
-                <select id="projectRangeSelect" class="form-select">
-                  <option value="all">All Time</option>
-                  <option value="1M">Last 1 Month</option>
-                  <option value="6M" selected>Last 6 Months</option>
-                  <option value="1Y">Last 1 Year</option>
-                </select>
+              <div class="panel-header-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="addProjectButton">
+                  <i class="fa-solid fa-folder-plus"></i>
+                  <span data-i18n="projects.addProject">Add Project</span>
+                </button>
+                <div class="field-block compact-field field-block-standalone">
+                  <label for="projectRangeSelect" class="form-label" data-i18n="projects.range">Range</label>
+                  <select id="projectRangeSelect" class="form-select">
+                    <option value="all" data-i18n="projects.range.all">All Time</option>
+                    <option value="1M" data-i18n="projects.range.1M">Last 1 Month</option>
+                    <option value="6M" selected data-i18n="projects.range.6M">Last 6 Months</option>
+                    <option value="1Y" data-i18n="projects.range.1Y">Last 1 Year</option>
+                  </select>
+                </div>
               </div>
             </div>
             <div class="chart-stage">
@@ -368,8 +375,7 @@
           <section class="panel-shell">
             <div class="panel-header-row">
               <div>
-                <div class="panel-kicker">Portfolio</div>
-                <h3>Project Overview</h3>
+                <div class="panel-kicker" data-i18n="projects.portfolio">Portfolio</div>
               </div>
             </div>
             <div id="projectsSummaryContainer" class="projects-grid"></div>
@@ -378,8 +384,7 @@
           <section class="panel-shell">
             <div class="panel-header-row">
               <div>
-                <div class="panel-kicker">Deep Dive</div>
-                <h3>Project Detail</h3>
+                <div class="panel-kicker" data-i18n="projects.deepDive">Deep Dive</div>
               </div>
             </div>
             <div id="projectDetailContainer"></div>
@@ -391,61 +396,64 @@
 
   <div id="authOverlay" class="auth-overlay">
     <div class="auth-card">
-      <div class="auth-card-side">
-        <div class="auth-brand-lockup">
-          <img src="assets/crest.png" class="brand-crest" alt="GÉEM crest">
-          <div>
-            <div class="brand-eyebrow">GÉEM</div>
-            <div class="brand-title">Unified Overtime Workspace</div>
+        <div class="auth-card-side">
+          <div class="auth-brand-lockup">
+            <img src="assets/crest.png" class="brand-crest" alt="GÉEM crest">
+            <div>
+              <div class="brand-eyebrow">GÉEM</div>
+              <div class="brand-title" data-i18n="brand.overtimeManager">Overtime Manager</div>
+            </div>
+          </div>
+          <div class="auth-side-points">
+            <div><i class="fa-solid fa-user-shield"></i><span data-i18n="auth.roleAccess">Role access</span></div>
           </div>
         </div>
-        <div class="auth-side-points">
-          <div><i class="fa-solid fa-wave-square"></i><span>Live sync</span></div>
-          <div><i class="fa-solid fa-user-shield"></i><span>Role access</span></div>
-          <div><i class="fa-solid fa-timeline"></i><span>Audit + analytics</span></div>
-        </div>
-      </div>
       <div class="auth-card-main">
         <div class="auth-header">
-          <div class="panel-kicker">Sign In</div>
-          <h3>Sign In</h3>
+          <div class="auth-header-row">
+            <h3 data-i18n="auth.signIn">Sign In</h3>
+            <select id="authLanguageSelect" class="form-select form-select-sm language-select" data-language-select data-i18n-aria-label="language.label">
+              <option value="en" data-i18n="language.english">English</option>
+              <option value="fr" data-i18n="language.french">Français</option>
+            </select>
+          </div>
         </div>
         <div id="authMessage" class="alert d-none" role="alert"></div>
         <form id="loginForm">
           <div class="field-block">
-            <label for="usernameInput" class="form-label">Username or Employee Code</label>
+            <label for="usernameInput" class="form-label" data-i18n="auth.username">Username or Employee Code</label>
             <input type="text" class="form-control" id="usernameInput" autocomplete="username" required>
           </div>
           <div class="field-block">
-            <label for="passwordInput" class="form-label">Password</label>
+            <label for="passwordInput" class="form-label" data-i18n="auth.password">Password</label>
             <input type="password" class="form-control" id="passwordInput" autocomplete="current-password" required>
           </div>
 
           <div id="passwordChangeSection" class="d-none">
             <div class="field-block">
-              <label for="newPasswordInput" class="form-label">New Password</label>
+              <label for="newPasswordInput" class="form-label" data-i18n="auth.newPassword">New Password</label>
               <input type="password" class="form-control" id="newPasswordInput" autocomplete="new-password">
             </div>
             <div class="field-block">
-              <label for="confirmPasswordInput" class="form-label">Confirm New Password</label>
+              <label for="confirmPasswordInput" class="form-label" data-i18n="auth.confirmNewPassword">Confirm New Password</label>
               <input type="password" class="form-control" id="confirmPasswordInput" autocomplete="new-password">
             </div>
-            <p class="panel-note">Passwords must be at least 10 characters and include uppercase, lowercase, digit, and symbol characters.</p>
+            <p class="panel-note" data-i18n="auth.passwordPolicy">Passwords must be at least 10 characters and include uppercase, lowercase, digit, and symbol characters.</p>
           </div>
 
           <div class="auth-advanced-toggle-row">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="authAdvancedToggle">Connection</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="authAdvancedToggle" data-i18n="auth.connection">Connection</button>
           </div>
           <div id="authAdvancedPanel" class="auth-advanced-panel d-none">
             <div class="field-block field-block-wide">
-              <label for="apiUrlInput" class="form-label">API URL</label>
+              <label for="apiUrlInput" class="form-label" data-i18n="auth.apiUrl">API URL</label>
               <input type="url" class="form-control mono" id="apiUrlInput" placeholder="http://localhost:8081/" required>
             </div>
           </div>
 
           <div class="auth-actions">
-            <button type="submit" class="btn btn-primary" id="loginSubmitButton">Sign In</button>
-            <button type="button" class="btn btn-success d-none" id="changePasswordButton">Update Password</button>
+            <button type="submit" class="btn btn-primary" id="loginSubmitButton" data-i18n="auth.signIn">Sign In</button>
+            <button type="button" class="btn btn-success d-none" id="changePasswordButton" data-i18n="action.updatePassword">Update Password</button>
           </div>
         </form>
       </div>
@@ -456,8 +464,8 @@
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
-          <h3 class="modal-title" id="updateEntryModalLabel">Update Entry</h3>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <h3 class="modal-title" id="updateEntryModalLabel" data-i18n="modal.updateEntry">Update Entry</h3>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
         </div>
         <div class="modal-body">
           <form id="updateEntryForm">
@@ -465,7 +473,7 @@
             <input type="hidden" id="originalPunchIn" />
             <input type="hidden" id="originalPunchOut" />
             <div class="field-block">
-              <label class="form-label">Punch In</label>
+              <label class="form-label" data-i18n="modal.punchIn">Punch In</label>
               <div class="input-group">
                 <input type="text" class="form-control" id="updatePunchInHours" placeholder="HH" required />
                 <span class="input-group-text">:</span>
@@ -473,7 +481,7 @@
               </div>
             </div>
             <div class="field-block">
-              <label class="form-label">Punch Out</label>
+              <label class="form-label" data-i18n="modal.punchOut">Punch Out</label>
               <div class="input-group">
                 <input type="text" class="form-control" id="updatePunchOutHours" placeholder="HH" required />
                 <span class="input-group-text">:</span>
@@ -481,24 +489,24 @@
               </div>
             </div>
             <div class="field-block">
-              <label for="updateProjectCode" class="form-label">Project</label>
+              <label for="updateProjectCode" class="form-label" data-i18n="shared.project">Project</label>
               <input type="hidden" id="originalProjectCode" />
               <select id="updateProjectCode" class="form-select" required>
-                <option value="">Loading projects...</option>
+                <option value="" data-i18n="shared.loadingProjects">Loading projects...</option>
               </select>
             </div>
             <div class="field-block">
-              <label for="updateOvertimeCode" class="form-label">Overtime Code</label>
+              <label for="updateOvertimeCode" class="form-label" data-i18n="shared.overtimeCode">Overtime Code</label>
               <input type="hidden" id="originalOvertimeCode" />
               <select id="updateOvertimeCode" class="form-select" required>
-                <option value="">Loading overtime codes...</option>
+                <option value="" data-i18n="shared.loadingOvertimeCodes">Loading overtime codes...</option>
               </select>
             </div>
           </form>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="button" id="saveUpdateBtn" class="btn btn-primary">Save Changes</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
+          <button type="button" id="saveUpdateBtn" class="btn btn-primary" data-i18n="action.saveChanges">Save Changes</button>
         </div>
       </div>
     </div>
@@ -508,17 +516,17 @@
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
-          <h3 class="modal-title" id="addEntryModalLabel">Add Entry</h3>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <h3 class="modal-title" id="addEntryModalLabel" data-i18n="modal.addEntry">Add Entry</h3>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
         </div>
         <div class="modal-body">
           <form id="addEntryForm">
             <div class="field-block">
-              <label for="addEntryDate" class="form-label">Date</label>
+              <label for="addEntryDate" class="form-label" data-i18n="modal.date">Date</label>
               <input type="date" class="form-control" id="addEntryDate" required />
             </div>
             <div class="field-block">
-              <label class="form-label">Punch In</label>
+              <label class="form-label" data-i18n="modal.punchIn">Punch In</label>
               <div class="input-group">
                 <input type="text" class="form-control" id="addPunchInHours" placeholder="HH" required />
                 <span class="input-group-text">:</span>
@@ -526,7 +534,7 @@
               </div>
             </div>
             <div class="field-block">
-              <label class="form-label">Punch Out</label>
+              <label class="form-label" data-i18n="modal.punchOut">Punch Out</label>
               <div class="input-group">
                 <input type="text" class="form-control" id="addPunchOutHours" placeholder="HH" required />
                 <span class="input-group-text">:</span>
@@ -534,22 +542,22 @@
               </div>
             </div>
             <div class="field-block">
-              <label for="addProjectCode" class="form-label">Project</label>
+              <label for="addProjectCode" class="form-label" data-i18n="shared.project">Project</label>
               <select id="addProjectCode" class="form-select" required>
-                <option value="">Select project</option>
+                <option value="" data-i18n="shared.selectProject">Select project</option>
               </select>
             </div>
             <div class="field-block">
-              <label for="addOvertimeCode" class="form-label">Overtime Code</label>
+              <label for="addOvertimeCode" class="form-label" data-i18n="shared.overtimeCode">Overtime Code</label>
               <select id="addOvertimeCode" class="form-select" required>
-                <option value="">Select overtime code</option>
+                <option value="" data-i18n="shared.selectOvertimeCode">Select overtime code</option>
               </select>
             </div>
           </form>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="button" id="saveAddEntryBtn" class="btn btn-primary">Add Entry</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
+          <button type="button" id="saveAddEntryBtn" class="btn btn-primary" data-i18n="action.addEntry">Add Entry</button>
         </div>
       </div>
     </div>
@@ -560,12 +568,12 @@
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title" id="selfConfirmModalLabel"></h3>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
         </div>
         <div class="modal-body" id="selfConfirmModalBody"></div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="button" id="selfConfirmModalConfirmBtn" class="btn btn-primary">Confirm</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
+          <button type="button" id="selfConfirmModalConfirmBtn" class="btn btn-primary" data-i18n="action.confirm">Confirm</button>
         </div>
       </div>
     </div>
@@ -575,68 +583,106 @@
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
-          <h3 class="modal-title" id="selfPasswordModalLabel">Change Password</h3>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <h3 class="modal-title" id="selfPasswordModalLabel" data-i18n="modal.changePassword">Change Password</h3>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
         </div>
         <div class="modal-body">
           <div id="selfPasswordMessage" class="alert d-none" role="alert"></div>
           <form id="selfPasswordForm">
             <div class="field-block">
-              <label for="selfCurrentPasswordInput" class="form-label">Current Password</label>
+              <label for="selfCurrentPasswordInput" class="form-label" data-i18n="modal.currentPassword">Current Password</label>
               <input type="password" class="form-control" id="selfCurrentPasswordInput" autocomplete="current-password">
             </div>
             <div class="field-block">
-              <label for="selfNewPasswordInput" class="form-label">New Password</label>
+              <label for="selfNewPasswordInput" class="form-label" data-i18n="auth.newPassword">New Password</label>
               <input type="password" class="form-control" id="selfNewPasswordInput" autocomplete="new-password">
             </div>
             <div class="field-block">
-              <label for="selfConfirmPasswordInput" class="form-label">Confirm New Password</label>
+              <label for="selfConfirmPasswordInput" class="form-label" data-i18n="auth.confirmNewPassword">Confirm New Password</label>
               <input type="password" class="form-control" id="selfConfirmPasswordInput" autocomplete="new-password">
             </div>
-            <p class="panel-note mb-0">Passwords must be at least 10 characters and include uppercase, lowercase, digit, and symbol characters.</p>
+            <p class="panel-note mb-0" data-i18n="auth.passwordPolicy">Passwords must be at least 10 characters and include uppercase, lowercase, digit, and symbol characters.</p>
           </form>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="button" class="btn btn-primary" id="selfPasswordSaveButton">Update Password</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
+          <button type="button" class="btn btn-primary" id="selfPasswordSaveButton" data-i18n="action.updatePassword">Update Password</button>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="modal fade" id="employeePasswordModal" tabindex="-1" aria-labelledby="employeePasswordModalLabel" aria-hidden="true">
+  <div class="modal fade" id="employeeEditorModal" tabindex="-1" aria-labelledby="employeeEditorModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
-          <h3 class="modal-title" id="employeePasswordModalLabel">Manage Employee Password</h3>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <h3 class="modal-title" id="employeeEditorModalLabel" data-i18n="employees.addEmployee">Add Employee</h3>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <div id="employeePasswordMessage" class="alert d-none" role="alert"></div>
-          <form id="employeePasswordForm">
-            <input type="hidden" id="employeePasswordCodeInput">
+          <div id="employeeEditorMessage" class="alert d-none" role="alert"></div>
+          <form id="employeeEditorForm">
+            <input type="hidden" id="employeeEditorMode" value="create">
+            <input type="hidden" id="employeeEditorOriginalNameInput" value="">
             <div class="field-block">
-              <label for="employeePasswordNameInput" class="form-label">Employee</label>
-              <input type="text" class="form-control" id="employeePasswordNameInput" readonly>
-            </div>
-            <div class="field-block">
-              <label for="employeePasswordValueInput" class="form-label">New Password</label>
-              <input type="password" class="form-control" id="employeePasswordValueInput" autocomplete="new-password">
+              <label for="employeeEditorCodeInput" class="form-label" data-i18n="employees.employeeCode">Employee Code</label>
+              <input type="text" class="form-control" id="employeeEditorCodeInput" autocomplete="off">
             </div>
             <div class="field-block">
-              <label for="employeePasswordConfirmInput" class="form-label">Confirm New Password</label>
-              <input type="password" class="form-control" id="employeePasswordConfirmInput" autocomplete="new-password">
+              <label for="employeeEditorNameInput" class="form-label" data-i18n="employees.employeeName">Employee Name</label>
+              <input type="text" class="form-control" id="employeeEditorNameInput" autocomplete="off">
             </div>
-            <div class="form-check mb-3">
-              <input class="form-check-input" type="checkbox" id="employeePasswordMustChangeInput" checked>
-              <label class="form-check-label" for="employeePasswordMustChangeInput">Require a password change on next sign-in</label>
+            <div id="employeeEditorPasswordFields">
+              <div class="field-block">
+                <label for="employeeEditorPasswordInput" class="form-label" data-i18n="auth.newPassword">New Password</label>
+                <input type="password" class="form-control" id="employeeEditorPasswordInput" autocomplete="new-password">
+              </div>
+              <div class="field-block">
+                <label for="employeeEditorPasswordConfirmInput" class="form-label" data-i18n="auth.confirmNewPassword">Confirm New Password</label>
+                <input type="password" class="form-control" id="employeeEditorPasswordConfirmInput" autocomplete="new-password">
+              </div>
+              <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="employeeEditorMustChangeInput" checked>
+                <label class="form-check-label" for="employeeEditorMustChangeInput" data-i18n="employees.requirePasswordChange">Require a password change on next sign-in</label>
+              </div>
+              <p class="panel-note mb-0" id="employeeEditorPasswordHint" data-i18n="employees.passwordHintCreate">Leave the password empty to use an auto-generated one.</p>
             </div>
-            <p class="panel-note mb-0">Existing sessions for this employee will be revoked after the reset.</p>
           </form>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="button" class="btn btn-primary" id="employeePasswordSaveButton">Save Password</button>
+          <button type="button" class="btn btn-outline-danger d-none me-auto" id="employeeEditorRemoveButton" data-i18n="action.remove">Remove</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
+          <button type="button" class="btn btn-primary" id="employeeEditorSaveButton" data-i18n="action.saveChanges">Save Changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="projectEditorModal" tabindex="-1" aria-labelledby="projectEditorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title" id="projectEditorModalLabel" data-i18n="projects.addProject">Add Project</h3>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="projectEditorMessage" class="alert d-none" role="alert"></div>
+          <form id="projectEditorForm">
+            <input type="hidden" id="projectEditorMode" value="create">
+            <div class="field-block">
+              <label for="projectEditorCodeInput" class="form-label" data-i18n="projects.projectCode">Project Code</label>
+              <input type="text" class="form-control" id="projectEditorCodeInput" autocomplete="off">
+            </div>
+            <div class="field-block">
+              <label for="projectEditorNameInput" class="form-label" data-i18n="projects.projectName">Project Name</label>
+              <input type="text" class="form-control" id="projectEditorNameInput" autocomplete="off">
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-danger d-none me-auto" id="projectEditorRemoveButton" data-i18n="action.remove">Remove</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
+          <button type="button" class="btn btn-primary" id="projectEditorSaveButton" data-i18n="action.saveChanges">Save Changes</button>
         </div>
       </div>
     </div>
@@ -649,6 +695,7 @@
       : "http://localhost:8081/";
   </script>
   <script src="assets/vendor/chart.umd.min.js"></script>
+  <script src="scripts/I18n.js"></script>
   <script src="scripts/Utilities.js"></script>
   <script src="scripts/AppShell.js"></script>
   <script src="scripts/Views/ViewSwitching.js"></script>

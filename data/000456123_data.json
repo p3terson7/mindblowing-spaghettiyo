@@ -27,7 +27,7 @@
     "punchIn": "06:30:00",
     "punchOut": "08:00:00",
     "overtime": "01:30:00",
-    "status": "pending",
+    "status": "approved",
     "message": "Early maintenance window and verification.",
     "projectCode": "INF-330",
     "overtimeCode": "OT-MNT"

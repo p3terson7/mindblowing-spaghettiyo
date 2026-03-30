@@ -71,6 +71,7 @@ function Get-ProjectStatistics {
                 date     = $entry.date
                 punchIn  = $entry.punchIn
                 punchOut = $entry.punchOut
+                overtime = if ($entry.overtime) { [string]$entry.overtime } else { "00:00:00" }
             }
         }
     }

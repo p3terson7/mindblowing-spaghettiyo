@@ -34,7 +34,7 @@ function showSelfConfirmationModal(title, message, callback) {
 }
 
 function formatPromptTime(date) {
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleTimeString(getI18nLocale(), { hour: "2-digit", minute: "2-digit" });
 }
 
 function persistSelfSelections() {
@@ -69,8 +69,8 @@ function renderSelfPunchSelectors() {
   const projectSelect = document.getElementById("selfProjectCodeSelect");
   const overtimeCodeSelect = document.getElementById("selfOvertimeCodeSelect");
 
-  projectSelect.innerHTML = buildProjectOptions(selfViewState.projects, "Project", selfViewState.selectedProjectCode);
-  overtimeCodeSelect.innerHTML = buildOvertimeCodeOptions(selfViewState.overtimeCodes, "Overtime Code", selfViewState.selectedOvertimeCode);
+  projectSelect.innerHTML = buildProjectOptions(selfViewState.projects, t("shared.project"), selfViewState.selectedProjectCode);
+  overtimeCodeSelect.innerHTML = buildOvertimeCodeOptions(selfViewState.overtimeCodes, t("shared.overtimeCode"), selfViewState.selectedOvertimeCode);
 
   if (selfViewState.selectedProjectCode && projectSelect.value !== selfViewState.selectedProjectCode) {
     selfViewState.selectedProjectCode = "";
@@ -174,22 +174,6 @@ function getFilteredSelfEntries(entries) {
   }
 }
 
-function getRangeSummaryLabel(filteredEntries) {
-  switch (selfViewState.selectedRange) {
-    case "today":
-      return filteredEntries.length > 0 ? "Today" : "Today | 0";
-    case "week":
-      return "This Week";
-    case "month":
-      return "This Month";
-    case "custom":
-      return "Custom";
-    case "all":
-    default:
-      return "All";
-  }
-}
-
 function updateSelfSummaryMetrics(allEntries) {
   const now = new Date();
   const currentMonthEntries = allEntries.filter(entry => {
@@ -218,61 +202,68 @@ function updateSelfStatus(entries) {
   if (activeEntry) {
     const startedAt = toEntryDateTime(activeEntry);
     const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
-    primaryButton.textContent = "End Overtime";
+    primaryButton.textContent = t("self.endOvertime");
     primaryButton.dataset.punchType = "out";
-    punchState.textContent = `Started ${formatDateLabel(activeEntry.date)} | ${formatTimeString(activeEntry.punchIn)}`;
-    statusMessage.textContent = `${secondsToDurationLabel(elapsedSeconds)} open`;
-    currentStatusValue.textContent = "Clocked in";
+    punchState.textContent = t("self.startedAt", {
+      date: formatDateLabel(activeEntry.date),
+      time: formatTimeString(activeEntry.punchIn),
+    });
+    statusMessage.textContent = t("self.openDuration", { duration: secondsToDurationLabel(elapsedSeconds) });
+    currentStatusValue.textContent = t("status.clockedIn");
     currentStatusHint.textContent = getEntryContextLabel(activeEntry);
     selectionSummary.textContent = getEntryContextLabel(activeEntry);
     punchSelectors.classList.add("d-none");
     if (heroText) {
-      heroText.textContent = "Live";
+      heroText.textContent = t("self.hero.live");
     }
     updateSelfPunchAvailability();
     return;
   }
 
-  primaryButton.textContent = "Start Overtime";
+  primaryButton.textContent = t("self.startOvertime");
   primaryButton.dataset.punchType = "in";
   punchSelectors.classList.remove("d-none");
   selectionSummary.textContent = [selfViewState.selectedProjectCode, selfViewState.selectedOvertimeCode].filter(Boolean).join(" | ");
 
   if (!latestEntry) {
-    punchState.textContent = "No overtime history yet";
-    statusMessage.textContent = "Idle";
-    currentStatusValue.textContent = "Off the clock";
-    currentStatusHint.textContent = "Ready";
+    punchState.textContent = t("status.noHistory");
+    statusMessage.textContent = t("status.idle");
+    currentStatusValue.textContent = t("status.offClock");
+    currentStatusHint.textContent = t("shared.ready");
     if (heroText) {
-      heroText.textContent = "Idle";
+      heroText.textContent = t("self.hero.idle");
     }
     updateSelfPunchAvailability();
     return;
   }
 
   const latestStatus = String(latestEntry.status || "pending").toLowerCase();
-  punchState.textContent = `Last entry ${formatDateLabel(latestEntry.date)} | ${formatTimeString(latestEntry.punchIn)}${latestEntry.punchOut ? ` -> ${formatTimeString(latestEntry.punchOut)}` : ""}`;
+  const timeRange = `${formatTimeString(latestEntry.punchIn)}${latestEntry.punchOut ? ` -> ${formatTimeString(latestEntry.punchOut)}` : ""}`;
+  punchState.textContent = t("self.lastEntry", {
+    date: formatDateLabel(latestEntry.date),
+    timeRange,
+  });
   currentStatusValue.textContent = latestStatus === "rejected"
-    ? "Needs attention"
+    ? t("status.needsAttention")
     : latestStatus === "approved"
-      ? "Ready for next overtime"
-      : "Awaiting approval";
+      ? t("status.readyForNext")
+      : t("status.awaitingApproval");
   currentStatusHint.textContent = latestStatus === "rejected"
-    ? "Rejected"
+    ? t("status.rejected")
     : latestStatus === "approved"
-      ? "Approved"
-      : "Pending";
+      ? t("status.approved")
+      : t("status.pending");
   statusMessage.textContent = latestStatus === "rejected"
-    ? "Review required"
+    ? t("shared.reviewRequired")
     : latestStatus === "approved"
-      ? "Ready"
-      : "Waiting";
+      ? t("shared.ready")
+      : t("shared.waiting");
   if (heroText) {
     heroText.textContent = latestStatus === "rejected"
-      ? "Review"
+      ? t("self.hero.review")
       : latestStatus === "approved"
-        ? "Ready"
-        : "Pending";
+        ? t("self.hero.ready")
+        : t("self.hero.pending");
   }
   updateSelfPunchAvailability();
 }
@@ -282,7 +273,7 @@ function renderSelfEntries(entries) {
   container.innerHTML = "";
 
   if (!entries || entries.length === 0) {
-    container.innerHTML = '<div class="empty-state">No entries.</div>';
+    container.innerHTML = `<div class="empty-state">${escapeHtml(t("self.noEntries"))}</div>`;
     return;
   }
 
@@ -315,12 +306,12 @@ function renderSelfEntries(entries) {
       card.innerHTML = `
         <div class="worklog-main">
           <div>
-            <div class="worklog-title">${escapeHtml(formatTimeString(entry.punchIn))}${entry.punchOut ? ` -> ${escapeHtml(formatTimeString(entry.punchOut))}` : " -> In progress"}</div>
+            <div class="worklog-title">${escapeHtml(formatTimeString(entry.punchIn))}${entry.punchOut ? ` -> ${escapeHtml(formatTimeString(entry.punchOut))}` : ` -> ${escapeHtml(t("shared.inProgress"))}`}</div>
             <div class="worklog-secondary">${escapeHtml(getEntryContextLabel(entry))}</div>
           </div>
           <div class="meta-row">
-            <span class="inline-code-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : "In progress")}</span>
-            <span class="status-badge ${getStatusTone(entry.status)}">${escapeHtml(entry.status || "pending")}</span>
+            <span class="inline-code-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.inProgress"))}</span>
+            <span class="status-badge ${getStatusTone(entry.status)}">${escapeHtml(translateStatus(entry.status || "pending"))}</span>
           </div>
         </div>
         ${entry.message ? `<div class="worklog-message">${escapeHtml(entry.message)}</div>` : ""}
@@ -338,7 +329,6 @@ function renderSelfState(entries) {
 
   updateSelfSummaryMetrics(allEntries);
   updateSelfStatus(allEntries);
-  document.getElementById("selfRangeSummary").textContent = getRangeSummaryLabel(filteredEntries);
   renderSelfEntries(filteredEntries);
 }
 
@@ -354,27 +344,31 @@ async function refreshSelfView() {
     renderSelfState(entries);
   } catch (error) {
     console.error("Error fetching self-service entries:", error);
-    showToast("Error fetching entries: " + error.message, "error");
+    showToast(t("self.fetchError", { message: error.message }), "error");
   }
 }
 
 window.refreshSelfView = refreshSelfView;
 
 async function submitSelfPunch(type) {
-  const actionLabel = type === "in" ? "Start Overtime" : "End Overtime";
+  const actionLabel = type === "in" ? t("self.startOvertime") : t("self.endOvertime");
   const now = new Date();
   const promptTime = formatPromptTime(now);
   const projectCode = selfViewState.selectedProjectCode;
   const overtimeCode = selfViewState.selectedOvertimeCode;
 
   if (type === "in" && (!projectCode || !overtimeCode)) {
-    showToast("Select a project and overtime code before starting overtime.", "info");
+    showToast(t("self.selectionRequired"), "info");
     return;
   }
 
   const confirmationMessage = type === "in"
-    ? `Start overtime at <strong>${escapeHtml(promptTime)}</strong> for <strong>${escapeHtml(projectCode)}</strong> with <strong>${escapeHtml(overtimeCode)}</strong>?`
-    : `Are you sure you want to <strong>end</strong> overtime at <strong>${escapeHtml(promptTime)}</strong>?`;
+    ? t("self.startConfirm", {
+      time: escapeHtml(promptTime),
+      project: escapeHtml(projectCode),
+      code: escapeHtml(overtimeCode),
+    })
+    : t("self.endConfirm", { time: escapeHtml(promptTime) });
 
   showSelfConfirmationModal(
     actionLabel,
@@ -388,14 +382,14 @@ async function submitSelfPunch(type) {
         });
         const result = await parseResponse(response);
         const formattedTime = formatTimeString(result.time);
-        const statusMessage = `${actionLabel} successful at ${formattedTime}.`;
+        const statusMessage = t("self.punchSuccess", { action: actionLabel, time: formattedTime });
 
         document.getElementById("selfStatusMessage").textContent = statusMessage;
         showToast(statusMessage, "success");
         await refreshSelfView();
       } catch (error) {
         console.error(`Error during ${actionLabel.toLowerCase()}:`, error);
-        showToast(`Error during ${actionLabel.toLowerCase()}: ` + error.message, "error");
+        showToast(t("self.actionError", { action: actionLabel.toLowerCase(), message: error.message }), "error");
       }
     }
   );

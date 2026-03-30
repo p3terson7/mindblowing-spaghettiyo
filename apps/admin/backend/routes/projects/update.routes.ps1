@@ -33,6 +33,7 @@
                 Release-ResourceLock -LockHandle $lockHandle
             }
 
+            logHistory "Update" "Updated the project <strong>$projectCode</strong>." ([string]$currentUser.displayName)
             Publish-DataChange -Category "project" -Resource $projectCode
             respondWithSuccess $response '{ "message": "Project updated successfully." }'
             continue

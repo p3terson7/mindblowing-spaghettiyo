@@ -9,7 +9,7 @@ function logHistory($action, $message, $employeeName) {
 
     $lockHandle = Acquire-ResourceLock -ResourcePath $historyFile
     try {
-        $existingHistory = Read-JsonArrayFile -Path $historyFile
+        $existingHistory = @(Read-JsonArrayFile -Path $historyFile)
 
         # Create a new log entry.
         $newLogEntry = [PSCustomObject]@{

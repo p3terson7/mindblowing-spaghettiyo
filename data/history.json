@@ -58,5 +58,29 @@
     "message": "Approved an entry on March 19, 2026 starting at <strong>17h40</strong>.",
     "employee": "Alice Johnson",
     "timestamp": "2026-03-25 08:58:02"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on March 18, 2026 starting at <strong>17h30</strong>.",
+    "employee": "Jane Smith",
+    "timestamp": "2026-03-25 14:27:52"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on March 18, 2026 starting at <strong>06h30</strong>.",
+    "employee": "Michael Chen",
+    "timestamp": "2026-03-25 15:01:03"
+  },
+  {
+    "action": "Add",
+    "message": "Added an entry on March 30, 2026, starting at <strong>11h45</strong> and finishing at <strong>12h50</strong> for project <strong>APP-220</strong> and overtime code <strong>OT-MNT</strong>.",
+    "employee": "Jane Smith",
+    "timestamp": "2026-03-30 09:21:27"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on March 30, 2026 starting at <strong>11h45</strong>.",
+    "employee": "Jane Smith",
+    "timestamp": "2026-03-30 09:21:35"
   }
 ]

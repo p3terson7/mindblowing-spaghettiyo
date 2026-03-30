@@ -14,7 +14,7 @@ async function loadApprovalsView() {
     renderApprovalTabsFromFiltered(allApprovalEntries);
   } catch (error) {
     console.error("Error fetching employees for approvals:", error);
-    showToast("Unable to load approvals.", "error");
+    showToast(t("review.loadError"), "error");
   }
 }
 
@@ -33,9 +33,9 @@ async function fetchEmployeeApprovalData(employee) {
 }
 
 function updateApprovalTabLabels(pendingEntries, rejectedEntries, approvedEntries) {
-  document.getElementById("pending-tab").textContent = `Pending (${pendingEntries.length})`;
-  document.getElementById("rejected-tab").textContent = `Rejected (${rejectedEntries.length})`;
-  document.getElementById("approved-tab").textContent = `Approved (${approvedEntries.length})`;
+  document.getElementById("pending-tab").textContent = t("review.pending", { count: pendingEntries.length });
+  document.getElementById("rejected-tab").textContent = t("review.rejected", { count: rejectedEntries.length });
+  document.getElementById("approved-tab").textContent = t("review.approved", { count: approvedEntries.length });
 }
 
 function buildApprovalCard(entry, showActions) {
@@ -46,21 +46,21 @@ function buildApprovalCard(entry, showActions) {
           <div class="review-card-title">${escapeHtml(entry.employeeName)}</div>
           <div class="worklog-secondary">${escapeHtml(formatDateToWords(entry.date))} | ${escapeHtml(formatQueueTitle(entry))}</div>
         </div>
-        <span class="status-badge ${getStatusTone(entry.status)}">${escapeHtml(entry.status || "pending")}</span>
+        <span class="status-badge ${getStatusTone(entry.status)}">${escapeHtml(translateStatus(entry.status || "pending"))}</span>
       </div>
       <div class="review-card-meta">
-        <span class="inline-code-pill">${escapeHtml(entry.projectCode || "No project")}</span>
+        <span class="inline-code-pill">${escapeHtml(entry.projectCode || t("shared.noProject"))}</span>
         ${entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : ""}
-        <span class="meta-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : "Waiting for punch out")}</span>
+        <span class="meta-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
         <span class="meta-pill">EMP ${escapeHtml(entry.employeeCode)}</span>
       </div>
-      ${entry.message ? `<div class="review-card-message">${escapeHtml(entry.message)}</div>` : `<div class="panel-note">No manager note attached.</div>`}
+      ${entry.message ? `<div class="review-card-message">${escapeHtml(entry.message)}</div>` : `<div class="panel-note">${escapeHtml(t("shared.noManagerNote"))}</div>`}
       <div class="review-card-actions">
         ${showActions ? `
-          <button class="btn btn-success btn-sm approvals-approve-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> Approve</button>
-          <button class="btn btn-danger btn-sm approvals-reject-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-ban"></i> Reject</button>
+          <button class="btn btn-success btn-sm approvals-approve-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}</button>
+          <button class="btn btn-danger btn-sm approvals-reject-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}</button>
         ` : ""}
-        <button class="btn btn-outline-secondary btn-sm approvals-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}">Open Employee</button>
+        <button class="btn btn-outline-secondary btn-sm approvals-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}">${escapeHtml(t("action.openEmployee"))}</button>
       </div>
     </article>
   `;
@@ -69,7 +69,7 @@ function buildApprovalCard(entry, showActions) {
 function renderApprovalsList(containerId, entries, showActions) {
   const container = document.getElementById(containerId);
   if (!entries || entries.length === 0) {
-    container.innerHTML = createEmptyState(showActions ? "No entries are waiting for approval." : "No entries found for this state.");
+    container.innerHTML = createEmptyState(showActions ? t("review.nonePending") : t("review.noneForState"));
     return;
   }
 
@@ -111,3 +111,5 @@ document.getElementById("approvalsSection").addEventListener("click", event => {
     focusDashboardEmployee(jumpButton.getAttribute("data-employee-code"));
   }
 });
+
+updateApprovalTabLabels([], [], []);

@@ -60,10 +60,38 @@ function Get-ListeningProcessId {
     param([Parameter(Mandatory = $true)][int]$Port)
 
     if (Test-IsWindowsHost) {
-        $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($null -ne $connection) {
-            return [int]$connection.OwningProcess
+        $getNetTcpConnection = Get-Command -Name "Get-NetTCPConnection" -ErrorAction SilentlyContinue
+        if ($null -ne $getNetTcpConnection) {
+            $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($null -ne $connection) {
+                return [int]$connection.OwningProcess
+            }
         }
+
+        $netstat = Get-Command -Name "netstat.exe" -ErrorAction SilentlyContinue
+        if ($null -ne $netstat) {
+            $lines = & $netstat.Source -ano -p tcp 2>$null
+            foreach ($line in $lines) {
+                $trimmed = ([string]$line).Trim()
+                if ($trimmed -notmatch "^TCP\s+") {
+                    continue
+                }
+
+                $parts = $trimmed -split "\s+"
+                if ($parts.Count -lt 5) {
+                    continue
+                }
+
+                $localAddress = [string]$parts[1]
+                $state = [string]$parts[3]
+                $pidText = [string]$parts[4]
+                $portPattern = "(:|\.)" + [regex]::Escape([string]$Port) + "$"
+                if ($localAddress -match $portPattern -and $pidText -match "^\d+$" -and $state -match "LISTEN|ECOUTE|ÉCOUTE") {
+                    return [int]$pidText
+                }
+            }
+        }
+
         return $null
     }
 
@@ -156,6 +184,8 @@ function Get-ServiceStatus {
     $portOwnerId = Get-ListeningProcessId -Port $Port
     $portOwnerProcess = Get-ManagedProcess -ProcessId $portOwnerId
 
+    $displayProcessId = if ($trackedPid) { $trackedPid } else { $portOwnerId }
+
     return [PSCustomObject]@{
         Name             = $Name
         DisplayName      = $DisplayName
@@ -166,6 +196,7 @@ function Get-ServiceStatus {
         TrackedProcess   = $trackedProcess
         PortOwnerId      = $portOwnerId
         PortOwnerProcess = $portOwnerProcess
+        DisplayProcessId = $displayProcessId
         IsRunning        = ($null -ne $portOwnerId)
     }
 }
@@ -207,6 +238,34 @@ function Wait-ForPortState {
     return (Get-ListeningProcessId -Port $Port)
 }
 
+function Wait-ForProcessesToExit {
+    param(
+        [Parameter(Mandatory = $true)][int[]]$ProcessIds,
+        [int]$TimeoutSeconds = 10
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $activeProcesses = @($ProcessIds | Where-Object {
+            $candidate = [int]$_
+            $candidate -gt 0 -and $null -ne (Get-ManagedProcess -ProcessId $candidate)
+        })
+
+        if ($activeProcesses.Count -eq 0) {
+            return $true
+        }
+
+        Start-Sleep -Milliseconds 200
+    }
+
+    $remaining = @($ProcessIds | Where-Object {
+        $candidate = [int]$_
+        $candidate -gt 0 -and $null -ne (Get-ManagedProcess -ProcessId $candidate)
+    })
+
+    return ($remaining.Count -eq 0)
+}
+
 function Start-ManagedService {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -226,13 +285,19 @@ function Start-ManagedService {
 
     $status = Get-ServiceStatus -Name $Name -DisplayName $DisplayName -Port $Port -PidFile $PidFile
     if ($status.IsRunning -and -not $Force) {
-        $isManagedInstance = $status.Metadata -and $status.Metadata.scriptPath -and ([string]$status.Metadata.scriptPath -eq $ServerScript) -and $status.TrackedProcessId -and ($status.PortOwnerId -eq $status.TrackedProcessId)
+        $isManagedInstance = $status.Metadata -and $status.Metadata.scriptPath -and ([string]$status.Metadata.scriptPath -eq $ServerScript) -and $status.TrackedProcessId
         if ($isManagedInstance) {
-            Write-Host "$DisplayName is already running on port $Port (PID $($status.PortOwnerId))."
+            Write-Host "$DisplayName is already running on port $Port (PID $($status.DisplayProcessId))."
             return $status
         }
 
+        if (Test-IsWindowsHost -and [int]$status.PortOwnerId -eq 4 -and -not $status.TrackedProcessId) {
+            Write-Host "$DisplayName appears to be behind HTTP.sys on port $Port. Attempting a managed restart."
+            Remove-ServiceMetadata -PidFile $PidFile
+        }
+        else {
         throw "$DisplayName could not start because port $Port is already in use by PID $($status.PortOwnerId). Stop that process or run the stop script first."
+        }
     }
 
     if ($Force) {
@@ -307,10 +372,11 @@ function Start-ManagedService {
         throw "Failed to start $DisplayName on port $Port.$detailText"
     }
 
+    $managedProcessId = if (Test-IsWindowsHost) { [int]$requestedProcessId } else { [int]$listenerPid }
     $metadata = @{
         name              = $Name
         displayName       = $DisplayName
-        pid               = [int]$listenerPid
+        pid               = $managedProcessId
         requestedProcessId = $requestedProcessId
         port              = $Port
         scriptPath        = $ServerScript
@@ -320,7 +386,7 @@ function Start-ManagedService {
     }
     Write-ServiceMetadata -PidFile $PidFile -Metadata $metadata
 
-    Write-Host "Started $DisplayName on port $Port (PID $listenerPid)."
+    Write-Host "Started $DisplayName on port $Port (PID $managedProcessId)."
     Write-Host "Logs:"
     Write-Host "  stdout: $StdOutLog"
     Write-Host "  stderr: $StdErrLog"
@@ -342,6 +408,12 @@ function Stop-ManagedService {
     if ($status.TrackedProcessId) {
         $processIds += [int]$status.TrackedProcessId
     }
+    if ($status.Metadata -and $status.Metadata.requestedProcessId) {
+        $requestedProcessId = [int]$status.Metadata.requestedProcessId
+        if ($processIds -notcontains $requestedProcessId) {
+            $processIds += $requestedProcessId
+        }
+    }
     if ($status.PortOwnerId -and ($processIds -notcontains [int]$status.PortOwnerId)) {
         $processIds += [int]$status.PortOwnerId
     }
@@ -361,10 +433,20 @@ function Stop-ManagedService {
         catch { }
     }
 
+    $managedProcessIds = @($processIds | Where-Object { [int]$_ -gt 0 -and [int]$_ -ne 4 })
+    $managedProcessesStopped = $true
+    if ($managedProcessIds.Count -gt 0) {
+        $managedProcessesStopped = Wait-ForProcessesToExit -ProcessIds $managedProcessIds -TimeoutSeconds 10
+    }
+
     $remainingPortOwner = Wait-ForPortState -Port $Port -ShouldBeListening $false -TimeoutSeconds 10
     Remove-ServiceMetadata -PidFile $PidFile
 
-    if ($remainingPortOwner) {
+    if (-not $managedProcessesStopped) {
+        throw "Failed to stop $DisplayName cleanly. A managed backend process is still running."
+    }
+
+    if ($remainingPortOwner -and -not (Test-IsWindowsHost -and [int]$remainingPortOwner -eq 4)) {
         throw "Failed to stop $DisplayName cleanly. Port $Port is still in use by PID $remainingPortOwner."
     }
 
@@ -384,7 +466,7 @@ function Show-ServiceStatus {
 
     $status = Get-ServiceStatus -Name $Name -DisplayName $DisplayName -Port $Port -PidFile $PidFile
     if ($status.IsRunning) {
-        Write-Host ("{0}: RUNNING (PID {1}, port {2})" -f $DisplayName, $status.PortOwnerId, $Port)
+        Write-Host ("{0}: RUNNING (PID {1}, port {2})" -f $DisplayName, $status.DisplayProcessId, $Port)
     }
     else {
         Write-Host ("{0}: STOPPED" -f $DisplayName)

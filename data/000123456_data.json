@@ -27,9 +27,20 @@
     "punchIn": "17:30:00",
     "punchOut": "19:15:00",
     "overtime": "01:45:00",
-    "status": "pending",
+    "status": "approved",
     "message": "Month-end reconciliation and report validation.",
     "projectCode": "OPS-410",
     "overtimeCode": "OT-CLS"
+  },
+  {
+    "name": "Jane Smith",
+    "date": "2026-03-30",
+    "punchIn": "11:45:00",
+    "punchOut": "12:50:00",
+    "overtime": "01:05:00",
+    "status": "approved",
+    "message": "",
+    "projectCode": "APP-220",
+    "overtimeCode": "OT-MNT"
   }
 ]
