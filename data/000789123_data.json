@@ -38,7 +38,7 @@
     "punchIn": "10:06:00",
     "punchOut": "10:09:00",
     "overtime": "00:03:00",
-    "status": "pending",
+    "status": "approved",
     "message": "",
     "projectCode": "OPS-410",
     "overtimeCode": "OT-OPS"

@@ -82,5 +82,11 @@
     "message": "Approved an entry on March 30, 2026 starting at <strong>11h45</strong>.",
     "employee": "Jane Smith",
     "timestamp": "2026-03-30 09:21:35"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on March 30, 2026 starting at <strong>10h06</strong>.",
+    "employee": "Priya Patel",
+    "timestamp": "2026-04-01 09:22:53"
   }
 ]

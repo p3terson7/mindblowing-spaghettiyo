@@ -13,7 +13,94 @@ const appShellState = {
   syncTimerId: null,
   lastSyncVersion: null,
   syncRequestInFlight: false,
+  viewState: {},
 };
+
+function resetViewState() {
+  appShellState.viewState = {};
+}
+
+function ensureViewState(viewId) {
+  if (!appShellState.viewState[viewId]) {
+    appShellState.viewState[viewId] = {
+      loaded: false,
+      stale: true,
+      refreshPromise: null,
+      lastLoadedAt: null,
+    };
+  }
+
+  return appShellState.viewState[viewId];
+}
+
+function markViewsStale(viewIds) {
+  (viewIds || []).forEach(viewId => {
+    if (!viewId) {
+      return;
+    }
+
+    const state = ensureViewState(viewId);
+    state.stale = true;
+  });
+}
+
+function markAllowedViewsStale(user) {
+  markViewsStale(getAllowedViewsForUser(user));
+}
+
+function getViewsAffectedBySyncState(syncState) {
+  const user = getCurrentUser();
+  const category = String(syncState && syncState.category || "").toLowerCase();
+  const resource = String(syncState && syncState.resource || "");
+
+  if (!user) {
+    return [];
+  }
+
+  if (category === "seed") {
+    return getAllowedViewsForUser(user);
+  }
+
+  if (category === "history") {
+    return user.role === "admin"
+      ? ["dashboardView", "adminView"]
+      : [];
+  }
+
+  if (category === "employee-directory") {
+    return user.role === "admin"
+      ? ["dashboardView", "employeesView"]
+      : [];
+  }
+
+  if (category === "project") {
+    return user.role === "admin"
+      ? ["dashboardView", "projectsView"]
+      : ["selfView"];
+  }
+
+  if (category === "auth") {
+    if (user.role === "admin") {
+      return ["employeesView"];
+    }
+
+    return resource && user.employeeCode === resource
+      ? ["selfView"]
+      : [];
+  }
+
+  if (category === "employee") {
+    if (user.role === "admin") {
+      return ["dashboardView", "adminView", "projectsView"];
+    }
+
+    return resource && user.employeeCode === resource
+      ? ["selfView"]
+      : [];
+  }
+
+  return getAllowedViewsForUser(user);
+}
 
 function normalizeApiUrl(value, fallbackValue) {
   const rawValue = String(value || fallbackValue || "").trim();
@@ -265,7 +352,7 @@ function stopSyncPolling() {
 }
 
 function getSyncPollDelay() {
-  return document.hidden ? 8000 : 2500;
+  return document.hidden ? 10000 : 2500;
 }
 
 function scheduleNextSyncPoll(delayMs) {
@@ -275,7 +362,7 @@ function scheduleNextSyncPoll(delayMs) {
   }, typeof delayMs === "number" ? delayMs : getSyncPollDelay());
 }
 
-async function refreshViewById(viewId) {
+async function runViewRefresh(viewId) {
   if (viewId === "selfView" && typeof refreshSelfView === "function") {
     await refreshSelfView();
     return;
@@ -313,17 +400,46 @@ async function refreshViewById(viewId) {
   }
 }
 
+async function refreshViewById(viewId, options) {
+  const state = ensureViewState(viewId);
+  const forceRefresh = !!(options && options.force);
+
+  if (!forceRefresh && state.loaded && !state.stale) {
+    return;
+  }
+
+  if (state.refreshPromise) {
+    return state.refreshPromise;
+  }
+
+  state.refreshPromise = runViewRefresh(viewId)
+    .then(() => {
+      state.loaded = true;
+      state.stale = false;
+      state.lastLoadedAt = Date.now();
+    })
+    .catch(error => {
+      state.stale = true;
+      throw error;
+    })
+    .finally(() => {
+      state.refreshPromise = null;
+    });
+
+  return state.refreshPromise;
+}
+
 window.refreshAppViewById = refreshViewById;
 window.refreshAdminViewById = refreshViewById;
 
-async function refreshActiveView() {
+async function refreshActiveView(options) {
   const user = getCurrentUser();
   if (!user) {
     return;
   }
 
   const activeViewId = document.querySelector(".view.active")?.id || localStorage.getItem("activeView") || resolvePreferredView(user);
-  await refreshViewById(activeViewId);
+  await refreshViewById(activeViewId, options);
 }
 
 async function pollSyncState() {
@@ -355,6 +471,7 @@ async function pollSyncState() {
       if (typeof window.handleSyncStateChange === "function") {
         window.handleSyncStateChange(syncState);
       }
+      markViewsStale(getViewsAffectedBySyncState(syncState));
       setSyncStatus(t("status.updatedRev", { version: nextVersion }));
       await refreshActiveView();
       return;
@@ -380,6 +497,8 @@ async function bootstrapApplication() {
     return;
   }
 
+  resetViewState();
+  markAllowedViewsStale(user);
   configureRoleUi(user);
 
   if (user.role === "employee" && typeof initializeSelfView === "function") {
@@ -391,7 +510,7 @@ async function bootstrapApplication() {
     showView(preferredView);
   }
 
-  await refreshViewById(preferredView);
+  await refreshViewById(preferredView, { force: true });
   await pollSyncState();
   startSyncPolling();
   appShellState.initialized = true;
@@ -423,6 +542,7 @@ function installFetchWrapper() {
 function handleSessionExpired() {
   stopSyncPolling();
   appShellState.lastSyncVersion = null;
+  resetViewState();
   clearStoredSession();
   clearRoleUi();
   updateSessionSummary();
@@ -457,6 +577,8 @@ async function applySession(authResult) {
     user: authResult.user,
   });
   appShellState.lastSyncVersion = null;
+  resetViewState();
+  markAllowedViewsStale(authResult.user);
   updateSessionSummary();
   configureRoleUi(authResult.user);
 
@@ -472,7 +594,7 @@ async function applySession(authResult) {
   if (!appShellState.initialized) {
     await bootstrapApplication();
   } else {
-    await refreshActiveView();
+    await refreshActiveView({ force: true });
     await pollSyncState();
     startSyncPolling();
   }
@@ -553,7 +675,11 @@ async function submitPasswordChange() {
     if (!appShellState.initialized) {
       await bootstrapApplication();
     } else {
-      await refreshActiveView();
+      const user = getCurrentUser();
+      if (user) {
+        markAllowedViewsStale(user);
+      }
+      await refreshActiveView({ force: true });
       await pollSyncState();
       startSyncPolling();
     }
@@ -628,6 +754,7 @@ async function submitLogout() {
   }
 
   appShellState.lastSyncVersion = null;
+  resetViewState();
   clearStoredSession();
   clearRoleUi();
   updateSessionSummary();
@@ -723,7 +850,7 @@ window.addEventListener("app:language-changed", event => {
     return;
   }
 
-  refreshActiveView().catch(error => {
+  refreshActiveView({ force: true }).catch(error => {
     console.error("Unable to refresh active view after language change:", error);
   });
 });
