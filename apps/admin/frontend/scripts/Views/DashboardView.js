@@ -3,6 +3,7 @@ const dashboardState = {
   entriesByEmployee: {},
   history: [],
   historyLoaded: false,
+  bootstrap: null,
 };
 
 function buildEmployeeOptions(employees) {
@@ -41,6 +42,13 @@ function getFlattenedDashboardEntries() {
 
 function createEmptyState(message) {
   return `<div class="empty-state">${escapeHtml(message)}</div>`;
+}
+
+function setDashboardLoadingState() {
+  setLoadingState("dashboardApprovalQueue", "queue", 3);
+  setLoadingState("dashboardActiveList", "queue", 3);
+  setLoadingState("dashboardRecentActivity", "activity", 4);
+  setLoadingState("punchClockEntries", "entries", 3);
 }
 
 function buildInspectorMeta(entryCount, selectedMonth, selectedYear) {
@@ -138,19 +146,16 @@ function renderDashboardActiveSessions(entries) {
   }).join("");
 }
 
-function renderDashboardRecentActivity() {
+function renderDashboardRecentActivity(entries) {
   const container = document.getElementById("dashboardRecentActivity");
-  const entries = (dashboardState.history || [])
-    .slice()
-    .sort((left, right) => new Date(right.timestamp) - new Date(left.timestamp))
-    .slice(0, 7);
+  const recentEntries = Array.isArray(entries) ? entries : (dashboardState.history || []);
 
-  if (entries.length === 0) {
+  if (recentEntries.length === 0) {
     container.innerHTML = createEmptyState(t("dashboard.noRecentHistory"));
     return;
   }
 
-  container.innerHTML = entries.map(entry => {
+  container.innerHTML = recentEntries.map(entry => {
     const actionTone = String(entry.action || "").toLowerCase();
     return `
       <article class="activity-card">
@@ -167,22 +172,17 @@ function renderDashboardRecentActivity() {
   }).join("");
 }
 
-function renderDashboardOverview() {
-  const flattenedEntries = getFlattenedDashboardEntries();
-  const now = new Date();
-  const currentMonthEntries = flattenedEntries.filter(entry => {
-    const entryDate = new Date(`${entry.date}T00:00:00`);
-    return entryDate.getMonth() === now.getMonth() && entryDate.getFullYear() === now.getFullYear();
-  });
-
-  const totalSeconds = currentMonthEntries.reduce((accumulator, entry) => accumulator + timeStringToSeconds(entry.overtime), 0);
-  const pendingCount = flattenedEntries.filter(entry => String(entry.status || "pending").toLowerCase() === "pending").length;
-  const activeCount = flattenedEntries.filter(entry => isEntryOpen(entry)).length;
+function renderDashboardOverview(payload) {
+  const model = payload || dashboardState.bootstrap || {};
+  const totalSeconds = timeStringToSeconds(model.totalOvertime);
+  const pendingCount = Number(model.pendingApprovals || 0);
+  const activeCount = Number(model.activeEmployees || 0);
+  const trackedCount = Number(model.trackedEmployees || dashboardState.employees.length || 0);
 
   document.getElementById("totalOvertime").innerText = secondsToDurationLabel(totalSeconds);
   document.getElementById("pendingApprovals").innerText = pendingCount;
   document.getElementById("activeEmployees").innerText = activeCount;
-  document.getElementById("trackedEmployeesCount").innerText = dashboardState.employees.length;
+  document.getElementById("trackedEmployeesCount").innerText = trackedCount;
   const summary = document.getElementById("dashboardSummaryText");
   if (summary) {
     summary.textContent = pendingCount > 0
@@ -190,9 +190,40 @@ function renderDashboardOverview() {
       : tn("shared.session", activeCount);
   }
 
-  renderDashboardApprovalQueue(flattenedEntries);
-  renderDashboardActiveSessions(flattenedEntries);
-  renderDashboardRecentActivity();
+  renderDashboardApprovalQueue(model.pendingQueue || []);
+  renderDashboardActiveSessions(model.activeSessions || []);
+  renderDashboardRecentActivity(model.recentHistory || []);
+}
+
+function applyDashboardBootstrap(payload) {
+  const model = payload || {};
+  dashboardState.bootstrap = model;
+  dashboardState.employees = Array.isArray(model.employees) ? model.employees : [];
+  dashboardState.history = Array.isArray(model.recentHistory) ? model.recentHistory : [];
+  dashboardState.historyLoaded = true;
+
+  const employeeSelect = document.getElementById("employeeSelect");
+  employeeSelect.innerHTML = buildEmployeeOptions(dashboardState.employees);
+
+  const savedEmployee = localStorage.getItem("selectedEmployee");
+  const desiredEmployee = savedEmployee && dashboardState.employees.some(employee => employee.code === savedEmployee)
+    ? savedEmployee
+    : (model.selectedEmployeeCode && dashboardState.employees.some(employee => employee.code === model.selectedEmployeeCode)
+      ? model.selectedEmployeeCode
+      : (model.defaultEmployeeCode && dashboardState.employees.some(employee => employee.code === model.defaultEmployeeCode)
+        ? model.defaultEmployeeCode
+        : ""));
+
+  if (desiredEmployee && Array.isArray(model.selectedEmployeeEntries)) {
+    dashboardState.entriesByEmployee[desiredEmployee] = model.selectedEmployeeEntries;
+  }
+
+  if (desiredEmployee) {
+    employeeSelect.value = desiredEmployee;
+    localStorage.setItem("selectedEmployee", desiredEmployee);
+  }
+
+  renderDashboardOverview(model);
 }
 
 async function fetchEmployees() {
@@ -220,52 +251,13 @@ async function fetchEmployeeEntries(employeeCode) {
 }
 
 async function loadDashboardCollections() {
-  const employees = dashboardState.employees.length > 0
-    ? dashboardState.employees
-    : await fetchEmployees();
-
-  const employeeCodesToRefresh = employees
-    .filter(employee => !Array.isArray(dashboardState.entriesByEmployee[employee.code]))
-    .map(employee => employee.code);
-
-  const historyPromise = dashboardState.historyLoaded
-    ? Promise.resolve(dashboardState.history)
-    : fetch(apiUrl + "history")
-      .then(parseResponse)
-      .catch(error => {
-        console.error("Unable to load history for dashboard:", error);
-        return [];
-      });
-
-  const employeeEntryPromises = employeeCodesToRefresh.map(employeeCode => fetchEmployeeEntries(employeeCode).catch(error => {
-    console.error(`Unable to load entries for ${employeeCode}:`, error);
-    return [];
-  }));
-
-  const [historyEntries, employeeEntrySets] = await Promise.all([historyPromise, Promise.all(employeeEntryPromises)]);
-  dashboardState.history = Array.isArray(historyEntries) ? historyEntries : [];
-  dashboardState.historyLoaded = true;
-  employeeCodesToRefresh.forEach((employeeCode, index) => {
-    dashboardState.entriesByEmployee[employeeCode] = employeeEntrySets[index] || [];
-  });
-  employees.forEach(employee => {
-    if (!Array.isArray(dashboardState.entriesByEmployee[employee.code])) {
-      dashboardState.entriesByEmployee[employee.code] = [];
-    }
-  });
-
   const employeeSelect = document.getElementById("employeeSelect");
-  if (employees.length > 0 && !employeeSelect.value) {
-    const preferredPendingEntry = employees
-      .flatMap(employee => (dashboardState.entriesByEmployee[employee.code] || []).map(entry => enrichEntry(employee, entry)))
-      .filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry))
-      .sort((left, right) => toEntryDateTime(right) - toEntryDateTime(left))[0];
-    const fallbackEmployeeCode = preferredPendingEntry ? preferredPendingEntry.employeeCode : employees[0].code;
-    employeeSelect.value = fallbackEmployeeCode;
-    localStorage.setItem("selectedEmployee", fallbackEmployeeCode);
-  }
-
-  renderDashboardOverview();
+  const savedEmployee = localStorage.getItem("selectedEmployee");
+  const requestedEmployeeCode = (employeeSelect && employeeSelect.value) || savedEmployee || "";
+  const query = requestedEmployeeCode ? `?employeeCode=${encodeURIComponent(requestedEmployeeCode)}` : "";
+  const response = await fetch(apiUrl + "dashboard/bootstrap" + query);
+  const payload = await parseResponse(response);
+  applyDashboardBootstrap(payload);
 }
 
 function renderEmployeeEntries(employeeCode, entries) {
@@ -368,6 +360,7 @@ async function fetchEmployeeData() {
   title.textContent = employeeName;
 
   try {
+    setLoadingState("punchClockEntries", "entries", 3);
     let entries = dashboardState.entriesByEmployee[employeeCode];
     if (!entries) {
       entries = await fetchEmployeeEntries(employeeCode);
@@ -391,6 +384,7 @@ async function fetchEmployeeData() {
 
 async function refreshDashboardView() {
   try {
+    setDashboardLoadingState();
     await loadDashboardCollections();
     await fetchEmployeeData();
   } catch (error) {
@@ -410,6 +404,7 @@ window.handleSyncStateChange = function (syncState) {
     dashboardState.entriesByEmployee = {};
     dashboardState.history = [];
     dashboardState.historyLoaded = false;
+    dashboardState.bootstrap = null;
     if (typeof clearProjectDetailCache === "function") {
       clearProjectDetailCache();
     }
@@ -419,6 +414,7 @@ window.handleSyncStateChange = function (syncState) {
   if (category === "employee" && resource) {
     dashboardState.entriesByEmployee[resource] = undefined;
     dashboardState.historyLoaded = false;
+    dashboardState.bootstrap = null;
     return;
   }
 
@@ -433,11 +429,13 @@ window.handleSyncStateChange = function (syncState) {
     dashboardState.employees = [];
     dashboardState.entriesByEmployee = {};
     dashboardState.historyLoaded = false;
+    dashboardState.bootstrap = null;
     return;
   }
 
   if (category === "history") {
     dashboardState.historyLoaded = false;
+    dashboardState.bootstrap = null;
   }
 };
 

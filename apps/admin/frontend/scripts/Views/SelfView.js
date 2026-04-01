@@ -95,6 +95,13 @@ async function loadSelfLookups(forceRefresh = false) {
   renderSelfPunchSelectors();
 }
 
+function applySelfBootstrap(payload) {
+  selfViewState.projects = Array.isArray(payload && payload.projects) ? payload.projects : [];
+  selfViewState.overtimeCodes = Array.isArray(payload && payload.overtimeCodes) ? payload.overtimeCodes : [];
+  selfViewState.lookupsLoaded = true;
+  renderSelfPunchSelectors();
+}
+
 function initializeSelfView() {
   if (!selfViewState.filtersInitialized) {
     const now = new Date();
@@ -336,10 +343,11 @@ async function refreshSelfView() {
   initializeSelfView();
 
   try {
-    await loadSelfLookups();
-    const response = await fetch(apiUrl + "self/entries");
+    setLoadingState("selfEntriesContainer", "entries", 3);
+    const response = await fetch(apiUrl + "self/bootstrap");
     const payload = await parseResponse(response);
-    const entries = Array.isArray(payload) ? payload : (payload ? [payload] : []);
+    applySelfBootstrap(payload);
+    const entries = Array.isArray(payload && payload.entries) ? payload.entries : [];
     selfViewState.entries = entries;
     renderSelfState(entries);
   } catch (error) {

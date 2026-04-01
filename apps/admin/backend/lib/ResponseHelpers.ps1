@@ -63,10 +63,38 @@ function Resolve-FrontendFilePath {
 function respondWithFile {
     param(
         [Parameter(Mandatory = $true)]$response,
-        [Parameter(Mandatory = $true)][string]$Path
+        [Parameter(Mandatory = $true)][string]$Path,
+        $request
     )
 
-    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $metadata = Get-FileMetadataSnapshot -Path $Path
+    if ($null -eq $metadata) {
+        respondWithError $response 404 "File not found."
+        return
+    }
+
+    $etag = '"{0}-{1}"' -f $metadata.Length, $metadata.LastWriteTicks
+    $response.Headers["ETag"] = $etag
+    $response.Headers["Last-Modified"] = $metadata.LastWriteUtc.ToString("R")
+
+    $extension = [System.IO.Path]::GetExtension($Path).ToLowerInvariant()
+    if ($extension -eq ".html") {
+        $response.Headers["Cache-Control"] = "no-cache"
+    }
+    else {
+        $response.Headers["Cache-Control"] = "public, max-age=86400"
+    }
+
+    if ($request) {
+        $ifNoneMatch = [string]$request.Headers["If-None-Match"]
+        if (-not [string]::IsNullOrWhiteSpace($ifNoneMatch) -and $ifNoneMatch -eq $etag) {
+            $response.StatusCode = 304
+            $response.Close()
+            return
+        }
+    }
+
+    $bytes = Read-FileBytesCached -Path $Path
     $response.ContentType = Get-ContentTypeForFilePath -Path $Path
     $response.StatusCode = 200
     $response.ContentLength64 = $bytes.Length

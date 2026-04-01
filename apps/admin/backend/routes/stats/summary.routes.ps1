@@ -1,37 +1,7 @@
         # GET /stats/projects: Return a summary of overtime statistics for each project.
         if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -match "^/stats/projects/?$") {
             try {
-                $allStats = Get-ProjectStatistics
-                $projects = Get-Projects
-
-                $result = @()
-                foreach ($projCode in $allStats.Keys) {
-                    $totalSec = $allStats[$projCode].totalSeconds
-                    $count = $allStats[$projCode].entryCount
-                    $totalTS = New-TimeSpan -Seconds $totalSec
-                    $totalOvertime = $totalTS.ToString("hh\:mm\:ss")
-                    if ($count -gt 0) {
-                        $avgSec = [math]::Round($totalSec / $count)
-                    }
-                    else {
-                        $avgSec = 0
-                    }
-                    $avgTS = New-TimeSpan -Seconds $avgSec
-                    $averageOvertime = $avgTS.ToString("hh\:mm\:ss")
-                    
-                    # Lookup projectName from the projects list.
-                    $projObj = $projects | Where-Object { $_.projectCode -eq $projCode } | Select-Object -First 1
-                    $projectName = if ($projObj) { $projObj.projectName } else { "N/A" }
-                    
-                    $result += [PSCustomObject]@{
-                        projectCode     = $projCode
-                        projectName     = $projectName
-                        totalOvertime   = $totalOvertime
-                        entryCount      = $count
-                        averageOvertime = $averageOvertime
-                    }
-                }
-                
+                $result = @(Get-ProjectSummaryList)
                 if ($result.Count -eq 0) {
                     $jsonResult = "[]"
                 }

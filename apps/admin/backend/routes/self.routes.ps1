@@ -31,6 +31,22 @@
             continue
         }
 
+        if ($request.Url.AbsolutePath -eq "/self/bootstrap" -and $request.HttpMethod -eq "GET") {
+            $currentUser = Get-AuthenticatedUserFromRequest -Request $request
+            if ($null -eq $currentUser) {
+                respondWithError $response 401 "Authentication required."
+                continue
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$currentUser.employeeCode)) {
+                respondWithError $response 403 "Employee access is required."
+                continue
+            }
+
+            $bootstrapPayload = Get-SelfBootstrapModel -EmployeeCode ([string]$currentUser.employeeCode)
+            respondWithSuccess $response ($bootstrapPayload | ConvertTo-Json -Depth 6)
+            continue
+        }
+
         if ($request.Url.AbsolutePath -eq "/self/options" -and $request.HttpMethod -eq "GET") {
             $currentUser = Get-AuthenticatedUserFromRequest -Request $request
             if ($null -eq $currentUser) {

@@ -2,15 +2,11 @@ let allApprovalEntries = [];
 
 async function loadApprovalsView() {
   try {
-    const employees = await fetch(apiUrl + "employees").then(parseResponse);
-    if (!employees || employees.length === 0) {
-      allApprovalEntries = [];
-      renderApprovalTabsFromFiltered([]);
-      return;
-    }
-
-    const results = await Promise.all(employees.map(employee => fetchEmployeeApprovalData(employee)));
-    allApprovalEntries = results.flat();
+    setLoadingState("pendingContainer", "queue", 3);
+    setLoadingState("rejectedContainer", "queue", 2);
+    setLoadingState("approvedContainer", "queue", 2);
+    const entries = await fetch(apiUrl + "approvals/entries").then(parseResponse);
+    allApprovalEntries = Array.isArray(entries) ? entries : [];
     renderApprovalTabsFromFiltered(allApprovalEntries);
   } catch (error) {
     console.error("Error fetching employees for approvals:", error);
@@ -18,19 +14,32 @@ async function loadApprovalsView() {
   }
 }
 
-async function fetchEmployeeApprovalData(employee) {
+async function loadReviewView() {
   try {
-    const data = await fetchEmployeeEntries(employee.code);
-    return data.map(entry => ({
-      ...entry,
-      employeeName: employee.name,
-      employeeCode: employee.code,
-    }));
+    setLoadingState("pendingContainer", "queue", 3);
+    setLoadingState("rejectedContainer", "queue", 2);
+    setLoadingState("approvedContainer", "queue", 2);
+    setLoadingState("allHistoryContainer", "activity", 4);
+    setLoadingState("addHistoryContainer", "activity", 3);
+    setLoadingState("editHistoryContainer", "activity", 3);
+    setLoadingState("approveHistoryContainer", "activity", 3);
+    setLoadingState("deleteHistoryContainer", "activity", 3);
+
+    const payload = await fetch(apiUrl + "review/bootstrap").then(parseResponse);
+    allApprovalEntries = Array.isArray(payload && payload.approvals) ? payload.approvals : [];
+    renderApprovalTabsFromFiltered(allApprovalEntries);
+
+    if (typeof renderHistoryTabs === "function") {
+      allHistoryEntries = Array.isArray(payload && payload.history) ? payload.history : [];
+      renderHistoryTabs(allHistoryEntries);
+    }
   } catch (error) {
-    console.error(`Error fetching data for employee ${employee.code}:`, error);
-    return [];
+    console.error("Error loading review workspace:", error);
+    showToast(t("review.loadError"), "error");
   }
 }
+
+window.loadReviewView = loadReviewView;
 
 function updateApprovalTabLabels(pendingEntries, rejectedEntries, approvedEntries) {
   document.getElementById("pending-tab").textContent = t("review.pending", { count: pendingEntries.length });

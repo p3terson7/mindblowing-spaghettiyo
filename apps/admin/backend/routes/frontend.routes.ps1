@@ -13,7 +13,7 @@
                     continue
                 }
 
-                respondWithFile $response $frontendFile
+                respondWithFile $response $frontendFile $request
                 continue
             }
         }

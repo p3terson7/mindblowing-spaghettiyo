@@ -236,6 +236,7 @@ function applyEmployeeSearchFilter() {
 }
 
 function loadEmployeesView() {
+  setLoadingState("employeesDirectoryContainer", "grid", 4);
   return fetch(apiUrl + "employees")
     .then(parseResponse)
     .then(employees => {

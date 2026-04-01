@@ -1,3 +1,85 @@
+if (-not $script:TextFileCache) {
+    $script:TextFileCache = @{}
+}
+
+if (-not $script:BinaryFileCache) {
+    $script:BinaryFileCache = @{}
+}
+
+function Get-FileMetadataSnapshot {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -Path $Path -PathType Leaf)) {
+        return $null
+    }
+
+    $item = Get-Item -Path $Path
+    return [PSCustomObject]@{
+        Path           = $item.FullName
+        LastWriteUtc   = $item.LastWriteTimeUtc
+        LastWriteTicks = $item.LastWriteTimeUtc.Ticks
+        Length         = $item.Length
+    }
+}
+
+function Clear-CachedFileContent {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if ($script:TextFileCache.ContainsKey($Path)) {
+        $script:TextFileCache.Remove($Path) | Out-Null
+    }
+
+    if ($script:BinaryFileCache.ContainsKey($Path)) {
+        $script:BinaryFileCache.Remove($Path) | Out-Null
+    }
+}
+
+function Read-TextFileCached {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $metadata = Get-FileMetadataSnapshot -Path $Path
+    if ($null -eq $metadata) {
+        return $null
+    }
+
+    $cacheEntry = $script:TextFileCache[$Path]
+    if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
+        return [string]$cacheEntry.Content
+    }
+
+    $content = [System.IO.File]::ReadAllText($Path)
+    $script:TextFileCache[$Path] = [PSCustomObject]@{
+        LastWriteTicks = $metadata.LastWriteTicks
+        Length         = $metadata.Length
+        Content        = $content
+    }
+
+    return $content
+}
+
+function Read-FileBytesCached {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $metadata = Get-FileMetadataSnapshot -Path $Path
+    if ($null -eq $metadata) {
+        return $null
+    }
+
+    $cacheEntry = $script:BinaryFileCache[$Path]
+    if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
+        return $cacheEntry.Bytes
+    }
+
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $script:BinaryFileCache[$Path] = [PSCustomObject]@{
+        LastWriteTicks = $metadata.LastWriteTicks
+        Length         = $metadata.Length
+        Bytes          = $bytes
+    }
+
+    return $bytes
+}
+
 function Get-LockFilePath {
     param([Parameter(Mandatory = $true)][string]$ResourcePath)
 
@@ -118,6 +200,8 @@ function Write-TextAtomic {
     else {
         Move-Item -Path $tempPath -Destination $Path -Force
     }
+
+    Clear-CachedFileContent -Path $Path
 }
 
 function Write-JsonAtomic {

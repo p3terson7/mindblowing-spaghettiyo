@@ -1,11 +1,11 @@
 # Helper function to emulate the null-coalescing operator
 function Get-EmployeeNameMap {
     if (!(Test-Path -Path $mappingFile)) {
-        @{} | ConvertTo-Json -Depth 3 | Set-Content -Path $mappingFile -Encoding UTF8
+        Write-JsonAtomic -Path $mappingFile -Value @{} -Depth 3
     }
 
     try {
-        $map = Get-Content -Path $mappingFile -Raw | ConvertFrom-Json
+        $map = Read-TextFileCached -Path $mappingFile | ConvertFrom-Json
         if ($null -eq $map) {
             return @{}
         }
@@ -26,11 +26,11 @@ function Get-EmployeeName($code) {
 
 function Get-Projects {
     if (!(Test-Path -Path $projectsFile)) {
-        @() | ConvertTo-Json -Depth 3 | Set-Content -Path $projectsFile -Encoding UTF8
+        Write-JsonAtomic -Path $projectsFile -Value @() -Depth 3
     }
 
     try {
-        $projects = Get-Content -Path $projectsFile -Raw | ConvertFrom-Json
+        $projects = Read-TextFileCached -Path $projectsFile | ConvertFrom-Json
         if ($null -eq $projects) {
             return @()
         }
@@ -46,11 +46,11 @@ function Get-Projects {
 
 function Get-OvertimeCodes {
     if (!(Test-Path -Path $overtimeCodesFile)) {
-        @() | ConvertTo-Json -Depth 3 | Set-Content -Path $overtimeCodesFile -Encoding UTF8
+        Write-JsonAtomic -Path $overtimeCodesFile -Value @() -Depth 3
     }
 
     try {
-        $overtimeCodes = Get-Content -Path $overtimeCodesFile -Raw | ConvertFrom-Json
+        $overtimeCodes = Read-TextFileCached -Path $overtimeCodesFile | ConvertFrom-Json
         if ($null -eq $overtimeCodes) {
             return @()
         }

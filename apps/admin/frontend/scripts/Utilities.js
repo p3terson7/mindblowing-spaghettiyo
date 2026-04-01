@@ -194,6 +194,76 @@ function parseResponse(response) {
   });
 }
 
+function createLoadingState(variant = "list", count = 3) {
+  const safeCount = Math.max(1, Number(count) || 1);
+
+  if (variant === "chart") {
+    return `
+      <div class="loading-shell loading-shell-chart" aria-hidden="true">
+        <div class="loading-chart">
+          <span class="loading-bar loading-bar-title"></span>
+          <span class="loading-bar loading-bar-chart"></span>
+        </div>
+      </div>
+    `;
+  }
+
+  if (variant === "detail") {
+    return `
+      <div class="loading-shell loading-shell-detail" aria-hidden="true">
+        <div class="loading-card loading-card-detail">
+          <span class="loading-bar loading-bar-title"></span>
+          <span class="loading-bar loading-bar-meta"></span>
+          <span class="loading-bar loading-bar-wide"></span>
+          <span class="loading-bar loading-bar-wide"></span>
+        </div>
+      </div>
+    `;
+  }
+
+  const cards = Array.from({ length: safeCount }).map(() => `
+    <div class="loading-card">
+      <span class="loading-bar loading-bar-title"></span>
+      <span class="loading-bar loading-bar-meta"></span>
+      <span class="loading-bar loading-bar-wide"></span>
+    </div>
+  `).join("");
+
+  const shellClass = variant === "grid"
+    ? "loading-shell-grid"
+    : variant === "activity"
+      ? "loading-shell-activity"
+      : "loading-shell-list";
+
+  return `<div class="loading-shell ${shellClass}" aria-hidden="true">${cards}</div>`;
+}
+
+function setLoadingState(targetOrId, variant = "list", count = 3) {
+  const target = typeof targetOrId === "string"
+    ? document.getElementById(targetOrId)
+    : targetOrId;
+
+  if (!target) {
+    return;
+  }
+
+  target.innerHTML = createLoadingState(variant, count);
+}
+
+function setChartLoadingState(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) {
+    return;
+  }
+
+  const chartStage = container.querySelector(".chart-stage");
+  if (!chartStage) {
+    return;
+  }
+
+  chartStage.innerHTML = createLoadingState("chart", 1);
+}
+
 function getStatusTone(status) {
   switch (String(status || "").toLowerCase()) {
     case "approved":

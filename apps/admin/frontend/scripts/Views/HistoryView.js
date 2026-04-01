@@ -2,6 +2,11 @@ let allHistoryEntries = [];
 
 async function fetchHistory() {
   try {
+    setLoadingState("allHistoryContainer", "activity", 4);
+    setLoadingState("addHistoryContainer", "activity", 3);
+    setLoadingState("editHistoryContainer", "activity", 3);
+    setLoadingState("approveHistoryContainer", "activity", 3);
+    setLoadingState("deleteHistoryContainer", "activity", 3);
     const response = await fetch(apiUrl + "history");
     const historyEntries = await parseResponse(response);
     allHistoryEntries = Array.isArray(historyEntries) ? historyEntries : [];
@@ -102,5 +107,12 @@ document.getElementById("historySearchInput").addEventListener("input", function
   renderHistoryTabs(filtered);
 });
 
-document.getElementById("refreshHistoryBtn").addEventListener("click", fetchHistory);
+document.getElementById("refreshHistoryBtn").addEventListener("click", () => {
+  if (typeof loadReviewView === "function") {
+    loadReviewView();
+    return;
+  }
+
+  fetchHistory();
+});
 updateHistoryTabLabels([], [], [], [], []);

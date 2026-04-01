@@ -110,6 +110,23 @@ async function fetchProjects() {
   }
 }
 
+function buildProjectBootstrapUrl(filterPeriod, projectCode) {
+  const { startDate, endDate } = calculateDateRange(filterPeriod);
+  const params = new URLSearchParams();
+
+  if (filterPeriod !== "all" && startDate && endDate) {
+    params.set("startDate", startDate);
+    params.set("endDate", endDate);
+  }
+
+  if (projectCode) {
+    params.set("projectCode", projectCode);
+  }
+
+  const query = params.toString();
+  return `${apiUrl}projects/bootstrap${query ? `?${query}` : ""}`;
+}
+
 function buildProjectStatsUrl(projectCode, filterPeriod) {
   const { startDate, endDate } = calculateDateRange(filterPeriod);
   let url = apiUrl + "stats/projects/" + projectCode;
@@ -127,6 +144,7 @@ async function loadProjectDetailStats(projectCode, filterPeriod = "all") {
   }
 
   try {
+    setLoadingState("projectDetailContainer", "detail", 1);
     const response = await fetch(buildProjectStatsUrl(projectCode, filterPeriod));
     const data = await parseResponse(response);
     projectDetailCache[cacheKey] = data;
@@ -137,64 +155,39 @@ async function loadProjectDetailStats(projectCode, filterPeriod = "all") {
   }
 }
 
-function loadProjectDetailStatsPromise(projectCode, filterPeriod = "all") {
-  const cacheKey = getProjectDetailCacheKey(projectCode, filterPeriod);
-  if (projectDetailCache[cacheKey]) {
-    return Promise.resolve(projectDetailCache[cacheKey]);
-  }
+async function refreshProjectsView() {
+  clearProjectDetailCache();
+  setLoadingState("projectsSummaryContainer", "grid", 4);
+  setLoadingState("projectDetailContainer", "detail", 1);
+  setChartLoadingState("projectChartContainer");
 
-  return fetch(buildProjectStatsUrl(projectCode, filterPeriod))
-    .then(parseResponse)
-    .then(data => {
-      projectDetailCache[cacheKey] = data;
-      return data;
-    })
-    .catch(error => {
-      console.error("Error loading project detail stats promise:", error);
-      return null;
-    });
-}
-
-async function loadAllProjectSummaryStats(filterPeriod = "all") {
   try {
-    const projectsList = await fetchProjects();
-    const details = await Promise.all(projectsList.map(async project => {
-      const detail = await loadProjectDetailStatsPromise(project.projectCode, filterPeriod);
-      if (detail) {
-        detail.projectName = project.projectName;
-      }
-      return detail;
-    }));
+    const response = await fetch(buildProjectBootstrapUrl(currentProjectFilter, currentProjectCode));
+    const payload = await parseResponse(response);
+    const summary = Array.isArray(payload && payload.summary) ? payload.summary : [];
+    projectsViewState.projects = summary;
 
-    const validDetails = details.filter(Boolean);
-    if (!currentProjectCode && validDetails.length > 0) {
-      currentProjectCode = validDetails[0].projectCode;
-    }
-    renderProjectSummaryCards(validDetails);
+    currentProjectCode = payload && payload.selectedProjectCode ? payload.selectedProjectCode : (summary[0] ? summary[0].projectCode : null);
 
-    if (currentProjectCode) {
-      const activeDetail = validDetails.find(detail => detail.projectCode === currentProjectCode);
-      if (activeDetail) {
-        renderProjectDetail(activeDetail);
-      } else if (validDetails[0]) {
-        currentProjectCode = validDetails[0].projectCode;
-        renderProjectDetail(validDetails[0]);
-      }
+    renderProjectSummaryCards(summary);
+    renderProjectMultiLineChart(payload && payload.trends ? payload.trends : {});
+
+    if (payload && payload.selectedProject) {
+      projectDetailCache[getProjectDetailCacheKey(payload.selectedProject.projectCode, currentProjectFilter)] = payload.selectedProject;
+      renderProjectDetail(payload.selectedProject);
+    } else if (currentProjectCode) {
+      await loadProjectDetailStats(currentProjectCode, currentProjectFilter);
     } else {
       document.getElementById("projectDetailContainer").innerHTML = createEmptyState(t("projects.selectToInspect"));
     }
   } catch (error) {
-    console.error("Error loading all project summary stats:", error);
+    console.error("Error loading project data:", error);
     document.getElementById("projectsSummaryContainer").innerHTML = createEmptyState(t("projects.unableToLoad"));
-  }
-}
-
-async function refreshProjectsView() {
-  clearProjectDetailCache();
-  await loadAllProjectSummaryStats(currentProjectFilter);
-  await loadProjectTrendChart(currentProjectFilter);
-  if (currentProjectCode) {
-    await loadProjectDetailStats(currentProjectCode, currentProjectFilter);
+    document.getElementById("projectDetailContainer").innerHTML = createEmptyState(t("projects.statsUnavailable"));
+    const chartStage = document.querySelector("#projectChartContainer .chart-stage");
+    if (chartStage) {
+      chartStage.innerHTML = createEmptyState(t("projects.chartLoadError"));
+    }
   }
 }
 
@@ -532,7 +525,7 @@ document.getElementById("projectsSummaryContainer").addEventListener("click", ev
   const projectCode = projectCard.getAttribute("data-project-code");
   if (projectCode) {
     currentProjectCode = projectCode;
-    renderProjectSummaryCards(Object.values(projectDetailCache).filter(Boolean));
+    renderProjectSummaryCards(projectsViewState.projects);
     loadProjectDetailStats(projectCode, currentProjectFilter);
   }
 });

@@ -12,6 +12,7 @@ const appShellState = {
   initialized: false,
   syncTimerId: null,
   lastSyncVersion: null,
+  syncRequestInFlight: false,
 };
 
 function normalizeApiUrl(value, fallbackValue) {
@@ -258,9 +259,20 @@ function configureRoleUi(user) {
 
 function stopSyncPolling() {
   if (appShellState.syncTimerId) {
-    window.clearInterval(appShellState.syncTimerId);
+    window.clearTimeout(appShellState.syncTimerId);
     appShellState.syncTimerId = null;
   }
+}
+
+function getSyncPollDelay() {
+  return document.hidden ? 8000 : 2500;
+}
+
+function scheduleNextSyncPoll(delayMs) {
+  stopSyncPolling();
+  appShellState.syncTimerId = window.setTimeout(() => {
+    pollSyncState();
+  }, typeof delayMs === "number" ? delayMs : getSyncPollDelay());
 }
 
 async function refreshViewById(viewId) {
@@ -280,6 +292,11 @@ async function refreshViewById(viewId) {
   }
 
   if (viewId === "adminView") {
+    if (typeof loadReviewView === "function") {
+      await loadReviewView();
+      return;
+    }
+
     const tasks = [];
     if (typeof loadApprovalsView === "function") {
       tasks.push(loadApprovalsView());
@@ -310,12 +327,18 @@ async function refreshActiveView() {
 }
 
 async function pollSyncState() {
+  if (appShellState.syncRequestInFlight) {
+    scheduleNextSyncPoll();
+    return;
+  }
+
   const sessionToken = getSessionToken();
   if (!sessionToken) {
     setSyncStatus(t("status.waitingForSignIn"));
     return;
   }
 
+  appShellState.syncRequestInFlight = true;
   try {
     const response = await fetch(apiUrl + "sync/status");
     const syncState = await parseResponse(response);
@@ -341,14 +364,14 @@ async function pollSyncState() {
   } catch (error) {
     console.error("Unable to refresh sync state:", error);
     setSyncStatus(t("status.syncPaused"));
+  } finally {
+    appShellState.syncRequestInFlight = false;
+    scheduleNextSyncPoll();
   }
 }
 
 function startSyncPolling() {
-  stopSyncPolling();
-  appShellState.syncTimerId = window.setInterval(() => {
-    pollSyncState();
-  }, 1000);
+  scheduleNextSyncPoll(0);
 }
 
 async function bootstrapApplication() {
@@ -661,6 +684,14 @@ document.addEventListener("DOMContentLoaded", () => {
   setSyncStatus(t("status.waitingForSignIn"));
   installFetchWrapper();
   restoreSession();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!getSessionToken()) {
+    return;
+  }
+
+  scheduleNextSyncPoll(0);
 });
 
 window.addEventListener("app:language-changed", event => {

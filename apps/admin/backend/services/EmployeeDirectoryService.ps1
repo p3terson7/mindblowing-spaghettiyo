@@ -81,26 +81,7 @@ function Update-EmployeeEntryDisplayName {
 }
 
 function Get-EmployeeDirectoryList {
-    $employees = @()
-    $users = @(Get-Users | Where-Object { [string]$_.role -eq "employee" -and -not [bool]$_.disabled } | Sort-Object username)
-
-    foreach ($user in $users) {
-        $employeeCode = if ($user.employeeCode) { [string]$user.employeeCode } else { [string]$user.username }
-        $displayName = if ($user.displayName) { [string]$user.displayName } else { [string](Get-EmployeeName $employeeCode) }
-        $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
-        $entryCount = 0
-        if (Test-Path -Path $dataFile) {
-            $entryCount = @(Read-JsonArrayFile -Path $dataFile).Count
-        }
-
-        $employees += [PSCustomObject]@{
-            code       = $employeeCode
-            name       = $displayName
-            entryCount = $entryCount
-        }
-    }
-
-    return $employees
+    return @((Get-EmployeeDataSnapshot).employees)
 }
 
 function Add-EmployeeDirectoryRecord {

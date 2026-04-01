@@ -1,3 +1,15 @@
+if (-not $script:CachedSyncState) {
+    $script:CachedSyncState = $null
+}
+
+if (-not $script:CachedSyncStateLastWriteTicks) {
+    $script:CachedSyncStateLastWriteTicks = $null
+}
+
+if (-not $script:CachedSyncStateLength) {
+    $script:CachedSyncStateLength = $null
+}
+
 function New-DefaultSyncState {
     return [PSCustomObject]@{
         version      = 0
@@ -13,7 +25,16 @@ function Read-SyncStateUnsafe {
     }
 
     try {
-        return (Get-Content -Path $syncStateFile -Raw | ConvertFrom-Json)
+        $item = Get-Item -Path $syncStateFile
+        if ($script:CachedSyncState -and $script:CachedSyncStateLastWriteTicks -eq $item.LastWriteTimeUtc.Ticks -and $script:CachedSyncStateLength -eq $item.Length) {
+            return $script:CachedSyncState
+        }
+
+        $parsed = Read-TextFileCached -Path $syncStateFile | ConvertFrom-Json
+        $script:CachedSyncState = $parsed
+        $script:CachedSyncStateLastWriteTicks = $item.LastWriteTimeUtc.Ticks
+        $script:CachedSyncStateLength = $item.Length
+        return $parsed
     }
     catch {
         return (New-DefaultSyncState)
@@ -21,6 +42,10 @@ function Read-SyncStateUnsafe {
 }
 
 function Ensure-SyncState {
+    if (Test-Path -Path $syncStateFile) {
+        return
+    }
+
     $lockHandle = Acquire-ResourceLock -ResourcePath $syncStateFile
     try {
         if (Test-Path -Path $syncStateFile) {
@@ -64,6 +89,10 @@ function Publish-DataChange {
         }
 
         Write-JsonAtomic -Path $syncStateFile -Value $updatedState -Depth 6
+        $syncStateItem = Get-Item -Path $syncStateFile
+        $script:CachedSyncState = $updatedState
+        $script:CachedSyncStateLastWriteTicks = $syncStateItem.LastWriteTimeUtc.Ticks
+        $script:CachedSyncStateLength = $syncStateItem.Length
         return $updatedState
     }
     finally {

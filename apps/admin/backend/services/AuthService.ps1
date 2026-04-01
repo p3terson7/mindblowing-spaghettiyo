@@ -125,14 +125,43 @@ function Ensure-AuthStorage {
     }
 }
 
+function Read-AuthArrayFileCached {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -Path $Path)) {
+        return @()
+    }
+
+    try {
+        $raw = Read-TextFileCached -Path $Path
+        if ([string]::IsNullOrWhiteSpace($raw) -or $raw.Trim() -eq "null") {
+            return @()
+        }
+
+        $parsed = $raw | ConvertFrom-Json
+        if ($null -eq $parsed) {
+            return @()
+        }
+
+        if (-not ($parsed -is [System.Collections.IEnumerable]) -or ($parsed -is [string])) {
+            return @($parsed)
+        }
+
+        return @($parsed)
+    }
+    catch {
+        return @()
+    }
+}
+
 function Get-Users {
     Ensure-AuthStorage
-    return (Read-JsonArrayFile -Path $usersFile)
+    return (Read-AuthArrayFileCached -Path $usersFile)
 }
 
 function Get-Sessions {
     Ensure-AuthStorage
-    return (Read-JsonArrayFile -Path $sessionsFile)
+    return (Read-AuthArrayFileCached -Path $sessionsFile)
 }
 
 function Get-AuthorizationTokenFromRequest {
