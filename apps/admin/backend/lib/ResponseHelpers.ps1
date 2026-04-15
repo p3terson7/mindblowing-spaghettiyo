@@ -78,8 +78,10 @@ function respondWithFile {
     $response.Headers["Last-Modified"] = $metadata.LastWriteUtc.ToString("R")
 
     $extension = [System.IO.Path]::GetExtension($Path).ToLowerInvariant()
-    if ($extension -eq ".html") {
-        $response.Headers["Cache-Control"] = "no-cache"
+    if ($extension -eq ".html" -or $extension -eq ".js" -or $extension -eq ".css") {
+        $response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        $response.Headers["Pragma"] = "no-cache"
+        $response.Headers["Expires"] = "0"
     }
     else {
         $response.Headers["Cache-Control"] = "public, max-age=86400"

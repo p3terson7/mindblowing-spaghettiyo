@@ -88,5 +88,35 @@
     "message": "Approved an entry on March 30, 2026 starting at <strong>10h06</strong>.",
     "employee": "Priya Patel",
     "timestamp": "2026-04-01 09:22:53"
+  },
+  {
+    "action": "Delete",
+    "message": "Deleted an entry on March 19, 2026 starting at <strong>17h40</strong>.",
+    "employee": "Alice Johnson",
+    "timestamp": "2026-04-08 07:59:24"
+  },
+  {
+    "action": "Delete",
+    "message": "Removed employee access for <strong>Alice Johnson</strong>.",
+    "employee": "Alice Johnson",
+    "timestamp": "2026-04-08 09:58:24"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on April 08, 2026 from <strong>11h30</strong> to <strong>08h00</strong>.",
+    "employee": "Peter-Nicholas Sarateanu",
+    "timestamp": "2026-04-15 07:58:07"
+  },
+  {
+    "action": "Add",
+    "message": "Added an entry on April 15, 2026, starting at <strong>10h45</strong> and finishing at <strong>12h45</strong> for project <strong>APP-220</strong> and overtime code <strong>OT-OPS</strong>.",
+    "employee": "Jane Smith",
+    "timestamp": "2026-04-15 08:03:10"
+  },
+  {
+    "action": "Rejected",
+    "message": "Rejected an entry on April 15, 2026 from <strong>10h45</strong> to <strong>12h45</strong>.",
+    "employee": "Jane Smith",
+    "timestamp": "2026-04-15 08:03:26"
   }
 ]

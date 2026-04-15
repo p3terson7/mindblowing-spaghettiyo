@@ -571,6 +571,35 @@ function Disable-EmployeeUser {
     return $updated
 }
 
+function Restore-EmployeeUser {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode
+    )
+
+    $updated = $false
+
+    $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
+    try {
+        $users = Read-JsonArrayFile -Path $usersFile
+        foreach ($user in $users) {
+            if ($user.username -eq $EmployeeCode -and [string]$user.role -eq "employee") {
+                $user.disabled = $false
+                $updated = $true
+                break
+            }
+        }
+
+        if ($updated) {
+            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+        }
+    }
+    finally {
+        Release-ResourceLock -LockHandle $lockHandle
+    }
+
+    return $updated
+}
+
 function Test-NewPasswordPolicy {
     param([string]$Password)
 

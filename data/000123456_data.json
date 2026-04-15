@@ -42,5 +42,19 @@
     "message": "",
     "projectCode": "APP-220",
     "overtimeCode": "OT-MNT"
+  },
+  {
+    "entryId": "ae1af77a085e4618bf5da890848200db",
+    "name": "Jane Smith",
+    "date": "2026-04-15",
+    "punchIn": "10:45:00",
+    "exactPunchIn": "10:45:00",
+    "punchOut": "12:45:00",
+    "exactPunchOut": "12:45:00",
+    "overtime": "02:00:00",
+    "status": "rejected",
+    "message": "big badaboum",
+    "projectCode": "APP-220",
+    "overtimeCode": "OT-OPS"
   }
 ]

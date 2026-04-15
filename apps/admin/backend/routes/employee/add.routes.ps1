@@ -42,9 +42,15 @@
                 continue
             }
 
-            # Round times to the minute (set seconds to "00").
-            $punchInRounded = (($payload.punchIn -split ":")[0] + ":" + ($payload.punchIn -split ":")[1] + ":00")
-            $punchOutRounded = (($payload.punchOut -split ":")[0] + ":" + ($payload.punchOut -split ":")[1] + ":00")
+            $exactPunchIn = Convert-ToNormalizedTimeText -TimeText ([string]$payload.punchIn)
+            $exactPunchOut = Convert-ToNormalizedTimeText -TimeText ([string]$payload.punchOut)
+            if ([string]::IsNullOrWhiteSpace($exactPunchIn) -or [string]::IsNullOrWhiteSpace($exactPunchOut)) {
+                respondWithError $response 400 "Punch In and Punch Out must use a valid time format."
+                continue
+            }
+
+            $punchInRounded = Convert-ToNearestQuarterHourText -Date ([string]$payload.date) -TimeText $exactPunchIn
+            $punchOutRounded = Convert-ToNearestQuarterHourText -Date ([string]$payload.date) -TimeText $exactPunchOut
 
             # Validate that punchOut is after punchIn.
             $punchInTime = [DateTime]::ParseExact("$($payload.date) $punchInRounded", "yyyy-MM-dd HH:mm:ss", $null)
@@ -60,10 +66,13 @@
 
                 # Create the new entry with an empty message and the projectCode.
                 $newEntry = [PSCustomObject]@{
+                    entryId      = New-EntryIdentifier
                     name        = Get-EmployeeName $employeeCode
                     date        = $payload.date
                     punchIn     = $punchInRounded
+                    exactPunchIn = $exactPunchIn
                     punchOut    = $punchOutRounded
+                    exactPunchOut = $exactPunchOut
                     overtime    = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
                     status      = "pending"
                     message     = ""
@@ -86,7 +95,7 @@
 
             $responseMessage = @{
                 message = "Entry added successfully."
-                time    = $punchInRounded
+                time    = $exactPunchIn
             }
             $responseString = $responseMessage | ConvertTo-Json -Depth 3
             $response.ContentType = "application/json"

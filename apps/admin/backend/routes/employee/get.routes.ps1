@@ -8,7 +8,7 @@
                 continue
             }
 
-            $entries = Read-JsonArrayFile -Path $dataFile
+            $entries = @((Read-JsonArrayFile -Path $dataFile) | ForEach-Object { Convert-ToNormalizedEntryObject -Entry $_ })
             respondWithSuccess $response ($entries | ConvertTo-Json -Depth 6)
             continue
         }

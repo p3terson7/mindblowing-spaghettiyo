@@ -26,7 +26,7 @@
                 continue
             }
 
-            $entries = Read-JsonArrayFile -Path $dataFile
+            $entries = @((Read-JsonArrayFile -Path $dataFile) | ForEach-Object { Convert-ToNormalizedEntryObject -Entry $_ })
             respondWithSuccess $response ($entries | ConvertTo-Json -Depth 6)
             continue
         }
@@ -133,7 +133,10 @@
                     $activeEntry = @($sortedEntries | Where-Object { $_.punchIn -and -not $_.punchOut }) | Select-Object -Last 1
 
                     $now = Get-Date
-                    $nowRounded = Get-Date -Year $now.Year -Month $now.Month -Day $now.Day -Hour $now.Hour -Minute $now.Minute -Second 0
+                    $exactNow = Get-Date -Year $now.Year -Month $now.Month -Day $now.Day -Hour $now.Hour -Minute $now.Minute -Second 0
+                    $todayText = $exactNow.ToString("yyyy-MM-dd")
+                    $exactNowText = $exactNow.ToString("HH:mm:ss")
+                    $roundedNowText = Convert-ToNearestQuarterHourText -Date $todayText -TimeText $exactNowText
 
                     if ($payload.type -eq "in") {
                         if ($activeEntry) {
@@ -142,10 +145,13 @@
                         }
 
                         $existingData += [PSCustomObject]@{
+                            entryId      = New-EntryIdentifier
                             name        = Get-EmployeeName $employeeCode
-                            date        = $nowRounded.ToString("yyyy-MM-dd")
-                            punchIn     = $nowRounded.ToString("HH:mm:ss")
+                            date        = $todayText
+                            punchIn     = $roundedNowText
+                            exactPunchIn = $exactNowText
                             punchOut    = $null
+                            exactPunchOut = $null
                             overtime    = $null
                             status      = "pending"
                             message     = ""
@@ -159,7 +165,8 @@
                             continue
                         }
 
-                        $activeEntry.punchOut = $nowRounded.ToString("HH:mm:ss")
+                        $activeEntry.exactPunchOut = $exactNowText
+                        $activeEntry.punchOut = $roundedNowText
                         $punchInTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchIn)", "yyyy-MM-dd HH:mm:ss", $null)
                         $punchOutTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchOut)", "yyyy-MM-dd HH:mm:ss", $null)
                         $activeEntry.overtime = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
@@ -175,7 +182,7 @@
 
                 $result = [PSCustomObject]@{
                     message = "Punch updated successfully."
-                    time    = $nowRounded.ToString("HH:mm:ss")
+                    time    = $exactNowText
                 }
                 respondWithSuccess $response ($result | ConvertTo-Json -Depth 6)
             }

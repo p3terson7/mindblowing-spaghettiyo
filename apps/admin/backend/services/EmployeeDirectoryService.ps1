@@ -81,7 +81,32 @@ function Update-EmployeeEntryDisplayName {
 }
 
 function Get-EmployeeDirectoryList {
-    return @((Get-EmployeeDataSnapshot).employees)
+    param(
+        [bool]$IncludeDisabled = $false
+    )
+
+    $directory = @()
+    $users = @(Get-Users | Where-Object { [string]$_.role -eq "employee" })
+    foreach ($user in ($users | Sort-Object username)) {
+        $isArchived = [bool]$user.disabled
+        if ($isArchived -and -not $IncludeDisabled) {
+            continue
+        }
+
+        $employeeCode = if ($user.employeeCode) { [string]$user.employeeCode } else { [string]$user.username }
+        $displayName = if ($user.displayName) { [string]$user.displayName } else { [string](Get-EmployeeName $employeeCode) }
+        $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
+        $entryCount = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile).Count
+
+        $directory += [PSCustomObject]@{
+            code      = $employeeCode
+            name      = $displayName
+            entryCount = $entryCount
+            archived  = $isArchived
+        }
+    }
+
+    return @($directory)
 }
 
 function Add-EmployeeDirectoryRecord {
@@ -145,6 +170,22 @@ function Remove-EmployeeDirectoryRecord {
     $updated = Disable-EmployeeUser -EmployeeCode $EmployeeCode
     if ($updated) {
         Revoke-SessionsForUsername -Username $EmployeeCode
+    }
+
+    return [PSCustomObject]@{
+        updated = $updated
+        error   = $null
+    }
+}
+
+function Restore-EmployeeDirectoryRecord {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode
+    )
+
+    $updated = Restore-EmployeeUser -EmployeeCode $EmployeeCode
+    if ($updated) {
+        Ensure-EmployeeDataFile -EmployeeCode $EmployeeCode | Out-Null
     }
 
     return [PSCustomObject]@{

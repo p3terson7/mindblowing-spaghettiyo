@@ -98,17 +98,20 @@ function New-EmployeeEntryProjection {
     )
 
     return [PSCustomObject]@{
-        name         = [string]$Entry.name
-        date         = [string]$Entry.date
-        punchIn      = [string]$Entry.punchIn
-        punchOut     = if ($null -ne $Entry.punchOut) { [string]$Entry.punchOut } else { $null }
-        overtime     = if ($null -ne $Entry.overtime) { [string]$Entry.overtime } else { $null }
-        status       = if ($null -ne $Entry.status) { [string]$Entry.status } else { "pending" }
-        message      = if ($null -ne $Entry.message) { [string]$Entry.message } else { "" }
-        projectCode  = if ($null -ne $Entry.projectCode) { [string]$Entry.projectCode } else { "" }
-        overtimeCode = if ($null -ne $Entry.overtimeCode) { [string]$Entry.overtimeCode } else { "" }
-        employeeCode = $EmployeeCode
-        employeeName = $EmployeeName
+        entryId       = Get-EntryIdentifierValue -Entry $Entry
+        name          = [string]$Entry.name
+        date          = [string]$Entry.date
+        punchIn       = [string]$Entry.punchIn
+        exactPunchIn  = Get-EntryExactPunchInText -Entry $Entry
+        punchOut      = if ($null -ne $Entry.punchOut) { [string]$Entry.punchOut } else { $null }
+        exactPunchOut = Get-EntryExactPunchOutText -Entry $Entry
+        overtime      = if ($null -ne $Entry.overtime) { [string]$Entry.overtime } else { $null }
+        status        = if ($null -ne $Entry.status) { [string]$Entry.status } else { "pending" }
+        message       = if ($null -ne $Entry.message) { [string]$Entry.message } else { "" }
+        projectCode   = if ($null -ne $Entry.projectCode) { [string]$Entry.projectCode } else { "" }
+        overtimeCode  = if ($null -ne $Entry.overtimeCode) { [string]$Entry.overtimeCode } else { "" }
+        employeeCode  = $EmployeeCode
+        employeeName  = $EmployeeName
     }
 }
 
@@ -128,7 +131,10 @@ function Get-CachedEmployeeEntriesForFile {
         return $cacheEntry.Entries
     }
 
-    $entries = @(Read-JsonArrayFile -Path $DataFile)
+    $entries = @()
+    foreach ($entry in @(Read-JsonArrayFile -Path $DataFile)) {
+        $entries += (Convert-ToNormalizedEntryObject -Entry $entry)
+    }
     $script:EmployeeEntryFileCache[$DataFile] = [PSCustomObject]@{
         LastWriteTicks = $metadata.LastWriteTicks
         Length         = $metadata.Length
@@ -335,12 +341,20 @@ function Get-ProjectStatisticsOverview {
                 $stats[$projectCode] = [PSCustomObject]@{
                     totalSeconds = 0
                     entryCount   = 0
+                    minSeconds   = $null
+                    maxSeconds   = $null
                     breakdown    = @{}
                 }
             }
 
             $stats[$projectCode].totalSeconds += $seconds
             $stats[$projectCode].entryCount++
+            if ($null -eq $stats[$projectCode].minSeconds -or $seconds -lt $stats[$projectCode].minSeconds) {
+                $stats[$projectCode].minSeconds = $seconds
+            }
+            if ($null -eq $stats[$projectCode].maxSeconds -or $seconds -gt $stats[$projectCode].maxSeconds) {
+                $stats[$projectCode].maxSeconds = $seconds
+            }
 
             $employeeName = if ($entry.employeeName) { [string]$entry.employeeName } else { [string]$entry.name }
             if (-not $stats[$projectCode].breakdown.ContainsKey($employeeName)) {
@@ -354,10 +368,13 @@ function Get-ProjectStatisticsOverview {
             $stats[$projectCode].breakdown[$employeeName].totalSeconds += $seconds
             $stats[$projectCode].breakdown[$employeeName].entryCount++
             $stats[$projectCode].breakdown[$employeeName].entries += [PSCustomObject]@{
-                date     = $entry.date
-                punchIn  = $entry.punchIn
-                punchOut = $entry.punchOut
-                overtime = if ($entry.overtime) { [string]$entry.overtime } else { "00:00:00" }
+                entryId       = $entry.entryId
+                date          = $entry.date
+                punchIn       = $entry.punchIn
+                exactPunchIn  = $entry.exactPunchIn
+                punchOut      = $entry.punchOut
+                exactPunchOut = $entry.exactPunchOut
+                overtime      = if ($entry.overtime) { [string]$entry.overtime } else { "00:00:00" }
             }
         }
 
@@ -394,6 +411,8 @@ function Get-ProjectSummaryList {
         $totalSeconds = if ($projectStats) { [double]$projectStats.totalSeconds } else { 0 }
         $entryCount = if ($projectStats) { [int]$projectStats.entryCount } else { 0 }
         $averageSeconds = if ($entryCount -gt 0) { [math]::Round($totalSeconds / $entryCount) } else { 0 }
+        $minSeconds = if ($projectStats -and $null -ne $projectStats.minSeconds) { [double]$projectStats.minSeconds } else { 0 }
+        $maxSeconds = if ($projectStats -and $null -ne $projectStats.maxSeconds) { [double]$projectStats.maxSeconds } else { 0 }
 
         $summaries += [PSCustomObject]@{
             projectCode     = [string]$projectCode
@@ -401,6 +420,8 @@ function Get-ProjectSummaryList {
             totalOvertime   = Convert-SecondsToTimeText -Seconds $totalSeconds
             entryCount      = $entryCount
             averageOvertime = Convert-SecondsToTimeText -Seconds $averageSeconds
+            minOvertime     = Convert-SecondsToTimeText -Seconds $minSeconds
+            maxOvertime     = Convert-SecondsToTimeText -Seconds $maxSeconds
         }
     }
 
@@ -442,6 +463,8 @@ function Get-ProjectDetailModel {
         totalOvertime       = [string]$projectSummary.totalOvertime
         entryCount          = [int]$projectSummary.entryCount
         averageOvertime     = [string]$projectSummary.averageOvertime
+        minOvertime         = [string]$projectSummary.minOvertime
+        maxOvertime         = [string]$projectSummary.maxOvertime
         breakdownByEmployee = $breakdown
     }
 }
@@ -523,7 +546,12 @@ function Get-SelfBootstrapModel {
     param([Parameter(Mandatory = $true)][string]$EmployeeCode)
 
     $dataFile = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $EmployeeCode)
-    $entries = if (Test-Path -Path $dataFile) { @(Read-JsonArrayFile -Path $dataFile) } else { @() }
+    $entries = if (Test-Path -Path $dataFile) {
+        @((Read-JsonArrayFile -Path $dataFile) | ForEach-Object { Convert-ToNormalizedEntryObject -Entry $_ })
+    }
+    else {
+        @()
+    }
 
     return [PSCustomObject]@{
         entries        = $entries

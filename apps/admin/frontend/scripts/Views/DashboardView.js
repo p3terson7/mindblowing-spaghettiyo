@@ -10,6 +10,10 @@ function buildEmployeeOptions(employees) {
   return `<option value="">${escapeHtml(t("shared.selectEmployee"))}</option>${employees.map(emp => `<option value="${escapeHtml(emp.code)}">${escapeHtml(emp.name)}</option>`).join("")}`;
 }
 
+function buildProjectFilterOptions(projects) {
+  return buildProjectOptions(projects || [], t("filters.allProjects"), document.getElementById("projectFilter")?.value || "");
+}
+
 function groupEntriesByDate(entries) {
   return entries.reduce((accumulator, entry) => {
     if (!accumulator[entry.date]) {
@@ -51,19 +55,20 @@ function setDashboardLoadingState() {
   setLoadingState("punchClockEntries", "entries", 3);
 }
 
-function buildInspectorMeta(entryCount, selectedMonth, selectedYear) {
+function buildInspectorMeta(entryCount, startDate, endDate, projectCode) {
   const parts = [tn("shared.entry", entryCount)];
-  if (selectedMonth || selectedYear) {
-    const monthLabel = selectedMonth ? String(selectedMonth).padStart(2, "0") : "--";
-    const yearLabel = selectedYear || "----";
-    parts.push(`${monthLabel}/${yearLabel}`);
+  const dateRangeLabel = buildDateRangeLabel(startDate, endDate);
+  if (dateRangeLabel) {
+    parts.push(dateRangeLabel);
+  }
+  if (projectCode) {
+    parts.push(projectCode);
   }
   return parts.join(" | ");
 }
 
 function formatQueueTitle(entry) {
-  const punchOut = entry.punchOut ? ` -> ${formatTimeString(entry.punchOut)}` : ` -> ${t("shared.inProgress")}`;
-  return `${formatTimeString(entry.punchIn)}${punchOut}`;
+  return getEntryRoundedTimeRange(entry);
 }
 
 function renderDashboardApprovalQueue(entries) {
@@ -88,6 +93,7 @@ function renderDashboardApprovalQueue(entries) {
         <div>
           <div class="queue-card-title">${escapeHtml(entry.employeeName)}</div>
           <div class="worklog-secondary">${escapeHtml(formatDateLabel(entry.date))} | ${escapeHtml(formatQueueTitle(entry))}</div>
+          ${getEntryExactTimeLabel(entry) ? `<div class="panel-note">${escapeHtml(getEntryExactTimeLabel(entry))}</div>` : ""}
         </div>
         <span class="status-badge pending">${escapeHtml(t("status.pending"))}</span>
       </div>
@@ -98,8 +104,8 @@ function renderDashboardApprovalQueue(entries) {
       </div>
       ${entry.message ? `<div class="review-card-message">${escapeHtml(entry.message)}</div>` : ""}
       <div class="queue-card-actions">
-        <button type="button" class="btn btn-success btn-sm dashboard-approve-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}</button>
-        <button type="button" class="btn btn-danger btn-sm dashboard-reject-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}</button>
+        <button type="button" class="btn btn-success btn-sm dashboard-approve-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}</button>
+        <button type="button" class="btn btn-danger btn-sm dashboard-reject-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}</button>
         <button type="button" class="btn btn-outline-secondary btn-sm dashboard-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}">${escapeHtml(t("action.openEmployee"))}</button>
       </div>
     </article>
@@ -130,6 +136,7 @@ function renderDashboardActiveSessions(entries) {
           <div>
             <div class="queue-card-title">${escapeHtml(entry.employeeName)}</div>
             <div class="worklog-secondary">${escapeHtml(t("dashboard.started", { date: formatDateLabel(entry.date), time: formatTimeString(entry.punchIn) }))}</div>
+            ${getEntryExactTimeLabel(entry) ? `<div class="panel-note">${escapeHtml(getEntryExactTimeLabel(entry))}</div>` : ""}
           </div>
           <span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>
         </div>
@@ -204,6 +211,19 @@ function applyDashboardBootstrap(payload) {
 
   const employeeSelect = document.getElementById("employeeSelect");
   employeeSelect.innerHTML = buildEmployeeOptions(dashboardState.employees);
+  fetchOvertimeEntryLookups().then(lookups => {
+    const projectFilter = document.getElementById("projectFilter");
+    if (projectFilter) {
+      const previousValue = projectFilter.value || "";
+      projectFilter.innerHTML = buildProjectOptions(lookups.projects, t("filters.allProjects"), previousValue);
+      projectFilter.value = previousValue;
+    }
+  }).catch(() => {
+    const projectFilter = document.getElementById("projectFilter");
+    if (projectFilter) {
+      projectFilter.innerHTML = `<option value="">${escapeHtml(t("filters.allProjects"))}</option>`;
+    }
+  });
 
   const savedEmployee = localStorage.getItem("selectedEmployee");
   const desiredEmployee = savedEmployee && dashboardState.employees.some(employee => employee.code === savedEmployee)
@@ -288,24 +308,29 @@ function renderEmployeeEntries(employeeCode, entries) {
         const statusTone = getStatusTone(entry.status);
         const isOpen = isEntryOpen(entry);
         const isPending = String(entry.status || "pending").toLowerCase() === "pending";
+        const exactTimeLabel = getEntryExactTimeLabel(entry);
         const card = document.createElement("article");
         card.className = `worklog-card${statusTone === "pending" ? " is-pending" : ""}${isOpen ? " is-open" : ""}`;
 
         const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
+        const entryIdAttribute = ` data-entryid="${escapeHtml(entry.entryId || "")}"`;
+        const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
+        const exactPunchInAttribute = ` data-exactpunchin="${escapeHtml(getEntryExactPunchIn(entry))}"`;
+        const exactPunchOutAttribute = ` data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`;
         const reviewButtons = isPending && !isOpen ? `
-          <button class="btn btn-success btn-sm action-btn approve-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="${escapeHtml(t("action.approve"))}">
+          <button class="btn btn-success btn-sm action-btn approve-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.approve"))}">
             <i class="fa-solid fa-check"></i>
           </button>
-          <button class="btn btn-danger btn-sm action-btn reject-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="${escapeHtml(t("action.reject"))}">
+          <button class="btn btn-danger btn-sm action-btn reject-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.reject"))}">
             <i class="fa-solid fa-ban"></i>
           </button>
         ` : "";
         const actionHtml = `
           ${reviewButtons}
-          <button class="btn btn-outline-secondary btn-sm action-btn update-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute} title="${escapeHtml(t("modal.updateEntry"))}">
+          <button class="btn btn-outline-secondary btn-sm action-btn update-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("modal.updateEntry"))}">
             <i class="fa-solid fa-pen"></i>
           </button>
-          <button class="btn btn-outline-secondary btn-sm action-btn delete-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" title="${escapeHtml(t("action.delete"))}">
+          <button class="btn btn-outline-secondary btn-sm action-btn delete-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
             <i class="fa-solid fa-trash"></i>
           </button>
         `;
@@ -313,8 +338,9 @@ function renderEmployeeEntries(employeeCode, entries) {
         card.innerHTML = `
           <div class="worklog-main">
             <div>
-              <div class="worklog-title">${escapeHtml(formatQueueTitle(entry))}</div>
+            <div class="worklog-title">${escapeHtml(formatQueueTitle(entry))}</div>
             <div class="worklog-secondary">${escapeHtml(getEntryContextLabel(entry))}</div>
+            ${exactTimeLabel ? `<div class="panel-note">${escapeHtml(exactTimeLabel)}</div>` : ""}
           </div>
           <div class="meta-row">
               <span class="inline-code-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.inProgress"))}</span>
@@ -337,8 +363,9 @@ function renderEmployeeEntries(employeeCode, entries) {
 
 async function fetchEmployeeData() {
   const employeeCode = document.getElementById("employeeSelect").value;
-  const selectedMonth = document.getElementById("monthFilter").value;
-  const selectedYear = document.getElementById("yearFilter").value;
+  const selectedStartDate = document.getElementById("startDateFilter").value;
+  const selectedEndDate = document.getElementById("endDateFilter").value;
+  const selectedProjectCode = document.getElementById("projectFilter").value;
   const latestFirst = document.getElementById("latestCheck").checked;
   const container = document.getElementById("punchClockEntries");
   const addButton = document.getElementById("addEntryButton");
@@ -368,13 +395,19 @@ async function fetchEmployeeData() {
     }
 
     let filteredEntries = entries.filter(entry => {
-      const entryDate = new Date(`${entry.date}T00:00:00`);
-      return (!selectedMonth || entryDate.getMonth() + 1 === Number(selectedMonth))
-        && (!selectedYear || entryDate.getFullYear() === Number(selectedYear));
+      if (!isDateWithinRange(entry.date, selectedStartDate, selectedEndDate)) {
+        return false;
+      }
+
+      if (selectedProjectCode && String(entry.projectCode || "") !== selectedProjectCode) {
+        return false;
+      }
+
+      return true;
     });
 
     filteredEntries = sortEntriesByDateTime(filteredEntries, latestFirst);
-    hint.textContent = buildInspectorMeta(filteredEntries.length, selectedMonth, selectedYear);
+    hint.textContent = buildInspectorMeta(filteredEntries.length, selectedStartDate, selectedEndDate, selectedProjectCode);
     renderEmployeeEntries(employeeCode, filteredEntries);
   } catch (error) {
     console.error("Error fetching employee data:", error);
@@ -462,24 +495,33 @@ async function openAddEntryModal() {
 }
 
 function openUpdateModal(button) {
+  document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee = "";
   const date = button.getAttribute("data-date");
   const originalPunchIn = button.getAttribute("data-punchin");
   const currentPunchOut = button.getAttribute("data-punchout");
+  const exactPunchIn = button.getAttribute("data-exactpunchin") || originalPunchIn;
+  const exactPunchOut = button.getAttribute("data-exactpunchout") || currentPunchOut;
   const projectCode = button.getAttribute("data-projectcode") || "";
   const overtimeCode = button.getAttribute("data-overtimecode") || "";
+  const entryId = button.getAttribute("data-entryid") || "";
+  const message = button.getAttribute("data-message") || "";
 
   document.getElementById("updateDate").value = date;
   document.getElementById("originalPunchIn").value = originalPunchIn;
   document.getElementById("originalPunchOut").value = currentPunchOut;
+  document.getElementById("updateEntryId").value = entryId;
+  document.getElementById("updateManagerMessage").value = message;
+  document.getElementById("updateEntryForm").dataset.originalExactPunchIn = exactPunchIn || "";
+  document.getElementById("updateEntryForm").dataset.originalExactPunchOut = exactPunchOut || "";
 
-  if (originalPunchIn) {
-    const [hours, minutes] = originalPunchIn.split(":");
+  if (exactPunchIn) {
+    const [hours, minutes] = exactPunchIn.split(":");
     document.getElementById("updatePunchInHours").value = hours;
     document.getElementById("updatePunchInMinutes").value = minutes;
   }
 
-  if (currentPunchOut) {
-    const [hours, minutes] = currentPunchOut.split(":");
+  if (exactPunchOut) {
+    const [hours, minutes] = exactPunchOut.split(":");
     document.getElementById("updatePunchOutHours").value = hours;
     document.getElementById("updatePunchOutMinutes").value = minutes;
   } else {
@@ -504,15 +546,27 @@ async function deleteEntry(button) {
   const employeeCode = document.getElementById("employeeSelect").value;
   const date = button.getAttribute("data-date");
   const punchIn = button.getAttribute("data-punchin");
+  const entryId = button.getAttribute("data-entryid") || "";
+  const managerMessage = window.prompt(t("dashboard.deleteManagerMessagePrompt"), "");
 
   if (!window.confirm(t("dashboard.deleteConfirm"))) {
     return;
   }
 
+  if (managerMessage === null) {
+    return;
+  }
+
+  if (!String(managerMessage).trim()) {
+    showToast(t("dashboard.managerMessageRequired"), "error");
+    return;
+  }
+
   try {
-    const response = await fetch(apiUrl + `employee/${employeeCode}?date=${encodeURIComponent(date)}&punchIn=${encodeURIComponent(punchIn)}`, {
+    const response = await fetch(apiUrl + `employee/${employeeCode}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entryId, date, punchIn, message: managerMessage.trim() }),
     });
     await parseResponse(response);
     dashboardState.entriesByEmployee[employeeCode] = undefined;
@@ -529,12 +583,25 @@ async function updateApprovalAction(button, newStatus) {
   const employeeCode = document.getElementById("employeeSelect").value;
   const date = button.getAttribute("data-date");
   const punchIn = button.getAttribute("data-punchin");
+  const entryId = button.getAttribute("data-entryid") || "";
+  const managerMessage = newStatus === "rejected" ? window.prompt(t("dashboard.rejectManagerMessagePrompt"), "") : "";
+
+  if (newStatus === "rejected") {
+    if (managerMessage === null) {
+      return;
+    }
+
+    if (!String(managerMessage).trim()) {
+      showToast(t("dashboard.managerMessageRequired"), "error");
+      return;
+    }
+  }
 
   try {
     const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, punchIn, status: newStatus }),
+      body: JSON.stringify({ entryId, date, punchIn, status: newStatus, message: managerMessage }),
     });
     await parseResponse(response);
     dashboardState.entriesByEmployee[employeeCode] = undefined;
@@ -550,18 +617,35 @@ async function updateApprovalAction(button, newStatus) {
 async function updateApprovalActionInApprovals(button, employeeCode, newStatus) {
   const date = button.getAttribute("data-date");
   const punchIn = button.getAttribute("data-punchin");
+  const entryId = button.getAttribute("data-entryid") || "";
+  const managerMessage = newStatus === "rejected" ? window.prompt(t("dashboard.rejectManagerMessagePrompt"), "") : "";
+
+  if (newStatus === "rejected") {
+    if (managerMessage === null) {
+      return;
+    }
+
+    if (!String(managerMessage).trim()) {
+      showToast(t("dashboard.managerMessageRequired"), "error");
+      return;
+    }
+  }
   try {
     const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, punchIn, status: newStatus }),
+      body: JSON.stringify({ entryId, date, punchIn, status: newStatus, message: managerMessage }),
     });
     await parseResponse(response);
     dashboardState.entriesByEmployee[employeeCode] = undefined;
     dashboardState.historyLoaded = false;
     showToast(t("dashboard.entryUpdated"), "success");
     await refreshDashboardView();
-    await loadApprovalsView();
+    if (typeof loadReviewView === "function") {
+      await loadReviewView();
+    } else {
+      await loadApprovalsView();
+    }
   } catch (error) {
     console.error("Approval update error in Approvals view:", error);
     showToast(t("dashboard.genericApprovalError"), "error");
@@ -571,11 +655,24 @@ async function updateApprovalActionInApprovals(button, employeeCode, newStatus) 
 async function updateApprovalActionInDashboardQueue(button, employeeCode, newStatus) {
   const date = button.getAttribute("data-date");
   const punchIn = button.getAttribute("data-punchin");
+  const entryId = button.getAttribute("data-entryid") || "";
+  const managerMessage = newStatus === "rejected" ? window.prompt(t("dashboard.rejectManagerMessagePrompt"), "") : "";
+
+  if (newStatus === "rejected") {
+    if (managerMessage === null) {
+      return;
+    }
+
+    if (!String(managerMessage).trim()) {
+      showToast(t("dashboard.managerMessageRequired"), "error");
+      return;
+    }
+  }
   try {
     const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, punchIn, status: newStatus }),
+      body: JSON.stringify({ entryId, date, punchIn, status: newStatus, message: managerMessage }),
     });
     await parseResponse(response);
     dashboardState.entriesByEmployee[employeeCode] = undefined;
@@ -605,9 +702,17 @@ document.getElementById("employeeSelect").addEventListener("change", event => {
   fetchEmployeeData();
 });
 
-document.getElementById("monthFilter").addEventListener("input", fetchEmployeeData);
-document.getElementById("yearFilter").addEventListener("input", fetchEmployeeData);
+document.getElementById("startDateFilter").addEventListener("input", fetchEmployeeData);
+document.getElementById("endDateFilter").addEventListener("input", fetchEmployeeData);
+document.getElementById("projectFilter").addEventListener("change", fetchEmployeeData);
 document.getElementById("latestCheck").addEventListener("change", fetchEmployeeData);
+document.getElementById("dashboardResetFiltersBtn").addEventListener("click", () => {
+  document.getElementById("startDateFilter").value = "";
+  document.getElementById("endDateFilter").value = "";
+  document.getElementById("projectFilter").value = "";
+  document.getElementById("latestCheck").checked = true;
+  fetchEmployeeData();
+});
 document.getElementById("addEntryButton").addEventListener("click", openAddEntryModal);
 
 document.getElementById("saveAddEntryBtn").addEventListener("click", async () => {
@@ -683,6 +788,9 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
   const date = document.getElementById("updateDate").value;
   const originalPunchIn = document.getElementById("originalPunchIn").value;
   const originalPunchOut = document.getElementById("originalPunchOut").value || null;
+  const originalExactPunchIn = document.getElementById("updateEntryForm").dataset.originalExactPunchIn || originalPunchIn;
+  const originalExactPunchOut = document.getElementById("updateEntryForm").dataset.originalExactPunchOut || originalPunchOut || "";
+  const entryId = document.getElementById("updateEntryId").value;
   const punchInHours = document.getElementById("updatePunchInHours").value.trim();
   const punchInMinutes = document.getElementById("updatePunchInMinutes").value.trim();
   const punchOutHours = document.getElementById("updatePunchOutHours").value.trim();
@@ -691,6 +799,7 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
   const originalProjectCode = document.getElementById("originalProjectCode").value;
   const overtimeCode = document.getElementById("updateOvertimeCode").value;
   const originalOvertimeCode = document.getElementById("originalOvertimeCode").value;
+  const managerMessage = document.getElementById("updateManagerMessage").value.trim();
 
   if (!punchInHours || !punchInMinutes || !punchOutHours || !punchOutMinutes) {
     showToast(t("dashboard.fillAllTimeFields"), "error");
@@ -711,8 +820,12 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
     return;
   }
 
-  const punchOutUnchanged = (originalPunchOut || "") === punchOutBackend;
-  if (newPunchInBackend === originalPunchIn && punchOutUnchanged && projectCode === originalProjectCode && overtimeCode === originalOvertimeCode) {
+  if (!managerMessage) {
+    showToast(t("dashboard.managerMessageRequired"), "error");
+    return;
+  }
+
+  if (newPunchInBackend === originalExactPunchIn && punchOutBackend === originalExactPunchOut && projectCode === originalProjectCode && overtimeCode === originalOvertimeCode) {
     showToast(t("dashboard.noChanges"), "info");
     return;
   }
@@ -726,14 +839,19 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
     const response = await fetch(apiUrl + "employee/" + employeeCode, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode }),
+      body: JSON.stringify({ entryId, date, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, message: managerMessage }),
     });
     const data = await parseResponse(response);
+    const refreshPeopleEmployee = document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee || "";
     bootstrap.Modal.getInstance(document.getElementById("updateEntryModal")).hide();
+    document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee = "";
     dashboardState.entriesByEmployee[employeeCode] = undefined;
     dashboardState.historyLoaded = false;
     showToast(t("dashboard.entryUpdated"), "success");
     await refreshDashboardView();
+    if (refreshPeopleEmployee && typeof window.refreshPeopleEmployeeDetail === "function") {
+      await window.refreshPeopleEmployeeDetail(refreshPeopleEmployee);
+    }
   } catch (error) {
     console.error("Error updating entry:", error);
     showToast(t("dashboard.entryUpdateError", { message: error.message }), "error");

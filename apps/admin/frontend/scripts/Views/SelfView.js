@@ -1,12 +1,12 @@
 const selfViewState = {
-  filtersInitialized: false,
-  selectedRange: "today",
   entries: [],
   projects: [],
   overtimeCodes: [],
   lookupsLoaded: false,
   selectedProjectCode: localStorage.getItem("selfSelectedProjectCode") || "",
   selectedOvertimeCode: localStorage.getItem("selfSelectedOvertimeCode") || "",
+  currentMonthKey: "",
+  expandedNotes: {},
 };
 
 const SELF_PROJECT_STORAGE_KEY = "selfSelectedProjectCode";
@@ -103,82 +103,95 @@ function applySelfBootstrap(payload) {
 }
 
 function initializeSelfView() {
-  if (!selfViewState.filtersInitialized) {
-    const now = new Date();
-    document.getElementById("selfMonthFilter").value = now.getMonth() + 1;
-    document.getElementById("selfYearFilter").value = now.getFullYear();
-    selfViewState.filtersInitialized = true;
-  }
-
-  setSelfRange(selfViewState.selectedRange, false);
   renderSelfPunchSelectors();
 }
 
 window.initializeSelfView = initializeSelfView;
 
-function setSelfRange(range, shouldRefresh = true) {
-  selfViewState.selectedRange = range;
-  document.querySelectorAll("#selfPresetFilters .chip-button").forEach(button => {
-    button.classList.toggle("active", button.getAttribute("data-range") === range);
+function toSelfMonthKey(dateValue) {
+  const parsed = dateValue instanceof Date ? dateValue : parseLocalDate(dateValue);
+  if (!parsed) {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function shiftSelfMonthKey(monthKey, delta) {
+  const [year, month] = String(monthKey || "").split("-").map(Number);
+  const base = new Date(Number.isNaN(year) ? new Date().getFullYear() : year, Number.isNaN(month) ? new Date().getMonth() : month - 1, 1);
+  base.setMonth(base.getMonth() + delta);
+  return toSelfMonthKey(base);
+}
+
+function getSelfCalendarWeekdayLabels() {
+  const sunday = new Date(2026, 0, 4);
+  return Array.from({ length: 7 }, (_, index) => {
+    const labelDate = new Date(sunday);
+    labelDate.setDate(sunday.getDate() + index);
+    return labelDate.toLocaleDateString(getCurrentLocale(), { weekday: "short" });
   });
-  document.getElementById("selfCustomFilterPanel").classList.toggle("d-none", range !== "custom");
-
-  if (shouldRefresh && selfViewState.entries.length > 0) {
-    renderSelfState(selfViewState.entries);
-  }
 }
 
-function getCurrentWeekBounds() {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 7);
-  return { start, end };
+function getDefaultSelfMonthKey(entries) {
+  if (selfViewState.currentMonthKey) {
+    return selfViewState.currentMonthKey;
+  }
+
+  if (Array.isArray(entries) && entries.length > 0) {
+    const latest = sortEntriesByDateTime(entries, true)[0];
+    return toSelfMonthKey(latest.date);
+  }
+
+  return toSelfMonthKey(new Date());
 }
 
-function getFilteredSelfEntries(entries) {
-  const allEntries = Array.isArray(entries) ? entries : [];
-  const now = new Date();
-  const todayKey = now.toISOString().slice(0, 10);
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
+function buildSelfMonthBoard(entries, activeMonthKey) {
+  const [activeYear] = String(activeMonthKey || "").split("-").map(Number);
+  const year = Number.isNaN(activeYear) ? new Date().getFullYear() : activeYear;
+  const monthCounts = {};
 
-  switch (selfViewState.selectedRange) {
-    case "today":
-      return allEntries.filter(entry => entry.date === todayKey);
-    case "week": {
-      const bounds = getCurrentWeekBounds();
-      return allEntries.filter(entry => {
-        const entryDate = new Date(`${entry.date}T00:00:00`);
-        return entryDate >= bounds.start && entryDate < bounds.end;
-      });
+  (entries || []).forEach(entry => {
+    const monthKey = toSelfMonthKey(entry.date);
+    if (!monthKey.startsWith(`${year}-`)) {
+      return;
     }
-    case "month":
-      return allEntries.filter(entry => {
-        const entryDate = new Date(`${entry.date}T00:00:00`);
-        return entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear;
-      });
-    case "custom": {
-      const monthFilter = Number(document.getElementById("selfMonthFilter").value);
-      const yearFilter = Number(document.getElementById("selfYearFilter").value);
-      return allEntries.filter(entry => {
-        const entryDate = new Date(`${entry.date}T00:00:00`);
-        if (monthFilter && entryDate.getMonth() + 1 !== monthFilter) {
-          return false;
-        }
-        if (yearFilter && entryDate.getFullYear() !== yearFilter) {
-          return false;
-        }
-        return true;
-      });
+    monthCounts[monthKey] = (monthCounts[monthKey] || 0) + 1;
+  });
+
+  return Array.from({ length: 12 }, (_, index) => {
+    const date = new Date(year, index, 1);
+    const monthKey = toSelfMonthKey(date);
+    return {
+      key: monthKey,
+      label: date.toLocaleDateString(getCurrentLocale(), { month: "short" }),
+      count: monthCounts[monthKey] || 0,
+      active: monthKey === activeMonthKey,
+    };
+  });
+}
+
+function groupSelfEntriesByDate(entries) {
+  return (entries || []).reduce((accumulator, entry) => {
+    if (!accumulator[entry.date]) {
+      accumulator[entry.date] = [];
     }
-    case "all":
-    default:
-      return allEntries;
+    accumulator[entry.date].push(entry);
+    return accumulator;
+  }, {});
+}
+
+function getSelfEntryKey(entry) {
+  return `${entry.entryId || ""}__${entry.date || ""}__${entry.punchIn || ""}`;
+}
+
+function getSelfCalendarEntrySeconds(entry) {
+  if (isEntryOpen(entry)) {
+    const startedAt = toEntryDateTime(entry);
+    return Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
   }
+  return timeStringToSeconds(entry && entry.overtime);
 }
 
 function updateSelfSummaryMetrics(allEntries) {
@@ -213,7 +226,7 @@ function updateSelfStatus(entries) {
     primaryButton.dataset.punchType = "out";
     punchState.textContent = t("self.startedAt", {
       date: formatDateLabel(activeEntry.date),
-      time: formatTimeString(activeEntry.punchIn),
+      time: formatTimeString(getEntryExactPunchIn(activeEntry)),
     });
     statusMessage.textContent = t("self.openDuration", { duration: secondsToDurationLabel(elapsedSeconds) });
     currentStatusValue.textContent = t("status.clockedIn");
@@ -245,7 +258,7 @@ function updateSelfStatus(entries) {
   }
 
   const latestStatus = String(latestEntry.status || "pending").toLowerCase();
-  const timeRange = `${formatTimeString(latestEntry.punchIn)}${latestEntry.punchOut ? ` -> ${formatTimeString(latestEntry.punchOut)}` : ""}`;
+  const timeRange = `${formatTimeString(getEntryExactPunchIn(latestEntry))}${latestEntry.punchOut ? ` -> ${formatTimeString(getEntryExactPunchOut(latestEntry))}` : ""}`;
   punchState.textContent = t("self.lastEntry", {
     date: formatDateLabel(latestEntry.date),
     timeRange,
@@ -277,73 +290,131 @@ function updateSelfStatus(entries) {
 
 function renderSelfEntries(entries) {
   const container = document.getElementById("selfEntriesContainer");
-  container.innerHTML = "";
+  const allEntries = Array.isArray(entries) ? sortEntriesByDateTime(entries, true) : [];
+  const liveEntries = sortEntriesByDateTime(allEntries.filter(entry => isEntryOpen(entry)), true);
+  const activeMonthKey = getDefaultSelfMonthKey(allEntries);
+  selfViewState.currentMonthKey = activeMonthKey;
 
-  if (!entries || entries.length === 0) {
-    container.innerHTML = `<div class="empty-state">${escapeHtml(t("self.noEntries"))}</div>`;
-    return;
+  const [activeYear, activeMonth] = activeMonthKey.split("-").map(Number);
+  const monthEntries = sortEntriesByDateTime(allEntries.filter(entry => toSelfMonthKey(entry.date) === activeMonthKey), true);
+  const monthBoard = buildSelfMonthBoard(allEntries, activeMonthKey);
+
+  const firstDay = new Date(activeYear, activeMonth - 1, 1);
+  const lastDay = new Date(activeYear, activeMonth, 0);
+  const gridStart = new Date(firstDay);
+  gridStart.setDate(firstDay.getDate() - firstDay.getDay());
+  const gridEnd = new Date(lastDay);
+  gridEnd.setDate(lastDay.getDate() + (6 - lastDay.getDay()));
+
+  const grouped = groupSelfEntriesByDate(monthEntries);
+  const dayCells = [];
+  const cursor = new Date(gridStart);
+
+  while (cursor <= gridEnd) {
+    const dateKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+    const dayEntries = sortEntriesByDateTime(grouped[dateKey] || [], true);
+    const isCurrentMonth = cursor.getMonth() === (activeMonth - 1);
+    const totalDaySeconds = dayEntries.reduce((accumulator, entry) => accumulator + getSelfCalendarEntrySeconds(entry), 0);
+
+    const entryMarkup = dayEntries.map(entry => {
+      const statusTone = getStatusTone(entry.status);
+      const note = String(entry.message || "").trim();
+      const entryKey = getSelfEntryKey(entry);
+      const isExpanded = Boolean(selfViewState.expandedNotes[entryKey]);
+      const noteOverflow = note.length > 120;
+      const exactTimeLabel = getEntryExactTimeLabel(entry);
+
+      return `
+        <div class="calendar-entry">
+          <div class="calendar-entry-main">
+            <span class="calendar-entry-time">${escapeHtml(getEntryRoundedTimeRange(entry))}</span>
+            <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(translateStatus(entry.status || "pending"))}</span>
+          </div>
+          <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
+          ${exactTimeLabel ? `<div class="calendar-entry-meta">${escapeHtml(exactTimeLabel)}</div>` : ""}
+          ${note ? `
+            <div class="calendar-entry-note${isExpanded ? " is-expanded" : ""}">
+              <div class="calendar-entry-note-label">${escapeHtml(t("employees.managerNoteLabel"))}</div>
+              <div class="calendar-entry-note-text">${escapeHtml(note)}</div>
+              ${noteOverflow ? `<button type="button" class="calendar-note-toggle" data-self-note-key="${escapeHtml(entryKey)}">${escapeHtml(t(isExpanded ? "action.less" : "action.more"))}</button>` : ""}
+            </div>
+          ` : ""}
+        </div>
+      `;
+    }).join("");
+
+    dayCells.push(`
+      <div class="calendar-day${isCurrentMonth ? "" : " is-muted"}${dayEntries.length > 0 ? " has-entries" : ""}">
+        <div class="calendar-day-header">
+          <span class="calendar-day-number">${cursor.getDate()}</span>
+          ${dayEntries.length > 0 ? `<span class="calendar-day-total">${escapeHtml(secondsToDurationLabel(totalDaySeconds))}</span>` : ""}
+        </div>
+        <div class="calendar-day-body">${entryMarkup}</div>
+      </div>
+    `);
+
+    cursor.setDate(cursor.getDate() + 1);
   }
 
-  const groupedEntries = entries.reduce((accumulator, entry) => {
-    if (!accumulator[entry.date]) {
-      accumulator[entry.date] = [];
-    }
-    accumulator[entry.date].push(entry);
-    return accumulator;
-  }, {});
-
-  const sortedDates = Object.keys(groupedEntries).sort((left, right) => new Date(right) - new Date(left));
-  sortedDates.forEach(date => {
-    const group = document.createElement("div");
-    group.className = "entry-date-group";
-    const dayEntries = sortEntriesByDateTime(groupedEntries[date], true);
-    const totalDaySeconds = dayEntries.reduce((accumulator, entry) => accumulator + timeStringToSeconds(entry.overtime), 0);
-
-    group.innerHTML = `
-      <div class="entry-date-header">
-        <strong>${escapeHtml(formatDateToWords(date))}</strong>
-        <span>${escapeHtml(secondsToDurationLabel(totalDaySeconds))}</span>
+  const monthTotalSeconds = monthEntries.reduce((accumulator, entry) => accumulator + getSelfCalendarEntrySeconds(entry), 0);
+  const liveEntriesMarkup = liveEntries.length > 0
+    ? `
+      <div class="calendar-live-strip">
+        ${liveEntries.map(entry => `
+          <article class="calendar-live-card">
+            <div class="calendar-entry-main">
+              <span class="calendar-entry-time">${escapeHtml(formatDateLabel(entry.date))} | ${escapeHtml(formatTimeString(getEntryExactPunchIn(entry)))} -> ${escapeHtml(t("shared.inProgress"))}</span>
+              <span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>
+            </div>
+            <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
+            <div class="calendar-entry-meta">${escapeHtml(secondsToDurationLabel(getSelfCalendarEntrySeconds(entry)))}</div>
+          </article>
+        `).join("")}
       </div>
-    `;
+    `
+    : "";
 
-    dayEntries.forEach(entry => {
-      const card = document.createElement("article");
-      const isOpen = isEntryOpen(entry);
-      card.className = `worklog-card${isOpen ? " is-open" : ""}`;
-      card.innerHTML = `
-        <div class="worklog-main">
-          <div>
-            <div class="worklog-title">${escapeHtml(formatTimeString(entry.punchIn))}${entry.punchOut ? ` -> ${escapeHtml(formatTimeString(entry.punchOut))}` : ` -> ${escapeHtml(t("shared.inProgress"))}`}</div>
-            <div class="worklog-secondary">${escapeHtml(getEntryContextLabel(entry))}</div>
-          </div>
-          <div class="meta-row">
-            <span class="inline-code-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.inProgress"))}</span>
-            <span class="status-badge ${getStatusTone(entry.status)}">${escapeHtml(translateStatus(entry.status || "pending"))}</span>
-          </div>
-        </div>
-        ${entry.message ? `<div class="worklog-message">${escapeHtml(entry.message)}</div>` : ""}
-      `;
-      group.appendChild(card);
-    });
-
-    container.appendChild(group);
-  });
+  container.innerHTML = `
+    <div class="employee-calendar-header">
+      <div class="employee-calendar-nav">
+        <button type="button" class="btn btn-outline-secondary btn-sm employee-calendar-year-button" data-self-calendar-year-nav="prev"><i class="fa-solid fa-chevron-left"></i></button>
+        <div class="employee-calendar-label">${escapeHtml(String(activeYear))}</div>
+        <button type="button" class="btn btn-outline-secondary btn-sm employee-calendar-year-button" data-self-calendar-year-nav="next"><i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+      <div class="employee-calendar-summary">${escapeHtml(t("employees.calendarSummary", { count: monthEntries.length, duration: secondsToDurationLabel(monthTotalSeconds) }))}</div>
+    </div>
+    <div class="employee-month-board-shell">
+      <div class="employee-month-board">
+        ${monthBoard.map(month => `
+          <button type="button" class="employee-month-chip${month.active ? " is-active" : ""}${month.count > 0 ? " has-entries" : ""}" data-self-month-key="${escapeHtml(month.key)}">
+            <span class="employee-month-chip-label">${escapeHtml(month.label)}</span>
+            <span class="employee-month-chip-count">${escapeHtml(String(month.count))}</span>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+    ${liveEntriesMarkup}
+    ${monthEntries.length === 0 ? createEmptyState(t("employees.noEntriesForMonth")) : `
+      <div class="employee-calendar-grid">
+        ${getSelfCalendarWeekdayLabels().map(label => `<div class="calendar-weekday">${escapeHtml(label)}</div>`).join("")}
+        ${dayCells.join("")}
+      </div>
+    `}
+  `;
 }
 
 function renderSelfState(entries) {
   const allEntries = sortEntriesByDateTime(entries, true);
-  const filteredEntries = sortEntriesByDateTime(getFilteredSelfEntries(allEntries), true);
-
   updateSelfSummaryMetrics(allEntries);
   updateSelfStatus(allEntries);
-  renderSelfEntries(filteredEntries);
+  renderSelfEntries(allEntries);
 }
 
 async function refreshSelfView() {
   initializeSelfView();
 
   try {
-    setLoadingState("selfEntriesContainer", "entries", 3);
+    setLoadingState("selfEntriesContainer", "detail", 1);
     const response = await fetch(apiUrl + "self/bootstrap");
     const payload = await parseResponse(response);
     applySelfBootstrap(payload);
@@ -420,18 +491,32 @@ document.getElementById("selfOvertimeCodeSelect").addEventListener("change", eve
   updateSelfStatus(selfViewState.entries);
 });
 
-document.querySelectorAll("#selfPresetFilters .chip-button").forEach(button => {
-  button.addEventListener("click", () => {
-    setSelfRange(button.getAttribute("data-range"));
-  });
-});
+document.getElementById("selfEntriesContainer").addEventListener("click", event => {
+  const yearNavButton = event.target.closest(".employee-calendar-year-button");
+  if (yearNavButton) {
+    const direction = yearNavButton.getAttribute("data-self-calendar-year-nav");
+    const currentMonthKey = selfViewState.currentMonthKey || toSelfMonthKey(new Date());
+    selfViewState.currentMonthKey = shiftSelfMonthKey(currentMonthKey, direction === "prev" ? -12 : 12);
+    renderSelfEntries(selfViewState.entries);
+    return;
+  }
 
-document.getElementById("selfApplyFilterButton").addEventListener("click", () => {
-  setSelfRange("custom");
-});
+  const monthChip = event.target.closest(".employee-month-chip");
+  if (monthChip) {
+    const monthKey = monthChip.getAttribute("data-self-month-key");
+    if (monthKey) {
+      selfViewState.currentMonthKey = monthKey;
+      renderSelfEntries(selfViewState.entries);
+    }
+    return;
+  }
 
-document.getElementById("selfClearFilterButton").addEventListener("click", () => {
-  selfViewState.filtersInitialized = false;
-  initializeSelfView();
-  setSelfRange("today");
+  const noteToggle = event.target.closest(".calendar-note-toggle");
+  if (noteToggle) {
+    const noteKey = noteToggle.getAttribute("data-self-note-key");
+    if (noteKey) {
+      selfViewState.expandedNotes[noteKey] = !selfViewState.expandedNotes[noteKey];
+      renderSelfEntries(selfViewState.entries);
+    }
+  }
 });

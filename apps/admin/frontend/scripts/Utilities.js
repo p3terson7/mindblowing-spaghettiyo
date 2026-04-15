@@ -63,6 +63,64 @@ function parseLocalDate(dateString) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function normalizeDateInputValue(dateString) {
+  const trimmed = String(dateString || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const parsedDate = parseLocalDate(trimmed);
+  if (!parsedDate) {
+    return "";
+  }
+
+  return trimmed;
+}
+
+function isDateWithinRange(dateString, startDate, endDate) {
+  const entryDate = parseLocalDate(dateString);
+  if (!entryDate) {
+    return false;
+  }
+
+  const normalizedStartDate = normalizeDateInputValue(startDate);
+  if (normalizedStartDate) {
+    const start = parseLocalDate(normalizedStartDate);
+    if (start && entryDate < start) {
+      return false;
+    }
+  }
+
+  const normalizedEndDate = normalizeDateInputValue(endDate);
+  if (normalizedEndDate) {
+    const end = parseLocalDate(normalizedEndDate);
+    if (end && entryDate > end) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function buildDateRangeLabel(startDate, endDate) {
+  const normalizedStart = normalizeDateInputValue(startDate);
+  const normalizedEnd = normalizeDateInputValue(endDate);
+
+  if (normalizedStart && normalizedEnd) {
+    return `${formatDateLabel(normalizedStart)} -> ${formatDateLabel(normalizedEnd)}`;
+  }
+
+  if (normalizedStart) {
+    return `${t("filters.startDate")} ${formatDateLabel(normalizedStart)}`;
+  }
+
+  if (normalizedEnd) {
+    return `${t("filters.endDate")} ${formatDateLabel(normalizedEnd)}`;
+  }
+
+  return "";
+}
+
 function formatDateToWords(dateString) {
   if (!dateString) {
     return t("shared.unknownDate");
@@ -336,6 +394,47 @@ function getEntryContextLabel(entry) {
   return parts.length > 0 ? parts.join(" | ") : t("shared.uncoded");
 }
 
+function getEntryExactPunchIn(entry) {
+  if (!entry) {
+    return "";
+  }
+
+  return String(entry.exactPunchIn || entry.punchIn || "");
+}
+
+function getEntryExactPunchOut(entry) {
+  if (!entry) {
+    return "";
+  }
+
+  return String(entry.exactPunchOut || entry.punchOut || "");
+}
+
+function getEntryRoundedTimeRange(entry) {
+  const roundedPunchIn = formatTimeString(entry && entry.punchIn);
+  const roundedPunchOut = entry && entry.punchOut ? formatTimeString(entry.punchOut) : t("shared.inProgress");
+  return `${roundedPunchIn} -> ${roundedPunchOut}`;
+}
+
+function getEntryExactTimeLabel(entry) {
+  const exactPunchIn = getEntryExactPunchIn(entry);
+  const exactPunchOut = getEntryExactPunchOut(entry);
+  const exactStart = exactPunchIn ? formatTimeString(exactPunchIn) : "";
+  const exactEnd = exactPunchOut ? formatTimeString(exactPunchOut) : "";
+  const hasExactStartDifference = Boolean(exactPunchIn && entry && entry.punchIn && exactPunchIn !== entry.punchIn);
+  const hasExactEndDifference = Boolean(exactPunchOut && entry && entry.punchOut && exactPunchOut !== entry.punchOut);
+
+  if (!hasExactStartDifference && !hasExactEndDifference) {
+    return "";
+  }
+
+  if (entry && entry.punchOut && exactEnd) {
+    return t("shared.exactRange", { start: exactStart, end: exactEnd });
+  }
+
+  return t("shared.exactClockIn", { time: exactStart });
+}
+
 function buildProjectOptions(projects, placeholder, selectedValue) {
   const options = Array.isArray(projects) ? projects : [];
   const placeholderText = placeholder || t("shared.project");
@@ -459,6 +558,25 @@ function translateAuditMessage(message) {
     }
   }
 
+  match = rawMessage.match(/^Updated an entry on ([A-Za-z]+ \d{1,2}, \d{4}) from <strong>(.*?)<\/strong> to <strong>(.*?)<\/strong>\.\s*(.*)$/i);
+  if (match) {
+    const translatedFragments = buildTranslatedAuditUpdateFragments(match[4]);
+    if (translatedFragments) {
+      return t("history.message.updatedEntryWithSpan", {
+        date: localizeAuditHumanDate(match[1]),
+        start: match[2],
+        end: match[3],
+        details: translatedFragments,
+      });
+    }
+
+    return t("history.message.updatedEntryWithSpanSimple", {
+      date: localizeAuditHumanDate(match[1]),
+      start: match[2],
+      end: match[3],
+    });
+  }
+
   match = rawMessage.match(/^Entry on ([A-Za-z]+ \d{1,2}, \d{4}) updated successfully\.$/i);
   if (match) {
     return t("history.message.updatedEntrySimple", {
@@ -466,32 +584,67 @@ function translateAuditMessage(message) {
     });
   }
 
+  match = rawMessage.match(/^Deleted an entry on ([A-Za-z]+ \d{1,2}, \d{4}) from <strong>(.*?)<\/strong> to <strong>(.*?)<\/strong>\.(?: Reason: (.*))?$/i);
+  if (match) {
+    if (match[4]) {
+      return t("history.message.deletedEntryReason", {
+        date: localizeAuditHumanDate(match[1]),
+        start: match[2],
+        end: match[3],
+        reason: match[4],
+      });
+    }
+    return t("history.message.deletedEntry", {
+      date: localizeAuditHumanDate(match[1]),
+      start: match[2],
+      end: match[3],
+    });
+  }
+
   match = rawMessage.match(/^Deleted an entry on ([A-Za-z]+ \d{1,2}, \d{4}) starting at <strong>(.*?)<\/strong>\.(?: Reason: (.*))?$/i);
   if (match) {
     if (match[3]) {
-      return t("history.message.deletedEntryReason", {
+      return t("history.message.deletedEntryReasonLegacy", {
         date: localizeAuditHumanDate(match[1]),
         time: match[2],
         reason: match[3],
       });
     }
-    return t("history.message.deletedEntry", {
+    return t("history.message.deletedEntryLegacy", {
       date: localizeAuditHumanDate(match[1]),
       time: match[2],
+    });
+  }
+
+  match = rawMessage.match(/^Approved an entry on ([A-Za-z]+ \d{1,2}, \d{4}) from <strong>(.*?)<\/strong> to <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.approvedEntry", {
+      date: localizeAuditHumanDate(match[1]),
+      start: match[2],
+      end: match[3],
     });
   }
 
   match = rawMessage.match(/^Approved an entry on ([A-Za-z]+ \d{1,2}, \d{4}) starting at <strong>(.*?)<\/strong>\.$/i);
   if (match) {
-    return t("history.message.approvedEntry", {
+    return t("history.message.approvedEntryLegacy", {
       date: localizeAuditHumanDate(match[1]),
       time: match[2],
     });
   }
 
-  match = rawMessage.match(/^Rejected an entry on ([A-Za-z]+ \d{1,2}, \d{4}) starting at <strong>(.*?)<\/strong>\.$/i);
+  match = rawMessage.match(/^Rejected an entry on ([A-Za-z]+ \d{1,2}, \d{4}) from <strong>(.*?)<\/strong> to <strong>(.*?)<\/strong>\.$/i);
   if (match) {
     return t("history.message.rejectedEntry", {
+      date: localizeAuditHumanDate(match[1]),
+      start: match[2],
+      end: match[3],
+    });
+  }
+
+  match = rawMessage.match(/^Rejected an entry on ([A-Za-z]+ \d{1,2}, \d{4}) starting at <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.rejectedEntryLegacy", {
       date: localizeAuditHumanDate(match[1]),
       time: match[2],
     });
@@ -525,6 +678,11 @@ function translateAuditMessage(message) {
   match = rawMessage.match(/^Removed employee access for <strong>(.*?)<\/strong>\.$/i);
   if (match) {
     return t("history.message.employeeRemoved", { name: match[1] });
+  }
+
+  match = rawMessage.match(/^Reinstated employee access for <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.employeeRestored", { name: match[1] });
   }
 
   match = rawMessage.match(/^Created a project named <strong>(.*?)<\/strong> with code <strong>(.*?)<\/strong>\.$/i);

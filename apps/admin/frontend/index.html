@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GÉEM Overtime Manager</title>
-  <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css" />
-  <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css" />
-  <link rel="stylesheet" type="text/css" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260408-2" />
+  <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260408-2" />
+  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260408-2">
 </head>
 <body>
   <div class="app-root">
@@ -123,30 +123,6 @@
               <div>
                 <div class="panel-kicker" data-i18n="self.timeline">Timeline</div>
               </div>
-              <div class="panel-header-actions">
-                <div class="chip-group" id="selfPresetFilters">
-                  <button type="button" class="chip-button active" data-range="today" data-i18n="self.range.today">Today</button>
-                  <button type="button" class="chip-button" data-range="week" data-i18n="self.range.week">This Week</button>
-                  <button type="button" class="chip-button" data-range="month" data-i18n="self.range.month">This Month</button>
-                  <button type="button" class="chip-button" data-range="all" data-i18n="self.range.all">All</button>
-                  <button type="button" class="chip-button" data-range="custom" data-i18n="self.range.custom">Custom</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="filter-row d-none" id="selfCustomFilterPanel">
-              <div class="field-block compact-field">
-                <label for="selfMonthFilter" class="form-label" data-i18n="filters.month">Month</label>
-                <input type="number" id="selfMonthFilter" class="form-control" placeholder="MM" min="1" max="12" />
-              </div>
-              <div class="field-block compact-field">
-                <label for="selfYearFilter" class="form-label" data-i18n="filters.year">Year</label>
-                <input type="number" id="selfYearFilter" class="form-control" placeholder="YYYY" min="2000" />
-              </div>
-              <div class="filter-actions">
-                <button id="selfApplyFilterButton" class="btn btn-primary" data-i18n="action.apply">Apply</button>
-                <button id="selfClearFilterButton" class="btn btn-outline-secondary" data-i18n="action.reset">Reset</button>
-              </div>
             </div>
 
             <div id="selfEntriesContainer" class="entry-stack"></div>
@@ -212,35 +188,47 @@
             <section class="panel-shell panel-shell-sticky">
               <div class="panel-header-row">
                 <div>
-                  <div class="panel-kicker" data-i18n="dashboard.inspector">Inspector</div>
+                  <div class="panel-kicker" data-i18n="dashboard.inspector">Employee Detail</div>
                   <h3 id="dashboardInspectorTitle" data-i18n="dashboard.timeline">Timeline</h3>
                 </div>
                 <div class="panel-header-actions">
-                  <button id="addEntryButton" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> <span data-i18n="dashboard.addEntry">Add Entry</span></button>
+                  <button id="addEntryButton" class="btn btn-primary btn-sm" type="button"><i class="fa-solid fa-plus"></i> <span data-i18n="dashboard.addEntry">Add Entry</span></button>
                 </div>
               </div>
 
-              <div class="filter-grid filter-grid-admin">
-                <div class="field-block">
-                  <label for="employeeSelect" class="form-label" data-i18n="dashboard.employee">Employee</label>
-                  <select id="employeeSelect" class="form-select">
-                    <option value="" data-i18n="shared.loadingEmployees">Loading employees...</option>
-                  </select>
+              <div class="filter-toolbar filter-toolbar-dashboard">
+                <div class="filter-toolbar-row dashboard-filter-row dashboard-filter-row-primary">
+                  <div class="field-block filter-field filter-field-grow">
+                    <label for="employeeSelect" class="filter-caption" data-i18n="dashboard.employee">Employee</label>
+                    <select id="employeeSelect" class="form-select">
+                      <option value="" data-i18n="shared.loadingEmployees">Loading employees...</option>
+                    </select>
+                  </div>
+                  <div class="field-block filter-field filter-field-project">
+                    <label for="projectFilter" class="filter-caption" data-i18n="shared.project">Project</label>
+                    <select id="projectFilter" class="form-select">
+                      <option value="" data-i18n="filters.allProjects">All projects</option>
+                    </select>
+                  </div>
                 </div>
-                <div class="field-block compact-field">
-                  <label for="monthFilter" class="form-label" data-i18n="filters.month">Month</label>
-                  <input type="number" id="monthFilter" class="form-control" placeholder="MM" min="1" max="12" />
-                </div>
-                <div class="field-block compact-field">
-                  <label for="yearFilter" class="form-label" data-i18n="filters.year">Year</label>
-                  <input type="number" id="yearFilter" class="form-control" placeholder="YYYY" min="2000" />
-                </div>
-                <div class="field-block field-block-checkbox">
-                  <label class="form-label" data-i18n="dashboard.sort">Sort</label>
-                  <label class="checkbox-chip" for="latestCheck">
-                    <input class="form-check-input" type="checkbox" id="latestCheck" checked>
-                    <span data-i18n="dashboard.newestFirst">Newest first</span>
-                  </label>
+                <div class="filter-toolbar-row dashboard-filter-row dashboard-filter-row-secondary">
+                  <div class="field-block filter-field filter-range-field">
+                    <span class="filter-caption" data-i18n="filters.period">Period</span>
+                    <div class="filter-range-cluster">
+                      <input type="date" id="startDateFilter" class="form-control" data-i18n-aria-label="filters.startDate" aria-label="Start" />
+                      <input type="date" id="endDateFilter" class="form-control" data-i18n-aria-label="filters.endDate" aria-label="End" />
+                    </div>
+                  </div>
+                  <div class="field-block filter-field filter-field-toggle">
+                    <span class="filter-caption" data-i18n="dashboard.sort">Sort</span>
+                    <label class="checkbox-chip" for="latestCheck">
+                      <input class="form-check-input" type="checkbox" id="latestCheck" checked>
+                      <span data-i18n="dashboard.newestFirst">Newest first</span>
+                    </label>
+                  </div>
+                  <div class="filter-actions dashboard-filter-actions">
+                    <button id="dashboardResetFiltersBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
+                  </div>
                 </div>
               </div>
 
@@ -265,14 +253,28 @@
               </div>
             </div>
 
-            <div class="filter-row filter-row-inline">
-              <div class="field-block field-block-wide">
-                <label for="employeesSearchInput" class="form-label" data-i18n="employees.search">Search employees</label>
+            <div class="filter-toolbar filter-toolbar-inline">
+              <div class="filter-toolbar-row">
+                <div class="field-block filter-field filter-field-grow">
+                <label for="employeesSearchInput" class="filter-caption" data-i18n="filters.search">Search</label>
                 <input type="text" id="employeesSearchInput" class="form-control" data-i18n-placeholder="employees.searchPlaceholder" placeholder="Search by name or employee code">
+                </div>
+                <div class="field-block filter-field filter-field-status">
+                  <label for="employeesScopeSelect" class="filter-caption" data-i18n="employees.scope">Status</label>
+                  <select id="employeesScopeSelect" class="form-select">
+                    <option value="active" data-i18n="employees.scopeActive">Active</option>
+                    <option value="archived" data-i18n="employees.scopeArchived">Archived</option>
+                    <option value="all" data-i18n="employees.scopeAll">All</option>
+                  </select>
+                </div>
+                <div class="filter-actions filter-actions-inline">
+                  <button id="employeesResetFiltersBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
+                </div>
               </div>
             </div>
 
             <div id="employeesDirectoryContainer" class="employee-grid"></div>
+            <div id="employeeDetailContainer" class="employee-detail-shell"></div>
           </section>
         </div>
 
@@ -295,8 +297,30 @@
                   <button class="nav-link" id="approved-tab" data-bs-toggle="tab" data-bs-target="#approvedContainer" type="button" role="tab" aria-controls="approvedContainer" aria-selected="false">Approved</button>
                 </li>
               </ul>
-              <div id="approvalsSearchContainer" class="search-row">
-                <input type="text" id="approvalsSearchInput" class="form-control" data-i18n-placeholder="review.searchApprovals" placeholder="Filter approvals by employee or date"/>
+              <div id="approvalsSearchContainer" class="filter-toolbar filter-toolbar-inline">
+                <div class="filter-toolbar-row">
+                  <div class="field-block filter-field filter-field-grow">
+                    <label for="approvalsSearchInput" class="filter-caption" data-i18n="filters.search">Search</label>
+                    <input type="text" id="approvalsSearchInput" class="form-control" data-i18n-placeholder="review.searchApprovals" placeholder="Filter approvals by employee or date"/>
+                  </div>
+                  <div class="field-block filter-field filter-field-status">
+                    <label for="reviewEmployeeFilter" class="filter-caption" data-i18n="dashboard.employee">Employee</label>
+                    <select id="reviewEmployeeFilter" class="form-select">
+                      <option value="" data-i18n="filters.allEmployees">All employees</option>
+                    </select>
+                  </div>
+                  <div class="field-block filter-field filter-range-field">
+                    <span class="filter-caption" data-i18n="filters.period">Period</span>
+                    <div class="filter-range-cluster">
+                      <input type="date" id="reviewStartDate" class="form-control" data-i18n-aria-label="filters.startDate" aria-label="Start" />
+                      <input type="date" id="reviewEndDate" class="form-control" data-i18n-aria-label="filters.endDate" aria-label="End" />
+                    </div>
+                  </div>
+                  <div class="filter-actions filter-actions-inline">
+                    <button id="approveFilteredBtn" class="btn btn-primary btn-sm" type="button" data-i18n="review.approveFiltered">Approve Filtered</button>
+                    <button id="reviewResetFiltersBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
+                  </div>
+                </div>
               </div>
               <div class="tab-content review-tab-content" id="approvalTabsContent">
                 <div class="tab-pane fade show active" id="pendingContainer" role="tabpanel" aria-labelledby="pending-tab"></div>
@@ -331,8 +355,23 @@
                   <button class="nav-link" id="delete-history-tab" data-bs-toggle="tab" data-bs-target="#deleteHistoryContainer" type="button" role="tab" aria-controls="deleteHistoryContainer" aria-selected="false">Deleted</button>
                 </li>
               </ul>
-              <div id="historySearchContainer" class="search-row">
-                <input type="text" id="historySearchInput" class="form-control" data-i18n-placeholder="history.search" placeholder="Filter audit history by employee, action, or message"/>
+              <div id="historySearchContainer" class="filter-toolbar filter-toolbar-inline">
+                <div class="filter-toolbar-row">
+                  <div class="field-block filter-field filter-field-grow">
+                    <label for="historySearchInput" class="filter-caption" data-i18n="filters.search">Search</label>
+                    <input type="text" id="historySearchInput" class="form-control" data-i18n-placeholder="history.search" placeholder="Filter audit history by employee, action, or message"/>
+                  </div>
+                  <div class="field-block filter-field filter-range-field">
+                    <span class="filter-caption" data-i18n="filters.period">Period</span>
+                    <div class="filter-range-cluster">
+                      <input type="date" id="historyStartDate" class="form-control" data-i18n-aria-label="filters.startDate" aria-label="Start" />
+                      <input type="date" id="historyEndDate" class="form-control" data-i18n-aria-label="filters.endDate" aria-label="End" />
+                    </div>
+                  </div>
+                  <div class="filter-actions filter-actions-inline">
+                    <button id="historyResetFiltersBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
+                  </div>
+                </div>
               </div>
               <div class="tab-content review-tab-content" id="historyTabsContent">
                 <div class="tab-pane fade show active" id="allHistoryContainer" role="tabpanel" aria-labelledby="all-history-tab"></div>
@@ -356,14 +395,28 @@
                   <i class="fa-solid fa-folder-plus"></i>
                   <span data-i18n="projects.addProject">Add Project</span>
                 </button>
-                <div class="field-block compact-field field-block-standalone">
-                  <label for="projectRangeSelect" class="form-label" data-i18n="projects.range">Range</label>
-                  <select id="projectRangeSelect" class="form-select">
-                    <option value="all" data-i18n="projects.range.all">All Time</option>
-                    <option value="1M" data-i18n="projects.range.1M">Last 1 Month</option>
-                    <option value="6M" selected data-i18n="projects.range.6M">Last 6 Months</option>
-                    <option value="1Y" data-i18n="projects.range.1Y">Last 1 Year</option>
-                  </select>
+              </div>
+            </div>
+            <div class="filter-toolbar filter-toolbar-inline filter-toolbar-project" id="projectCustomFilterPanel">
+              <div class="filter-toolbar-row project-filter-row">
+                <div class="field-block filter-field project-filter-field">
+                  <span class="filter-caption" data-i18n="filters.period">Period</span>
+                  <div class="project-filter-controls">
+                    <div class="chip-group" id="projectQuickRangeButtons">
+                      <button type="button" class="chip-button" data-range="all" data-i18n="projects.range.all">All</button>
+                      <button type="button" class="chip-button" data-range="1M" data-i18n="projects.range.1M">1 month</button>
+                      <button type="button" class="chip-button active" data-range="6M" data-i18n="projects.range.6M">6 months</button>
+                      <button type="button" class="chip-button" data-range="1Y" data-i18n="projects.range.1Y">1 year</button>
+                    </div>
+                    <div class="filter-range-cluster project-filter-range-cluster">
+                      <input type="date" id="projectStartDate" class="form-control" data-i18n-aria-label="filters.startDate" aria-label="Start" />
+                      <input type="date" id="projectEndDate" class="form-control" data-i18n-aria-label="filters.endDate" aria-label="End" />
+                    </div>
+                  </div>
+                </div>
+                <div class="filter-actions project-filter-actions">
+                  <button id="projectApplyCustomRangeButton" class="btn btn-primary btn-sm" type="button" data-i18n="action.apply">Apply</button>
+                  <button id="projectClearCustomRangeButton" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
                 </div>
               </div>
             </div>
@@ -501,6 +554,11 @@
               <select id="updateOvertimeCode" class="form-select" required>
                 <option value="" data-i18n="shared.loadingOvertimeCodes">Loading overtime codes...</option>
               </select>
+            </div>
+            <input type="hidden" id="updateEntryId" />
+            <div class="field-block">
+              <label for="updateManagerMessage" class="form-label" data-i18n="shared.managerMessage">Manager message</label>
+              <textarea id="updateManagerMessage" class="form-control" rows="3"></textarea>
             </div>
           </form>
         </div>
@@ -651,6 +709,7 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-danger d-none me-auto" id="employeeEditorRemoveButton" data-i18n="action.remove">Remove</button>
+          <button type="button" class="btn btn-outline-primary d-none me-auto" id="employeeEditorRestoreButton" data-i18n="employees.reinstate">Reinstate</button>
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
           <button type="button" class="btn btn-primary" id="employeeEditorSaveButton" data-i18n="action.saveChanges">Save Changes</button>
         </div>
@@ -688,22 +747,22 @@
     </div>
   </div>
 
-  <script src="assets/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+  <script src="assets/vendor/bootstrap/bootstrap.bundle.min.js?v=20260408-2"></script>
   <script>
     window.defaultApiUrl = (window.location.protocol === "http:" || window.location.protocol === "https:")
       ? window.location.origin + "/"
       : "http://localhost:8081/";
   </script>
-  <script src="assets/vendor/chart.umd.min.js"></script>
-  <script src="scripts/I18n.js"></script>
-  <script src="scripts/Utilities.js"></script>
-  <script src="scripts/AppShell.js"></script>
-  <script src="scripts/Views/ViewSwitching.js"></script>
-  <script src="scripts/Views/SelfView.js"></script>
-  <script src="scripts/Views/EmployeesView.js"></script>
-  <script src="scripts/Views/DashboardView.js"></script>
-  <script src="scripts/Views/ApprovalsView.js"></script>
-  <script src="scripts/Views/HistoryView.js"></script>
-  <script src="scripts/Views/ProjectsView.js"></script>
+  <script src="assets/vendor/chart.umd.min.js?v=20260408-2"></script>
+  <script src="scripts/I18n.js?v=20260408-2"></script>
+  <script src="scripts/Utilities.js?v=20260408-2"></script>
+  <script src="scripts/AppShell.js?v=20260408-2"></script>
+  <script src="scripts/Views/ViewSwitching.js?v=20260408-2"></script>
+  <script src="scripts/Views/SelfView.js?v=20260408-2"></script>
+  <script src="scripts/Views/EmployeesView.js?v=20260408-2"></script>
+  <script src="scripts/Views/DashboardView.js?v=20260408-2"></script>
+  <script src="scripts/Views/ApprovalsView.js?v=20260408-2"></script>
+  <script src="scripts/Views/HistoryView.js?v=20260408-2"></script>
+  <script src="scripts/Views/ProjectsView.js?v=20260408-2"></script>
 </body>
 </html>

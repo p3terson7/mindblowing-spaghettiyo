@@ -8,6 +8,7 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 . (Join-Path -Path $scriptDir -ChildPath "lib/FileStore.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "lib/ResponseHelpers.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/AuthService.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "services/EntryService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/ReadModelService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/EmployeeDirectoryService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/SyncService.ps1")

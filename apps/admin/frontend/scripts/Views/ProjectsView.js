@@ -4,6 +4,10 @@ let currentProjectCode = null;
 let pendingProjectChartFrameId = null;
 const projectsViewState = {
   projects: [],
+  customRange: {
+    startDate: "",
+    endDate: "",
+  },
 };
 
 function setProjectEditorMessage(message, type) {
@@ -70,15 +74,18 @@ function clearProjectDetailCache() {
 }
 
 function getProjectDetailCacheKey(projectCode, filterPeriod) {
-  return `${projectCode}_${filterPeriod}`;
+  const { startDate, endDate } = calculateDateRange(filterPeriod);
+  return `${projectCode}_${filterPeriod}_${startDate || "all"}_${endDate || "all"}`;
 }
 
 function calculateDateRange(filterPeriod) {
+  const normalizedFilter = filterPeriod || currentProjectFilter;
   const now = new Date();
   const endDate = now.toISOString().split("T")[0];
   let startDate = "";
+  let resolvedEndDate = endDate;
 
-  switch (filterPeriod) {
+  switch (normalizedFilter) {
     case "1M":
       startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split("T")[0];
       break;
@@ -88,37 +95,73 @@ function calculateDateRange(filterPeriod) {
     case "1Y":
       startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()).toISOString().split("T")[0];
       break;
+    case "custom":
+      startDate = normalizeDateInputValue(projectsViewState.customRange.startDate);
+      resolvedEndDate = normalizeDateInputValue(projectsViewState.customRange.endDate);
+      break;
     case "all":
     default:
       startDate = "";
+      resolvedEndDate = "";
       break;
   }
 
-  return { startDate, endDate };
+  return { startDate, endDate: resolvedEndDate };
 }
 
-async function fetchProjects() {
-  try {
-    const response = await fetch(apiUrl + "projects");
-    const projects = await parseResponse(response);
-    projectsViewState.projects = Array.isArray(projects) ? projects : [];
-    return projectsViewState.projects;
-  } catch (error) {
-    console.error("Error fetching projects:", error);
-    projectsViewState.projects = [];
-    return [];
+function syncProjectCustomRangeInputs() {
+  const activeRange = calculateDateRange(currentProjectFilter);
+  if (currentProjectFilter === "custom") {
+    document.getElementById("projectStartDate").value = projectsViewState.customRange.startDate || "";
+    document.getElementById("projectEndDate").value = projectsViewState.customRange.endDate || "";
+    return;
   }
+
+  document.getElementById("projectStartDate").value = activeRange.startDate || "";
+  document.getElementById("projectEndDate").value = activeRange.endDate || "";
+}
+
+function syncProjectRangeButtons() {
+  document.querySelectorAll("#projectQuickRangeButtons .chip-button").forEach(button => {
+    button.classList.toggle("active", button.getAttribute("data-range") === currentProjectFilter);
+  });
+}
+
+function getMatchingPresetProjectRange(startDate, endDate) {
+  const normalizedStartDate = normalizeDateInputValue(startDate);
+  const normalizedEndDate = normalizeDateInputValue(endDate);
+
+  const supportedRanges = ["all", "1M", "6M", "1Y"];
+  for (let index = 0; index < supportedRanges.length; index += 1) {
+    const range = supportedRanges[index];
+    const candidate = calculateDateRange(range);
+    const candidateStart = normalizeDateInputValue(candidate.startDate);
+    const candidateEnd = normalizeDateInputValue(candidate.endDate);
+    if (candidateStart === normalizedStartDate && candidateEnd === normalizedEndDate) {
+      return range;
+    }
+  }
+
+  return "custom";
+}
+
+async function setProjectRange(range) {
+  currentProjectFilter = range;
+  syncProjectRangeButtons();
+  syncProjectCustomRangeInputs();
+  await refreshProjectsView();
 }
 
 function buildProjectBootstrapUrl(filterPeriod, projectCode) {
   const { startDate, endDate } = calculateDateRange(filterPeriod);
   const params = new URLSearchParams();
 
-  if (filterPeriod !== "all" && startDate && endDate) {
+  if (startDate) {
     params.set("startDate", startDate);
+  }
+  if (endDate) {
     params.set("endDate", endDate);
   }
-
   if (projectCode) {
     params.set("projectCode", projectCode);
   }
@@ -129,11 +172,15 @@ function buildProjectBootstrapUrl(filterPeriod, projectCode) {
 
 function buildProjectStatsUrl(projectCode, filterPeriod) {
   const { startDate, endDate } = calculateDateRange(filterPeriod);
-  let url = apiUrl + "stats/projects/" + projectCode;
-  if (filterPeriod !== "all" && startDate && endDate) {
-    url += `?startDate=${startDate}&endDate=${endDate}`;
+  const params = new URLSearchParams();
+  if (startDate) {
+    params.set("startDate", startDate);
   }
-  return url;
+  if (endDate) {
+    params.set("endDate", endDate);
+  }
+  const query = params.toString();
+  return `${apiUrl}stats/projects/${projectCode}${query ? `?${query}` : ""}`;
 }
 
 async function loadProjectDetailStats(projectCode, filterPeriod = "all") {
@@ -157,6 +204,8 @@ async function loadProjectDetailStats(projectCode, filterPeriod = "all") {
 
 async function refreshProjectsView() {
   clearProjectDetailCache();
+  syncProjectRangeButtons();
+  syncProjectCustomRangeInputs();
   setLoadingState("projectsSummaryContainer", "grid", 4);
   setLoadingState("projectDetailContainer", "detail", 1);
   setChartLoadingState("projectChartContainer");
@@ -198,24 +247,30 @@ function renderProjectSummaryCards(projectDetails) {
     return;
   }
 
-  container.innerHTML = projectDetails.map(detail => `
-    <article class="project-summary-card${currentProjectCode === detail.projectCode ? " is-active" : ""}" data-project-code="${escapeHtml(detail.projectCode)}">
-      <div class="project-card-header">
-        <div>
-          <div class="project-card-title">${escapeHtml(detail.projectName)}</div>
-          <div class="employee-card-note">${escapeHtml(detail.projectCode)}</div>
+  container.innerHTML = projectDetails.map(detail => {
+    const total = secondsToDurationLabel(timeStringToSeconds(detail.totalOvertime || "00:00:00"));
+    const minValue = secondsToDurationLabel(timeStringToSeconds(detail.minOvertime || "00:00:00"));
+    const maxValue = secondsToDurationLabel(timeStringToSeconds(detail.maxOvertime || "00:00:00"));
+    return `
+      <article class="project-summary-card${currentProjectCode === detail.projectCode ? " is-active" : ""}" data-project-code="${escapeHtml(detail.projectCode)}">
+        <div class="project-card-header">
+          <div>
+            <div class="project-card-title">${escapeHtml(detail.projectName)}</div>
+            <div class="employee-card-note">${escapeHtml(detail.projectCode)}</div>
+          </div>
+          <span class="inline-code-pill">${escapeHtml(total)}</span>
         </div>
-        <span class="inline-code-pill">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(detail.totalOvertime)))}</span>
-      </div>
-      <div class="project-card-meta">
-        <span class="meta-pill">${escapeHtml(t("projects.entries", { count: detail.entryCount }))}</span>
-        <span class="meta-pill">${escapeHtml(t("projects.average", { value: secondsToDurationLabel(timeStringToSeconds(detail.averageOvertime)) }))}</span>
-      </div>
-      <div class="employee-card-actions">
-        <button type="button" class="btn btn-outline-secondary btn-sm project-edit-button" data-project-code="${escapeHtml(detail.projectCode)}">${escapeHtml(t("action.edit"))}</button>
-      </div>
-    </article>
-  `).join("");
+        <div class="project-card-meta">
+          <span class="meta-pill">${escapeHtml(t("projects.entries", { count: detail.entryCount }))}</span>
+          <span class="meta-pill">${escapeHtml(t("projects.min", { value: minValue }))}</span>
+          <span class="meta-pill">${escapeHtml(t("projects.max", { value: maxValue }))}</span>
+        </div>
+        <div class="employee-card-actions">
+          <button type="button" class="btn btn-outline-secondary btn-sm project-edit-button" data-project-code="${escapeHtml(detail.projectCode)}">${escapeHtml(t("action.edit"))}</button>
+        </div>
+      </article>
+    `;
+  }).join("");
 }
 
 function renderProjectEmployeeEntries(entries) {
@@ -230,13 +285,19 @@ function renderProjectEmployeeEntries(entries) {
         <span>${escapeHtml(t("projects.timeRange"))}</span>
         <span>${escapeHtml(t("projects.overtimeLabel"))}</span>
       </div>
-      ${entries.map(entry => `
-        <div class="project-entry-row">
-          <span class="project-entry-date">${escapeHtml(formatDateLabel(entry.date))}</span>
-          <span class="project-entry-time mono">${escapeHtml(formatTimeString(entry.punchIn))} -> ${escapeHtml(entry.punchOut ? formatTimeString(entry.punchOut) : t("shared.inProgress"))}</span>
-          <span class="project-entry-overtime mono">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(entry.overtime)))}</span>
-        </div>
-      `).join("")}
+      ${entries.map(entry => {
+        const exactTimeLabel = getEntryExactTimeLabel(entry);
+        return `
+          <div class="project-entry-row">
+            <span class="project-entry-date">${escapeHtml(formatDateLabel(entry.date))}</span>
+            <span class="project-entry-time mono">
+              ${escapeHtml(getEntryRoundedTimeRange(entry))}
+              ${exactTimeLabel ? `<span class="panel-note d-block">${escapeHtml(exactTimeLabel)}</span>` : ""}
+            </span>
+            <span class="project-entry-overtime mono">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(entry.overtime)))}</span>
+          </div>
+        `;
+      }).join("")}
     </div>
   `;
 }
@@ -249,8 +310,9 @@ function renderProjectDetail(detail) {
   }
 
   const touchedBy = (detail.breakdownByEmployee && detail.breakdownByEmployee.length) || 0;
-  const average = detail.averageOvertime ? secondsToDurationLabel(timeStringToSeconds(detail.averageOvertime)) : "00h 00m";
   const total = detail.totalOvertime ? secondsToDurationLabel(timeStringToSeconds(detail.totalOvertime)) : "00h 00m";
+  const minValue = detail.minOvertime ? secondsToDurationLabel(timeStringToSeconds(detail.minOvertime)) : "00h 00m";
+  const maxValue = detail.maxOvertime ? secondsToDurationLabel(timeStringToSeconds(detail.maxOvertime)) : "00h 00m";
 
   container.innerHTML = `
     <article class="project-detail-card">
@@ -268,8 +330,12 @@ function renderProjectDetail(detail) {
           <strong class="metric-value mono">${escapeHtml(detail.entryCount)}</strong>
         </div>
         <div class="project-summary-item">
-          <span class="metric-label">${escapeHtml(t("projects.averageLabel"))}</span>
-          <strong class="metric-value mono">${escapeHtml(average)}</strong>
+          <span class="metric-label">${escapeHtml(t("projects.minLabel"))}</span>
+          <strong class="metric-value mono">${escapeHtml(minValue)}</strong>
+        </div>
+        <div class="project-summary-item">
+          <span class="metric-label">${escapeHtml(t("projects.maxLabel"))}</span>
+          <strong class="metric-value mono">${escapeHtml(maxValue)}</strong>
         </div>
         <div class="project-summary-item">
           <span class="metric-label">${escapeHtml(t("projects.contributors"))}</span>
@@ -486,26 +552,6 @@ function renderProjectMultiLineChart(trendData) {
   });
 }
 
-async function loadProjectTrendChart(filterPeriod = "all") {
-  const { startDate, endDate } = calculateDateRange(filterPeriod);
-  let url = apiUrl + "stats/projects/trends";
-  if (filterPeriod !== "all" && startDate && endDate) {
-    url += `?startDate=${startDate}&endDate=${endDate}`;
-  }
-
-  try {
-    const response = await fetch(url);
-    const trendData = await parseResponse(response);
-    renderProjectMultiLineChart(trendData || {});
-  } catch (error) {
-    console.error("Error fetching project trend data:", error);
-    const chartStage = document.querySelector("#projectChartContainer .chart-stage");
-    if (chartStage) {
-      chartStage.innerHTML = createEmptyState(t("projects.chartLoadError"));
-    }
-  }
-}
-
 document.getElementById("projectsSummaryContainer").addEventListener("click", event => {
   const editButton = event.target.closest(".project-edit-button");
   if (editButton) {
@@ -530,11 +576,37 @@ document.getElementById("projectsSummaryContainer").addEventListener("click", ev
   }
 });
 
-document.getElementById("projectRangeSelect").addEventListener("change", event => {
-  currentProjectFilter = event.target.value;
+document.getElementById("projectQuickRangeButtons").addEventListener("click", event => {
+  const rangeButton = event.target.closest(".chip-button");
+  if (!rangeButton) {
+    return;
+  }
+
+  const nextRange = rangeButton.getAttribute("data-range");
+  if (!nextRange || nextRange === currentProjectFilter) {
+    return;
+  }
+
+  setProjectRange(nextRange);
+});
+document.getElementById("projectApplyCustomRangeButton").addEventListener("click", () => {
+  const startDate = document.getElementById("projectStartDate").value;
+  const endDate = document.getElementById("projectEndDate").value;
+  if (startDate && endDate && startDate > endDate) {
+    showToast(t("filters.invalidRange"), "error");
+    return;
+  }
+  projectsViewState.customRange.startDate = startDate;
+  projectsViewState.customRange.endDate = endDate;
+  currentProjectFilter = getMatchingPresetProjectRange(startDate, endDate);
+  syncProjectRangeButtons();
   refreshProjectsView();
 });
-
+document.getElementById("projectClearCustomRangeButton").addEventListener("click", () => {
+  projectsViewState.customRange.startDate = "";
+  projectsViewState.customRange.endDate = "";
+  setProjectRange("6M");
+});
 document.getElementById("addProjectButton").addEventListener("click", () => {
   openProjectEditorModal("create");
 });

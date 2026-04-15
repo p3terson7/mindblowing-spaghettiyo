@@ -9,27 +9,21 @@
             }
 
             $payload = Read-JsonRequestBody -Request $request
+            $entryId = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "entryId")) { [string]$payload.entryId } else { "" }
+            $date = if ($null -ne $payload) { [string]$payload.date } else { "" }
+            $originalPunchIn = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "originalPunchIn")) { [string]$payload.originalPunchIn } else { "" }
+            $managerMessage = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "message")) { [string]$payload.message } else { "" }
 
-            # Require payload to include the date and the original punchIn (stable identifier).
-            if (-not ($payload.date -and $payload.originalPunchIn)) {
-                respondWithError $response 400 "Missing required identifier: date and originalPunchIn are required."
+            if ([string]::IsNullOrWhiteSpace($date) -or ([string]::IsNullOrWhiteSpace($entryId) -and [string]::IsNullOrWhiteSpace($originalPunchIn))) {
+                respondWithError $response 400 "Missing required identifier: date and entryId/originalPunchIn are required."
                 continue
             }
 
-            # Determine new punchIn value.
-            $newPunchIn = $payload.newPunchIn
-            if (-not $newPunchIn) { $newPunchIn = $payload.originalPunchIn }
-
-            # Optionally update punchOut if provided.
-            $newPunchOut = $payload.punchOut
-
-            # Round times to the minute (set seconds to "00").
-            $newPunchIn = (($newPunchIn -split ":")[0] + ":" + ($newPunchIn -split ":")[1] + ":00")
-            if ($newPunchOut) {
-                $newPunchOut = (($newPunchOut -split ":")[0] + ":" + ($newPunchOut -split ":")[1] + ":00")
+            if ([string]::IsNullOrWhiteSpace($managerMessage)) {
+                respondWithError $response 400 "A manager message is required when updating an entry."
+                continue
             }
 
-            # If projectCode is provided in the payload, validate it.
             if ($payload.PSObject.Properties.Name -contains "projectCode") {
                 if (-not $payload.projectCode) {
                     respondWithError $response 400 "If provided, projectCode cannot be empty."
@@ -59,74 +53,116 @@
             $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
             try {
                 $existingData = Read-JsonArrayFile -Path $dataFile
-
-                # Find the entry index by matching date and original punchIn.
-                $foundIndex = -1
-                for ($i = 0; $i -lt $existingData.Count; $i++) {
-                    if ($existingData[$i].date -eq $payload.date -and $existingData[$i].punchIn -eq $payload.originalPunchIn) {
-                        $foundIndex = $i
-                        break
-                    }
-                }
+                $foundIndex = Find-EntryIndex -Entries $existingData -EntryId $entryId -Date $date -PunchIn $originalPunchIn
                 if ($foundIndex -eq -1) {
                     respondWithError $response 404 "Entry not found"
                     continue
                 }
 
-                # Initialize an array for individual update messages.
+                $existingEntry = $existingData[$foundIndex]
+                if (-not (Get-EntryIdentifierValue -Entry $existingEntry)) {
+                    $existingEntry | Add-Member -NotePropertyName entryId -NotePropertyValue (New-EntryIdentifier) -Force
+                }
+
+                $originalRoundedPunchIn = [string]$existingEntry.punchIn
+                $originalRoundedPunchOut = if ($existingEntry.punchOut) { [string]$existingEntry.punchOut } else { $null }
+                $originalProjectCode = if ($existingEntry.projectCode) { [string]$existingEntry.projectCode } else { "" }
+                $originalOvertimeCode = if ($existingEntry.overtimeCode) { [string]$existingEntry.overtimeCode } else { "" }
+
+                $newExactPunchIn = if ($payload.newPunchIn) {
+                    Convert-ToNormalizedTimeText -TimeText ([string]$payload.newPunchIn)
+                }
+                else {
+                    Get-EntryExactPunchInText -Entry $existingEntry
+                }
+
+                if ([string]::IsNullOrWhiteSpace($newExactPunchIn)) {
+                    respondWithError $response 400 "Punch In must use a valid time format."
+                    continue
+                }
+
+                $newExactPunchOut = $null
+                if ($payload.PSObject.Properties.Name -contains "punchOut") {
+                    if ([string]::IsNullOrWhiteSpace([string]$payload.punchOut)) {
+                        $newExactPunchOut = $null
+                    }
+                    else {
+                        $newExactPunchOut = Convert-ToNormalizedTimeText -TimeText ([string]$payload.punchOut)
+                        if ([string]::IsNullOrWhiteSpace($newExactPunchOut)) {
+                            respondWithError $response 400 "Punch Out must use a valid time format."
+                            continue
+                        }
+                    }
+                }
+                else {
+                    $newExactPunchOut = Get-EntryExactPunchOutText -Entry $existingEntry
+                }
+
+                $newRoundedPunchIn = Convert-ToNearestQuarterHourText -Date $date -TimeText $newExactPunchIn
+                $newRoundedPunchOut = if ($newExactPunchOut) { Convert-ToNearestQuarterHourText -Date $date -TimeText $newExactPunchOut } else { $null }
+
+                if ($newRoundedPunchOut) {
+                    $punchInTime = [DateTime]::ParseExact("$date $newRoundedPunchIn", "yyyy-MM-dd HH:mm:ss", $null)
+                    $punchOutTime = [DateTime]::ParseExact("$date $newRoundedPunchOut", "yyyy-MM-dd HH:mm:ss", $null)
+                    if ($punchOutTime -le $punchInTime) {
+                        respondWithError $response 400 "Punch Out must be after Punch In."
+                        continue
+                    }
+                }
+
                 $messages = @()
-
-                # Update punchIn if changed.
-                if ($payload.originalPunchIn -ne $newPunchIn) {
-                    $existingData[$foundIndex].punchIn = $newPunchIn
-                    $messages += "Punch In from <strong>$(Format-TimeForHistory $payload.originalPunchIn)</strong> to <strong>$(Format-TimeForHistory $newPunchIn)</strong>."
+                if ($originalRoundedPunchIn -ne $newRoundedPunchIn) {
+                    $messages += "Punch In from <strong>$(Format-TimeForHistory $originalRoundedPunchIn)</strong> to <strong>$(Format-TimeForHistory $newRoundedPunchIn)</strong>."
                 }
 
-                # Update punchOut if provided.
-                if ($newPunchOut) {
-                    if ($existingData[$foundIndex].punchOut -and $existingData[$foundIndex].punchOut -ne $newPunchOut) {
-                        $messages += "Punch Out from <strong>$(Format-TimeForHistory $existingData[$foundIndex].punchOut)</strong> to <strong>$(Format-TimeForHistory $newPunchOut)</strong>."
+                if ($newRoundedPunchOut) {
+                    if ($originalRoundedPunchOut -and $originalRoundedPunchOut -ne $newRoundedPunchOut) {
+                        $messages += "Punch Out from <strong>$(Format-TimeForHistory $originalRoundedPunchOut)</strong> to <strong>$(Format-TimeForHistory $newRoundedPunchOut)</strong>."
                     }
-                    elseif (-not $existingData[$foundIndex].punchOut) {
-                        $messages += "Punch Out recorded at <strong>$(Format-TimeForHistory $newPunchOut)</strong>."
+                    elseif (-not $originalRoundedPunchOut) {
+                        $messages += "Punch Out recorded at <strong>$(Format-TimeForHistory $newRoundedPunchOut)</strong>."
                     }
-                    $existingData[$foundIndex].punchOut = $newPunchOut
                 }
 
-                # Update projectCode if provided.
-                if ($payload.PSObject.Properties.Name -contains "projectCode") {
-                    $existingData[$foundIndex].projectCode = $payload.projectCode
+                if ($payload.PSObject.Properties.Name -contains "projectCode" -and $originalProjectCode -ne [string]$payload.projectCode) {
                     $messages += "Project Code updated."
                 }
 
-                if ($payload.PSObject.Properties.Name -contains "overtimeCode") {
-                    $existingData[$foundIndex].overtimeCode = $payload.overtimeCode
+                if ($payload.PSObject.Properties.Name -contains "overtimeCode" -and $originalOvertimeCode -ne [string]$payload.overtimeCode) {
                     $messages += "Overtime Code updated."
                 }
 
-                # Recalculate overtime if both punchIn and punchOut exist.
-                if ($existingData[$foundIndex].punchIn -and $existingData[$foundIndex].punchOut) {
-                    $punchInTime = [DateTime]::ParseExact("$($existingData[$foundIndex].date) $($existingData[$foundIndex].punchIn)", "yyyy-MM-dd HH:mm:ss", $null)
-                    $punchOutTime = [DateTime]::ParseExact("$($existingData[$foundIndex].date) $($existingData[$foundIndex].punchOut)", "yyyy-MM-dd HH:mm:ss", $null)
-                    $existingData[$foundIndex].overtime = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
+                $existingEntry.punchIn = $newRoundedPunchIn
+                $existingEntry.exactPunchIn = $newExactPunchIn
+                $existingEntry.punchOut = $newRoundedPunchOut
+                $existingEntry.exactPunchOut = $newExactPunchOut
+                if ($payload.PSObject.Properties.Name -contains "projectCode") {
+                    $existingEntry.projectCode = [string]$payload.projectCode
                 }
+                if ($payload.PSObject.Properties.Name -contains "overtimeCode") {
+                    $existingEntry.overtimeCode = [string]$payload.overtimeCode
+                }
+                $existingEntry.message = $managerMessage.Trim()
+                Update-EntryComputedOvertime -Entry $existingEntry
 
-                # Save the updated data.
-                Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 6
+                Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 8
 
-                # Build the history log message.
                 $employeeName = Get-EmployeeName $employeeCode
-                $formattedDate = (Get-Date $payload.date).ToString("MMMM dd, yyyy")
+                $formattedDate = (Get-Date $date).ToString("MMMM dd, yyyy")
+                $historySpan = Get-EntryHistorySpanText -StartTime ([string]$existingEntry.punchIn) -EndTime ([string]$existingEntry.punchOut)
                 if ($messages.Count -eq 0) {
-                    $finalMessage = "Entry on $formattedDate updated successfully."
+                    $finalMessage = "Updated an entry on $formattedDate $historySpan."
                 }
                 else {
-                    $finalMessage = "Updated an entry on $formattedDate, " + ($messages -join " ")
+                    $finalMessage = "Updated an entry on $formattedDate $historySpan. " + ($messages -join " ")
                 }
                 logHistory "Update" $finalMessage $employeeName
                 Publish-DataChange -Category "employee" -Resource $employeeCode
 
-                respondWithSuccess $response ('{ "message": "' + ($messages -join "<br>") + '" }')
+                respondWithSuccess $response (([PSCustomObject]@{
+                    message = ($messages -join "<br>")
+                    entryId = [string]$existingEntry.entryId
+                }) | ConvertTo-Json -Depth 4)
             }
             catch {
                 respondWithError $response 500 "Error: '$($_.Exception.Message)'"

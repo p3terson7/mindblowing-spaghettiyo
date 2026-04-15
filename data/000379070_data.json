@@ -31,5 +31,19 @@
     "message": "Split support and build work into separate entries.",
     "projectCode": "APP-220",
     "overtimeCode": "OT-REL"
+  },
+  {
+    "entryId": "ea65b5d49b804a7d99378d4585a53538",
+    "name": "Peter-Nicholas Sarateanu",
+    "date": "2026-04-08",
+    "punchIn": "11:30:00",
+    "exactPunchIn": "11:24:00",
+    "punchOut": "08:00:00",
+    "exactPunchOut": "07:56:00",
+    "overtime": "03:30:00",
+    "status": "approved",
+    "message": "",
+    "projectCode": "APP-220",
+    "overtimeCode": "OT-OPS"
   }
 ]

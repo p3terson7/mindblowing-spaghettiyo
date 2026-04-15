@@ -10,7 +10,7 @@ async function fetchHistory() {
     const response = await fetch(apiUrl + "history");
     const historyEntries = await parseResponse(response);
     allHistoryEntries = Array.isArray(historyEntries) ? historyEntries : [];
-    renderHistoryTabs(allHistoryEntries);
+    applyHistoryFilters();
   } catch (error) {
     console.error("Error fetching history:", error);
     showToast(t("history.fetchError"), "error");
@@ -21,13 +21,18 @@ function formatHistoryTimestamp(timestamp) {
   return formatDateTimeStamp(timestamp);
 }
 
-function filterHistoryEntries(entries, searchTerm) {
+function filterHistoryEntries(entries, searchTerm, startDate, endDate) {
   const tokens = String(searchTerm || "").toLowerCase().split(/\s+/).filter(token => token.length > 0);
-  if (tokens.length === 0) {
-    return entries;
-  }
 
-  return entries.filter(entry => {
+  return (entries || []).filter(entry => {
+    if (!isDateWithinRange(String(entry.timestamp || "").split(" ")[0] || "", startDate, endDate)) {
+      return false;
+    }
+
+    if (tokens.length === 0) {
+      return true;
+    }
+
     const combinedText = [entry.timestamp, entry.action, translateHistoryAction(entry.action), entry.employee, auditMessageToText(entry.message)].join(" ").toLowerCase();
     return tokens.every(token => combinedText.includes(token));
   });
@@ -101,10 +106,22 @@ function renderHistoryTabs(historyEntries) {
   renderHistoryList(deleteContainer, deletedEntries);
 }
 
-document.getElementById("historySearchInput").addEventListener("input", function () {
-  const searchTerm = this.value;
-  const filtered = filterHistoryEntries(allHistoryEntries, searchTerm);
+function applyHistoryFilters() {
+  const searchTerm = document.getElementById("historySearchInput").value;
+  const startDate = document.getElementById("historyStartDate").value;
+  const endDate = document.getElementById("historyEndDate").value;
+  const filtered = filterHistoryEntries(allHistoryEntries, searchTerm, startDate, endDate);
   renderHistoryTabs(filtered);
+}
+
+document.getElementById("historySearchInput").addEventListener("input", applyHistoryFilters);
+document.getElementById("historyStartDate").addEventListener("input", applyHistoryFilters);
+document.getElementById("historyEndDate").addEventListener("input", applyHistoryFilters);
+document.getElementById("historyResetFiltersBtn").addEventListener("click", () => {
+  document.getElementById("historySearchInput").value = "";
+  document.getElementById("historyStartDate").value = "";
+  document.getElementById("historyEndDate").value = "";
+  applyHistoryFilters();
 });
 
 document.getElementById("refreshHistoryBtn").addEventListener("click", () => {
