@@ -1317,12 +1317,13 @@ code,
   border-radius: 4px;
   background: #ffffff;
   max-height: 620px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .dashboard-entry-table {
   margin-bottom: 0;
-  min-width: 1360px;
+  min-width: 0;
   table-layout: fixed;
   width: 100%;
 }
@@ -1343,6 +1344,7 @@ code,
   vertical-align: top;
   padding-top: 10px;
   padding-bottom: 10px;
+  min-width: 0;
 }
 
 .dashboard-entry-row.is-open {
@@ -1409,7 +1411,7 @@ code,
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  min-width: 220px;
+  min-width: 0;
   justify-content: flex-end;
   align-items: center;
   margin-left: auto;
@@ -1417,41 +1419,52 @@ code,
 
 .dashboard-entry-actions .btn {
   min-height: 28px;
-  padding: 0.22rem 0.5rem;
+  padding: 0.2rem 0.46rem;
+  white-space: nowrap;
 }
 
 .dashboard-entry-col-date {
-  width: 130px;
+  width: 13%;
 }
 
 .dashboard-entry-col-window {
-  width: 220px;
+  width: 14%;
 }
 
 .dashboard-entry-col-project {
-  width: 130px;
+  width: 10%;
 }
 
 .dashboard-entry-col-overtime-code {
-  width: 130px;
+  width: 11%;
 }
 
 .dashboard-entry-col-duration {
-  width: 118px;
+  width: 8%;
 }
 
 .dashboard-entry-col-status {
-  width: 116px;
+  width: 9%;
 }
 
 .dashboard-entry-col-note {
-  width: 260px;
-  max-width: 260px;
+  width: 16%;
+  max-width: none;
 }
 
 .dashboard-entry-col-actions {
-  width: 250px;
+  width: 19%;
   vertical-align: middle !important;
+}
+
+.dashboard-entry-col-window .dashboard-table-main {
+  white-space: nowrap;
+}
+
+@media (max-width: 1500px) {
+  .dashboard-entry-actions {
+    justify-content: flex-start;
+  }
 }
 
 .modal-dialog.modal-note-editor {
