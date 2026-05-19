@@ -223,6 +223,34 @@ function getEmployeeInitials(name) {
   return parts.slice(0, 2).map(part => part[0].toUpperCase()).join("");
 }
 
+function isArchivedEmployee(employee) {
+  if (!employee) {
+    return false;
+  }
+
+  const archivedValue = employee.archived;
+  if (typeof archivedValue === "boolean") {
+    return archivedValue;
+  }
+  if (typeof archivedValue === "number") {
+    return archivedValue !== 0;
+  }
+
+  const normalizedValue = String(archivedValue || "").trim().toLowerCase();
+  return normalizedValue === "true" || normalizedValue === "1" || normalizedValue === "yes";
+}
+
+function filterEmployeesByScope(employees, scope) {
+  const source = Array.isArray(employees) ? employees : [];
+  if (scope === "archived") {
+    return source.filter(employee => isArchivedEmployee(employee));
+  }
+  if (scope === "active") {
+    return source.filter(employee => !isArchivedEmployee(employee));
+  }
+  return source;
+}
+
 async function fetchEmployeeDetailEntries(employeeCode) {
   const response = await fetch(apiUrl + "employee/" + encodeURIComponent(employeeCode));
   if (response.status === 404) {
@@ -350,9 +378,9 @@ async function refreshPeopleEmployeeDetail(employeeCode) {
   employeesViewState.selectedEmployeeCode = employeeCode;
 
   try {
-    const response = await fetch(apiUrl + "employees?scope=" + encodeURIComponent(currentScope));
+    const response = await fetch(apiUrl + "employees?scope=all");
     const employees = await parseResponse(response);
-    employeesViewState.employees = Array.isArray(employees) ? employees : [];
+    employeesViewState.employees = filterEmployeesByScope(employees, currentScope);
     document.getElementById("employeesSearchInput").value = currentSearchValue;
     applyEmployeeSearchFilter();
     await loadEmployeeDetail(employeeCode);
@@ -387,14 +415,14 @@ function renderEmployeesDirectory(employees) {
           <div class="employee-avatar">${escapeHtml(getEmployeeInitials(employee.name))}</div>
           <div>
             <div class="employee-card-title">${escapeHtml(employee.name)}</div>
-            <div class="employee-card-note">${escapeHtml(employee.archived ? t("employees.archived") : t("shared.employeeAccount"))}</div>
+            <div class="employee-card-note">${escapeHtml(isArchivedEmployee(employee) ? t("employees.archived") : t("shared.employeeAccount"))}</div>
           </div>
         </div>
       </div>
       <div class="employee-card-meta">
         <span class="inline-code-pill">EMP ${escapeHtml(employee.code)}</span>
         <span class="meta-pill">${escapeHtml(t("employees.entryCount", { count: employee.entryCount || 0 }))}</span>
-        ${employee.archived ? `<span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span>` : ""}
+        ${isArchivedEmployee(employee) ? `<span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span>` : ""}
       </div>
       <div class="employee-card-actions">
         <button type="button" class="btn btn-outline-secondary btn-sm employee-edit-button" data-employee-code="${escapeHtml(employee.code)}">${escapeHtml(t("action.edit"))}</button>
@@ -599,7 +627,7 @@ function renderEmployeeDetail(employee) {
           <div class="employee-avatar employee-avatar-large">${escapeHtml(getEmployeeInitials(employee.name))}</div>
           <div>
             <div class="employee-detail-title">${escapeHtml(employee.name)}</div>
-            <div class="employee-card-note">${escapeHtml(employee.archived ? t("employees.archived") : t("shared.employeeAccount"))}</div>
+            <div class="employee-card-note">${escapeHtml(isArchivedEmployee(employee) ? t("employees.archived") : t("shared.employeeAccount"))}</div>
           </div>
         </div>
         <div class="employee-detail-actions">
@@ -609,7 +637,7 @@ function renderEmployeeDetail(employee) {
       <div class="employee-detail-meta">
         <span class="inline-code-pill">EMP ${escapeHtml(employee.code)}</span>
         <span class="meta-pill">${escapeHtml(t("employees.entryCount", { count: employee.entryCount || 0 }))}</span>
-        ${employee.archived ? `<span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span>` : `<span class="status-badge approved">${escapeHtml(t("employees.scopeActive"))}</span>`}
+        ${isArchivedEmployee(employee) ? `<span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span>` : `<span class="status-badge approved">${escapeHtml(t("employees.scopeActive"))}</span>`}
       </div>
       <div class="employee-detail-section">
         <div class="panel-kicker">${escapeHtml(t("employees.calendar"))}</div>
@@ -663,10 +691,10 @@ function loadEmployeesView() {
   setLoadingState("employeesDirectoryContainer", "grid", 4);
   document.getElementById("employeeDetailContainer").innerHTML = "";
   const scope = document.getElementById("employeesScopeSelect").value || "active";
-  return fetch(apiUrl + "employees?scope=" + encodeURIComponent(scope))
+  return fetch(apiUrl + "employees?scope=all")
     .then(parseResponse)
     .then(employees => {
-      employeesViewState.employees = Array.isArray(employees) ? employees : [];
+      employeesViewState.employees = filterEmployeesByScope(employees, scope);
       applyEmployeeSearchFilter();
     })
     .catch(error => {

@@ -118,5 +118,11 @@
     "message": "Rejected an entry on April 15, 2026 from <strong>10h45</strong> to <strong>12h45</strong>.",
     "employee": "Jane Smith",
     "timestamp": "2026-04-15 08:03:26"
+  },
+  {
+    "action": "Delete",
+    "message": "Deleted an entry on March 30, 2026 from <strong>10h06</strong> to <strong>10h09</strong>. Reason: boom bap",
+    "employee": "Priya Patel",
+    "timestamp": "2026-04-15 11:07:41"
   }
 ]

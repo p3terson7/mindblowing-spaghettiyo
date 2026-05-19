@@ -153,88 +153,101 @@
             </article>
           </section>
 
-          <div class="workspace-grid workspace-grid-admin">
-            <section class="panel-shell">
-              <div class="panel-header-row">
-                <div>
-                  <div class="panel-kicker" data-i18n="dashboard.needsAttention">Needs Attention</div>
-                </div>
-              </div>
-
-              <div class="queue-section">
-                <div class="queue-header">
-                  <h4 data-i18n="dashboard.pendingApprovals">Pending Approvals</h4>
+          <div class="dashboard-layout">
+            <div class="dashboard-main-stack">
+              <section class="panel-shell dashboard-stream-card dashboard-stream-card-compact">
+                <div class="panel-header-row">
+                  <div>
+                    <div class="panel-kicker" data-i18n="dashboard.needsAttention">Needs Attention</div>
+                    <h4 data-i18n="dashboard.pendingApprovals">Pending Approvals</h4>
+                  </div>
                   <span class="panel-note" id="dashboardPendingQueueMeta" data-i18n="dashboard.pendingQueueMetaWaiting">Waiting for review</span>
                 </div>
-                <div id="dashboardApprovalQueue" class="queue-list"></div>
-              </div>
+                <div id="dashboardApprovalQueue" class="queue-list dashboard-scroll-list"></div>
+              </section>
 
-              <div class="queue-section">
-                <div class="queue-header">
-                  <h4 data-i18n="dashboard.activeQueueTitle">Currently Clocked In</h4>
+              <section class="panel-shell dashboard-stream-card">
+                <div class="panel-header-row">
+                  <div>
+                    <div class="panel-kicker" data-i18n="dashboard.activeQueueTitle">Currently Clocked In</div>
+                    <h4 data-i18n="dashboard.activeQueueTitle">Currently Clocked In</h4>
+                  </div>
                   <span class="panel-note" id="dashboardActiveQueueMeta" data-i18n="dashboard.activeQueueMeta">Live overtime sessions</span>
                 </div>
-                <div id="dashboardActiveList" class="queue-list"></div>
-              </div>
+                <div id="dashboardActiveList" class="queue-list dashboard-scroll-list"></div>
+              </section>
 
-              <div class="queue-section">
-                <div class="queue-header">
-                  <h4 data-i18n="dashboard.recentActivity">Recent Activity</h4>
-                </div>
-                <div id="dashboardRecentActivity" class="activity-feed"></div>
-              </div>
-            </section>
-
-            <section class="panel-shell panel-shell-sticky">
-              <div class="panel-header-row">
-                <div>
-                  <div class="panel-kicker" data-i18n="dashboard.inspector">Employee Detail</div>
-                  <h3 id="dashboardInspectorTitle" data-i18n="dashboard.timeline">Timeline</h3>
-                </div>
-                <div class="panel-header-actions">
-                  <button id="addEntryButton" class="btn btn-primary btn-sm" type="button"><i class="fa-solid fa-plus"></i> <span data-i18n="dashboard.addEntry">Add Entry</span></button>
-                </div>
-              </div>
-
-              <div class="filter-toolbar filter-toolbar-dashboard">
-                <div class="filter-toolbar-row dashboard-filter-row dashboard-filter-row-primary">
-                  <div class="field-block filter-field filter-field-grow">
-                    <label for="employeeSelect" class="filter-caption" data-i18n="dashboard.employee">Employee</label>
-                    <select id="employeeSelect" class="form-select">
-                      <option value="" data-i18n="shared.loadingEmployees">Loading employees...</option>
-                    </select>
+              <section class="panel-shell dashboard-inspector-card">
+                <div class="panel-header-row">
+                  <div>
+                    <div class="panel-kicker" data-i18n="dashboard.inspector">Employee Detail</div>
+                    <h3 id="dashboardInspectorTitle" data-i18n="dashboard.timeline">Timeline</h3>
                   </div>
-                  <div class="field-block filter-field filter-field-project">
-                    <label for="projectFilter" class="filter-caption" data-i18n="shared.project">Project</label>
-                    <select id="projectFilter" class="form-select">
-                      <option value="" data-i18n="filters.allProjects">All projects</option>
-                    </select>
+                  <div class="panel-header-actions">
+                    <button id="addEntryButton" class="btn btn-primary btn-sm" type="button"><i class="fa-solid fa-plus"></i> <span data-i18n="dashboard.addEntry">Add Entry</span></button>
                   </div>
                 </div>
-                <div class="filter-toolbar-row dashboard-filter-row dashboard-filter-row-secondary">
-                  <div class="field-block filter-field filter-range-field">
-                    <span class="filter-caption" data-i18n="filters.period">Period</span>
-                    <div class="filter-range-cluster">
-                      <input type="date" id="startDateFilter" class="form-control" data-i18n-aria-label="filters.startDate" aria-label="Start" />
-                      <input type="date" id="endDateFilter" class="form-control" data-i18n-aria-label="filters.endDate" aria-label="End" />
+
+                <div class="filter-toolbar filter-toolbar-dashboard">
+                  <div class="filter-toolbar-row dashboard-filter-row dashboard-filter-row-primary">
+                    <div class="field-block filter-field filter-field-grow">
+                      <label for="employeeSelect" class="filter-caption" data-i18n="dashboard.employee">Employee</label>
+                      <select id="employeeSelect" class="form-select">
+                        <option value="" data-i18n="shared.loadingEmployees">Loading employees...</option>
+                      </select>
+                    </div>
+                    <div class="field-block filter-field filter-field-project">
+                      <label for="projectFilter" class="filter-caption" data-i18n="shared.project">Project</label>
+                      <select id="projectFilter" class="form-select">
+                        <option value="" data-i18n="filters.allProjects">All projects</option>
+                      </select>
                     </div>
                   </div>
-                  <div class="field-block filter-field filter-field-toggle">
-                    <span class="filter-caption" data-i18n="dashboard.sort">Sort</span>
-                    <label class="checkbox-chip" for="latestCheck">
-                      <input class="form-check-input" type="checkbox" id="latestCheck" checked>
-                      <span data-i18n="dashboard.newestFirst">Newest first</span>
-                    </label>
-                  </div>
-                  <div class="filter-actions dashboard-filter-actions">
-                    <button id="dashboardResetFiltersBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
+                  <div class="filter-toolbar-row dashboard-filter-row dashboard-filter-row-secondary">
+                    <div class="field-block filter-field filter-range-field">
+                      <span class="filter-caption" data-i18n="filters.period">Period</span>
+                      <div class="filter-range-cluster">
+                        <input type="date" id="startDateFilter" class="form-control" data-i18n-aria-label="filters.startDate" aria-label="Start" />
+                        <input type="date" id="endDateFilter" class="form-control" data-i18n-aria-label="filters.endDate" aria-label="End" />
+                      </div>
+                    </div>
+                    <div class="field-block filter-field filter-field-toggle">
+                      <span class="filter-caption" data-i18n="dashboard.sort">Sort</span>
+                      <label class="checkbox-chip" for="latestCheck">
+                        <input class="form-check-input" type="checkbox" id="latestCheck" checked>
+                        <span data-i18n="dashboard.newestFirst">Newest first</span>
+                      </label>
+                    </div>
+                    <div class="filter-actions dashboard-filter-actions">
+                      <button id="dashboardResetFiltersBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div class="panel-note" id="dashboardSelectionHint"></div>
-              <div id="punchClockEntries" class="entry-stack"></div>
-            </section>
+                <div class="panel-note" id="dashboardSelectionHint"></div>
+                <div id="punchClockEntries" class="entry-stack"></div>
+              </section>
+            </div>
+
+            <aside class="dashboard-activity-rail">
+              <section class="panel-shell panel-shell-sticky dashboard-activity-card">
+                <div class="panel-header-row">
+                  <div>
+                    <div class="panel-kicker" data-i18n="dashboard.recentActivity">Recent Activity</div>
+                    <h4 data-i18n="dashboard.latestAudit">Latest audit trail entries</h4>
+                  </div>
+                </div>
+                <div class="filter-toolbar filter-toolbar-inline dashboard-activity-search-toolbar">
+                  <div class="filter-toolbar-row">
+                    <div class="field-block filter-field filter-field-grow">
+                      <label for="dashboardRecentSearchInput" class="filter-caption" data-i18n="filters.search">Search</label>
+                      <input type="text" id="dashboardRecentSearchInput" class="form-control" data-i18n-placeholder="dashboard.searchRecentActivity" placeholder="Filter recent activity by employee, action, or message"/>
+                    </div>
+                  </div>
+                </div>
+                <div id="dashboardRecentActivity" class="activity-feed dashboard-scroll-list"></div>
+              </section>
+            </aside>
           </div>
         </div>
 
@@ -616,6 +629,29 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
           <button type="button" id="saveAddEntryBtn" class="btn btn-primary" data-i18n="action.addEntry">Add Entry</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="dashboardNoteModal" tabindex="-1" aria-labelledby="dashboardNoteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-note-editor">
+      <div class="modal-content note-editor-modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title" id="dashboardNoteModalLabel" data-i18n="shared.managerMessage">Manager message</h3>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="dashboardNoteDate" />
+          <input type="hidden" id="dashboardNotePunchIn" />
+          <div class="field-block mb-0">
+            <label for="dashboardNoteInput" class="form-label" data-i18n="shared.managerMessage">Manager message</label>
+            <textarea id="dashboardNoteInput" class="form-control" rows="4"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
+          <button type="button" id="dashboardSaveNoteBtn" class="btn btn-primary" data-i18n="action.saveChanges">Save Changes</button>
         </div>
       </div>
     </div>

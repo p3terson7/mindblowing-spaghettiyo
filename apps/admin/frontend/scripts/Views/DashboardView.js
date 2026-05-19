@@ -71,6 +71,67 @@ function formatQueueTitle(entry) {
   return getEntryRoundedTimeRange(entry);
 }
 
+function getDashboardNotePreview(note) {
+  const normalized = String(note || "").trim();
+  if (!normalized) {
+    return "-";
+  }
+  if (normalized.length <= 90) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 87).trimEnd()}...`;
+}
+
+function openDashboardNoteEditor(noteButton) {
+  const modalElement = document.getElementById("dashboardNoteModal");
+  if (!modalElement || !noteButton) {
+    return;
+  }
+
+  document.getElementById("dashboardNoteDate").value = noteButton.getAttribute("data-date") || "";
+  document.getElementById("dashboardNotePunchIn").value = noteButton.getAttribute("data-punchin") || "";
+  document.getElementById("dashboardNoteInput").value = noteButton.getAttribute("data-message") || "";
+
+  const modal = new bootstrap.Modal(modalElement);
+  modal.show();
+}
+
+async function saveDashboardNoteFromModal() {
+  const employeeCode = document.getElementById("employeeSelect").value;
+  if (!employeeCode) {
+    showToast(t("dashboard.selectEmployeeBeforeNote"), "info");
+    return;
+  }
+
+  const date = document.getElementById("dashboardNoteDate").value;
+  const punchIn = document.getElementById("dashboardNotePunchIn").value;
+  const message = document.getElementById("dashboardNoteInput").value;
+  const saveButton = document.getElementById("dashboardSaveNoteBtn");
+  saveButton.disabled = true;
+
+  try {
+    const response = await fetch(apiUrl + "employee/message/" + employeeCode, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, punchIn, message }),
+    });
+    await parseResponse(response);
+    dashboardState.entriesByEmployee[employeeCode] = undefined;
+    dashboardState.historyLoaded = false;
+    showToast(t("dashboard.managerMessageSaved"), "success");
+    const modalInstance = bootstrap.Modal.getInstance(document.getElementById("dashboardNoteModal"));
+    if (modalInstance) {
+      modalInstance.hide();
+    }
+    await refreshDashboardView();
+  } catch (error) {
+    console.error("Error updating message:", error);
+    showToast(t("dashboard.managerMessageError"), "error");
+  } finally {
+    saveButton.disabled = false;
+  }
+}
+
 function renderDashboardApprovalQueue(entries) {
   const container = document.getElementById("dashboardApprovalQueue");
   const queueEntries = entries
@@ -156,13 +217,27 @@ function renderDashboardActiveSessions(entries) {
 function renderDashboardRecentActivity(entries) {
   const container = document.getElementById("dashboardRecentActivity");
   const recentEntries = Array.isArray(entries) ? entries : (dashboardState.history || []);
+  const searchInput = document.getElementById("dashboardRecentSearchInput");
+  const searchTerm = String(searchInput && searchInput.value || "").trim().toLowerCase();
+  const filteredEntries = searchTerm
+    ? recentEntries.filter(entry => {
+      const combinedText = [
+        entry.employee || t("shared.system"),
+        translateHistoryAction(entry.action || "event"),
+        auditMessageToText(entry.message || ""),
+        entry.timestamp || "",
+        formatDateToWords(String(entry.timestamp || "").split(" ")[0] || ""),
+      ].join(" ").toLowerCase();
+      return searchTerm.split(/\s+/).every(token => combinedText.includes(token));
+    })
+    : recentEntries;
 
-  if (recentEntries.length === 0) {
+  if (filteredEntries.length === 0) {
     container.innerHTML = createEmptyState(t("dashboard.noRecentHistory"));
     return;
   }
 
-  container.innerHTML = recentEntries.map(entry => {
+  container.innerHTML = filteredEntries.map(entry => {
     const actionTone = String(entry.action || "").toLowerCase();
     return `
       <article class="activity-card">
@@ -289,76 +364,85 @@ function renderEmployeeEntries(employeeCode, entries) {
     return;
   }
 
-  const groupedEntries = groupEntriesByDate(entries);
-  Object.keys(groupedEntries)
-    .sort((left, right) => new Date(right) - new Date(left))
-    .forEach(date => {
-      const dayEntries = groupedEntries[date];
-      const dateGroup = document.createElement("div");
-      dateGroup.className = "entry-date-group";
-      const totalDaySeconds = dayEntries.reduce((accumulator, entry) => accumulator + timeStringToSeconds(entry.overtime), 0);
-      dateGroup.innerHTML = `
-        <div class="entry-date-header">
-          <strong>${escapeHtml(formatDateToWords(date))}</strong>
-          <span>${escapeHtml(secondsToDurationLabel(totalDaySeconds))}</span>
-        </div>
-      `;
+  container.innerHTML = `
+    <div class="dashboard-table-wrap">
+      <table class="table dashboard-entry-table">
+        <thead>
+          <tr>
+            <th scope="col">${escapeHtml(t("dashboard.tableDate"))}</th>
+            <th scope="col">${escapeHtml(t("dashboard.tableWindow"))}</th>
+            <th scope="col">${escapeHtml(t("dashboard.tableProject"))}</th>
+            <th scope="col">${escapeHtml(t("dashboard.tableOvertimeCode"))}</th>
+            <th scope="col">${escapeHtml(t("dashboard.tableDuration"))}</th>
+            <th scope="col">${escapeHtml(t("dashboard.tableStatus"))}</th>
+            <th scope="col">${escapeHtml(t("dashboard.tableManagerNote"))}</th>
+            <th scope="col">${escapeHtml(t("dashboard.tableActions"))}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${entries.map(entry => {
+            const statusTone = getStatusTone(entry.status);
+            const isOpen = isEntryOpen(entry);
+            const isPending = String(entry.status || "pending").toLowerCase() === "pending";
+            const exactTimeLabel = getEntryExactTimeLabel(entry);
+            const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
+            const entryIdAttribute = ` data-entryid="${escapeHtml(entry.entryId || "")}"`;
+            const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
+            const exactPunchInAttribute = ` data-exactpunchin="${escapeHtml(getEntryExactPunchIn(entry))}"`;
+            const exactPunchOutAttribute = ` data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`;
+            const reviewButtons = isPending && !isOpen ? `
+              <button class="btn btn-success btn-sm approve-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.approve"))}">
+                <i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}
+              </button>
+              <button class="btn btn-danger btn-sm reject-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.reject"))}">
+                <i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}
+              </button>
+            ` : "";
 
-      dayEntries.forEach(entry => {
-        const statusTone = getStatusTone(entry.status);
-        const isOpen = isEntryOpen(entry);
-        const isPending = String(entry.status || "pending").toLowerCase() === "pending";
-        const exactTimeLabel = getEntryExactTimeLabel(entry);
-        const card = document.createElement("article");
-        card.className = `worklog-card${statusTone === "pending" ? " is-pending" : ""}${isOpen ? " is-open" : ""}`;
-
-        const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
-        const entryIdAttribute = ` data-entryid="${escapeHtml(entry.entryId || "")}"`;
-        const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
-        const exactPunchInAttribute = ` data-exactpunchin="${escapeHtml(getEntryExactPunchIn(entry))}"`;
-        const exactPunchOutAttribute = ` data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`;
-        const reviewButtons = isPending && !isOpen ? `
-          <button class="btn btn-success btn-sm action-btn approve-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.approve"))}">
-            <i class="fa-solid fa-check"></i>
-          </button>
-          <button class="btn btn-danger btn-sm action-btn reject-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.reject"))}">
-            <i class="fa-solid fa-ban"></i>
-          </button>
-        ` : "";
-        const actionHtml = `
-          ${reviewButtons}
-          <button class="btn btn-outline-secondary btn-sm action-btn update-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("modal.updateEntry"))}">
-            <i class="fa-solid fa-pen"></i>
-          </button>
-          <button class="btn btn-outline-secondary btn-sm action-btn delete-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
-            <i class="fa-solid fa-trash"></i>
-          </button>
-        `;
-
-        card.innerHTML = `
-          <div class="worklog-main">
-            <div>
-            <div class="worklog-title">${escapeHtml(formatQueueTitle(entry))}</div>
-            <div class="worklog-secondary">${escapeHtml(getEntryContextLabel(entry))}</div>
-            ${exactTimeLabel ? `<div class="panel-note">${escapeHtml(exactTimeLabel)}</div>` : ""}
-          </div>
-          <div class="meta-row">
-              <span class="inline-code-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.inProgress"))}</span>
-              <span class="status-badge ${statusTone}">${escapeHtml(translateStatus(entry.status || "pending"))}</span>
-          </div>
-        </div>
-        ${entry.message ? `<div class="worklog-message">${escapeHtml(entry.message)}</div>` : ""}
-        <div class="worklog-actions">${actionHtml}</div>
-        <div class="worklog-message-editor">
-            <input type="text" class="form-control message-input" placeholder="${escapeHtml(t("shared.managerMessage"))}" value="${escapeHtml(entry.message || "")}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}">
-            <button class="btn btn-outline-secondary btn-sm save-message-btn" type="button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}">${escapeHtml(t("action.saveNote"))}</button>
-        </div>
-      `;
-        dateGroup.appendChild(card);
-      });
-
-      container.appendChild(dateGroup);
-    });
+            return `
+              <tr class="dashboard-entry-row${statusTone === "pending" ? " is-pending" : ""}${isOpen ? " is-open" : ""}">
+                <td class="dashboard-entry-col-date">
+                  <div class="dashboard-table-main">${escapeHtml(formatDateToWords(entry.date))}</div>
+                </td>
+                <td class="dashboard-entry-col-window">
+                  <div class="dashboard-table-main">${escapeHtml(formatQueueTitle(entry))}</div>
+                  ${exactTimeLabel ? `<div class="dashboard-table-sub">${escapeHtml(exactTimeLabel)}</div>` : ""}
+                </td>
+                <td class="dashboard-entry-col-project">
+                  <span class="inline-code-pill">${escapeHtml(entry.projectCode || t("shared.noProject"))}</span>
+                </td>
+                <td class="dashboard-entry-col-overtime-code">
+                  ${entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : `<span class="meta-pill">-</span>`}
+                </td>
+                <td class="dashboard-entry-col-duration">
+                  <span class="inline-code-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.inProgress"))}</span>
+                </td>
+                <td class="dashboard-entry-col-status">
+                  <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(translateStatus(entry.status || "pending"))}</span>
+                </td>
+                <td class="dashboard-entry-col-note">
+                  <button type="button" class="dashboard-note-trigger${entry.message ? "" : " is-empty"}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-message="${escapeHtml(entry.message || "")}" title="${escapeHtml(t("shared.managerMessage"))}">
+                    ${escapeHtml(getDashboardNotePreview(entry.message))}
+                  </button>
+                </td>
+                <td class="dashboard-entry-col-actions">
+                  <div class="dashboard-entry-actions">
+                    ${reviewButtons}
+                    <button class="btn btn-outline-secondary btn-sm update-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("modal.updateEntry"))}">
+                      <i class="fa-solid fa-pen"></i> ${escapeHtml(t("action.edit"))}
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm delete-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
+                      <i class="fa-solid fa-trash"></i> ${escapeHtml(t("action.delete"))}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 async function fetchEmployeeData() {
@@ -859,6 +943,12 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
 });
 
 document.getElementById("punchClockEntries").addEventListener("click", event => {
+  const noteButton = event.target.closest(".dashboard-note-trigger");
+  if (noteButton) {
+    openDashboardNoteEditor(noteButton);
+    return;
+  }
+
   const updateButton = event.target.closest(".update-button");
   if (updateButton) {
     openUpdateModal(updateButton);
@@ -909,36 +999,7 @@ document.getElementById("dashboardActiveList").addEventListener("click", event =
   }
 });
 
-document.addEventListener("click", event => {
-  const saveButton = event.target.closest(".save-message-btn");
-  if (!saveButton) {
-    return;
-  }
-
-  const input = saveButton.parentElement.querySelector(".message-input");
-  const message = input.value;
-  const date = saveButton.getAttribute("data-date") || input.getAttribute("data-date");
-  const punchIn = saveButton.getAttribute("data-punchin") || input.getAttribute("data-punchin");
-  const employeeCode = document.getElementById("employeeSelect").value;
-  if (!employeeCode) {
-    showToast(t("dashboard.selectEmployeeBeforeNote"), "info");
-    return;
-  }
-
-  fetch(apiUrl + "employee/message/" + employeeCode, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ date, punchIn, message }),
-  })
-    .then(parseResponse)
-    .then(data => {
-      dashboardState.entriesByEmployee[employeeCode] = undefined;
-      dashboardState.historyLoaded = false;
-      showToast(t("dashboard.managerMessageSaved"), "success");
-      refreshDashboardView();
-    })
-    .catch(error => {
-      console.error("Error updating message:", error);
-      showToast(t("dashboard.managerMessageError"), "error");
-    });
+document.getElementById("dashboardSaveNoteBtn").addEventListener("click", saveDashboardNoteFromModal);
+document.getElementById("dashboardRecentSearchInput").addEventListener("input", () => {
+  renderDashboardRecentActivity(dashboardState.history || []);
 });

@@ -28,7 +28,7 @@
     "punchOut": "20:20:00",
     "overtime": "02:15:00",
     "status": "rejected",
-    "message": "Split support and build work into separate entries.",
+    "message": "",
     "projectCode": "APP-220",
     "overtimeCode": "OT-REL"
   },
