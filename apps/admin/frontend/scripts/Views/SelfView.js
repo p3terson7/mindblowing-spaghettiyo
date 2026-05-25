@@ -2,15 +2,29 @@ const selfViewState = {
   entries: [],
   projects: [],
   overtimeCodes: [],
+  paymentOptions: [],
+  reasonCodes: [],
   lookupsLoaded: false,
   selectedProjectCode: localStorage.getItem("selfSelectedProjectCode") || "",
   selectedOvertimeCode: localStorage.getItem("selfSelectedOvertimeCode") || "",
+  selectedPaymentOption: localStorage.getItem("selfSelectedPaymentOption") || "",
+  selectedReasonCode: localStorage.getItem("selfSelectedReasonCode") || "",
   currentMonthKey: "",
   expandedNotes: {},
+  statsFilter: {
+    range: ["month", "year", "all", "custom"].includes(localStorage.getItem("selfStatsRange")) ? localStorage.getItem("selfStatsRange") : "month",
+    projectCode: "",
+    status: "",
+    startDate: "",
+    endDate: "",
+  },
 };
 
 const SELF_PROJECT_STORAGE_KEY = "selfSelectedProjectCode";
 const SELF_OVERTIME_CODE_STORAGE_KEY = "selfSelectedOvertimeCode";
+const SELF_PAYMENT_OPTION_STORAGE_KEY = "selfSelectedPaymentOption";
+const SELF_REASON_CODE_STORAGE_KEY = "selfSelectedReasonCode";
+const SELF_STATS_RANGE_STORAGE_KEY = "selfStatsRange";
 
 function showSelfConfirmationModal(title, message, callback) {
   const modalTitle = document.getElementById("selfConfirmModalLabel");
@@ -49,6 +63,18 @@ function persistSelfSelections() {
   } else {
     localStorage.removeItem(SELF_OVERTIME_CODE_STORAGE_KEY);
   }
+
+  if (selfViewState.selectedPaymentOption) {
+    localStorage.setItem(SELF_PAYMENT_OPTION_STORAGE_KEY, selfViewState.selectedPaymentOption);
+  } else {
+    localStorage.removeItem(SELF_PAYMENT_OPTION_STORAGE_KEY);
+  }
+
+  if (selfViewState.selectedReasonCode) {
+    localStorage.setItem(SELF_REASON_CODE_STORAGE_KEY, selfViewState.selectedReasonCode);
+  } else {
+    localStorage.removeItem(SELF_REASON_CODE_STORAGE_KEY);
+  }
 }
 
 function updateSelfPunchAvailability() {
@@ -62,15 +88,19 @@ function updateSelfPunchAvailability() {
 
   primaryButton.disabled = !selfViewState.lookupsLoaded
     || !selfViewState.selectedProjectCode
-    || !selfViewState.selectedOvertimeCode;
+    || !selfViewState.selectedPaymentOption;
 }
 
 function renderSelfPunchSelectors() {
   const projectSelect = document.getElementById("selfProjectCodeSelect");
   const overtimeCodeSelect = document.getElementById("selfOvertimeCodeSelect");
+  const paymentOptionSelect = document.getElementById("selfPaymentOptionSelect");
+  const reasonCodeSelect = document.getElementById("selfReasonCodeSelect");
 
   projectSelect.innerHTML = buildProjectOptions(selfViewState.projects, t("shared.project"), selfViewState.selectedProjectCode);
   overtimeCodeSelect.innerHTML = buildOvertimeCodeOptions(selfViewState.overtimeCodes, t("shared.overtimeCode"), selfViewState.selectedOvertimeCode);
+  paymentOptionSelect.innerHTML = buildPaymentOptionOptions(selfViewState.paymentOptions, t("shared.paymentOption"), selfViewState.selectedPaymentOption);
+  reasonCodeSelect.innerHTML = buildReasonCodeOptions(selfViewState.reasonCodes, t("shared.reasonCode"), selfViewState.selectedReasonCode);
 
   if (selfViewState.selectedProjectCode && projectSelect.value !== selfViewState.selectedProjectCode) {
     selfViewState.selectedProjectCode = "";
@@ -80,8 +110,18 @@ function renderSelfPunchSelectors() {
     selfViewState.selectedOvertimeCode = "";
   }
 
+  if (selfViewState.selectedPaymentOption && paymentOptionSelect.value !== selfViewState.selectedPaymentOption) {
+    selfViewState.selectedPaymentOption = "";
+  }
+
+  if (selfViewState.selectedReasonCode && reasonCodeSelect.value !== selfViewState.selectedReasonCode) {
+    selfViewState.selectedReasonCode = "";
+  }
+
   projectSelect.value = selfViewState.selectedProjectCode;
   overtimeCodeSelect.value = selfViewState.selectedOvertimeCode;
+  paymentOptionSelect.value = selfViewState.selectedPaymentOption;
+  reasonCodeSelect.value = selfViewState.selectedReasonCode;
 
   persistSelfSelections();
   updateSelfPunchAvailability();
@@ -91,6 +131,8 @@ async function loadSelfLookups(forceRefresh = false) {
   const payload = await fetchOvertimeEntryLookups(forceRefresh);
   selfViewState.projects = payload.projects;
   selfViewState.overtimeCodes = payload.overtimeCodes;
+  selfViewState.paymentOptions = payload.paymentOptions;
+  selfViewState.reasonCodes = payload.reasonCodes;
   selfViewState.lookupsLoaded = true;
   renderSelfPunchSelectors();
 }
@@ -98,6 +140,8 @@ async function loadSelfLookups(forceRefresh = false) {
 function applySelfBootstrap(payload) {
   selfViewState.projects = Array.isArray(payload && payload.projects) ? payload.projects : [];
   selfViewState.overtimeCodes = Array.isArray(payload && payload.overtimeCodes) ? payload.overtimeCodes : [];
+  selfViewState.paymentOptions = Array.isArray(payload && payload.paymentOptions) ? payload.paymentOptions : [];
+  selfViewState.reasonCodes = Array.isArray(payload && payload.reasonCodes) ? payload.reasonCodes : [];
   selfViewState.lookupsLoaded = true;
   renderSelfPunchSelectors();
 }
@@ -194,6 +238,293 @@ function getSelfCalendarEntrySeconds(entry) {
   return timeStringToSeconds(entry && entry.overtime);
 }
 
+function toSelfDateInputValue(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function getSelfStatsDateRange() {
+  const now = new Date();
+  const range = selfViewState.statsFilter.range || "month";
+
+  if (range === "custom") {
+    return {
+      startDate: normalizeDateInputValue(selfViewState.statsFilter.startDate),
+      endDate: normalizeDateInputValue(selfViewState.statsFilter.endDate),
+    };
+  }
+
+  if (range === "year") {
+    return {
+      startDate: toSelfDateInputValue(new Date(now.getFullYear(), 0, 1)),
+      endDate: toSelfDateInputValue(now),
+    };
+  }
+
+  if (range === "month") {
+    return {
+      startDate: toSelfDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1)),
+      endDate: toSelfDateInputValue(now),
+    };
+  }
+
+  return { startDate: "", endDate: "" };
+}
+
+function getSelfStatsStatus(entry) {
+  if (isEntryOpen(entry)) {
+    return "live";
+  }
+  return String(entry && entry.status || "pending").toLowerCase();
+}
+
+function getSelfProjectName(projectCode) {
+  const match = selfViewState.projects.find(project => String(project.projectCode || "") === String(projectCode || ""));
+  return match ? String(match.projectName || projectCode) : String(projectCode || "");
+}
+
+function buildSelfStatsProjectFilterOptions(entries) {
+  const projectMap = {};
+  (selfViewState.projects || []).forEach(project => {
+    const code = String(project.projectCode || "").trim();
+    if (code) {
+      projectMap[code] = {
+        projectCode: code,
+        projectName: String(project.projectName || code),
+      };
+    }
+  });
+
+  (entries || []).forEach(entry => {
+    const code = String(entry.projectCode || "").trim();
+    if (code && !projectMap[code]) {
+      projectMap[code] = { projectCode: code, projectName: code };
+    }
+  });
+
+  const options = Object.values(projectMap).sort((left, right) => left.projectCode.localeCompare(right.projectCode));
+  return buildProjectOptions(options, t("filters.allProjects"), selfViewState.statsFilter.projectCode);
+}
+
+function syncSelfStatsControls(entries) {
+  const rangeButtons = document.querySelectorAll("[data-self-stats-range]");
+  rangeButtons.forEach(button => {
+    button.classList.toggle("active", button.getAttribute("data-self-stats-range") === selfViewState.statsFilter.range);
+  });
+
+  const range = getSelfStatsDateRange();
+  const startInput = document.getElementById("selfStatsStartDate");
+  const endInput = document.getElementById("selfStatsEndDate");
+  if (startInput && endInput) {
+    startInput.value = selfViewState.statsFilter.range === "custom" ? selfViewState.statsFilter.startDate : range.startDate;
+    endInput.value = selfViewState.statsFilter.range === "custom" ? selfViewState.statsFilter.endDate : range.endDate;
+    startInput.disabled = selfViewState.statsFilter.range !== "custom";
+    endInput.disabled = selfViewState.statsFilter.range !== "custom";
+  }
+
+  const projectSelect = document.getElementById("selfStatsProjectFilter");
+  if (projectSelect) {
+    projectSelect.innerHTML = buildSelfStatsProjectFilterOptions(entries);
+    projectSelect.value = selfViewState.statsFilter.projectCode || "";
+    if (selfViewState.statsFilter.projectCode && projectSelect.value !== selfViewState.statsFilter.projectCode) {
+      selfViewState.statsFilter.projectCode = "";
+      projectSelect.value = "";
+    }
+  }
+
+  const statusSelect = document.getElementById("selfStatsStatusFilter");
+  if (statusSelect) {
+    statusSelect.value = selfViewState.statsFilter.status || "";
+  }
+}
+
+function getFilteredSelfStatsEntries(entries) {
+  const range = getSelfStatsDateRange();
+  return (entries || []).filter(entry => {
+    if (!isDateWithinRange(entry.date, range.startDate, range.endDate)) {
+      return false;
+    }
+    if (selfViewState.statsFilter.projectCode && String(entry.projectCode || "") !== selfViewState.statsFilter.projectCode) {
+      return false;
+    }
+    if (selfViewState.statsFilter.status && getSelfStatsStatus(entry) !== selfViewState.statsFilter.status) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function getTopSelfStatsBucket(buckets) {
+  return Object.values(buckets).sort((left, right) => {
+    if (right.seconds !== left.seconds) {
+      return right.seconds - left.seconds;
+    }
+    return right.count - left.count;
+  })[0] || null;
+}
+
+function buildSelfStatsModel(entries) {
+  const filteredEntries = getFilteredSelfStatsEntries(entries);
+  const projectBuckets = {};
+  const overtimeCodeBuckets = {};
+  const totals = {
+    count: filteredEntries.length,
+    seconds: 0,
+    approvedSeconds: 0,
+    pending: 0,
+    rejected: 0,
+    live: 0,
+    notes: 0,
+    maxSeconds: 0,
+  };
+
+  filteredEntries.forEach(entry => {
+    const seconds = getSelfCalendarEntrySeconds(entry);
+    const status = getSelfStatsStatus(entry);
+    const rawProjectCode = String(entry.projectCode || "").trim();
+    const projectCode = rawProjectCode || "__NO_PROJECT__";
+    const overtimeCode = String(entry.overtimeCode || "").trim() || t("shared.uncoded");
+
+    if (!projectBuckets[projectCode]) {
+      projectBuckets[projectCode] = {
+        projectCode,
+        projectName: rawProjectCode ? getSelfProjectName(projectCode) : t("shared.noProject"),
+        count: 0,
+        seconds: 0,
+        approvedSeconds: 0,
+        pending: 0,
+        rejected: 0,
+        live: 0,
+        notes: 0,
+        maxSeconds: 0,
+        latestEntry: null,
+        overtimeCodes: {},
+      };
+    }
+
+    const projectBucket = projectBuckets[projectCode];
+    projectBucket.count += 1;
+    projectBucket.seconds += seconds;
+    projectBucket.maxSeconds = Math.max(projectBucket.maxSeconds, seconds);
+    projectBucket.latestEntry = !projectBucket.latestEntry || toEntryDateTime(entry) > toEntryDateTime(projectBucket.latestEntry)
+      ? entry
+      : projectBucket.latestEntry;
+
+    if (!projectBucket.overtimeCodes[overtimeCode]) {
+      projectBucket.overtimeCodes[overtimeCode] = { code: overtimeCode, count: 0, seconds: 0 };
+    }
+    projectBucket.overtimeCodes[overtimeCode].count += 1;
+    projectBucket.overtimeCodes[overtimeCode].seconds += seconds;
+
+    if (!overtimeCodeBuckets[overtimeCode]) {
+      overtimeCodeBuckets[overtimeCode] = { code: overtimeCode, count: 0, seconds: 0 };
+    }
+    overtimeCodeBuckets[overtimeCode].count += 1;
+    overtimeCodeBuckets[overtimeCode].seconds += seconds;
+
+    totals.seconds += seconds;
+    totals.maxSeconds = Math.max(totals.maxSeconds, seconds);
+    if (String(entry.message || "").trim()) {
+      totals.notes += 1;
+      projectBucket.notes += 1;
+    }
+    if (status === "approved") {
+      totals.approvedSeconds += seconds;
+      projectBucket.approvedSeconds += seconds;
+    } else if (status === "pending") {
+      totals.pending += 1;
+      projectBucket.pending += 1;
+    } else if (status === "rejected") {
+      totals.rejected += 1;
+      projectBucket.rejected += 1;
+    } else if (status === "live") {
+      totals.live += 1;
+      projectBucket.live += 1;
+    }
+  });
+
+  return {
+    entries: filteredEntries,
+    totals,
+    projects: Object.values(projectBuckets).sort((left, right) => right.seconds - left.seconds),
+    topOvertimeCode: getTopSelfStatsBucket(overtimeCodeBuckets),
+  };
+}
+
+function renderSelfStats(entries) {
+  const summaryContainer = document.getElementById("selfStatsSummary");
+  const projectsContainer = document.getElementById("selfProjectStatsContainer");
+  if (!summaryContainer || !projectsContainer) {
+    return;
+  }
+
+  syncSelfStatsControls(entries);
+  const model = buildSelfStatsModel(entries);
+  const averageSeconds = model.totals.count > 0 ? Math.round(model.totals.seconds / model.totals.count) : 0;
+  const topCodeLabel = model.topOvertimeCode
+    ? `${model.topOvertimeCode.code} | ${secondsToDurationLabel(model.topOvertimeCode.seconds)}`
+    : t("shared.uncoded");
+
+  const summaryCards = [
+    { label: t("self.statsTotal"), value: secondsToDurationLabel(model.totals.seconds), hint: t("self.statsFilteredSummary", { count: model.totals.count, duration: secondsToDurationLabel(model.totals.seconds) }) },
+    { label: t("self.statsApproved"), value: secondsToDurationLabel(model.totals.approvedSeconds), hint: t("status.approved") },
+    { label: t("self.statsAverage"), value: secondsToDurationLabel(averageSeconds), hint: t("self.statsMax") + " " + secondsToDurationLabel(model.totals.maxSeconds) },
+    { label: t("self.statsPendingRejected"), value: `${model.totals.pending} / ${model.totals.rejected}`, hint: `${t("self.statsLive")}: ${model.totals.live}` },
+    { label: t("self.statsTopCode"), value: topCodeLabel, hint: `${t("self.statsSupervisorNotes")}: ${model.totals.notes}` },
+  ];
+
+  summaryContainer.innerHTML = summaryCards.map(card => `
+    <article class="self-stat-card">
+      <span class="metric-label">${escapeHtml(card.label)}</span>
+      <strong class="metric-value mono">${escapeHtml(card.value)}</strong>
+      <span class="metric-hint">${escapeHtml(card.hint)}</span>
+    </article>
+  `).join("");
+
+  if (model.projects.length === 0) {
+    projectsContainer.innerHTML = createEmptyState(t("self.statsNoEntries"));
+    return;
+  }
+
+  projectsContainer.innerHTML = `
+    <div class="self-project-stats-header">
+      <span class="panel-kicker">${escapeHtml(t("self.statsProjectBreakdown"))}</span>
+      <span class="panel-note">${escapeHtml(t("self.statsFilteredSummary", { count: model.totals.count, duration: secondsToDurationLabel(model.totals.seconds) }))}</span>
+    </div>
+    <div class="self-project-stat-list">
+      ${model.projects.map(project => {
+        const average = project.count > 0 ? Math.round(project.seconds / project.count) : 0;
+        const topProjectCode = getTopSelfStatsBucket(project.overtimeCodes);
+        const latestLabel = project.latestEntry
+          ? `${formatDateLabel(project.latestEntry.date)} | ${getEntryRoundedTimeRange(project.latestEntry)}`
+          : t("employees.noRecentEntry");
+        return `
+          <article class="self-project-stat-card">
+            <div class="self-project-stat-main">
+              <div>
+                <div class="self-project-stat-title">${escapeHtml(project.projectCode === "__NO_PROJECT__" ? t("shared.noProject") : project.projectCode)}</div>
+                <div class="worklog-secondary">${escapeHtml(project.projectName || project.projectCode)}</div>
+              </div>
+              <span class="inline-code-pill">${escapeHtml(secondsToDurationLabel(project.seconds))}</span>
+            </div>
+            <div class="self-project-stat-grid">
+              <span><strong>${escapeHtml(String(project.count))}</strong> ${escapeHtml(t("self.statsEntries"))}</span>
+              <span><strong>${escapeHtml(secondsToDurationLabel(project.approvedSeconds))}</strong> ${escapeHtml(t("self.statsApproved"))}</span>
+              <span><strong>${escapeHtml(String(project.pending))}/${escapeHtml(String(project.rejected))}</strong> ${escapeHtml(t("self.statsPendingRejected"))}</span>
+              <span><strong>${escapeHtml(secondsToDurationLabel(average))}</strong> ${escapeHtml(t("self.statsAverage"))}</span>
+              <span><strong>${escapeHtml(secondsToDurationLabel(project.maxSeconds))}</strong> ${escapeHtml(t("self.statsMax"))}</span>
+              <span><strong>${escapeHtml(topProjectCode ? topProjectCode.code : t("shared.uncoded"))}</strong> ${escapeHtml(t("self.statsTopCode"))}</span>
+            </div>
+            <div class="self-project-stat-footer">
+              <span>${escapeHtml(latestLabel)}</span>
+              <span>${escapeHtml(t("self.statsSupervisorNotes"))}: ${escapeHtml(String(project.notes))}</span>
+            </div>
+          </article>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
 function updateSelfSummaryMetrics(allEntries) {
   const now = new Date();
   const currentMonthEntries = allEntries.filter(entry => {
@@ -243,7 +574,12 @@ function updateSelfStatus(entries) {
   primaryButton.textContent = t("self.startOvertime");
   primaryButton.dataset.punchType = "in";
   punchSelectors.classList.remove("d-none");
-  selectionSummary.textContent = [selfViewState.selectedProjectCode, selfViewState.selectedOvertimeCode].filter(Boolean).join(" | ");
+  selectionSummary.textContent = [
+    selfViewState.selectedProjectCode,
+    selfViewState.selectedOvertimeCode,
+    selfViewState.selectedPaymentOption ? formatPaymentOptionValue(selfViewState.selectedPaymentOption) : "",
+    selfViewState.selectedReasonCode,
+  ].filter(Boolean).join(" | ");
 
   if (!latestEntry) {
     punchState.textContent = t("status.noHistory");
@@ -317,7 +653,7 @@ function renderSelfEntries(entries) {
     const totalDaySeconds = dayEntries.reduce((accumulator, entry) => accumulator + getSelfCalendarEntrySeconds(entry), 0);
 
     const entryMarkup = dayEntries.map(entry => {
-      const statusTone = getStatusTone(entry.status);
+      const statusTone = getStatusTone(entry);
       const note = String(entry.message || "").trim();
       const entryKey = getSelfEntryKey(entry);
       const isExpanded = Boolean(selfViewState.expandedNotes[entryKey]);
@@ -328,7 +664,7 @@ function renderSelfEntries(entries) {
         <div class="calendar-entry">
           <div class="calendar-entry-main">
             <span class="calendar-entry-time">${escapeHtml(getEntryRoundedTimeRange(entry))}</span>
-            <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(translateStatus(entry.status || "pending"))}</span>
+            <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
           </div>
           <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
           ${exactTimeLabel ? `<div class="calendar-entry-meta">${escapeHtml(exactTimeLabel)}</div>` : ""}
@@ -381,7 +717,12 @@ function renderSelfEntries(entries) {
         <div class="employee-calendar-label">${escapeHtml(String(activeYear))}</div>
         <button type="button" class="btn btn-outline-secondary btn-sm employee-calendar-year-button" data-self-calendar-year-nav="next"><i class="fa-solid fa-chevron-right"></i></button>
       </div>
-      <div class="employee-calendar-summary">${escapeHtml(t("employees.calendarSummary", { count: monthEntries.length, duration: secondsToDurationLabel(monthTotalSeconds) }))}</div>
+      <div class="employee-calendar-actions">
+        <div class="employee-calendar-summary">${escapeHtml(t("employees.calendarSummary", { count: monthEntries.length, duration: secondsToDurationLabel(monthTotalSeconds) }))}</div>
+        <button type="button" class="btn btn-outline-secondary btn-sm self-export-month-button" data-self-export-month="${escapeHtml(activeMonthKey)}">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(t("export.openMonthlyHtml"))}
+        </button>
+      </div>
     </div>
     <div class="employee-month-board-shell">
       <div class="employee-month-board">
@@ -407,6 +748,7 @@ function renderSelfState(entries) {
   const allEntries = sortEntriesByDateTime(entries, true);
   updateSelfSummaryMetrics(allEntries);
   updateSelfStatus(allEntries);
+  renderSelfStats(allEntries);
   renderSelfEntries(allEntries);
 }
 
@@ -435,8 +777,10 @@ async function submitSelfPunch(type) {
   const promptTime = formatPromptTime(now);
   const projectCode = selfViewState.selectedProjectCode;
   const overtimeCode = selfViewState.selectedOvertimeCode;
+  const paymentOption = selfViewState.selectedPaymentOption;
+  const reasonCode = selfViewState.selectedReasonCode;
 
-  if (type === "in" && (!projectCode || !overtimeCode)) {
+  if (type === "in" && (!projectCode || !paymentOption)) {
     showToast(t("self.selectionRequired"), "info");
     return;
   }
@@ -445,7 +789,9 @@ async function submitSelfPunch(type) {
     ? t("self.startConfirm", {
       time: escapeHtml(promptTime),
       project: escapeHtml(projectCode),
-      code: escapeHtml(overtimeCode),
+      code: escapeHtml(overtimeCode || t("shared.overtimeCode")),
+      payment: escapeHtml(formatPaymentOptionValue(paymentOption)),
+      reason: escapeHtml(reasonCode || t("shared.reasonCode")),
     })
     : t("self.endConfirm", { time: escapeHtml(promptTime) });
 
@@ -457,14 +803,16 @@ async function submitSelfPunch(type) {
         const response = await fetch(apiUrl + "self/punch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type, projectCode, overtimeCode }),
+          body: JSON.stringify({ type, projectCode, overtimeCode, paymentOption, reasonCode }),
         });
         const result = await parseResponse(response);
         const formattedTime = formatTimeString(result.time);
-        const statusMessage = t("self.punchSuccess", { action: actionLabel, time: formattedTime });
+        const statusMessage = result && result.requiresClockOutReview
+          ? t("self.clockOutNeedsReview", { date: formatDateLabel(result.reviewEntryDate) })
+          : t("self.punchSuccess", { action: actionLabel, time: formattedTime });
 
         document.getElementById("selfStatusMessage").textContent = statusMessage;
-        showToast(statusMessage, "success");
+        showToast(statusMessage, result && result.requiresClockOutReview ? "warning" : "success");
         await refreshSelfView();
       } catch (error) {
         console.error(`Error during ${actionLabel.toLowerCase()}:`, error);
@@ -491,7 +839,79 @@ document.getElementById("selfOvertimeCodeSelect").addEventListener("change", eve
   updateSelfStatus(selfViewState.entries);
 });
 
+document.getElementById("selfPaymentOptionSelect").addEventListener("change", event => {
+  selfViewState.selectedPaymentOption = event.target.value;
+  persistSelfSelections();
+  updateSelfStatus(selfViewState.entries);
+});
+
+document.getElementById("selfReasonCodeSelect").addEventListener("change", event => {
+  selfViewState.selectedReasonCode = event.target.value;
+  persistSelfSelections();
+  updateSelfStatus(selfViewState.entries);
+});
+
+document.getElementById("selfStatsRangeGroup").addEventListener("click", event => {
+  const rangeButton = event.target.closest("[data-self-stats-range]");
+  if (!rangeButton) {
+    return;
+  }
+
+  selfViewState.statsFilter.range = rangeButton.getAttribute("data-self-stats-range") || "month";
+  localStorage.setItem(SELF_STATS_RANGE_STORAGE_KEY, selfViewState.statsFilter.range);
+  renderSelfStats(selfViewState.entries);
+});
+
+document.getElementById("selfStatsProjectFilter").addEventListener("change", event => {
+  selfViewState.statsFilter.projectCode = event.target.value;
+  renderSelfStats(selfViewState.entries);
+});
+
+document.getElementById("selfStatsStatusFilter").addEventListener("change", event => {
+  selfViewState.statsFilter.status = event.target.value;
+  renderSelfStats(selfViewState.entries);
+});
+
+["selfStatsStartDate", "selfStatsEndDate"].forEach(id => {
+  document.getElementById(id).addEventListener("input", () => {
+    selfViewState.statsFilter.range = "custom";
+    selfViewState.statsFilter.startDate = document.getElementById("selfStatsStartDate").value;
+    selfViewState.statsFilter.endDate = document.getElementById("selfStatsEndDate").value;
+    localStorage.setItem(SELF_STATS_RANGE_STORAGE_KEY, "custom");
+    renderSelfStats(selfViewState.entries);
+  });
+});
+
+document.getElementById("selfStatsResetFiltersBtn").addEventListener("click", () => {
+  selfViewState.statsFilter = {
+    range: "month",
+    projectCode: "",
+    status: "",
+    startDate: "",
+    endDate: "",
+  };
+  localStorage.setItem(SELF_STATS_RANGE_STORAGE_KEY, "month");
+  renderSelfStats(selfViewState.entries);
+});
+
 document.getElementById("selfEntriesContainer").addEventListener("click", event => {
+  const exportButton = event.target.closest(".self-export-month-button");
+  if (exportButton) {
+    const currentUser = typeof getCurrentUser === "function" ? getCurrentUser() : null;
+    openMonthlyEntriesExportHtml({
+      entries: selfViewState.entries,
+      monthKey: exportButton.getAttribute("data-self-export-month") || selfViewState.currentMonthKey,
+      employeeName: currentUser && currentUser.displayName ? currentUser.displayName : t("shared.employee"),
+      employeeCode: currentUser && currentUser.employeeCode ? currentUser.employeeCode : "",
+      lookups: {
+        overtimeCodes: selfViewState.overtimeCodes,
+        paymentOptions: selfViewState.paymentOptions,
+        reasonCodes: selfViewState.reasonCodes,
+      },
+    });
+    return;
+  }
+
   const yearNavButton = event.target.closest(".employee-calendar-year-button");
   if (yearNavButton) {
     const direction = yearNavButton.getAttribute("data-self-calendar-year-nav");

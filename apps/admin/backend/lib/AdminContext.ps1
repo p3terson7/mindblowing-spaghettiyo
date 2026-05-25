@@ -94,23 +94,126 @@ $overtimeCodesFile = Join-Path -Path $sharedFolder -ChildPath "overtimeCodes.jso
 if (!(Test-Path -Path $overtimeCodesFile)) {
     $defaultOvertimeCodes = @(
         @{
-            code  = "OT-OPS"
-            label = "Operational Support"
+            code    = ""
+            labelEn = "Overtime Code"
+            labelFr = "Code supp."
         },
         @{
-            code  = "OT-MNT"
-            label = "Maintenance Window"
+            code    = "260"
+            labelEn = "OVERTIME, Regular Working Day"
+            labelFr = "HEURES SUPPLÉMENTAIRES, Jour ouvrable régulier"
         },
         @{
-            code  = "OT-REL"
-            label = "Release / Deployment"
+            code    = "261"
+            labelEn = "OVERTIME, First Day of Rest"
+            labelFr = "HEURES SUPPLÉMENTAIRES, Premier jour de repos"
         },
         @{
-            code  = "OT-CLS"
-            label = "Month-End / Closeout"
+            code    = "262"
+            labelEn = "OVERTIME, Second or Subsequent Day of Rest"
+            labelFr = "HEURES SUPPLÉMENTAIRES, Deuxième jour de repos subséquent"
+        },
+        @{
+            code    = "263"
+            labelEn = "OVERTIME, Designated Holiday"
+            labelFr = "HEURES SUPPLÉMENTAIRES, Congé férié"
+        },
+        @{
+            code    = "089"
+            labelEn = "TRAVEL TIME, Regular Working Day"
+            labelFr = "TEMPS de DÉPLACEMENT, Jour ouvrable régulier"
+        },
+        @{
+            code    = "072"
+            labelEn = "TRAVEL TIME, Day of Rest"
+            labelFr = "TEMPS de DÉPLACEMENT, Jour de repos"
+        },
+        @{
+            code    = "009"
+            labelEn = "CALL BACK"
+            labelFr = "RAPPEL AU TRAVAIL"
+        },
+        @{
+            code    = "050"
+            labelEn = "REPORTING PAY"
+            labelFr = "INDEMNITÉ DE PRÉSENCE"
+        },
+        @{
+            code    = "049"
+            labelEn = "PART TIME, Additional Hours"
+            labelFr = "TEMPS PARTIEL, Heures additionnelles"
+        },
+        @{
+            code    = "043"
+            labelEn = "PART TIME, Premium Pay for Work on a Holiday"
+            labelFr = "TEMPS PARTIEL, Prime pour le travail effectué lors d'un jour férié"
         }
     )
     $defaultOvertimeCodes | ConvertTo-Json -Depth 3 | Set-Content -Path $overtimeCodesFile -Encoding UTF8
+}
+
+$paymentOptionsFile = Join-Path -Path $sharedFolder -ChildPath "paymentOptions.json"
+if (!(Test-Path -Path $paymentOptionsFile)) {
+    $defaultPaymentOptions = @(
+        @{
+            code    = "cash"
+            labelEn = "Cash"
+            labelFr = "En espèce"
+        },
+        @{
+            code    = "leave"
+            labelEn = "Leave"
+            labelFr = "Congé"
+        }
+    )
+    $defaultPaymentOptions | ConvertTo-Json -Depth 3 | Set-Content -Path $paymentOptionsFile -Encoding UTF8
+}
+
+$reasonCodesFile = Join-Path -Path $sharedFolder -ChildPath "reasonCodes.json"
+if (!(Test-Path -Path $reasonCodesFile)) {
+    $defaultReasonCodes = @(
+        @{
+            code    = ""
+            labelEn = "Reason"
+            labelFr = "Raison"
+        },
+        @{
+            code    = "A"
+            labelEn = "Emergency Situation"
+            labelFr = "Situation d'urgence"
+        },
+        @{
+            code    = "B"
+            labelEn = "Cost Effectiveness"
+            labelFr = "Coût-efficacité"
+        },
+        @{
+            code    = "C"
+            labelEn = "Exceptional Circumstances"
+            labelFr = "Circonstances exceptionnelles"
+        },
+        @{
+            code    = "D"
+            labelEn = "Significant Workload Increases"
+            labelFr = "Augmentation significative de charge de travail"
+        },
+        @{
+            code    = "E"
+            labelEn = "Unanticipated Absence"
+            labelFr = "Absence imprévue"
+        },
+        @{
+            code    = "F"
+            labelEn = "Vacant Position"
+            labelFr = "Poste vacant"
+        },
+        @{
+            code    = "G"
+            labelEn = "Other"
+            labelFr = "Autre"
+        }
+    )
+    $defaultReasonCodes | ConvertTo-Json -Depth 3 | Set-Content -Path $reasonCodesFile -Encoding UTF8
 }
 
 # Ensure employeeNames mapping exists.

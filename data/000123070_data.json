@@ -8,7 +8,9 @@
     "status": "approved",
     "message": "After-hours deployment support.",
     "projectCode": "APP-220",
-    "overtimeCode": "OT-REL"
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": ""
   },
   {
     "name": "Alice Johnson",
@@ -19,7 +21,9 @@
     "status": "approved",
     "message": "",
     "projectCode": "OPS-410",
-    "overtimeCode": "OT-CLS"
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": ""
   },
   {
     "name": "Alice Johnson",
@@ -30,6 +34,8 @@
     "status": "approved",
     "message": "",
     "projectCode": "INF-330",
-    "overtimeCode": "OT-MNT"
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": ""
   }
 ]

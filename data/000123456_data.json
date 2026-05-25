@@ -8,7 +8,9 @@
     "status": "approved",
     "message": "",
     "projectCode": "CLT-120",
-    "overtimeCode": "OT-OPS"
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": ""
   },
   {
     "name": "Jane Smith",
@@ -19,7 +21,9 @@
     "status": "approved",
     "message": "",
     "projectCode": "APP-220",
-    "overtimeCode": "OT-REL"
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": ""
   },
   {
     "name": "Jane Smith",
@@ -30,7 +34,9 @@
     "status": "approved",
     "message": "Month-end reconciliation and report validation.",
     "projectCode": "OPS-410",
-    "overtimeCode": "OT-CLS"
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": ""
   },
   {
     "name": "Jane Smith",
@@ -41,7 +47,9 @@
     "status": "approved",
     "message": "",
     "projectCode": "APP-220",
-    "overtimeCode": "OT-MNT"
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": ""
   },
   {
     "entryId": "ae1af77a085e4618bf5da890848200db",
@@ -55,6 +63,8 @@
     "status": "rejected",
     "message": "big badaboum",
     "projectCode": "APP-220",
-    "overtimeCode": "OT-OPS"
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": ""
   }
 ]

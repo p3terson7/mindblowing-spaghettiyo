@@ -1,0 +1,42 @@
+[
+  {
+    "code": "",
+    "labelEn": "Reason",
+    "labelFr": "Raison"
+  },
+  {
+    "code": "A",
+    "labelEn": "Emergency Situation",
+    "labelFr": "Situation d'urgence"
+  },
+  {
+    "code": "B",
+    "labelEn": "Cost Effectiveness",
+    "labelFr": "Coût-efficacité"
+  },
+  {
+    "code": "C",
+    "labelEn": "Exceptional Circumstances",
+    "labelFr": "Circonstances exceptionnelles"
+  },
+  {
+    "code": "D",
+    "labelEn": "Significant Workload Increases",
+    "labelFr": "Augmentation significative de charge de travail"
+  },
+  {
+    "code": "E",
+    "labelEn": "Unanticipated Absence",
+    "labelFr": "Absence imprévue"
+  },
+  {
+    "code": "F",
+    "labelEn": "Vacant Position",
+    "labelFr": "Poste vacant"
+  },
+  {
+    "code": "G",
+    "labelEn": "Other",
+    "labelFr": "Autre"
+  }
+]

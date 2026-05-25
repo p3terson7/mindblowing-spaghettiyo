@@ -1,11 +1,44 @@
 const APP_API_URL_KEY = "overtimeAppApiUrl";
 const APP_SESSION_KEY = "overtimeAppSession";
+const APP_THEME_KEY = "overtimeAppTheme";
 const LEGACY_API_URL_KEYS = ["adminApiUrl", "employeeApiUrl"];
 const LEGACY_SESSION_KEYS = ["adminSession", "employeeSession"];
 const ROLE_VIEW_MAP = {
   admin: ["dashboardView", "employeesView", "adminView", "projectsView"],
   employee: ["selfView"],
 };
+
+function getStoredTheme() {
+  return localStorage.getItem(APP_THEME_KEY) === "dark" ? "dark" : "light";
+}
+
+function updateThemeToggle(theme) {
+  const toggleButton = document.getElementById("appThemeToggleButton");
+  const toggleText = document.getElementById("appThemeToggleText");
+  if (!toggleButton || !toggleText) {
+    return;
+  }
+
+  const nextTheme = theme === "dark" ? "light" : "dark";
+  const icon = toggleButton.querySelector("i");
+  if (icon) {
+    icon.className = nextTheme === "dark" ? "fa-solid fa-moon" : "fa-solid fa-sun";
+  }
+  toggleText.textContent = t(nextTheme === "dark" ? "theme.dark" : "theme.light");
+  toggleButton.setAttribute("aria-label", t("theme.label"));
+  toggleButton.setAttribute("title", t("theme.label"));
+}
+
+function applyAppTheme(theme) {
+  const resolvedTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", resolvedTheme);
+  localStorage.setItem(APP_THEME_KEY, resolvedTheme);
+  updateThemeToggle(resolvedTheme);
+}
+
+function toggleAppTheme() {
+  applyAppTheme(getStoredTheme() === "dark" ? "light" : "dark");
+}
 
 const appShellState = {
   nativeFetch: window.fetch.bind(window),
@@ -200,6 +233,69 @@ function getSessionToken() {
   return session && session.token ? session.token : null;
 }
 
+function getCurrentApiUrl() {
+  return normalizeApiUrl(window.apiUrl || getStoredApiUrl(), window.defaultApiUrl);
+}
+
+function getFetchTargetUrl(resource) {
+  if (typeof resource === "string") {
+    return resource;
+  }
+
+  if (resource && typeof resource.url === "string") {
+    return resource.url;
+  }
+
+  if (resource && typeof resource.href === "string") {
+    return resource.href;
+  }
+
+  return "";
+}
+
+function getBearerTokenFromHeader(headerValue) {
+  const match = String(headerValue || "").match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+function isApiRequestUrl(targetUrl, routePrefix) {
+  const activeApiUrl = getCurrentApiUrl();
+  if (!targetUrl || !activeApiUrl) {
+    return false;
+  }
+
+  try {
+    const requestUrl = new URL(targetUrl, window.location.href);
+    const apiBaseUrl = new URL(activeApiUrl, window.location.href);
+    if (requestUrl.origin !== apiBaseUrl.origin) {
+      return false;
+    }
+
+    const basePath = apiBaseUrl.pathname.endsWith("/") ? apiBaseUrl.pathname : `${apiBaseUrl.pathname}/`;
+    if (basePath !== "/" && requestUrl.pathname.indexOf(basePath) !== 0 && requestUrl.pathname !== apiBaseUrl.pathname) {
+      return false;
+    }
+
+    if (!routePrefix) {
+      return true;
+    }
+
+    const relativePath = basePath === "/"
+      ? requestUrl.pathname.replace(/^\//, "")
+      : requestUrl.pathname.slice(basePath.length);
+    return relativePath.indexOf(routePrefix) === 0;
+  } catch (error) {
+    const normalizedApiUrl = normalizeApiUrl(activeApiUrl, window.defaultApiUrl);
+    if (String(targetUrl).indexOf(normalizedApiUrl) !== 0) {
+      return false;
+    }
+
+    return routePrefix
+      ? String(targetUrl).indexOf(normalizedApiUrl + routePrefix) === 0
+      : true;
+  }
+}
+
 function getCurrentUser() {
   const session = getStoredSession();
   return session && session.user ? session.user : null;
@@ -352,7 +448,7 @@ function stopSyncPolling() {
 }
 
 function getSyncPollDelay() {
-  return document.hidden ? 10000 : 2500;
+  return document.hidden ? 15000 : 4000;
 }
 
 function scheduleNextSyncPoll(delayMs) {
@@ -487,10 +583,6 @@ async function pollSyncState() {
   }
 }
 
-function startSyncPolling() {
-  scheduleNextSyncPoll(0);
-}
-
 async function bootstrapApplication() {
   const user = getCurrentUser();
   if (!user) {
@@ -512,27 +604,31 @@ async function bootstrapApplication() {
 
   await refreshViewById(preferredView, { force: true });
   await pollSyncState();
-  startSyncPolling();
   appShellState.initialized = true;
 }
 
 function installFetchWrapper() {
   window.fetch = function (resource, options) {
     const requestOptions = options ? { ...options } : {};
-    const headers = new Headers(requestOptions.headers || {});
-    const targetUrl = typeof resource === "string" ? resource : resource.url;
+    const headers = new Headers(requestOptions.headers || (resource && resource.headers) || {});
+    const targetUrl = getFetchTargetUrl(resource);
     const token = getSessionToken();
+    let requestToken = getBearerTokenFromHeader(headers.get("Authorization"));
 
-    if (token && typeof targetUrl === "string" && targetUrl.indexOf(apiUrl) === 0 && !headers.has("Authorization")) {
+    if (token && isApiRequestUrl(targetUrl) && !headers.has("Authorization")) {
       headers.set("Authorization", `Bearer ${token}`);
+      requestToken = token;
     }
 
     requestOptions.headers = headers;
 
     return appShellState.nativeFetch(resource, requestOptions).then(response => {
-      const isAuthRequest = typeof targetUrl === "string" && targetUrl.indexOf(apiUrl + "auth/") === 0;
+      const isAuthRequest = isApiRequestUrl(targetUrl, "auth/");
       if (response.status === 401 && !isAuthRequest) {
-        handleSessionExpired();
+        const currentToken = getSessionToken();
+        if (!currentToken || (requestToken && currentToken === requestToken)) {
+          handleSessionExpired();
+        }
       }
       return response;
     });
@@ -596,7 +692,6 @@ async function applySession(authResult) {
   } else {
     await refreshActiveView({ force: true });
     await pollSyncState();
-    startSyncPolling();
   }
 }
 
@@ -681,7 +776,6 @@ async function submitPasswordChange() {
       }
       await refreshActiveView({ force: true });
       await pollSyncState();
-      startSyncPolling();
     }
 
     showToast(t("auth.passwordUpdated"), "success");
@@ -773,14 +867,25 @@ async function restoreSession() {
     return;
   }
 
+  const restoreToken = session.token;
   try {
     const response = await fetch(apiUrl + "auth/me");
     const currentUser = await parseResponse(response);
+    const latestSession = getStoredSession();
+    if (!latestSession || latestSession.token !== restoreToken) {
+      return;
+    }
+
     await applySession({
-      token: session.token,
+      token: restoreToken,
       user: currentUser,
     });
   } catch (error) {
+    const latestSession = getStoredSession();
+    if (latestSession && latestSession.token !== restoreToken) {
+      return;
+    }
+
     clearStoredSession();
     clearRoleUi();
     updateSessionSummary();
@@ -805,7 +910,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("appChangePasswordButton").addEventListener("click", openModalPasswordForm);
   document.getElementById("selfPasswordSaveButton").addEventListener("click", submitModalPasswordChange);
   document.getElementById("appLogoutButton").addEventListener("click", submitLogout);
-  document.getElementById("authAdvancedToggle").addEventListener("click", () => toggleAuthAdvancedPanel());
+  document.getElementById("appThemeToggleButton").addEventListener("click", toggleAppTheme);
+  const authAdvancedToggle = document.getElementById("authAdvancedToggle");
+  if (authAdvancedToggle) {
+    authAdvancedToggle.addEventListener("click", () => toggleAuthAdvancedPanel());
+  }
+  applyAppTheme(getStoredTheme());
   clearRoleUi();
   updateSessionSummary();
   setSyncStatus(t("status.waitingForSignIn"));
@@ -824,6 +934,7 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("app:language-changed", event => {
   updateConnectionDisplay();
   updateSessionSummary();
+  updateThemeToggle(getStoredTheme());
 
   const user = getCurrentUser();
   if (!user) {

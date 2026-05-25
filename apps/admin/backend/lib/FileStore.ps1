@@ -232,7 +232,7 @@ function Read-JsonArrayFile {
 
     if (-not (Test-Path -Path $Path)) { return @() }
 
-    $raw = Get-Content -Path $Path -Raw
+    $raw = Read-TextFileCached -Path $Path
     if ([string]::IsNullOrWhiteSpace($raw) -or $raw.Trim() -eq "null") {
         return @()
     }

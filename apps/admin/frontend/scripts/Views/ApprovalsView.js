@@ -88,6 +88,7 @@ function updateApprovalTabLabels(pendingEntries, rejectedEntries, approvedEntrie
 
 function buildApprovalCard(entry, showActions) {
   const exactTimeLabel = getEntryExactTimeLabel(entry);
+  const canReview = showActions && !isEntryForgottenClockOut(entry);
   return `
     <article class="review-card">
       <div class="review-card-header">
@@ -96,17 +97,19 @@ function buildApprovalCard(entry, showActions) {
           <div class="worklog-secondary">${escapeHtml(formatDateToWords(entry.date))} | ${escapeHtml(formatQueueTitle(entry))}</div>
           ${exactTimeLabel ? `<div class="panel-note">${escapeHtml(exactTimeLabel)}</div>` : ""}
         </div>
-        <span class="status-badge ${getStatusTone(entry.status)}">${escapeHtml(translateStatus(entry.status || "pending"))}</span>
+        <span class="status-badge ${getStatusTone(entry)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
       </div>
       <div class="review-card-meta">
         <span class="inline-code-pill">${escapeHtml(entry.projectCode || t("shared.noProject"))}</span>
         ${entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : ""}
+        <span class="meta-pill">${escapeHtml(formatPaymentOptionValue(entry.paymentOption || "cash"))}</span>
+        ${entry.reasonCode ? `<span class="meta-pill">${escapeHtml(entry.reasonCode)}</span>` : ""}
         <span class="meta-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
         <span class="meta-pill">EMP ${escapeHtml(entry.employeeCode)}</span>
       </div>
       ${entry.message ? `<div class="review-card-message">${escapeHtml(entry.message)}</div>` : `<div class="panel-note">${escapeHtml(t("shared.noManagerNote"))}</div>`}
       <div class="review-card-actions">
-        ${showActions ? `
+        ${canReview ? `
           <button class="btn btn-success btn-sm approvals-approve-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}</button>
           <button class="btn btn-danger btn-sm approvals-reject-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}</button>
         ` : ""}
@@ -142,7 +145,7 @@ function applyApprovalFilters() {
 }
 
 async function approveFilteredEntries() {
-  const filteredPendingEntries = getFilteredApprovalEntries().filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry));
+  const filteredPendingEntries = getFilteredApprovalEntries().filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry) && !isEntryForgottenClockOut(entry));
   if (filteredPendingEntries.length === 0) {
     showToast(t("review.approveFilteredNone"), "info");
     return;

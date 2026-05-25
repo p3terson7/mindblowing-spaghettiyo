@@ -124,5 +124,17 @@
     "message": "Deleted an entry on March 30, 2026 from <strong>10h06</strong> to <strong>10h09</strong>. Reason: boom bap",
     "employee": "Priya Patel",
     "timestamp": "2026-04-15 11:07:41"
+  },
+  {
+    "action": "Update",
+    "message": "Updated an entry on May 21, 2026 from <strong>14h15</strong> to <strong>15h45</strong>. Punch Out recorded at <strong>15h45</strong>.",
+    "employee": "Peter-Nicholas Sarateanu",
+    "timestamp": "2026-05-22 12:36:38"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on May 21, 2026 from <strong>14h15</strong> to <strong>15h45</strong>.",
+    "employee": "Peter-Nicholas Sarateanu",
+    "timestamp": "2026-05-22 12:36:44"
   }
 ]

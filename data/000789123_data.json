@@ -8,7 +8,9 @@
     "status": "approved",
     "message": "",
     "projectCode": "APP-220",
-    "overtimeCode": "OT-REL"
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": ""
   },
   {
     "name": "Priya Patel",
@@ -19,7 +21,9 @@
     "status": "approved",
     "message": "",
     "projectCode": "OPS-410",
-    "overtimeCode": "OT-CLS"
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": ""
   },
   {
     "name": "Priya Patel",
@@ -30,6 +34,8 @@
     "status": "approved",
     "message": "",
     "projectCode": "CLT-120",
-    "overtimeCode": "OT-OPS"
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": ""
   }
 ]

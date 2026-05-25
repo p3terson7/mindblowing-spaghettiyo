@@ -148,7 +148,9 @@ function renderDashboardApprovalQueue(entries) {
     return;
   }
 
-  container.innerHTML = queueEntries.map(entry => `
+  container.innerHTML = queueEntries.map(entry => {
+    const canReview = !isEntryForgottenClockOut(entry);
+    return `
     <article class="queue-card">
       <div class="queue-card-header">
         <div>
@@ -156,7 +158,7 @@ function renderDashboardApprovalQueue(entries) {
           <div class="worklog-secondary">${escapeHtml(formatDateLabel(entry.date))} | ${escapeHtml(formatQueueTitle(entry))}</div>
           ${getEntryExactTimeLabel(entry) ? `<div class="panel-note">${escapeHtml(getEntryExactTimeLabel(entry))}</div>` : ""}
         </div>
-        <span class="status-badge pending">${escapeHtml(t("status.pending"))}</span>
+        <span class="status-badge ${escapeHtml(getStatusTone(entry))}">${escapeHtml(getEntryStatusLabel(entry))}</span>
       </div>
       <div class="queue-card-meta">
         <span class="inline-code-pill">${escapeHtml(entry.projectCode || t("shared.noProject"))}</span>
@@ -165,12 +167,15 @@ function renderDashboardApprovalQueue(entries) {
       </div>
       ${entry.message ? `<div class="review-card-message">${escapeHtml(entry.message)}</div>` : ""}
       <div class="queue-card-actions">
-        <button type="button" class="btn btn-success btn-sm dashboard-approve-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}</button>
-        <button type="button" class="btn btn-danger btn-sm dashboard-reject-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}</button>
+        ${canReview ? `
+          <button type="button" class="btn btn-success btn-sm dashboard-approve-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}</button>
+          <button type="button" class="btn btn-danger btn-sm dashboard-reject-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}</button>
+        ` : ""}
         <button type="button" class="btn btn-outline-secondary btn-sm dashboard-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}">${escapeHtml(t("action.openEmployee"))}</button>
       </div>
     </article>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function renderDashboardActiveSessions(entries) {
@@ -373,6 +378,8 @@ function renderEmployeeEntries(employeeCode, entries) {
             <th scope="col">${escapeHtml(t("dashboard.tableWindow"))}</th>
             <th scope="col">${escapeHtml(t("dashboard.tableProject"))}</th>
             <th scope="col">${escapeHtml(t("dashboard.tableOvertimeCode"))}</th>
+            <th scope="col">${escapeHtml(t("dashboard.tablePayment"))}</th>
+            <th scope="col">${escapeHtml(t("dashboard.tableReason"))}</th>
             <th scope="col">${escapeHtml(t("dashboard.tableDuration"))}</th>
             <th scope="col">${escapeHtml(t("dashboard.tableStatus"))}</th>
             <th scope="col">${escapeHtml(t("dashboard.tableManagerNote"))}</th>
@@ -381,16 +388,19 @@ function renderEmployeeEntries(employeeCode, entries) {
         </thead>
         <tbody>
           ${entries.map(entry => {
-            const statusTone = getStatusTone(entry.status);
+            const statusTone = getStatusTone(entry);
             const isOpen = isEntryOpen(entry);
             const isPending = String(entry.status || "pending").toLowerCase() === "pending";
+            const needsClockOutReview = isEntryForgottenClockOut(entry);
             const exactTimeLabel = getEntryExactTimeLabel(entry);
             const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
+            const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
+            const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
             const entryIdAttribute = ` data-entryid="${escapeHtml(entry.entryId || "")}"`;
             const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
             const exactPunchInAttribute = ` data-exactpunchin="${escapeHtml(getEntryExactPunchIn(entry))}"`;
             const exactPunchOutAttribute = ` data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`;
-            const reviewButtons = isPending && !isOpen ? `
+            const reviewButtons = isPending && !isOpen && !needsClockOutReview ? `
               <button class="btn btn-success btn-sm approve-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.approve"))}">
                 <i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}
               </button>
@@ -414,11 +424,17 @@ function renderEmployeeEntries(employeeCode, entries) {
                 <td class="dashboard-entry-col-overtime-code">
                   ${entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : `<span class="meta-pill">-</span>`}
                 </td>
+                <td class="dashboard-entry-col-payment">
+                  <span class="meta-pill">${escapeHtml(formatPaymentOptionValue(entry.paymentOption || "cash"))}</span>
+                </td>
+                <td class="dashboard-entry-col-reason">
+                  <span class="meta-pill">${entry.reasonCode ? escapeHtml(entry.reasonCode) : "-"}</span>
+                </td>
                 <td class="dashboard-entry-col-duration">
                   <span class="inline-code-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.inProgress"))}</span>
                 </td>
                 <td class="dashboard-entry-col-status">
-                  <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(translateStatus(entry.status || "pending"))}</span>
+                  <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
                 </td>
                 <td class="dashboard-entry-col-note">
                   <button type="button" class="dashboard-note-trigger${entry.message ? "" : " is-empty"}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-message="${escapeHtml(entry.message || "")}" title="${escapeHtml(t("shared.managerMessage"))}">
@@ -428,7 +444,7 @@ function renderEmployeeEntries(employeeCode, entries) {
                 <td class="dashboard-entry-col-actions">
                   <div class="dashboard-entry-actions">
                     ${reviewButtons}
-                    <button class="btn btn-outline-secondary btn-sm update-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("modal.updateEntry"))}">
+                    <button class="btn btn-outline-secondary btn-sm update-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("modal.updateEntry"))}">
                       <i class="fa-solid fa-pen"></i> ${escapeHtml(t("action.edit"))}
                     </button>
                     <button class="btn btn-outline-secondary btn-sm delete-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
@@ -556,24 +572,32 @@ window.handleSyncStateChange = function (syncState) {
   }
 };
 
-async function populateEntryLookups(projectSelectId, overtimeCodeSelectId, selectedProjectCode = "", selectedOvertimeCode = "") {
+async function populateEntryLookups(projectSelectId, overtimeCodeSelectId, selectedProjectCode = "", selectedOvertimeCode = "", paymentSelectId = "", reasonSelectId = "", selectedPaymentOption = "", selectedReasonCode = "") {
   const lookups = await fetchOvertimeEntryLookups();
   document.getElementById(projectSelectId).innerHTML = buildProjectOptions(lookups.projects, t("shared.selectProject"), selectedProjectCode);
   document.getElementById(overtimeCodeSelectId).innerHTML = buildOvertimeCodeOptions(lookups.overtimeCodes, t("shared.selectOvertimeCode"), selectedOvertimeCode);
+  if (paymentSelectId) {
+    document.getElementById(paymentSelectId).innerHTML = buildPaymentOptionOptions(lookups.paymentOptions, t("shared.selectPaymentOption"), selectedPaymentOption);
+  }
+  if (reasonSelectId) {
+    document.getElementById(reasonSelectId).innerHTML = buildReasonCodeOptions(lookups.reasonCodes, t("shared.selectReasonCode"), selectedReasonCode);
+  }
 }
 
-async function openAddEntryModal() {
-  const employeeCode = document.getElementById("employeeSelect").value;
+async function openAddEntryModal(employeeCodeOverride = "") {
+  const employeeCode = employeeCodeOverride || document.getElementById("employeeSelect").value;
   if (!employeeCode) {
-    showToast(t("dashboard.selectEmployeeBeforeNote"), "info");
+    showToast(t("dashboard.selectEmployeeBeforeAdd"), "info");
     return;
   }
 
+  document.getElementById("addEntryForm").dataset.employeeCode = employeeCode;
+  document.getElementById("addEntryForm").dataset.refreshPeopleEmployee = employeeCodeOverride ? employeeCode : "";
   document.getElementById("addEntryDate").value = new Date().toISOString().slice(0, 10);
   ["addPunchInHours", "addPunchInMinutes", "addPunchOutHours", "addPunchOutMinutes"].forEach(id => {
     document.getElementById(id).value = "";
   });
-  await populateEntryLookups("addProjectCode", "addOvertimeCode");
+  await populateEntryLookups("addProjectCode", "addOvertimeCode", "", "", "addPaymentOption", "addReasonCode");
   const addModal = new bootstrap.Modal(document.getElementById("addEntryModal"));
   addModal.show();
 }
@@ -587,6 +611,8 @@ function openUpdateModal(button) {
   const exactPunchOut = button.getAttribute("data-exactpunchout") || currentPunchOut;
   const projectCode = button.getAttribute("data-projectcode") || "";
   const overtimeCode = button.getAttribute("data-overtimecode") || "";
+  const paymentOption = button.getAttribute("data-paymentoption") || "cash";
+  const reasonCode = button.getAttribute("data-reasoncode") || "";
   const entryId = button.getAttribute("data-entryid") || "";
   const message = button.getAttribute("data-message") || "";
 
@@ -613,11 +639,15 @@ function openUpdateModal(button) {
     document.getElementById("updatePunchOutMinutes").value = "";
   }
 
-  populateEntryLookups("updateProjectCode", "updateOvertimeCode", projectCode, overtimeCode).then(() => {
+  populateEntryLookups("updateProjectCode", "updateOvertimeCode", projectCode, overtimeCode, "updatePaymentOption", "updateReasonCode", paymentOption, reasonCode).then(() => {
     document.getElementById("updateProjectCode").value = projectCode;
     document.getElementById("originalProjectCode").value = projectCode;
     document.getElementById("updateOvertimeCode").value = overtimeCode;
     document.getElementById("originalOvertimeCode").value = overtimeCode;
+    document.getElementById("updatePaymentOption").value = paymentOption;
+    document.getElementById("originalPaymentOption").value = paymentOption;
+    document.getElementById("updateReasonCode").value = reasonCode;
+    document.getElementById("originalReasonCode").value = reasonCode;
     const updateModal = new bootstrap.Modal(document.getElementById("updateEntryModal"));
     updateModal.show();
   }).catch(error => {
@@ -800,7 +830,8 @@ document.getElementById("dashboardResetFiltersBtn").addEventListener("click", ()
 document.getElementById("addEntryButton").addEventListener("click", openAddEntryModal);
 
 document.getElementById("saveAddEntryBtn").addEventListener("click", async () => {
-  const employeeCode = document.getElementById("employeeSelect").value;
+  const addEntryForm = document.getElementById("addEntryForm");
+  const employeeCode = addEntryForm.dataset.employeeCode || document.getElementById("employeeSelect").value;
   const date = document.getElementById("addEntryDate").value;
   if (!employeeCode || !date) {
     showToast(t("dashboard.selectEmployeeAndDate"), "error");
@@ -813,6 +844,8 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async () =>
   const punchOutMinutes = document.getElementById("addPunchOutMinutes").value.trim();
   const projectCode = document.getElementById("addProjectCode").value;
   const overtimeCode = document.getElementById("addOvertimeCode").value;
+  const paymentOption = document.getElementById("addPaymentOption").value;
+  const reasonCode = document.getElementById("addReasonCode").value;
 
   if (!punchInHours || !punchInMinutes || !punchOutHours || !punchOutMinutes) {
     showToast(t("dashboard.fillAllTimeFields"), "error");
@@ -824,8 +857,8 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async () =>
     return;
   }
 
-  if (!overtimeCode) {
-    showToast(t("dashboard.selectOvertimeCode"), "error");
+  if (!paymentOption) {
+    showToast(t("dashboard.selectPaymentOption"), "error");
     return;
   }
 
@@ -853,14 +886,22 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async () =>
         status: "pending",
         projectCode,
         overtimeCode,
+        paymentOption,
+        reasonCode,
       }),
     });
     const data = await parseResponse(response);
     bootstrap.Modal.getInstance(document.getElementById("addEntryModal")).hide();
+    const refreshPeopleEmployee = addEntryForm.dataset.refreshPeopleEmployee || "";
+    addEntryForm.dataset.employeeCode = "";
+    addEntryForm.dataset.refreshPeopleEmployee = "";
     dashboardState.entriesByEmployee[employeeCode] = undefined;
     dashboardState.historyLoaded = false;
     showToast(t("dashboard.entryAdded"), "success");
     await refreshDashboardView();
+    if (refreshPeopleEmployee && typeof window.refreshPeopleEmployeeDetail === "function") {
+      await window.refreshPeopleEmployeeDetail(refreshPeopleEmployee);
+    }
   } catch (error) {
     console.error("Error adding entry:", error);
     showToast(t("dashboard.entryAddError", { message: error.message }), "error");
@@ -883,6 +924,10 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
   const originalProjectCode = document.getElementById("originalProjectCode").value;
   const overtimeCode = document.getElementById("updateOvertimeCode").value;
   const originalOvertimeCode = document.getElementById("originalOvertimeCode").value;
+  const paymentOption = document.getElementById("updatePaymentOption").value;
+  const originalPaymentOption = document.getElementById("originalPaymentOption").value;
+  const reasonCode = document.getElementById("updateReasonCode").value;
+  const originalReasonCode = document.getElementById("originalReasonCode").value;
   const managerMessage = document.getElementById("updateManagerMessage").value.trim();
 
   if (!punchInHours || !punchInMinutes || !punchOutHours || !punchOutMinutes) {
@@ -899,7 +944,7 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
   const newPunchInBackend = `${punchInHours.padStart(2, "0")}:${punchInMinutes.padStart(2, "0")}:00`;
   const punchOutBackend = `${punchOutHours.padStart(2, "0")}:${punchOutMinutes.padStart(2, "0")}:00`;
 
-  if (!projectCode || !overtimeCode) {
+  if (!projectCode || !paymentOption) {
     showToast(t("dashboard.projectAndCodeRequired"), "error");
     return;
   }
@@ -909,7 +954,7 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
     return;
   }
 
-  if (newPunchInBackend === originalExactPunchIn && punchOutBackend === originalExactPunchOut && projectCode === originalProjectCode && overtimeCode === originalOvertimeCode) {
+  if (newPunchInBackend === originalExactPunchIn && punchOutBackend === originalExactPunchOut && projectCode === originalProjectCode && overtimeCode === originalOvertimeCode && paymentOption === originalPaymentOption && reasonCode === originalReasonCode) {
     showToast(t("dashboard.noChanges"), "info");
     return;
   }
@@ -923,7 +968,7 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
     const response = await fetch(apiUrl + "employee/" + employeeCode, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entryId, date, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, message: managerMessage }),
+      body: JSON.stringify({ entryId, date, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, paymentOption, reasonCode, message: managerMessage }),
     });
     const data = await parseResponse(response);
     const refreshPeopleEmployee = document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee || "";

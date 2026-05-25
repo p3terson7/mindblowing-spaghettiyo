@@ -28,7 +28,9 @@ function filterEntries(entries, searchTerm) {
       formatDateToWords(entry.date),
       entry.projectCode,
       entry.overtimeCode,
-      translateStatus(entry.status || "pending"),
+      entry.paymentOption,
+      entry.reasonCode,
+      getEntryStatusLabel(entry),
       entry.message,
     ].join(" ").toLowerCase();
 
@@ -323,7 +325,12 @@ function setChartLoadingState(containerId) {
 }
 
 function getStatusTone(status) {
-  switch (String(status || "").toLowerCase()) {
+  if (status && typeof status === "object" && isEntryForgottenClockOut(status)) {
+    return "attention";
+  }
+
+  const statusValue = status && typeof status === "object" ? status.status : status;
+  switch (String(statusValue || "").toLowerCase()) {
     case "approved":
       return "approved";
     case "rejected":
@@ -331,6 +338,30 @@ function getStatusTone(status) {
     default:
       return "pending";
   }
+}
+
+function isEntryForgottenClockOut(entry) {
+  if (!entry || typeof entry !== "object") {
+    return false;
+  }
+
+  const value = entry.forgottenClockOut !== undefined && entry.forgottenClockOut !== null
+    ? entry.forgottenClockOut
+    : entry.needsClockOutReview;
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes";
+}
+
+function getEntryStatusLabel(entry) {
+  if (isEntryForgottenClockOut(entry)) {
+    return t("status.clockOutMissing");
+  }
+
+  return translateStatus(entry && entry.status ? entry.status : "pending");
 }
 
 function formatRelativeTime(timestamp) {
@@ -377,7 +408,7 @@ function getLatestEntry(entries) {
 }
 
 function isEntryOpen(entry) {
-  return Boolean(entry && entry.punchIn && !entry.punchOut);
+  return Boolean(entry && entry.punchIn && !entry.punchOut && !isEntryForgottenClockOut(entry));
 }
 
 function getEntryContextLabel(entry) {
@@ -389,6 +420,14 @@ function getEntryContextLabel(entry) {
 
   if (entry && entry.overtimeCode) {
     parts.push(String(entry.overtimeCode));
+  }
+
+  if (entry && entry.paymentOption) {
+    parts.push(formatPaymentOptionValue(entry.paymentOption));
+  }
+
+  if (entry && entry.reasonCode) {
+    parts.push(String(entry.reasonCode));
   }
 
   return parts.length > 0 ? parts.join(" | ") : t("shared.uncoded");
@@ -449,18 +488,358 @@ function buildProjectOptions(projects, placeholder, selectedValue) {
     .join("");
 }
 
-function buildOvertimeCodeOptions(overtimeCodes, placeholder, selectedValue) {
-  const options = Array.isArray(overtimeCodes) ? overtimeCodes : [];
-  const placeholderText = placeholder || t("shared.overtimeCode");
+function getLocalizedOptionLabel(item) {
+  if (!item) {
+    return "";
+  }
+
+  const locale = String(getCurrentLocale() || "").toLowerCase();
+  if (locale.startsWith("fr")) {
+    return String(item.labelFr || item.label || item.labelEn || item.descriptionFr || item.description || item.code || "");
+  }
+
+  return String(item.labelEn || item.label || item.labelFr || item.descriptionEn || item.description || item.code || "");
+}
+
+function buildCodeOptions(options, placeholder, selectedValue, optionsConfig = {}) {
+  const items = Array.isArray(options) ? options : [];
+  const placeholderText = placeholder || "";
   const nextSelectedValue = selectedValue || "";
-  return [`<option value="">${escapeHtml(placeholderText)}</option>`]
-    .concat(options.map(item => {
-      const code = String(item.code || "");
-      const label = String(item.label || code);
-      const selected = code === nextSelectedValue ? " selected" : "";
-      return `<option value="${escapeHtml(code)}"${selected}>${escapeHtml(code)} | ${escapeHtml(label)}</option>`;
-    }))
-    .join("");
+  const includePlaceholder = optionsConfig.includePlaceholder !== false;
+  const codeProperty = optionsConfig.codeProperty || "code";
+  const blankLabel = optionsConfig.blankLabel || placeholderText;
+  const renderedOptions = includePlaceholder
+    ? [`<option value="">${escapeHtml(placeholderText)}</option>`]
+    : [];
+
+  items.forEach(item => {
+    const code = String(item && item[codeProperty] != null ? item[codeProperty] : "");
+    const label = getLocalizedOptionLabel(item) || code || blankLabel;
+    const selected = code === nextSelectedValue ? " selected" : "";
+    const text = code ? `${code} | ${label}` : label;
+    renderedOptions.push(`<option value="${escapeHtml(code)}"${selected}>${escapeHtml(text)}</option>`);
+  });
+
+  return renderedOptions.join("");
+}
+
+function buildOvertimeCodeOptions(overtimeCodes, placeholder, selectedValue) {
+  return buildCodeOptions(overtimeCodes, placeholder || t("shared.overtimeCode"), selectedValue, {
+    includePlaceholder: false,
+    blankLabel: t("shared.overtimeCode"),
+  });
+}
+
+function buildPaymentOptionOptions(paymentOptions, placeholder, selectedValue) {
+  return buildCodeOptions(paymentOptions, placeholder || t("shared.paymentOption"), selectedValue, {
+    includePlaceholder: true,
+  });
+}
+
+function buildReasonCodeOptions(reasonCodes, placeholder, selectedValue) {
+  return buildCodeOptions(reasonCodes, placeholder || t("shared.reasonCode"), selectedValue, {
+    includePlaceholder: false,
+    blankLabel: t("shared.reasonCode"),
+  });
+}
+
+function getLookupOptionByCode(collection, code) {
+  return (Array.isArray(collection) ? collection : []).find(item => String(item.code || "") === String(code || "")) || null;
+}
+
+function formatPaymentOptionValue(code) {
+  const cached = overtimeEntryLookupCache.payload;
+  const option = cached ? getLookupOptionByCode(cached.paymentOptions, code) : null;
+  if (option) {
+    return getLocalizedOptionLabel(option);
+  }
+
+  const normalizedCode = String(code || "");
+  if (normalizedCode === "cash") {
+    return String(getCurrentLocale() || "").toLowerCase().startsWith("fr") ? "En espèce" : "Cash";
+  }
+  if (normalizedCode === "leave") {
+    return String(getCurrentLocale() || "").toLowerCase().startsWith("fr") ? "Congé" : "Leave";
+  }
+  return normalizedCode;
+}
+
+function formatLookupCodeValue(collection, code, fallbackLabel) {
+  const normalizedCode = String(code || "").trim();
+  if (!normalizedCode) {
+    return fallbackLabel || "-";
+  }
+
+  const option = getLookupOptionByCode(collection, normalizedCode);
+  const label = getLocalizedOptionLabel(option);
+  if (label && label !== normalizedCode) {
+    return `${normalizedCode} - ${label}`;
+  }
+
+  return normalizedCode;
+}
+
+function formatMonthlyExportMonth(monthKey) {
+  const parts = String(monthKey || "").split("-").map(Number);
+  if (parts.length < 2 || parts.some(Number.isNaN)) {
+    return String(monthKey || t("shared.unknownDate"));
+  }
+
+  const date = new Date(parts[0], parts[1] - 1, 1);
+  if (Number.isNaN(date.getTime())) {
+    return String(monthKey || t("shared.unknownDate"));
+  }
+
+  return date.toLocaleDateString(getCurrentLocale(), { month: "long", year: "numeric" });
+}
+
+function formatMonthlyExportDay(dateString) {
+  const date = parseLocalDate(dateString);
+  if (!date) {
+    return String(dateString || t("shared.unknownDate"));
+  }
+
+  return date.toLocaleDateString(getCurrentLocale(), { weekday: "long", month: "short", day: "numeric" });
+}
+
+function getMonthlyExportEntrySeconds(entry) {
+  if (entry && entry.overtime) {
+    return timeStringToSeconds(entry.overtime);
+  }
+
+  if (isEntryOpen(entry)) {
+    return Math.max(0, Math.floor((Date.now() - toEntryDateTime(entry).getTime()) / 1000));
+  }
+
+  return 0;
+}
+
+function buildMonthlyEntriesExportHtml(config) {
+  const sourceEntries = Array.isArray(config && config.entries) ? config.entries : [];
+  const monthKey = String(config && config.monthKey || "");
+  const lookups = config && config.lookups ? config.lookups : {};
+  const monthEntries = sortEntriesByDateTime(sourceEntries.filter(entry => {
+    const status = String(entry && entry.status || "pending").toLowerCase();
+    return String(entry && entry.date || "").slice(0, 7) === monthKey && status !== "rejected";
+  }), false);
+  const totalSeconds = monthEntries.reduce((accumulator, entry) => accumulator + getMonthlyExportEntrySeconds(entry), 0);
+  const employeeName = String(config && config.employeeName || t("shared.employee"));
+  const employeeCode = String(config && config.employeeCode || "");
+  const reportTitle = t("export.monthlyTitle");
+  const monthLabel = formatMonthlyExportMonth(monthKey);
+  const generatedAt = new Date().toLocaleString(getCurrentLocale(), { dateStyle: "medium", timeStyle: "short" });
+
+  const rows = monthEntries.map(entry => {
+    const reason = formatLookupCodeValue(lookups.reasonCodes, entry.reasonCode, "-");
+    const overtimeCode = formatLookupCodeValue(lookups.overtimeCodes, entry.overtimeCode, "-");
+    const paymentOption = (() => {
+      const option = getLookupOptionByCode(lookups.paymentOptions, entry.paymentOption || "cash");
+      return option ? getLocalizedOptionLabel(option) : formatPaymentOptionValue(entry.paymentOption || "cash");
+    })();
+    const endTime = entry.punchOut ? formatTimeString(entry.punchOut) : t("shared.inProgress");
+    return `
+      <tr>
+        <td>${escapeHtml(formatMonthlyExportDay(entry.date))}</td>
+        <td>${escapeHtml(reason)}</td>
+        <td class="mono">${escapeHtml(formatTimeString(entry.punchIn))}</td>
+        <td class="mono">${escapeHtml(endTime)}</td>
+        <td>${escapeHtml(overtimeCode)}</td>
+        <td>${escapeHtml(paymentOption || "-")}</td>
+        <td class="mono">${escapeHtml(secondsToDurationLabel(getMonthlyExportEntrySeconds(entry)))}</td>
+      </tr>
+    `;
+  }).join("");
+
+  return `<!doctype html>
+<html lang="${escapeHtml(String(getCurrentLocale() || "en").slice(0, 2))}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(reportTitle)} - ${escapeHtml(employeeName)} - ${escapeHtml(monthLabel)}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fa;
+      --panel: #ffffff;
+      --panel-muted: #f6f8fa;
+      --line: #d8dee4;
+      --line-strong: #d0d7de;
+      --text: #24292f;
+      --muted: #57606a;
+      --accent: #3574f0;
+      --mono: "JetBrains Mono", "Cascadia Code", Consolas, Menlo, Monaco, monospace;
+      --sans: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      color: var(--text);
+      background: var(--bg);
+      font-family: var(--sans);
+      font-size: 12px;
+    }
+    .report-shell {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 16px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--panel);
+    }
+    .report-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line-strong);
+    }
+    .kicker {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 4px 0 0;
+      font-size: 20px;
+      line-height: 1.15;
+      font-weight: 700;
+    }
+    .meta-grid {
+      display: grid;
+      gap: 5px;
+      min-width: 280px;
+      padding: 8px 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      background: var(--panel-muted);
+    }
+    .meta-row {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
+      gap: 8px;
+    }
+    .meta-label {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .meta-value {
+      font-weight: 700;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      border: 0;
+    }
+    th,
+    td {
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      padding: 8px 10px;
+      vertical-align: top;
+      text-align: left;
+      overflow-wrap: anywhere;
+    }
+    th {
+      background: #eef1f5;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    tbody tr:hover td {
+      background: #f6f8fa;
+    }
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    tfoot td {
+      border-top: 1px solid var(--line-strong);
+      border-bottom: 0;
+      background: var(--panel-muted);
+      font-weight: 800;
+    }
+    .mono {
+      font-family: var(--mono);
+      white-space: nowrap;
+    }
+    .empty {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--panel-muted);
+      color: var(--muted);
+      font-weight: 700;
+    }
+    @media print {
+      body { padding: 0; }
+      .report-shell { max-width: none; }
+      th { background: #f0f0f0 !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="report-shell">
+    <div class="report-topbar">
+      <div>
+        <div class="kicker">GÉEM</div>
+        <h1>${escapeHtml(reportTitle)}</h1>
+      </div>
+      <div class="meta-grid">
+        <div class="meta-row"><span class="meta-label">${escapeHtml(t("export.employee"))}</span><span class="meta-value">${escapeHtml(employeeName)}${employeeCode ? ` (${escapeHtml(employeeCode)})` : ""}</span></div>
+        <div class="meta-row"><span class="meta-label">${escapeHtml(t("export.month"))}</span><span class="meta-value">${escapeHtml(monthLabel)}</span></div>
+        <div class="meta-row"><span class="meta-label">${escapeHtml(t("export.generated"))}</span><span class="meta-value">${escapeHtml(generatedAt)}</span></div>
+      </div>
+    </div>
+    ${monthEntries.length === 0 ? `<div class="empty">${escapeHtml(t("export.noEntries"))}</div>` : `
+      <table>
+        <thead>
+          <tr>
+            <th>${escapeHtml(t("export.day"))}</th>
+            <th>${escapeHtml(t("export.reason"))}</th>
+            <th>${escapeHtml(t("export.startTime"))}</th>
+            <th>${escapeHtml(t("export.endTime"))}</th>
+            <th>${escapeHtml(t("export.overtimeCode"))}</th>
+            <th>${escapeHtml(t("export.payment"))}</th>
+            <th>${escapeHtml(t("export.totalTime"))}</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="6">${escapeHtml(t("export.total"))}</td>
+            <td class="mono">${escapeHtml(secondsToDurationLabel(totalSeconds))}</td>
+          </tr>
+        </tfoot>
+      </table>
+    `}
+  </main>
+</body>
+</html>`;
+}
+
+function openMonthlyEntriesExportHtml(config) {
+  const html = buildMonthlyEntriesExportHtml(config);
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const newWindow = window.open(url, "_blank");
+  if (!newWindow) {
+    URL.revokeObjectURL(url);
+    showToast(t("export.popupBlocked"), "error");
+    return false;
+  }
+
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return true;
 }
 
 async function fetchOvertimeEntryLookups(forceRefresh = false) {
@@ -474,6 +853,8 @@ async function fetchOvertimeEntryLookups(forceRefresh = false) {
   const normalizedPayload = {
     projects: Array.isArray(payload && payload.projects) ? payload.projects : [],
     overtimeCodes: Array.isArray(payload && payload.overtimeCodes) ? payload.overtimeCodes : [],
+    paymentOptions: Array.isArray(payload && payload.paymentOptions) ? payload.paymentOptions : [],
+    reasonCodes: Array.isArray(payload && payload.reasonCodes) ? payload.reasonCodes : [],
   };
 
   overtimeEntryLookupCache.apiUrl = currentApiUrl;
@@ -510,6 +891,8 @@ function buildTranslatedAuditUpdateFragments(message) {
   const punchOutRecordedMatch = rawMessage.match(/Punch Out recorded at <strong>(.*?)<\/strong>\./i);
   const projectUpdatedMatch = /Project Code updated\./i.test(rawMessage);
   const overtimeUpdatedMatch = /Overtime Code updated\./i.test(rawMessage);
+  const paymentUpdatedMatch = /Payment option updated\./i.test(rawMessage);
+  const reasonUpdatedMatch = /Reason code updated\./i.test(rawMessage);
 
   if (punchInMatch) {
     fragments.push(t("history.fragment.punchInFromTo", { from: punchInMatch[1], to: punchInMatch[2] }));
@@ -526,6 +909,12 @@ function buildTranslatedAuditUpdateFragments(message) {
   if (overtimeUpdatedMatch) {
     fragments.push(t("history.fragment.overtimeCodeUpdated"));
   }
+  if (paymentUpdatedMatch) {
+    fragments.push(t("history.fragment.paymentOptionUpdated"));
+  }
+  if (reasonUpdatedMatch) {
+    fragments.push(t("history.fragment.reasonCodeUpdated"));
+  }
 
   return fragments.join(" ");
 }
@@ -536,14 +925,27 @@ function translateAuditMessage(message) {
     return t("shared.noMessage");
   }
 
-  let match = rawMessage.match(/^Added an entry on ([A-Za-z]+ \d{1,2}, \d{4}), starting at <strong>(.*?)<\/strong> and finishing at <strong>(.*?)<\/strong> for project <strong>(.*?)<\/strong> and overtime code <strong>(.*?)<\/strong>\.$/i);
+  let match = rawMessage.match(/^Added an entry on ([A-Za-z]+ \d{1,2}, \d{4}), starting at <strong>(.*?)<\/strong> and finishing at <strong>(.*?)<\/strong> for project <strong>(.*?)<\/strong>, overtime code <strong>(.*?)<\/strong>, payment <strong>(.*?)<\/strong>, and reason <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.addedEntryWithOptions", {
+      date: localizeAuditHumanDate(match[1]),
+      start: match[2],
+      end: match[3],
+      projectCode: match[4],
+      overtimeCode: match[5] || t("shared.overtimeCode"),
+      paymentOption: formatPaymentOptionValue(match[6]),
+      reasonCode: match[7] || t("shared.reasonCode"),
+    });
+  }
+
+  match = rawMessage.match(/^Added an entry on ([A-Za-z]+ \d{1,2}, \d{4}), starting at <strong>(.*?)<\/strong> and finishing at <strong>(.*?)<\/strong> for project <strong>(.*?)<\/strong> and overtime code <strong>(.*?)<\/strong>\.$/i);
   if (match) {
     return t("history.message.addedEntry", {
       date: localizeAuditHumanDate(match[1]),
       start: match[2],
       end: match[3],
       projectCode: match[4],
-      overtimeCode: match[5],
+      overtimeCode: match[5] || t("shared.overtimeCode"),
     });
   }
 

@@ -1,18 +1,57 @@
 [
   {
-    "code": "OT-OPS",
-    "label": "Operational Support"
+    "code": "",
+    "labelEn": "Overtime Code",
+    "labelFr": "Code supp."
   },
   {
-    "code": "OT-MNT",
-    "label": "Maintenance Window"
+    "code": "260",
+    "labelEn": "OVERTIME, Regular Working Day",
+    "labelFr": "HEURES SUPPLÉMENTAIRES, Jour ouvrable régulier"
   },
   {
-    "code": "OT-REL",
-    "label": "Release / Deployment"
+    "code": "261",
+    "labelEn": "OVERTIME, First Day of Rest",
+    "labelFr": "HEURES SUPPLÉMENTAIRES, Premier jour de repos"
   },
   {
-    "code": "OT-CLS",
-    "label": "Month-End / Closeout"
+    "code": "262",
+    "labelEn": "OVERTIME, Second or Subsequent Day of Rest",
+    "labelFr": "HEURES SUPPLÉMENTAIRES, Deuxième jour de repos subséquent"
+  },
+  {
+    "code": "263",
+    "labelEn": "OVERTIME, Designated Holiday",
+    "labelFr": "HEURES SUPPLÉMENTAIRES, Congé férié"
+  },
+  {
+    "code": "089",
+    "labelEn": "TRAVEL TIME, Regular Working Day",
+    "labelFr": "TEMPS de DÉPLACEMENT, Jour ouvrable régulier"
+  },
+  {
+    "code": "072",
+    "labelEn": "TRAVEL TIME, Day of Rest",
+    "labelFr": "TEMPS de DÉPLACEMENT, Jour de repos"
+  },
+  {
+    "code": "009",
+    "labelEn": "CALL BACK",
+    "labelFr": "RAPPEL AU TRAVAIL"
+  },
+  {
+    "code": "050",
+    "labelEn": "REPORTING PAY",
+    "labelFr": "INDEMNITÉ DE PRÉSENCE"
+  },
+  {
+    "code": "049",
+    "labelEn": "PART TIME, Additional Hours",
+    "labelFr": "TEMPS PARTIEL, Heures additionnelles"
+  },
+  {
+    "code": "043",
+    "labelEn": "PART TIME, Premium Pay for Work on a Holiday",
+    "labelFr": "TEMPS PARTIEL, Prime pour le travail effectué lors d'un jour férié"
   }
 ]

@@ -2,7 +2,8 @@
 function respondWithError($response, $statusCode, $message) {
     $response.StatusCode = $statusCode
     $errorMsg = "{ `"error`": `"$message`" }"
-    $response.OutputStream.Write([System.Text.Encoding]::UTF8.GetBytes($errorMsg), 0, ([System.Text.Encoding]::UTF8.GetBytes($errorMsg)).Length)
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($errorMsg)
+    $response.OutputStream.Write($bytes, 0, $bytes.Length)
     $response.Close()
 }
 
@@ -10,7 +11,8 @@ function respondWithError($response, $statusCode, $message) {
 function respondWithSuccess($response, $message) {
     $response.ContentType = "application/json"
     $response.StatusCode = 200
-    $response.OutputStream.Write([System.Text.Encoding]::UTF8.GetBytes($message), 0, ([System.Text.Encoding]::UTF8.GetBytes($message)).Length)
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($message)
+    $response.OutputStream.Write($bytes, 0, $bytes.Length)
     $response.Close()
 }
 
@@ -78,10 +80,13 @@ function respondWithFile {
     $response.Headers["Last-Modified"] = $metadata.LastWriteUtc.ToString("R")
 
     $extension = [System.IO.Path]::GetExtension($Path).ToLowerInvariant()
-    if ($extension -eq ".html" -or $extension -eq ".js" -or $extension -eq ".css") {
+    if ($extension -eq ".html") {
         $response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         $response.Headers["Pragma"] = "no-cache"
         $response.Headers["Expires"] = "0"
+    }
+    elseif ($extension -eq ".js" -or $extension -eq ".css") {
+        $response.Headers["Cache-Control"] = "public, max-age=3600, must-revalidate"
     }
     else {
         $response.Headers["Cache-Control"] = "public, max-age=86400"

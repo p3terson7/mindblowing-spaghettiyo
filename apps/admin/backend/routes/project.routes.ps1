@@ -11,8 +11,8 @@ if ($request.Url.AbsolutePath -match "^/projects") {
     }
 }
 
-. (Join-Path -Path $scriptDir -ChildPath "routes/projects/get.routes.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "routes/projects/bootstrap.routes.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "routes/projects/add.routes.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "routes/projects/update.routes.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "routes/projects/delete.routes.ps1")
+Invoke-CachedRouteScript -RelativePath "routes/projects/get.routes.ps1"
+Invoke-CachedRouteScript -RelativePath "routes/projects/bootstrap.routes.ps1"
+Invoke-CachedRouteScript -RelativePath "routes/projects/add.routes.ps1"
+Invoke-CachedRouteScript -RelativePath "routes/projects/update.routes.ps1"
+Invoke-CachedRouteScript -RelativePath "routes/projects/delete.routes.ps1"

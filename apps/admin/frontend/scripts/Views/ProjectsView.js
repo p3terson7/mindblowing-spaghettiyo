@@ -363,6 +363,11 @@ function renderProjectDetail(detail) {
                   </h2>
                   <div id="${collapseId}" class="accordion-collapse collapse" aria-labelledby="projectHeading${index}" data-bs-parent="#employeeAccordion">
                     <div class="accordion-body">
+                      <div class="project-breakdown-actions">
+                        <button type="button" class="btn btn-outline-secondary btn-sm project-people-navigator" data-employee-code="${escapeHtml(employee.employeeCode || "")}" data-project-code="${escapeHtml(detail.projectCode)}">
+                          <i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(t("projects.openInPeople"))}
+                        </button>
+                      </div>
                       ${renderProjectEmployeeEntries(employee.entries)}
                     </div>
                   </div>
@@ -573,6 +578,19 @@ document.getElementById("projectsSummaryContainer").addEventListener("click", ev
     currentProjectCode = projectCode;
     renderProjectSummaryCards(projectsViewState.projects);
     loadProjectDetailStats(projectCode, currentProjectFilter);
+  }
+});
+
+document.getElementById("projectDetailContainer").addEventListener("click", event => {
+  const navigatorButton = event.target.closest(".project-people-navigator");
+  if (!navigatorButton) {
+    return;
+  }
+
+  const employeeCode = navigatorButton.getAttribute("data-employee-code");
+  const projectCode = navigatorButton.getAttribute("data-project-code");
+  if (typeof window.openPeopleProjectFilter === "function") {
+    window.openPeopleProjectFilter(employeeCode, projectCode);
   }
 });
 

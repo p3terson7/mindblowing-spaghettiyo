@@ -26,7 +26,7 @@
                 continue
             }
 
-            $entries = @((Read-JsonArrayFile -Path $dataFile) | ForEach-Object { Convert-ToNormalizedEntryObject -Entry $_ })
+            $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
             respondWithSuccess $response ($entries | ConvertTo-Json -Depth 6)
             continue
         }
@@ -57,6 +57,8 @@
             $optionsPayload = [PSCustomObject]@{
                 projects      = @(Get-Projects)
                 overtimeCodes = @(Get-OvertimeCodes)
+                paymentOptions = @(Get-PaymentOptions)
+                reasonCodes    = @(Get-ReasonCodes)
             }
 
             respondWithSuccess $response ($optionsPayload | ConvertTo-Json -Depth 6)
@@ -84,14 +86,16 @@
                 if ($payload.type -eq "in") {
                     $projectCode = [string]$payload.projectCode
                     $overtimeCode = [string]$payload.overtimeCode
+                    $paymentOption = [string]$payload.paymentOption
+                    $reasonCode = [string]$payload.reasonCode
 
                     if ([string]::IsNullOrWhiteSpace($projectCode)) {
                         respondWithError $response 400 "Project selection is required before starting overtime."
                         continue
                     }
 
-                    if ([string]::IsNullOrWhiteSpace($overtimeCode)) {
-                        respondWithError $response 400 "Overtime code selection is required before starting overtime."
+                    if ([string]::IsNullOrWhiteSpace($paymentOption)) {
+                        respondWithError $response 400 "Payment selection is required before starting overtime."
                         continue
                     }
 
@@ -102,8 +106,20 @@
                     }
 
                     $overtimeCodes = @(Get-OvertimeCodes)
-                    if (-not ($overtimeCodes | Where-Object { [string]$_.code -eq $overtimeCode })) {
+                    if (-not (Test-OptionCode -Options $overtimeCodes -Code $overtimeCode -AllowBlank $true)) {
                         respondWithError $response 400 "Invalid overtime code: $overtimeCode."
+                        continue
+                    }
+
+                    $paymentOptions = @(Get-PaymentOptions)
+                    if (-not (Test-OptionCode -Options $paymentOptions -Code $paymentOption -AllowBlank $false)) {
+                        respondWithError $response 400 "Invalid payment option: $paymentOption."
+                        continue
+                    }
+
+                    $reasonCodes = @(Get-ReasonCodes)
+                    if (-not (Test-OptionCode -Options $reasonCodes -Code $reasonCode -AllowBlank $true)) {
+                        respondWithError $response 400 "Invalid reason code: $reasonCode."
                         continue
                     }
                 }
@@ -130,18 +146,27 @@
                         }
                     )
                     $lastEntry = $sortedEntries | Select-Object -Last 1
-                    $activeEntry = @($sortedEntries | Where-Object { $_.punchIn -and -not $_.punchOut }) | Select-Object -Last 1
+                    $activeEntry = @($sortedEntries | Where-Object { $_.punchIn -and -not $_.punchOut -and -not (Test-EntryForgottenClockOut -Entry $_) }) | Select-Object -Last 1
 
                     $now = Get-Date
                     $exactNow = Get-Date -Year $now.Year -Month $now.Month -Day $now.Day -Hour $now.Hour -Minute $now.Minute -Second 0
                     $todayText = $exactNow.ToString("yyyy-MM-dd")
                     $exactNowText = $exactNow.ToString("HH:mm:ss")
                     $roundedNowText = Convert-ToNearestQuarterHourText -Date $todayText -TimeText $exactNowText
+                    $requiresClockOutReview = $false
+                    $reviewEntryDate = ""
+                    $punchResultMessage = "Punch updated successfully."
 
                     if ($payload.type -eq "in") {
                         if ($activeEntry) {
-                            respondWithError $response 400 "You must punch out before punching in again."
-                            continue
+                            if ([string]$activeEntry.date -eq $todayText) {
+                                respondWithError $response 400 "You must punch out before punching in again."
+                                continue
+                            }
+
+                            Set-EntryForgottenClockOutReview -Entry $activeEntry -AttemptDate $todayText -AttemptTime $exactNowText
+                            $requiresClockOutReview = $true
+                            $reviewEntryDate = [string]$activeEntry.date
                         }
 
                         $existingData += [PSCustomObject]@{
@@ -157,6 +182,8 @@
                             message     = ""
                             projectCode = $projectCode
                             overtimeCode = $overtimeCode
+                            paymentOption = $paymentOption
+                            reasonCode = $reasonCode
                         }
                     }
                     else {
@@ -165,11 +192,19 @@
                             continue
                         }
 
-                        $activeEntry.exactPunchOut = $exactNowText
-                        $activeEntry.punchOut = $roundedNowText
-                        $punchInTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchIn)", "yyyy-MM-dd HH:mm:ss", $null)
-                        $punchOutTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchOut)", "yyyy-MM-dd HH:mm:ss", $null)
-                        $activeEntry.overtime = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
+                        if ([string]$activeEntry.date -ne $todayText) {
+                            Set-EntryForgottenClockOutReview -Entry $activeEntry -AttemptDate $todayText -AttemptTime $exactNowText
+                            $requiresClockOutReview = $true
+                            $reviewEntryDate = [string]$activeEntry.date
+                            $punchResultMessage = "Previous-day clock-out requires supervisor review."
+                        }
+                        else {
+                            $activeEntry.exactPunchOut = $exactNowText
+                            $activeEntry.punchOut = $roundedNowText
+                            $punchInTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchIn)", "yyyy-MM-dd HH:mm:ss", $null)
+                            $punchOutTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchOut)", "yyyy-MM-dd HH:mm:ss", $null)
+                            $activeEntry.overtime = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
+                        }
                     }
 
                     Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 6
@@ -181,8 +216,10 @@
                 Publish-DataChange -Category "employee" -Resource $employeeCode
 
                 $result = [PSCustomObject]@{
-                    message = "Punch updated successfully."
+                    message = $punchResultMessage
                     time    = $exactNowText
+                    requiresClockOutReview = $requiresClockOutReview
+                    reviewEntryDate = $reviewEntryDate
                 }
                 respondWithSuccess $response ($result | ConvertTo-Json -Depth 6)
             }

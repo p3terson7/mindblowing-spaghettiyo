@@ -121,6 +121,90 @@ function Get-EntryExactPunchOutText {
     return $null
 }
 
+function Set-EntryPropertyValue {
+    param(
+        [Parameter(Mandatory = $true)]$Entry,
+        [Parameter(Mandatory = $true)][string]$Name,
+        $Value
+    )
+
+    if ($Entry.PSObject.Properties.Name -contains $Name) {
+        $Entry.PSObject.Properties[$Name].Value = $Value
+        return
+    }
+
+    $Entry | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
+}
+
+function Convert-ToBooleanFlag {
+    param($Value)
+
+    if ($Value -is [bool]) {
+        return [bool]$Value
+    }
+
+    if ($null -eq $Value) {
+        return $false
+    }
+
+    $normalized = ([string]$Value).Trim().ToLowerInvariant()
+    return ($normalized -eq "true" -or $normalized -eq "1" -or $normalized -eq "yes")
+}
+
+function Test-EntryForgottenClockOut {
+    param($Entry)
+
+    if ($null -eq $Entry) {
+        return $false
+    }
+
+    $forgottenFlag = $false
+    $reviewFlag = $false
+
+    if ($Entry.PSObject.Properties.Name -contains "forgottenClockOut") {
+        $forgottenFlag = Convert-ToBooleanFlag -Value $Entry.forgottenClockOut
+    }
+
+    if ($Entry.PSObject.Properties.Name -contains "needsClockOutReview") {
+        $reviewFlag = Convert-ToBooleanFlag -Value $Entry.needsClockOutReview
+    }
+
+    return ($forgottenFlag -or $reviewFlag)
+}
+
+function Set-EntryForgottenClockOutReview {
+    param(
+        [Parameter(Mandatory = $true)]$Entry,
+        [Parameter(Mandatory = $true)][string]$AttemptDate,
+        [Parameter(Mandatory = $true)][string]$AttemptTime
+    )
+
+    Set-EntryPropertyValue -Entry $Entry -Name "forgottenClockOut" -Value $true
+    Set-EntryPropertyValue -Entry $Entry -Name "needsClockOutReview" -Value $true
+    Set-EntryPropertyValue -Entry $Entry -Name "forgottenClockOutAttemptedDate" -Value $AttemptDate
+    Set-EntryPropertyValue -Entry $Entry -Name "forgottenClockOutAttemptedTime" -Value $AttemptTime
+    Set-EntryPropertyValue -Entry $Entry -Name "forgottenClockOutDetectedAtUtc" -Value ((Get-Date).ToUniversalTime().ToString("o"))
+
+    $note = "Clock-out missing: employee attempted to end this previous-day entry on $AttemptDate at $AttemptTime. Supervisor must correct the end time."
+    $currentMessage = if ($Entry.PSObject.Properties.Name -contains "message") { [string]$Entry.message } else { "" }
+    if ([string]::IsNullOrWhiteSpace($currentMessage)) {
+        Set-EntryPropertyValue -Entry $Entry -Name "message" -Value $note
+    }
+    elseif ($currentMessage -notmatch "Clock-out missing") {
+        Set-EntryPropertyValue -Entry $Entry -Name "message" -Value ($currentMessage.Trim() + " " + $note)
+    }
+}
+
+function Clear-EntryForgottenClockOutReview {
+    param([Parameter(Mandatory = $true)]$Entry)
+
+    Set-EntryPropertyValue -Entry $Entry -Name "forgottenClockOut" -Value $false
+    Set-EntryPropertyValue -Entry $Entry -Name "needsClockOutReview" -Value $false
+    Set-EntryPropertyValue -Entry $Entry -Name "forgottenClockOutAttemptedDate" -Value ""
+    Set-EntryPropertyValue -Entry $Entry -Name "forgottenClockOutAttemptedTime" -Value ""
+    Set-EntryPropertyValue -Entry $Entry -Name "forgottenClockOutDetectedAtUtc" -Value ""
+}
+
 function Convert-ToNormalizedEntryObject {
     param($Entry)
 
@@ -141,6 +225,13 @@ function Convert-ToNormalizedEntryObject {
         message       = if ($null -ne $Entry.message) { [string]$Entry.message } else { "" }
         projectCode   = if ($null -ne $Entry.projectCode) { [string]$Entry.projectCode } else { "" }
         overtimeCode  = if ($null -ne $Entry.overtimeCode) { [string]$Entry.overtimeCode } else { "" }
+        paymentOption = if ($null -ne $Entry.paymentOption -and -not [string]::IsNullOrWhiteSpace([string]$Entry.paymentOption)) { [string]$Entry.paymentOption } else { "cash" }
+        reasonCode    = if ($null -ne $Entry.reasonCode) { [string]$Entry.reasonCode } else { "" }
+        forgottenClockOut = Test-EntryForgottenClockOut -Entry $Entry
+        needsClockOutReview = Test-EntryForgottenClockOut -Entry $Entry
+        forgottenClockOutAttemptedDate = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedDate") { [string]$Entry.forgottenClockOutAttemptedDate } else { "" }
+        forgottenClockOutAttemptedTime = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedTime") { [string]$Entry.forgottenClockOutAttemptedTime } else { "" }
+        forgottenClockOutDetectedAtUtc = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutDetectedAtUtc") { [string]$Entry.forgottenClockOutDetectedAtUtc } else { "" }
     }
 }
 

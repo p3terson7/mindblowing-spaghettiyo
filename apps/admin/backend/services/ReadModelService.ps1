@@ -87,7 +87,7 @@ function Get-EntryDateTimeOrMin {
 function Test-EntryOpen {
     param($Entry)
 
-    return ($null -ne $Entry -and -not [string]::IsNullOrWhiteSpace([string]$Entry.punchIn) -and [string]::IsNullOrWhiteSpace([string]$Entry.punchOut))
+    return ($null -ne $Entry -and -not (Test-EntryForgottenClockOut -Entry $Entry) -and -not [string]::IsNullOrWhiteSpace([string]$Entry.punchIn) -and [string]::IsNullOrWhiteSpace([string]$Entry.punchOut))
 }
 
 function New-EmployeeEntryProjection {
@@ -110,6 +110,13 @@ function New-EmployeeEntryProjection {
         message       = if ($null -ne $Entry.message) { [string]$Entry.message } else { "" }
         projectCode   = if ($null -ne $Entry.projectCode) { [string]$Entry.projectCode } else { "" }
         overtimeCode  = if ($null -ne $Entry.overtimeCode) { [string]$Entry.overtimeCode } else { "" }
+        paymentOption = if ($null -ne $Entry.paymentOption -and -not [string]::IsNullOrWhiteSpace([string]$Entry.paymentOption)) { [string]$Entry.paymentOption } else { "cash" }
+        reasonCode    = if ($null -ne $Entry.reasonCode) { [string]$Entry.reasonCode } else { "" }
+        forgottenClockOut = Test-EntryForgottenClockOut -Entry $Entry
+        needsClockOutReview = Test-EntryForgottenClockOut -Entry $Entry
+        forgottenClockOutAttemptedDate = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedDate") { [string]$Entry.forgottenClockOutAttemptedDate } else { "" }
+        forgottenClockOutAttemptedTime = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedTime") { [string]$Entry.forgottenClockOutAttemptedTime } else { "" }
+        forgottenClockOutDetectedAtUtc = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutDetectedAtUtc") { [string]$Entry.forgottenClockOutDetectedAtUtc } else { "" }
         employeeCode  = $EmployeeCode
         employeeName  = $EmployeeName
     }
@@ -157,10 +164,18 @@ function Get-EmployeeDataSnapshot {
             $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
             $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
 
+            $projectCodes = @(
+                $entries |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.projectCode) } |
+                    ForEach-Object { [string]$_.projectCode } |
+                    Sort-Object -Unique
+            )
+
             $employees += [PSCustomObject]@{
                 code       = $employeeCode
                 name       = $displayName
                 entryCount = $entries.Count
+                projectCodes = $projectCodes
             }
 
             $entriesByEmployee[$employeeCode] = $entries
@@ -357,18 +372,22 @@ function Get-ProjectStatisticsOverview {
             }
 
             $employeeName = if ($entry.employeeName) { [string]$entry.employeeName } else { [string]$entry.name }
-            if (-not $stats[$projectCode].breakdown.ContainsKey($employeeName)) {
-                $stats[$projectCode].breakdown[$employeeName] = @{
+            $employeeCode = if ($entry.employeeCode) { [string]$entry.employeeCode } else { [string]$employeeName }
+            if (-not $stats[$projectCode].breakdown.ContainsKey($employeeCode)) {
+                $stats[$projectCode].breakdown[$employeeCode] = @{
+                    employeeCode = $employeeCode
+                    employeeName = $employeeName
                     totalSeconds = 0
                     entryCount   = 0
                     entries      = @()
                 }
             }
 
-            $stats[$projectCode].breakdown[$employeeName].totalSeconds += $seconds
-            $stats[$projectCode].breakdown[$employeeName].entryCount++
-            $stats[$projectCode].breakdown[$employeeName].entries += [PSCustomObject]@{
+            $stats[$projectCode].breakdown[$employeeCode].totalSeconds += $seconds
+            $stats[$projectCode].breakdown[$employeeCode].entryCount++
+            $stats[$projectCode].breakdown[$employeeCode].entries += [PSCustomObject]@{
                 entryId       = $entry.entryId
+                employeeCode  = $employeeCode
                 date          = $entry.date
                 punchIn       = $entry.punchIn
                 exactPunchIn  = $entry.exactPunchIn
@@ -446,10 +465,11 @@ function Get-ProjectDetailModel {
     $breakdown = @()
 
     if ($projectStats) {
-        foreach ($employeeName in ($projectStats.breakdown.Keys | Sort-Object)) {
-            $employeeStats = $projectStats.breakdown[$employeeName]
+        foreach ($employeeCode in ($projectStats.breakdown.Keys | Sort-Object)) {
+            $employeeStats = $projectStats.breakdown[$employeeCode]
             $breakdown += [PSCustomObject]@{
-                employee   = $employeeName
+                employeeCode = [string]$employeeStats.employeeCode
+                employee   = [string]$employeeStats.employeeName
                 overtime   = Convert-SecondsToTimeText -Seconds $employeeStats.totalSeconds
                 entryCount = [int]$employeeStats.entryCount
                 entries    = @($employeeStats.entries | Sort-Object date, punchIn)
@@ -546,16 +566,13 @@ function Get-SelfBootstrapModel {
     param([Parameter(Mandatory = $true)][string]$EmployeeCode)
 
     $dataFile = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $EmployeeCode)
-    $entries = if (Test-Path -Path $dataFile) {
-        @((Read-JsonArrayFile -Path $dataFile) | ForEach-Object { Convert-ToNormalizedEntryObject -Entry $_ })
-    }
-    else {
-        @()
-    }
+    $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
 
     return [PSCustomObject]@{
         entries        = $entries
         projects       = @(Get-Projects)
         overtimeCodes  = @(Get-OvertimeCodes)
+        paymentOptions = @(Get-PaymentOptions)
+        reasonCodes    = @(Get-ReasonCodes)
     }
 }

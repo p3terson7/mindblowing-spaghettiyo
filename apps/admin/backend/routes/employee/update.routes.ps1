@@ -38,14 +38,29 @@
             }
 
             if ($payload.PSObject.Properties.Name -contains "overtimeCode") {
-                if (-not $payload.overtimeCode) {
-                    respondWithError $response 400 "If provided, overtimeCode cannot be empty."
+                $overtimeCodes = Get-OvertimeCodes
+                if (-not (Test-OptionCode -Options $overtimeCodes -Code ([string]$payload.overtimeCode) -AllowBlank $true)) {
+                    respondWithError $response 400 "Invalid overtimeCode: $($payload.overtimeCode) does not exist."
                     continue
                 }
-                $overtimeCodes = Get-OvertimeCodes
-                $overtimeCodeExists = $overtimeCodes | Where-Object { $_.code -eq $payload.overtimeCode }
-                if (-not $overtimeCodeExists) {
-                    respondWithError $response 400 "Invalid overtimeCode: $($payload.overtimeCode) does not exist."
+            }
+
+            if ($payload.PSObject.Properties.Name -contains "paymentOption") {
+                if (-not $payload.paymentOption) {
+                    respondWithError $response 400 "If provided, paymentOption cannot be empty."
+                    continue
+                }
+                $paymentOptions = Get-PaymentOptions
+                if (-not (Test-OptionCode -Options $paymentOptions -Code ([string]$payload.paymentOption) -AllowBlank $false)) {
+                    respondWithError $response 400 "Invalid paymentOption: $($payload.paymentOption) does not exist."
+                    continue
+                }
+            }
+
+            if ($payload.PSObject.Properties.Name -contains "reasonCode") {
+                $reasonCodes = Get-ReasonCodes
+                if (-not (Test-OptionCode -Options $reasonCodes -Code ([string]$payload.reasonCode) -AllowBlank $true)) {
+                    respondWithError $response 400 "Invalid reasonCode: $($payload.reasonCode) does not exist."
                     continue
                 }
             }
@@ -68,6 +83,8 @@
                 $originalRoundedPunchOut = if ($existingEntry.punchOut) { [string]$existingEntry.punchOut } else { $null }
                 $originalProjectCode = if ($existingEntry.projectCode) { [string]$existingEntry.projectCode } else { "" }
                 $originalOvertimeCode = if ($existingEntry.overtimeCode) { [string]$existingEntry.overtimeCode } else { "" }
+                $originalPaymentOption = if ($existingEntry.paymentOption) { [string]$existingEntry.paymentOption } else { "cash" }
+                $originalReasonCode = if ($existingEntry.reasonCode) { [string]$existingEntry.reasonCode } else { "" }
 
                 $newExactPunchIn = if ($payload.newPunchIn) {
                     Convert-ToNormalizedTimeText -TimeText ([string]$payload.newPunchIn)
@@ -132,15 +149,32 @@
                     $messages += "Overtime Code updated."
                 }
 
+                if ($payload.PSObject.Properties.Name -contains "paymentOption" -and $originalPaymentOption -ne [string]$payload.paymentOption) {
+                    $messages += "Payment option updated."
+                }
+
+                if ($payload.PSObject.Properties.Name -contains "reasonCode" -and $originalReasonCode -ne [string]$payload.reasonCode) {
+                    $messages += "Reason code updated."
+                }
+
                 $existingEntry.punchIn = $newRoundedPunchIn
                 $existingEntry.exactPunchIn = $newExactPunchIn
                 $existingEntry.punchOut = $newRoundedPunchOut
                 $existingEntry.exactPunchOut = $newExactPunchOut
+                if ($newRoundedPunchOut) {
+                    Clear-EntryForgottenClockOutReview -Entry $existingEntry
+                }
                 if ($payload.PSObject.Properties.Name -contains "projectCode") {
                     $existingEntry.projectCode = [string]$payload.projectCode
                 }
                 if ($payload.PSObject.Properties.Name -contains "overtimeCode") {
-                    $existingEntry.overtimeCode = [string]$payload.overtimeCode
+                    Set-EntryPropertyValue -Entry $existingEntry -Name "overtimeCode" -Value ([string]$payload.overtimeCode)
+                }
+                if ($payload.PSObject.Properties.Name -contains "paymentOption") {
+                    Set-EntryPropertyValue -Entry $existingEntry -Name "paymentOption" -Value ([string]$payload.paymentOption)
+                }
+                if ($payload.PSObject.Properties.Name -contains "reasonCode") {
+                    Set-EntryPropertyValue -Entry $existingEntry -Name "reasonCode" -Value ([string]$payload.reasonCode)
                 }
                 $existingEntry.message = $managerMessage.Trim()
                 Update-EntryComputedOvertime -Entry $existingEntry

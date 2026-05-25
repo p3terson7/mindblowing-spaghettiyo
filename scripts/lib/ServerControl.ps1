@@ -336,21 +336,22 @@ function Start-ManagedService {
         $requestedProcessId = [int]$process.Id
     }
     else {
-        $nohup = Get-Command -Name "nohup" -ErrorAction SilentlyContinue
-        if ($null -eq $nohup) {
-            throw "Managed background start requires 'nohup' on non-Windows hosts."
-        }
-
-        $nohupArguments = @($powerShellExecutable, "-NoProfile", "-File", $ServerScript)
-        $startProcessParams = @{
-            FilePath               = $nohup.Source
-            ArgumentList           = $nohupArguments
-            WorkingDirectory       = $WorkingDirectory
-            RedirectStandardOutput = $StdOutLog
-            RedirectStandardError  = $StdErrLog
-            PassThru               = $true
-        }
-        $process = Start-Process @startProcessParams
+        $nohupCommand = Get-Command -Name "nohup" -ErrorAction SilentlyContinue
+        $launcherPrefix = if ($null -ne $nohupCommand) { (ConvertTo-ShellSingleQuotedLiteral -Value ([string]$nohupCommand.Source)) + " " } else { "" }
+        $shellCommand = "cd {0}; {1}{2} -NoProfile -File {3} > {4} 2> {5} < /dev/null &" -f `
+            (ConvertTo-ShellSingleQuotedLiteral -Value $WorkingDirectory),
+            $launcherPrefix,
+            (ConvertTo-ShellSingleQuotedLiteral -Value $powerShellExecutable),
+            (ConvertTo-ShellSingleQuotedLiteral -Value $ServerScript),
+            (ConvertTo-ShellSingleQuotedLiteral -Value $StdOutLog),
+            (ConvertTo-ShellSingleQuotedLiteral -Value $StdErrLog)
+        $processStartInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $processStartInfo.FileName = "/bin/sh"
+        $processStartInfo.WorkingDirectory = $WorkingDirectory
+        $processStartInfo.UseShellExecute = $false
+        [void]$processStartInfo.ArgumentList.Add("-c")
+        [void]$processStartInfo.ArgumentList.Add($shellCommand)
+        $process = [System.Diagnostics.Process]::Start($processStartInfo)
         $requestedProcessId = [int]$process.Id
     }
 

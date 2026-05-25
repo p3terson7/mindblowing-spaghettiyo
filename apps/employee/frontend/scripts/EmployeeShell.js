@@ -46,6 +46,69 @@ function getEmployeeSessionToken() {
   return session && session.token ? session.token : null;
 }
 
+function getCurrentEmployeeApiUrl() {
+  return normalizeEmployeeApiUrl(window.apiUrl || getEmployeeApiUrl(), window.defaultApiUrl);
+}
+
+function getEmployeeFetchTargetUrl(resource) {
+  if (typeof resource === "string") {
+    return resource;
+  }
+
+  if (resource && typeof resource.url === "string") {
+    return resource.url;
+  }
+
+  if (resource && typeof resource.href === "string") {
+    return resource.href;
+  }
+
+  return "";
+}
+
+function getEmployeeBearerTokenFromHeader(headerValue) {
+  const match = String(headerValue || "").match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+function isEmployeeApiRequestUrl(targetUrl, routePrefix) {
+  const activeApiUrl = getCurrentEmployeeApiUrl();
+  if (!targetUrl || !activeApiUrl) {
+    return false;
+  }
+
+  try {
+    const requestUrl = new URL(targetUrl, window.location.href);
+    const apiBaseUrl = new URL(activeApiUrl, window.location.href);
+    if (requestUrl.origin !== apiBaseUrl.origin) {
+      return false;
+    }
+
+    const basePath = apiBaseUrl.pathname.endsWith("/") ? apiBaseUrl.pathname : `${apiBaseUrl.pathname}/`;
+    if (basePath !== "/" && requestUrl.pathname.indexOf(basePath) !== 0 && requestUrl.pathname !== apiBaseUrl.pathname) {
+      return false;
+    }
+
+    if (!routePrefix) {
+      return true;
+    }
+
+    const relativePath = basePath === "/"
+      ? requestUrl.pathname.replace(/^\//, "")
+      : requestUrl.pathname.slice(basePath.length);
+    return relativePath.indexOf(routePrefix) === 0;
+  } catch (error) {
+    const normalizedApiUrl = normalizeEmployeeApiUrl(activeApiUrl, window.defaultApiUrl);
+    if (String(targetUrl).indexOf(normalizedApiUrl) !== 0) {
+      return false;
+    }
+
+    return routePrefix
+      ? String(targetUrl).indexOf(normalizedApiUrl + routePrefix) === 0
+      : true;
+  }
+}
+
 function getEmployeeUser() {
   const session = getStoredEmployeeSession();
   return session && session.user ? session.user : null;
@@ -101,20 +164,25 @@ function stopEmployeeSyncPolling() {
 function installEmployeeFetchWrapper() {
   window.fetch = function (resource, options) {
     const requestOptions = options ? { ...options } : {};
-    const headers = new Headers(requestOptions.headers || {});
-    const targetUrl = typeof resource === "string" ? resource : resource.url;
+    const headers = new Headers(requestOptions.headers || (resource && resource.headers) || {});
+    const targetUrl = getEmployeeFetchTargetUrl(resource);
     const token = getEmployeeSessionToken();
+    let requestToken = getEmployeeBearerTokenFromHeader(headers.get("Authorization"));
 
-    if (token && typeof targetUrl === "string" && targetUrl.indexOf(apiUrl) === 0 && !headers.has("Authorization")) {
+    if (token && isEmployeeApiRequestUrl(targetUrl) && !headers.has("Authorization")) {
       headers.set("Authorization", `Bearer ${token}`);
+      requestToken = token;
     }
 
     requestOptions.headers = headers;
 
     return employeeShellState.nativeFetch(resource, requestOptions).then(response => {
-      const isAuthRequest = typeof targetUrl === "string" && targetUrl.indexOf(apiUrl + "auth/") === 0;
+      const isAuthRequest = isEmployeeApiRequestUrl(targetUrl, "auth/");
       if (response.status === 401 && !isAuthRequest) {
-        handleEmployeeSessionExpired();
+        const currentToken = getEmployeeSessionToken();
+        if (!currentToken || (requestToken && currentToken === requestToken)) {
+          handleEmployeeSessionExpired();
+        }
       }
       return response;
     });
@@ -331,14 +399,25 @@ async function restoreEmployeeSession() {
     return;
   }
 
+  const restoreToken = session.token;
   try {
     const response = await fetch(apiUrl + "auth/me");
     const currentUser = await parseResponse(response);
+    const latestSession = getStoredEmployeeSession();
+    if (!latestSession || latestSession.token !== restoreToken) {
+      return;
+    }
+
     await applyEmployeeSession({
-      token: session.token,
+      token: restoreToken,
       user: currentUser,
     });
   } catch (error) {
+    const latestSession = getStoredEmployeeSession();
+    if (latestSession && latestSession.token !== restoreToken) {
+      return;
+    }
+
     clearStoredEmployeeSession();
     updateEmployeeSessionSummary();
     showEmployeeAuthOverlay(false);

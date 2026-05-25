@@ -1,3 +1,11 @@
+if ($null -eq $script:AuthStorageEnsured) {
+    $script:AuthStorageEnsured = $false
+}
+
+if (-not $script:AuthArrayFileCache) {
+    $script:AuthArrayFileCache = @{}
+}
+
 function New-PasswordCredential {
     param(
         [Parameter(Mandatory = $true)][string]$Password,
@@ -68,6 +76,10 @@ function Get-TokenHash {
 }
 
 function Ensure-AuthStorage {
+    if ($script:AuthStorageEnsured) {
+        return
+    }
+
     $sessionsLock = Acquire-ResourceLock -ResourcePath $sessionsFile
     try {
         if (!(Test-Path -Path $sessionsFile)) {
@@ -80,60 +92,70 @@ function Ensure-AuthStorage {
 
     $usersLock = Acquire-ResourceLock -ResourcePath $usersFile
     try {
-        if (Test-Path -Path $usersFile) {
-            return
-        }
-
-        $users = @()
-        $adminSecret = New-PasswordCredential -Password $bootstrapAdminPassword
-        $users += [PSCustomObject]@{
-            username           = $bootstrapAdminUsername
-            displayName        = "Administrator"
-            role               = "admin"
-            employeeCode       = $null
-            disabled           = $false
-            mustChangePassword = $true
-            createdAtUtc       = (Get-Date).ToUniversalTime().ToString("o")
-            passwordSalt       = $adminSecret.passwordSalt
-            passwordHash       = $adminSecret.passwordHash
-            passwordIterations = $adminSecret.passwordIterations
-            passwordAlgorithm  = $adminSecret.passwordAlgorithm
-        }
-
-        $employeeNames = Get-EmployeeNameMap
-        foreach ($code in ($employeeNames.PSObject.Properties.Name | Sort-Object)) {
-            $secret = New-PasswordCredential -Password $code
+        if (!(Test-Path -Path $usersFile)) {
+            $users = @()
+            $adminSecret = New-PasswordCredential -Password $bootstrapAdminPassword
             $users += [PSCustomObject]@{
-                username           = $code
-                displayName        = [string]$employeeNames.$code
-                role               = "employee"
-                employeeCode       = $code
+                username           = $bootstrapAdminUsername
+                displayName        = "Administrator"
+                role               = "admin"
+                employeeCode       = $null
                 disabled           = $false
                 mustChangePassword = $true
                 createdAtUtc       = (Get-Date).ToUniversalTime().ToString("o")
-                passwordSalt       = $secret.passwordSalt
-                passwordHash       = $secret.passwordHash
-                passwordIterations = $secret.passwordIterations
-                passwordAlgorithm  = $secret.passwordAlgorithm
+                passwordSalt       = $adminSecret.passwordSalt
+                passwordHash       = $adminSecret.passwordHash
+                passwordIterations = $adminSecret.passwordIterations
+                passwordAlgorithm  = $adminSecret.passwordAlgorithm
             }
-        }
 
-        Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            $employeeNames = Get-EmployeeNameMap
+            foreach ($code in ($employeeNames.PSObject.Properties.Name | Sort-Object)) {
+                $secret = New-PasswordCredential -Password $code
+                $users += [PSCustomObject]@{
+                    username           = $code
+                    displayName        = [string]$employeeNames.$code
+                    role               = "employee"
+                    employeeCode       = $code
+                    disabled           = $false
+                    mustChangePassword = $true
+                    createdAtUtc       = (Get-Date).ToUniversalTime().ToString("o")
+                    passwordSalt       = $secret.passwordSalt
+                    passwordHash       = $secret.passwordHash
+                    passwordIterations = $secret.passwordIterations
+                    passwordAlgorithm  = $secret.passwordAlgorithm
+                }
+            }
+
+            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+        }
     }
     finally {
         Release-ResourceLock -LockHandle $usersLock
     }
+
+    $script:AuthStorageEnsured = $true
 }
 
 function Read-AuthArrayFileCached {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    if (-not (Test-Path -Path $Path)) {
+    $metadata = Get-FileMetadataSnapshot -Path $Path
+    if ($null -eq $metadata) {
+        if ($script:AuthArrayFileCache.ContainsKey($Path)) {
+            $script:AuthArrayFileCache.Remove($Path) | Out-Null
+        }
         return @()
     }
 
+    $cacheKey = [string]$metadata.Path
+    $cacheEntry = $script:AuthArrayFileCache[$cacheKey]
+    if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
+        return $cacheEntry.Items
+    }
+
     try {
-        $raw = Read-TextFileCached -Path $Path
+        $raw = Read-TextFileCached -Path $metadata.Path
         if ([string]::IsNullOrWhiteSpace($raw) -or $raw.Trim() -eq "null") {
             return @()
         }
@@ -144,10 +166,22 @@ function Read-AuthArrayFileCached {
         }
 
         if (-not ($parsed -is [System.Collections.IEnumerable]) -or ($parsed -is [string])) {
-            return @($parsed)
+            $items = @($parsed)
+            $script:AuthArrayFileCache[$cacheKey] = [PSCustomObject]@{
+                LastWriteTicks = $metadata.LastWriteTicks
+                Length         = $metadata.Length
+                Items          = $items
+            }
+            return $items
         }
 
-        return @($parsed)
+        $items = @($parsed)
+        $script:AuthArrayFileCache[$cacheKey] = [PSCustomObject]@{
+            LastWriteTicks = $metadata.LastWriteTicks
+            Length         = $metadata.Length
+            Items          = $items
+        }
+        return $items
     }
     catch {
         return @()
@@ -168,12 +202,52 @@ function Get-AuthorizationTokenFromRequest {
     param($Request)
 
     $header = [string]$Request.Headers["Authorization"]
-    if ([string]::IsNullOrWhiteSpace($header)) {
-        return $null
-    }
-    if ($header -match "^Bearer\s+(.+)$") {
+    if (-not [string]::IsNullOrWhiteSpace($header) -and $header -match "^Bearer\s+(.+)$") {
         return $matches[1].Trim()
     }
+
+    return (Get-SessionTokenFromCookieHeader -CookieHeader ([string]$Request.Headers["Cookie"]))
+}
+
+function Get-SessionCookieHeader {
+    param([Parameter(Mandatory = $true)][string]$Token)
+
+    return ("overtimeSession={0}; Path=/; HttpOnly; SameSite=Lax" -f [System.Uri]::EscapeDataString($Token))
+}
+
+function Get-ExpiredSessionCookieHeader {
+    return "overtimeSession=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+}
+
+function Get-SessionTokenFromCookieHeader {
+    param([string]$CookieHeader)
+
+    if ([string]::IsNullOrWhiteSpace($CookieHeader)) {
+        return $null
+    }
+
+    $cookieParts = @($CookieHeader -split ";")
+    foreach ($part in $cookieParts) {
+        $trimmedPart = [string]$part
+        $trimmedPart = $trimmedPart.Trim()
+        $separatorIndex = $trimmedPart.IndexOf("=")
+        if ($separatorIndex -lt 1) {
+            continue
+        }
+
+        $name = $trimmedPart.Substring(0, $separatorIndex).Trim()
+        if ($name -ne "overtimeSession") {
+            continue
+        }
+
+        $value = $trimmedPart.Substring($separatorIndex + 1).Trim()
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            return $null
+        }
+
+        return [System.Uri]::UnescapeDataString($value)
+    }
+
     return $null
 }
 

@@ -121,6 +121,8 @@ function New-Entry {
         [Parameter(Mandatory = $true)][string]$Status,
         [string]$ProjectCode,
         [string]$OvertimeCode,
+        [string]$PaymentOption = "cash",
+        [string]$ReasonCode = "",
         [string]$Message = ""
     )
 
@@ -143,6 +145,8 @@ function New-Entry {
         message     = $Message
         projectCode = $ProjectCode
         overtimeCode = $OvertimeCode
+        paymentOption = $PaymentOption
+        reasonCode = $ReasonCode
     }
 }
 
@@ -227,10 +231,33 @@ $projects = @(
 )
 
 $overtimeCodes = @(
-    [PSCustomObject]@{ code = "OT-OPS"; label = "Operational Support" },
-    [PSCustomObject]@{ code = "OT-MNT"; label = "Maintenance Window" },
-    [PSCustomObject]@{ code = "OT-REL"; label = "Release / Deployment" },
-    [PSCustomObject]@{ code = "OT-CLS"; label = "Month-End / Closeout" }
+    [PSCustomObject]@{ code = ""; labelEn = "Overtime Code"; labelFr = "Code supp." },
+    [PSCustomObject]@{ code = "260"; labelEn = "OVERTIME, Regular Working Day"; labelFr = "HEURES SUPPLÉMENTAIRES, Jour ouvrable régulier" },
+    [PSCustomObject]@{ code = "261"; labelEn = "OVERTIME, First Day of Rest"; labelFr = "HEURES SUPPLÉMENTAIRES, Premier jour de repos" },
+    [PSCustomObject]@{ code = "262"; labelEn = "OVERTIME, Second or Subsequent Day of Rest"; labelFr = "HEURES SUPPLÉMENTAIRES, Deuxième jour de repos subséquent" },
+    [PSCustomObject]@{ code = "263"; labelEn = "OVERTIME, Designated Holiday"; labelFr = "HEURES SUPPLÉMENTAIRES, Congé férié" },
+    [PSCustomObject]@{ code = "089"; labelEn = "TRAVEL TIME, Regular Working Day"; labelFr = "TEMPS de DÉPLACEMENT, Jour ouvrable régulier" },
+    [PSCustomObject]@{ code = "072"; labelEn = "TRAVEL TIME, Day of Rest"; labelFr = "TEMPS de DÉPLACEMENT, Jour de repos" },
+    [PSCustomObject]@{ code = "009"; labelEn = "CALL BACK"; labelFr = "RAPPEL AU TRAVAIL" },
+    [PSCustomObject]@{ code = "050"; labelEn = "REPORTING PAY"; labelFr = "INDEMNITÉ DE PRÉSENCE" },
+    [PSCustomObject]@{ code = "049"; labelEn = "PART TIME, Additional Hours"; labelFr = "TEMPS PARTIEL, Heures additionnelles" },
+    [PSCustomObject]@{ code = "043"; labelEn = "PART TIME, Premium Pay for Work on a Holiday"; labelFr = "TEMPS PARTIEL, Prime pour le travail effectué lors d'un jour férié" }
+)
+
+$paymentOptions = @(
+    [PSCustomObject]@{ code = "cash"; labelEn = "Cash"; labelFr = "En espèce" },
+    [PSCustomObject]@{ code = "leave"; labelEn = "Leave"; labelFr = "Congé" }
+)
+
+$reasonCodes = @(
+    [PSCustomObject]@{ code = ""; labelEn = "Reason"; labelFr = "Raison" },
+    [PSCustomObject]@{ code = "A"; labelEn = "Emergency Situation"; labelFr = "Situation d'urgence" },
+    [PSCustomObject]@{ code = "B"; labelEn = "Cost Effectiveness"; labelFr = "Coût-efficacité" },
+    [PSCustomObject]@{ code = "C"; labelEn = "Exceptional Circumstances"; labelFr = "Circonstances exceptionnelles" },
+    [PSCustomObject]@{ code = "D"; labelEn = "Significant Workload Increases"; labelFr = "Augmentation significative de charge de travail" },
+    [PSCustomObject]@{ code = "E"; labelEn = "Unanticipated Absence"; labelFr = "Absence imprévue" },
+    [PSCustomObject]@{ code = "F"; labelEn = "Vacant Position"; labelFr = "Poste vacant" },
+    [PSCustomObject]@{ code = "G"; labelEn = "Other"; labelFr = "Autre" }
 )
 
 $now = Get-Date
@@ -245,29 +272,29 @@ if ($activePunchIn -ge $now) {
 
 $employeeEntries = [ordered]@{
     "000123070" = @(
-        (New-Entry -EmployeeName $employees."000123070" -PunchIn $activePunchIn -Status "pending" -ProjectCode "INF-330" -OvertimeCode "OT-MNT"),
-        (New-Entry -EmployeeName $employees."000123070" -PunchIn (New-DayTime -Today $today -DayOffset -2 -Hour 17 -Minute 45) -PunchOut (New-DayTime -Today $today -DayOffset -2 -Hour 18 -Minute 30) -Status "approved" -ProjectCode "OPS-410" -OvertimeCode "OT-CLS"),
-        (New-Entry -EmployeeName $employees."000123070" -PunchIn (New-DayTime -Today $today -DayOffset -16 -Hour 18 -Minute 20) -PunchOut (New-DayTime -Today $today -DayOffset -16 -Hour 21 -Minute 10) -Status "approved" -ProjectCode "APP-220" -OvertimeCode "OT-REL" -Message "After-hours deployment support.")
+        (New-Entry -EmployeeName $employees."000123070" -PunchIn $activePunchIn -Status "pending" -ProjectCode "INF-330" -OvertimeCode "260"),
+        (New-Entry -EmployeeName $employees."000123070" -PunchIn (New-DayTime -Today $today -DayOffset -2 -Hour 17 -Minute 45) -PunchOut (New-DayTime -Today $today -DayOffset -2 -Hour 18 -Minute 30) -Status "approved" -ProjectCode "OPS-410" -OvertimeCode "260"),
+        (New-Entry -EmployeeName $employees."000123070" -PunchIn (New-DayTime -Today $today -DayOffset -16 -Hour 18 -Minute 20) -PunchOut (New-DayTime -Today $today -DayOffset -16 -Hour 21 -Minute 10) -Status "approved" -ProjectCode "APP-220" -OvertimeCode "260" -Message "After-hours deployment support.")
     )
     "000123456" = @(
-        (New-Entry -EmployeeName $employees."000123456" -PunchIn (New-DayTime -Today $today -DayOffset -1 -Hour 17 -Minute 30) -PunchOut (New-DayTime -Today $today -DayOffset -1 -Hour 19 -Minute 15) -Status "pending" -ProjectCode "OPS-410" -OvertimeCode "OT-CLS" -Message "Month-end reconciliation and report validation."),
-        (New-Entry -EmployeeName $employees."000123456" -PunchIn (New-DayTime -Today $today -DayOffset -6 -Hour 18 -Minute 0) -PunchOut (New-DayTime -Today $today -DayOffset -6 -Hour 20 -Minute 30) -Status "approved" -ProjectCode "APP-220" -OvertimeCode "OT-REL"),
-        (New-Entry -EmployeeName $employees."000123456" -PunchIn (New-DayTime -Today $today -DayOffset -22 -Hour 18 -Minute 10) -PunchOut (New-DayTime -Today $today -DayOffset -22 -Hour 19 -Minute 40) -Status "approved" -ProjectCode "CLT-120" -OvertimeCode "OT-OPS")
+        (New-Entry -EmployeeName $employees."000123456" -PunchIn (New-DayTime -Today $today -DayOffset -1 -Hour 17 -Minute 30) -PunchOut (New-DayTime -Today $today -DayOffset -1 -Hour 19 -Minute 15) -Status "pending" -ProjectCode "OPS-410" -OvertimeCode "260" -Message "Month-end reconciliation and report validation."),
+        (New-Entry -EmployeeName $employees."000123456" -PunchIn (New-DayTime -Today $today -DayOffset -6 -Hour 18 -Minute 0) -PunchOut (New-DayTime -Today $today -DayOffset -6 -Hour 20 -Minute 30) -Status "approved" -ProjectCode "APP-220" -OvertimeCode "260"),
+        (New-Entry -EmployeeName $employees."000123456" -PunchIn (New-DayTime -Today $today -DayOffset -22 -Hour 18 -Minute 10) -PunchOut (New-DayTime -Today $today -DayOffset -22 -Hour 19 -Minute 40) -Status "approved" -ProjectCode "CLT-120" -OvertimeCode "260")
     )
     "000379070" = @(
-        (New-Entry -EmployeeName $employees."000379070" -PunchIn (New-DayTime -Today $today -DayOffset -3 -Hour 18 -Minute 5) -PunchOut (New-DayTime -Today $today -DayOffset -3 -Hour 20 -Minute 20) -Status "rejected" -ProjectCode "APP-220" -OvertimeCode "OT-REL" -Message "Split support and build work into separate entries."),
-        (New-Entry -EmployeeName $employees."000379070" -PunchIn (New-DayTime -Today $today -DayOffset -8 -Hour 18 -Minute 0) -PunchOut (New-DayTime -Today $today -DayOffset -8 -Hour 19 -Minute 30) -Status "approved" -ProjectCode "APP-220" -OvertimeCode "OT-OPS"),
-        (New-Entry -EmployeeName $employees."000379070" -PunchIn (New-DayTime -Today $today -DayOffset -37 -Hour 18 -Minute 10) -PunchOut (New-DayTime -Today $today -DayOffset -37 -Hour 21 -Minute 0) -Status "approved" -ProjectCode "CLT-120" -OvertimeCode "OT-OPS")
+        (New-Entry -EmployeeName $employees."000379070" -PunchIn (New-DayTime -Today $today -DayOffset -3 -Hour 18 -Minute 5) -PunchOut (New-DayTime -Today $today -DayOffset -3 -Hour 20 -Minute 20) -Status "rejected" -ProjectCode "APP-220" -OvertimeCode "260" -Message "Split support and build work into separate entries."),
+        (New-Entry -EmployeeName $employees."000379070" -PunchIn (New-DayTime -Today $today -DayOffset -8 -Hour 18 -Minute 0) -PunchOut (New-DayTime -Today $today -DayOffset -8 -Hour 19 -Minute 30) -Status "approved" -ProjectCode "APP-220" -OvertimeCode "260"),
+        (New-Entry -EmployeeName $employees."000379070" -PunchIn (New-DayTime -Today $today -DayOffset -37 -Hour 18 -Minute 10) -PunchOut (New-DayTime -Today $today -DayOffset -37 -Hour 21 -Minute 0) -Status "approved" -ProjectCode "CLT-120" -OvertimeCode "260")
     )
     "000456123" = @(
-        (New-Entry -EmployeeName $employees."000456123" -PunchIn (New-DayTime -Today $today -DayOffset -1 -Hour 6 -Minute 30) -PunchOut (New-DayTime -Today $today -DayOffset -1 -Hour 8 -Minute 0) -Status "pending" -ProjectCode "INF-330" -OvertimeCode "OT-MNT" -Message "Early maintenance window and verification."),
-        (New-Entry -EmployeeName $employees."000456123" -PunchIn (New-DayTime -Today $today -DayOffset -9 -Hour 19 -Minute 0) -PunchOut (New-DayTime -Today $today -DayOffset -9 -Hour 21 -Minute 10) -Status "approved" -ProjectCode "INF-330" -OvertimeCode "OT-MNT"),
-        (New-Entry -EmployeeName $employees."000456123" -PunchIn (New-DayTime -Today $today -DayOffset -61 -Hour 18 -Minute 45) -PunchOut (New-DayTime -Today $today -DayOffset -61 -Hour 20 -Minute 0) -Status "approved" -ProjectCode "OPS-410" -OvertimeCode "OT-OPS")
+        (New-Entry -EmployeeName $employees."000456123" -PunchIn (New-DayTime -Today $today -DayOffset -1 -Hour 6 -Minute 30) -PunchOut (New-DayTime -Today $today -DayOffset -1 -Hour 8 -Minute 0) -Status "pending" -ProjectCode "INF-330" -OvertimeCode "260" -Message "Early maintenance window and verification."),
+        (New-Entry -EmployeeName $employees."000456123" -PunchIn (New-DayTime -Today $today -DayOffset -9 -Hour 19 -Minute 0) -PunchOut (New-DayTime -Today $today -DayOffset -9 -Hour 21 -Minute 10) -Status "approved" -ProjectCode "INF-330" -OvertimeCode "260"),
+        (New-Entry -EmployeeName $employees."000456123" -PunchIn (New-DayTime -Today $today -DayOffset -61 -Hour 18 -Minute 45) -PunchOut (New-DayTime -Today $today -DayOffset -61 -Hour 20 -Minute 0) -Status "approved" -ProjectCode "OPS-410" -OvertimeCode "260")
     )
     "000789123" = @(
-        (New-Entry -EmployeeName $employees."000789123" -PunchIn (New-DayTime -Today $today -DayOffset -1 -Hour 20 -Minute 0) -PunchOut (New-DayTime -Today $today -DayOffset -1 -Hour 22 -Minute 0) -Status "approved" -ProjectCode "CLT-120" -OvertimeCode "OT-OPS"),
-        (New-Entry -EmployeeName $employees."000789123" -PunchIn (New-DayTime -Today $today -DayOffset -7 -Hour 19 -Minute 15) -PunchOut (New-DayTime -Today $today -DayOffset -7 -Hour 20 -Minute 10) -Status "approved" -ProjectCode "OPS-410" -OvertimeCode "OT-CLS"),
-        (New-Entry -EmployeeName $employees."000789123" -PunchIn (New-DayTime -Today $today -DayOffset -28 -Hour 18 -Minute 30) -PunchOut (New-DayTime -Today $today -DayOffset -28 -Hour 20 -Minute 5) -Status "approved" -ProjectCode "APP-220" -OvertimeCode "OT-REL")
+        (New-Entry -EmployeeName $employees."000789123" -PunchIn (New-DayTime -Today $today -DayOffset -1 -Hour 20 -Minute 0) -PunchOut (New-DayTime -Today $today -DayOffset -1 -Hour 22 -Minute 0) -Status "approved" -ProjectCode "CLT-120" -OvertimeCode "260"),
+        (New-Entry -EmployeeName $employees."000789123" -PunchIn (New-DayTime -Today $today -DayOffset -7 -Hour 19 -Minute 15) -PunchOut (New-DayTime -Today $today -DayOffset -7 -Hour 20 -Minute 10) -Status "approved" -ProjectCode "OPS-410" -OvertimeCode "260"),
+        (New-Entry -EmployeeName $employees."000789123" -PunchIn (New-DayTime -Today $today -DayOffset -28 -Hour 18 -Minute 30) -PunchOut (New-DayTime -Today $today -DayOffset -28 -Hour 20 -Minute 5) -Status "approved" -ProjectCode "APP-220" -OvertimeCode "260")
     )
 }
 
@@ -292,6 +319,8 @@ foreach ($employeeCode in $employees.Keys) {
 Write-JsonFile -Path (Join-Path -Path $dataPath -ChildPath "employeeNames.json") -Value ([PSCustomObject]$employees) -Depth 5
 Write-JsonFile -Path (Join-Path -Path $dataPath -ChildPath "projects.json") -Value $projects -Depth 5
 Write-JsonFile -Path (Join-Path -Path $dataPath -ChildPath "overtimeCodes.json") -Value $overtimeCodes -Depth 5
+Write-JsonFile -Path (Join-Path -Path $dataPath -ChildPath "paymentOptions.json") -Value $paymentOptions -Depth 5
+Write-JsonFile -Path (Join-Path -Path $dataPath -ChildPath "reasonCodes.json") -Value $reasonCodes -Depth 5
 foreach ($employeeCode in $employees.Keys) {
     Write-JsonFile `
         -Path (Join-Path -Path $dataPath -ChildPath ("{0}_data.json" -f $employeeCode)) `

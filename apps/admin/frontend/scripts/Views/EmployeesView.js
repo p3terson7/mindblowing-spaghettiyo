@@ -1,9 +1,11 @@
 const employeesViewState = {
   employees: [],
   selectedEmployeeCode: "",
+  selectedProjectCode: "",
   entriesByEmployee: {},
   currentMonthByEmployee: {},
   expandedNotes: {},
+  entryLookups: null,
 };
 
 function setEmployeeEditorMessage(message, type) {
@@ -251,6 +253,64 @@ function filterEmployeesByScope(employees, scope) {
   return source;
 }
 
+function getEmployeeProjectCodes(employee) {
+  if (!employee) {
+    return [];
+  }
+
+  return (Array.isArray(employee.projectCodes) ? employee.projectCodes : [])
+    .map(projectCode => String(projectCode || "").trim())
+    .filter(Boolean);
+}
+
+function employeeMatchesProjectFilter(employee, projectCode) {
+  const selectedProjectCode = String(projectCode || "").trim();
+  if (!selectedProjectCode) {
+    return true;
+  }
+
+  return getEmployeeProjectCodes(employee).indexOf(selectedProjectCode) >= 0;
+}
+
+function getEmployeesProjectFilterValue() {
+  const projectSelect = document.getElementById("employeesProjectSelect");
+  return projectSelect ? projectSelect.value : "";
+}
+
+function populateEmployeesProjectFilter(projects) {
+  const projectSelect = document.getElementById("employeesProjectSelect");
+  if (!projectSelect) {
+    return;
+  }
+
+  const currentValue = projectSelect.value || employeesViewState.selectedProjectCode || "";
+  const projectItems = Array.isArray(projects) ? projects : [];
+  projectSelect.innerHTML = [`<option value="">${escapeHtml(t("filters.allProjects"))}</option>`]
+    .concat(projectItems.map(project => {
+      const projectCode = String(project.projectCode || "");
+      const projectName = String(project.projectName || projectCode);
+      const selected = projectCode === currentValue ? " selected" : "";
+      return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(projectCode)} | ${escapeHtml(projectName)}</option>`;
+    }))
+    .join("");
+
+  if (currentValue && !projectItems.some(project => String(project.projectCode || "") === currentValue)) {
+    projectSelect.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(currentValue)}" selected>${escapeHtml(currentValue)}</option>`);
+  }
+
+  employeesViewState.selectedProjectCode = projectSelect.value;
+}
+
+function getVisibleEmployeeEntries(employeeCode) {
+  const entries = Array.isArray(employeesViewState.entriesByEmployee[employeeCode]) ? employeesViewState.entriesByEmployee[employeeCode] : [];
+  const projectCode = String(employeesViewState.selectedProjectCode || "").trim();
+  if (!projectCode) {
+    return entries;
+  }
+
+  return entries.filter(entry => String(entry.projectCode || "") === projectCode);
+}
+
 async function fetchEmployeeDetailEntries(employeeCode) {
   const response = await fetch(apiUrl + "employee/" + encodeURIComponent(employeeCode));
   if (response.status === 404) {
@@ -324,6 +384,264 @@ function getEmployeeCalendarEntrySeconds(entry) {
     return Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
   }
   return timeStringToSeconds(entry && entry.overtime);
+}
+
+function buildEmployeeInsightMarkup(entries, monthEntries) {
+  const allEntries = Array.isArray(entries) ? entries : [];
+  const visibleMonthEntries = Array.isArray(monthEntries) ? monthEntries : [];
+  const monthTotalSeconds = visibleMonthEntries.reduce((accumulator, entry) => accumulator + getEmployeeCalendarEntrySeconds(entry), 0);
+  const pendingCount = allEntries.filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry)).length;
+  const liveCount = allEntries.filter(entry => isEntryOpen(entry)).length;
+  const latestEntry = getLatestEntry(allEntries);
+  const projectTotals = {};
+
+  allEntries.forEach(entry => {
+    const projectCode = String(entry.projectCode || "").trim();
+    if (!projectCode) {
+      return;
+    }
+    if (!projectTotals[projectCode]) {
+      projectTotals[projectCode] = { code: projectCode, seconds: 0, count: 0 };
+    }
+    projectTotals[projectCode].seconds += getEmployeeCalendarEntrySeconds(entry);
+    projectTotals[projectCode].count += 1;
+  });
+
+  const topProject = Object.values(projectTotals).sort((left, right) => {
+    if (right.seconds !== left.seconds) {
+      return right.seconds - left.seconds;
+    }
+    return right.count - left.count;
+  })[0];
+
+  const lastEntryLabel = latestEntry
+    ? `${formatDateLabel(latestEntry.date)} | ${getEntryRoundedTimeRange(latestEntry)}`
+    : t("employees.noRecentEntry");
+
+  const topProjectValue = topProject
+    ? topProject.code
+    : t("shared.noProject");
+
+  const topProjectHint = topProject
+    ? `${secondsToDurationLabel(topProject.seconds)} | ${tn("shared.entry", topProject.count)}`
+    : t("shared.uncoded");
+
+  const insights = [
+    {
+      label: t("employees.insightMonth"),
+      value: secondsToDurationLabel(monthTotalSeconds),
+      hint: tn("shared.entry", visibleMonthEntries.length),
+    },
+    {
+      label: t("employees.insightPending"),
+      value: String(pendingCount),
+      hint: pendingCount === 1 ? t("status.awaitingApproval") : t("dashboard.waitingForAction"),
+    },
+    {
+      label: t("employees.insightLive"),
+      value: String(liveCount),
+      hint: liveCount > 0 ? t("dashboard.activeQueueMeta") : t("dashboard.activeQueueMetaEmpty"),
+    },
+    {
+      label: t("employees.insightTopProject"),
+      value: topProjectValue,
+      hint: topProjectHint,
+    },
+    {
+      label: t("employees.insightLastEntry"),
+      value: lastEntryLabel,
+      hint: latestEntry ? translateStatus(latestEntry.status || "pending") : t("status.noHistory"),
+    },
+  ];
+
+  return `
+    <div class="employee-insight-strip" aria-label="${escapeHtml(t("employees.insights"))}">
+      ${insights.map(insight => `
+        <div class="employee-insight-item">
+          <span class="employee-insight-label">${escapeHtml(insight.label)}</span>
+          <strong class="employee-insight-value">${escapeHtml(insight.value)}</strong>
+          <span class="employee-insight-hint">${escapeHtml(insight.hint)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function getEmployeeStatsStatus(entry) {
+  if (isEntryOpen(entry)) {
+    return "live";
+  }
+  return String(entry && entry.status || "pending").toLowerCase();
+}
+
+function getTopEmployeeStatsBucket(buckets) {
+  return Object.values(buckets).sort((left, right) => {
+    if (right.seconds !== left.seconds) {
+      return right.seconds - left.seconds;
+    }
+    return right.count - left.count;
+  })[0] || null;
+}
+
+function buildEmployeeStatsModel(entries) {
+  const sourceEntries = Array.isArray(entries) ? entries : [];
+  const projectBuckets = {};
+  const overtimeCodeBuckets = {};
+  const totals = {
+    count: sourceEntries.length,
+    seconds: 0,
+    approvedSeconds: 0,
+    pending: 0,
+    rejected: 0,
+    live: 0,
+    notes: 0,
+    maxSeconds: 0,
+  };
+
+  sourceEntries.forEach(entry => {
+    const seconds = getEmployeeCalendarEntrySeconds(entry);
+    const status = getEmployeeStatsStatus(entry);
+    const rawProjectCode = String(entry.projectCode || "").trim();
+    const projectCode = rawProjectCode || "__NO_PROJECT__";
+    const overtimeCode = String(entry.overtimeCode || "").trim() || t("shared.uncoded");
+
+    if (!projectBuckets[projectCode]) {
+      projectBuckets[projectCode] = {
+        projectCode,
+        projectName: rawProjectCode || t("shared.noProject"),
+        count: 0,
+        seconds: 0,
+        approvedSeconds: 0,
+        pending: 0,
+        rejected: 0,
+        live: 0,
+        notes: 0,
+        maxSeconds: 0,
+        latestEntry: null,
+        overtimeCodes: {},
+      };
+    }
+
+    const projectBucket = projectBuckets[projectCode];
+    projectBucket.count += 1;
+    projectBucket.seconds += seconds;
+    projectBucket.maxSeconds = Math.max(projectBucket.maxSeconds, seconds);
+    projectBucket.latestEntry = !projectBucket.latestEntry || toEntryDateTime(entry) > toEntryDateTime(projectBucket.latestEntry)
+      ? entry
+      : projectBucket.latestEntry;
+
+    if (!projectBucket.overtimeCodes[overtimeCode]) {
+      projectBucket.overtimeCodes[overtimeCode] = { code: overtimeCode, count: 0, seconds: 0 };
+    }
+    projectBucket.overtimeCodes[overtimeCode].count += 1;
+    projectBucket.overtimeCodes[overtimeCode].seconds += seconds;
+
+    if (!overtimeCodeBuckets[overtimeCode]) {
+      overtimeCodeBuckets[overtimeCode] = { code: overtimeCode, count: 0, seconds: 0 };
+    }
+    overtimeCodeBuckets[overtimeCode].count += 1;
+    overtimeCodeBuckets[overtimeCode].seconds += seconds;
+
+    totals.seconds += seconds;
+    totals.maxSeconds = Math.max(totals.maxSeconds, seconds);
+    if (String(entry.message || "").trim()) {
+      totals.notes += 1;
+      projectBucket.notes += 1;
+    }
+    if (status === "approved") {
+      totals.approvedSeconds += seconds;
+      projectBucket.approvedSeconds += seconds;
+    } else if (status === "pending") {
+      totals.pending += 1;
+      projectBucket.pending += 1;
+    } else if (status === "rejected") {
+      totals.rejected += 1;
+      projectBucket.rejected += 1;
+    } else if (status === "live") {
+      totals.live += 1;
+      projectBucket.live += 1;
+    }
+  });
+
+  return {
+    totals,
+    projects: Object.values(projectBuckets).sort((left, right) => right.seconds - left.seconds),
+    topOvertimeCode: getTopEmployeeStatsBucket(overtimeCodeBuckets),
+  };
+}
+
+function buildEmployeeDetailedStatsMarkup(entries) {
+  const model = buildEmployeeStatsModel(entries);
+  const averageSeconds = model.totals.count > 0 ? Math.round(model.totals.seconds / model.totals.count) : 0;
+  const topCodeLabel = model.topOvertimeCode
+    ? `${model.topOvertimeCode.code} | ${secondsToDurationLabel(model.topOvertimeCode.seconds)}`
+    : t("shared.uncoded");
+
+  const summaryCards = [
+    { label: t("self.statsTotal"), value: secondsToDurationLabel(model.totals.seconds), hint: t("self.statsFilteredSummary", { count: model.totals.count, duration: secondsToDurationLabel(model.totals.seconds) }) },
+    { label: t("self.statsApproved"), value: secondsToDurationLabel(model.totals.approvedSeconds), hint: t("status.approved") },
+    { label: t("self.statsAverage"), value: secondsToDurationLabel(averageSeconds), hint: t("self.statsMax") + " " + secondsToDurationLabel(model.totals.maxSeconds) },
+    { label: t("self.statsPendingRejected"), value: `${model.totals.pending} / ${model.totals.rejected}`, hint: `${t("self.statsLive")}: ${model.totals.live}` },
+    { label: t("self.statsTopCode"), value: topCodeLabel, hint: `${t("self.statsSupervisorNotes")}: ${model.totals.notes}` },
+  ];
+
+  const projectMarkup = model.projects.length === 0
+    ? createEmptyState(t("self.statsNoEntries"))
+    : `
+      <div class="self-project-stat-list">
+        ${model.projects.map(project => {
+          const average = project.count > 0 ? Math.round(project.seconds / project.count) : 0;
+          const topProjectCode = getTopEmployeeStatsBucket(project.overtimeCodes);
+          const latestLabel = project.latestEntry
+            ? `${formatDateLabel(project.latestEntry.date)} | ${getEntryRoundedTimeRange(project.latestEntry)}`
+            : t("employees.noRecentEntry");
+          return `
+            <article class="self-project-stat-card">
+              <div class="self-project-stat-main">
+                <div>
+                  <div class="self-project-stat-title">${escapeHtml(project.projectCode === "__NO_PROJECT__" ? t("shared.noProject") : project.projectCode)}</div>
+                  <div class="worklog-secondary">${escapeHtml(project.projectName || project.projectCode)}</div>
+                </div>
+                <span class="inline-code-pill">${escapeHtml(secondsToDurationLabel(project.seconds))}</span>
+              </div>
+              <div class="self-project-stat-grid">
+                <span><strong>${escapeHtml(String(project.count))}</strong> ${escapeHtml(t("self.statsEntries"))}</span>
+                <span><strong>${escapeHtml(secondsToDurationLabel(project.approvedSeconds))}</strong> ${escapeHtml(t("self.statsApproved"))}</span>
+                <span><strong>${escapeHtml(String(project.pending))}/${escapeHtml(String(project.rejected))}</strong> ${escapeHtml(t("self.statsPendingRejected"))}</span>
+                <span><strong>${escapeHtml(secondsToDurationLabel(average))}</strong> ${escapeHtml(t("self.statsAverage"))}</span>
+                <span><strong>${escapeHtml(secondsToDurationLabel(project.maxSeconds))}</strong> ${escapeHtml(t("self.statsMax"))}</span>
+                <span><strong>${escapeHtml(topProjectCode ? topProjectCode.code : t("shared.uncoded"))}</strong> ${escapeHtml(t("self.statsTopCode"))}</span>
+              </div>
+              <div class="self-project-stat-footer">
+                <span>${escapeHtml(latestLabel)}</span>
+                <span>${escapeHtml(t("self.statsSupervisorNotes"))}: ${escapeHtml(String(project.notes))}</span>
+              </div>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    `;
+
+  return `
+    <div class="employee-detail-section employee-stats-section">
+      <div class="self-stats-summary">
+        ${summaryCards.map(card => `
+          <article class="self-stat-card">
+            <span class="metric-label">${escapeHtml(card.label)}</span>
+            <strong class="metric-value mono">${escapeHtml(card.value)}</strong>
+            <span class="metric-hint">${escapeHtml(card.hint)}</span>
+          </article>
+        `).join("")}
+      </div>
+      <div class="self-project-stats">
+        <div class="self-project-stats-header">
+          <span class="panel-kicker">${escapeHtml(t("self.statsProjectBreakdown"))}</span>
+          <span class="panel-note">${escapeHtml(t("self.statsFilteredSummary", { count: model.totals.count, duration: secondsToDurationLabel(model.totals.seconds) }))}</span>
+        </div>
+        ${projectMarkup}
+      </div>
+    </div>
+  `;
 }
 
 function buildEmployeeMonthBoard(entries, activeMonthKey) {
@@ -440,12 +758,15 @@ function renderEmployeeDetail(employee) {
     return;
   }
 
-  const entries = Array.isArray(employeesViewState.entriesByEmployee[employee.code]) ? employeesViewState.entriesByEmployee[employee.code] : [];
+  const entries = getVisibleEmployeeEntries(employee.code);
   const liveEntries = sortEntriesByDateTime(entries.filter(entry => isEntryOpen(entry)), true);
   const activeMonthKey = getDefaultEmployeeMonthKey(employee.code, entries);
   employeesViewState.currentMonthByEmployee[employee.code] = activeMonthKey;
 
   const monthEntries = entries.filter(entry => toMonthKey(entry.date) === activeMonthKey);
+  const monthTotalSeconds = monthEntries.reduce((accumulator, entry) => accumulator + getEmployeeCalendarEntrySeconds(entry), 0);
+  const employeeInsightsMarkup = buildEmployeeInsightMarkup(entries, monthEntries);
+  const employeeDetailedStatsMarkup = buildEmployeeDetailedStatsMarkup(entries);
   const monthBoard = buildEmployeeMonthBoard(entries, activeMonthKey);
   const groupedEntries = groupEmployeeEntriesByDate(monthEntries);
   const [activeYear, activeMonth] = activeMonthKey.split("-").map(Number);
@@ -464,7 +785,7 @@ function renderEmployeeDetail(employee) {
     const isCurrentMonth = rollingDate.getMonth() === (activeMonth - 1);
     const totalDaySeconds = dayEntries.reduce((accumulator, entry) => accumulator + getEmployeeCalendarEntrySeconds(entry), 0);
     const entryPreview = dayEntries.map(entry => {
-      const statusTone = getStatusTone(entry.status);
+      const statusTone = getStatusTone(entry);
       const entryKey = getEmployeeEntryKey(employee.code, entry);
       const note = String(entry.message || "").trim();
       const showOverflowToggle = note.length > 120;
@@ -483,8 +804,10 @@ function renderEmployeeDetail(employee) {
       const exactPunchInAttribute = ` data-exactpunchin="${escapeHtml(getEntryExactPunchIn(entry))}"`;
       const exactPunchOutAttribute = ` data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`;
       const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
+      const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
+      const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
       const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
-      const reviewButtons = String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry)
+      const reviewButtons = String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry) && !isEntryForgottenClockOut(entry)
         ? `
           <button type="button" class="btn btn-success btn-sm action-btn calendar-entry-action-btn calendar-review-btn people-calendar-approve" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.approve"))}">
             <i class="fa-solid fa-check"></i>
@@ -499,13 +822,13 @@ function renderEmployeeDetail(employee) {
         <div class="calendar-entry">
           <div class="calendar-entry-main">
             <span class="calendar-entry-time">${escapeHtml(getEntryRoundedTimeRange(entry))}</span>
-            <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(translateStatus(entry.status || "pending"))}</span>
+            <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
           </div>
           <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
           ${noteMarkup}
           ${reviewButtons ? `<div class="calendar-entry-actions calendar-entry-actions-review">${reviewButtons}</div>` : ""}
           <div class="calendar-entry-actions calendar-entry-actions-manage">
-            <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
+            <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
               <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
             </button>
             <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
@@ -531,7 +854,6 @@ function renderEmployeeDetail(employee) {
     rollingDate.setDate(rollingDate.getDate() + 1);
   }
 
-  const monthTotalSeconds = monthEntries.reduce((accumulator, entry) => accumulator + getEmployeeCalendarEntrySeconds(entry), 0);
   const liveEntriesMarkup = liveEntries.length > 0
     ? `
       <div class="calendar-live-strip">
@@ -541,6 +863,8 @@ function renderEmployeeDetail(employee) {
           const exactPunchInAttribute = ` data-exactpunchin="${escapeHtml(getEntryExactPunchIn(entry))}"`;
           const exactPunchOutAttribute = ` data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`;
           const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
+          const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
+          const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
           const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
           return `
             <article class="calendar-live-card">
@@ -550,7 +874,7 @@ function renderEmployeeDetail(employee) {
               </div>
               <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
               <div class="calendar-entry-actions calendar-entry-actions-manage">
-                <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
+                <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
                   <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
                 </button>
                 <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
@@ -576,7 +900,12 @@ function renderEmployeeDetail(employee) {
             <i class="fa-solid fa-chevron-right"></i>
           </button>
         </div>
-        <div class="employee-calendar-summary">${escapeHtml(t("employees.calendarSummary", { count: monthEntries.length, duration: secondsToDurationLabel(monthTotalSeconds) }))}</div>
+        <div class="employee-calendar-actions">
+          <div class="employee-calendar-summary">${escapeHtml(t("employees.calendarSummary", { count: monthEntries.length, duration: secondsToDurationLabel(monthTotalSeconds) }))}</div>
+          <button type="button" class="btn btn-outline-secondary btn-sm people-export-month-button" data-employee-code="${escapeHtml(employee.code)}" data-export-month="${escapeHtml(activeMonthKey)}">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(t("export.openMonthlyHtml"))}
+          </button>
+        </div>
       </div>
       <div class="employee-month-board-shell">
         <div class="employee-month-board">
@@ -605,6 +934,11 @@ function renderEmployeeDetail(employee) {
             <i class="fa-solid fa-chevron-right"></i>
           </button>
         </div>
+        <div class="employee-calendar-actions">
+          <button type="button" class="btn btn-outline-secondary btn-sm people-export-month-button" data-employee-code="${escapeHtml(employee.code)}" data-export-month="${escapeHtml(activeMonthKey)}">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(t("export.openMonthlyHtml"))}
+          </button>
+        </div>
       </div>
       <div class="employee-month-board-shell">
         <div class="employee-month-board">
@@ -631,14 +965,18 @@ function renderEmployeeDetail(employee) {
           </div>
         </div>
         <div class="employee-detail-actions">
+          ${isArchivedEmployee(employee) ? "" : `<button type="button" class="btn btn-primary btn-sm people-add-entry-button" data-employee-code="${escapeHtml(employee.code)}"><i class="fa-solid fa-plus"></i> ${escapeHtml(t("dashboard.addEntry"))}</button>`}
           <button type="button" class="btn btn-outline-secondary btn-sm employee-edit-button" data-employee-code="${escapeHtml(employee.code)}">${escapeHtml(t("action.edit"))}</button>
         </div>
       </div>
       <div class="employee-detail-meta">
         <span class="inline-code-pill">EMP ${escapeHtml(employee.code)}</span>
-        <span class="meta-pill">${escapeHtml(t("employees.entryCount", { count: employee.entryCount || 0 }))}</span>
+        <span class="meta-pill">${escapeHtml(t("employees.entryCount", { count: entries.length }))}</span>
+        ${employeesViewState.selectedProjectCode ? `<span class="meta-pill">${escapeHtml(employeesViewState.selectedProjectCode)}</span>` : ""}
         ${isArchivedEmployee(employee) ? `<span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span>` : `<span class="status-badge approved">${escapeHtml(t("employees.scopeActive"))}</span>`}
       </div>
+      ${employeeInsightsMarkup}
+      ${employeeDetailedStatsMarkup}
       <div class="employee-detail-section">
         <div class="panel-kicker">${escapeHtml(t("employees.calendar"))}</div>
         <div class="employee-detail-entries">
@@ -675,14 +1013,13 @@ async function loadEmployeeDetail(employeeCode) {
 
 function applyEmployeeSearchFilter() {
   const searchValue = document.getElementById("employeesSearchInput").value.trim().toLowerCase();
-  if (!searchValue) {
-    renderEmployeesDirectory(employeesViewState.employees);
-    return;
-  }
+  const projectCode = getEmployeesProjectFilterValue();
+  employeesViewState.selectedProjectCode = projectCode;
 
   const filteredEmployees = employeesViewState.employees.filter(employee => {
     const haystack = `${employee.name} ${employee.code}`.toLowerCase();
-    return haystack.includes(searchValue);
+    const matchesSearch = !searchValue || haystack.includes(searchValue);
+    return matchesSearch && employeeMatchesProjectFilter(employee, projectCode);
   });
   renderEmployeesDirectory(filteredEmployees);
 }
@@ -691,9 +1028,18 @@ function loadEmployeesView() {
   setLoadingState("employeesDirectoryContainer", "grid", 4);
   document.getElementById("employeeDetailContainer").innerHTML = "";
   const scope = document.getElementById("employeesScopeSelect").value || "active";
-  return fetch(apiUrl + "employees?scope=all")
-    .then(parseResponse)
-    .then(employees => {
+  return Promise.all([
+    fetch(apiUrl + "employees?scope=all").then(parseResponse),
+    fetchOvertimeEntryLookups().catch(error => {
+      console.warn("Unable to preload entry lookups for employee exports:", error);
+      return null;
+    }),
+  ])
+    .then(([employees, lookups]) => {
+      if (lookups) {
+        employeesViewState.entryLookups = lookups;
+        populateEmployeesProjectFilter(lookups.projects);
+      }
       employeesViewState.employees = filterEmployeesByScope(employees, scope);
       applyEmployeeSearchFilter();
     })
@@ -706,6 +1052,32 @@ function loadEmployeesView() {
 function getEmployeeByCode(employeeCode) {
   return employeesViewState.employees.find(employee => employee.code === employeeCode) || null;
 }
+
+async function openPeopleProjectFilter(employeeCode, projectCode) {
+  if (typeof showView === "function") {
+    showView("employeesView");
+  }
+
+  employeesViewState.selectedEmployeeCode = employeeCode || "";
+  employeesViewState.selectedProjectCode = projectCode || "";
+  const projectSelect = document.getElementById("employeesProjectSelect");
+  if (projectSelect) {
+    projectSelect.value = projectCode || "";
+  }
+  const searchInput = document.getElementById("employeesSearchInput");
+  if (searchInput) {
+    searchInput.value = "";
+  }
+
+  await loadEmployeesView();
+  if (employeeCode) {
+    employeesViewState.selectedEmployeeCode = employeeCode;
+    applyEmployeeSearchFilter();
+    await loadEmployeeDetail(employeeCode);
+  }
+}
+
+window.openPeopleProjectFilter = openPeopleProjectFilter;
 
 document.getElementById("employeesDirectoryContainer").addEventListener("click", event => {
   const editButton = event.target.closest(".employee-edit-button");
@@ -732,6 +1104,21 @@ document.getElementById("employeesDirectoryContainer").addEventListener("click",
 });
 
 document.getElementById("employeeDetailContainer").addEventListener("click", async event => {
+  const exportButton = event.target.closest(".people-export-month-button");
+  if (exportButton) {
+    const employeeCode = exportButton.getAttribute("data-employee-code");
+    const employee = getEmployeeByCode(employeeCode);
+    const entries = getVisibleEmployeeEntries(employeeCode);
+    openMonthlyEntriesExportHtml({
+      entries,
+      monthKey: exportButton.getAttribute("data-export-month") || employeesViewState.currentMonthByEmployee[employeeCode],
+      employeeName: employee && employee.name ? employee.name : t("shared.employee"),
+      employeeCode,
+      lookups: employeesViewState.entryLookups || {},
+    });
+    return;
+  }
+
   const yearButton = event.target.closest(".employee-calendar-year-button");
   if (yearButton) {
     const employeeCode = yearButton.getAttribute("data-employee-code");
@@ -882,6 +1269,17 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
     return;
   }
 
+  const addEntryButton = event.target.closest(".people-add-entry-button");
+  if (addEntryButton) {
+    const employeeCode = addEntryButton.getAttribute("data-employee-code");
+    if (employeeCode && typeof openAddEntryModal === "function") {
+      employeesViewState.selectedEmployeeCode = employeeCode;
+      setDashboardEmployeeContext(employeeCode);
+      await openAddEntryModal(employeeCode);
+    }
+    return;
+  }
+
   const entryEditButton = event.target.closest(".people-calendar-edit");
   if (entryEditButton) {
     const employeeCode = entryEditButton.getAttribute("data-employee-code");
@@ -921,9 +1319,15 @@ document.getElementById("employeeEditorForm").addEventListener("submit", event =
 });
 document.getElementById("employeesSearchInput").addEventListener("input", applyEmployeeSearchFilter);
 document.getElementById("employeesScopeSelect").addEventListener("change", loadEmployeesView);
+document.getElementById("employeesProjectSelect").addEventListener("change", () => {
+  employeesViewState.selectedProjectCode = getEmployeesProjectFilterValue();
+  applyEmployeeSearchFilter();
+});
 document.getElementById("employeesResetFiltersBtn").addEventListener("click", () => {
   document.getElementById("employeesSearchInput").value = "";
   document.getElementById("employeesScopeSelect").value = "active";
+  document.getElementById("employeesProjectSelect").value = "";
+  employeesViewState.selectedProjectCode = "";
   loadEmployeesView();
 });
 document.getElementById("employeesDirectoryCount").textContent = tn("shared.employee", 0);

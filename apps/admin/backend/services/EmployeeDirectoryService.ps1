@@ -96,12 +96,20 @@ function Get-EmployeeDirectoryList {
         $employeeCode = if ($user.employeeCode) { [string]$user.employeeCode } else { [string]$user.username }
         $displayName = if ($user.displayName) { [string]$user.displayName } else { [string](Get-EmployeeName $employeeCode) }
         $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
-        $entryCount = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile).Count
+        $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
+        $entryCount = $entries.Count
+        $projectCodes = @(
+            $entries |
+                Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.projectCode) } |
+                ForEach-Object { [string]$_.projectCode } |
+                Sort-Object -Unique
+        )
 
         $directory += [PSCustomObject]@{
             code      = $employeeCode
             name      = $displayName
             entryCount = $entryCount
+            projectCodes = $projectCodes
             archived  = $isArchived
         }
     }

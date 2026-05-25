@@ -26,6 +26,7 @@
                         mustChangePassword = [bool]$userRecord.mustChangePassword
                     }
                 }
+                $response.Headers["Set-Cookie"] = Get-SessionCookieHeader -Token $sessionToken
                 respondWithSuccess $response ($result | ConvertTo-Json -Depth 6)
             }
             catch {
@@ -60,6 +61,7 @@
             }
 
             Revoke-SessionToken -Token $currentUser.token
+            $response.Headers["Set-Cookie"] = Get-ExpiredSessionCookieHeader
             respondWithSuccess $response '{ "message": "Logged out successfully." }'
             continue
         }

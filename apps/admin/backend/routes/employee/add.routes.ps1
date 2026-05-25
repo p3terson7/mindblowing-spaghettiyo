@@ -23,8 +23,16 @@
             }
 
             if (-not $payload.overtimeCode) {
-                respondWithError $response 400 "Missing required field: overtimeCode is required."
+                $payload | Add-Member -NotePropertyName overtimeCode -NotePropertyValue "" -Force
+            }
+
+            if (-not $payload.paymentOption) {
+                respondWithError $response 400 "Missing required field: paymentOption is required."
                 continue
+            }
+
+            if (-not ($payload.PSObject.Properties.Name -contains "reasonCode")) {
+                $payload | Add-Member -NotePropertyName reasonCode -NotePropertyValue "" -Force
             }
 
             # Validate that the provided projectCode exists in the projects list.
@@ -36,9 +44,20 @@
             }
 
             $overtimeCodes = Get-OvertimeCodes
-            $overtimeCodeExists = $overtimeCodes | Where-Object { $_.code -eq $payload.overtimeCode }
-            if (-not $overtimeCodeExists) {
+            if (-not (Test-OptionCode -Options $overtimeCodes -Code ([string]$payload.overtimeCode) -AllowBlank $true)) {
                 respondWithError $response 400 "Invalid overtimeCode: $($payload.overtimeCode) does not exist."
+                continue
+            }
+
+            $paymentOptions = Get-PaymentOptions
+            if (-not (Test-OptionCode -Options $paymentOptions -Code ([string]$payload.paymentOption) -AllowBlank $false)) {
+                respondWithError $response 400 "Invalid paymentOption: $($payload.paymentOption) does not exist."
+                continue
+            }
+
+            $reasonCodes = Get-ReasonCodes
+            if (-not (Test-OptionCode -Options $reasonCodes -Code ([string]$payload.reasonCode) -AllowBlank $true)) {
+                respondWithError $response 400 "Invalid reasonCode: $($payload.reasonCode) does not exist."
                 continue
             }
 
@@ -78,6 +97,8 @@
                     message     = ""
                     projectCode = $payload.projectCode
                     overtimeCode = $payload.overtimeCode
+                    paymentOption = $payload.paymentOption
+                    reasonCode = $payload.reasonCode
                 }
                 $existingData += $newEntry
                 Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 6
@@ -89,7 +110,7 @@
             # Log history for adding.
             $employeeName = Get-EmployeeName $employeeCode
             $formattedDate = (Get-Date $payload.date).ToString("MMMM dd, yyyy")
-            $historyMessage = "Added an entry on $formattedDate, starting at <strong>$(Format-TimeForHistory $punchInRounded)</strong> and finishing at <strong>$(Format-TimeForHistory $punchOutRounded)</strong> for project <strong>$($payload.projectCode)</strong> and overtime code <strong>$($payload.overtimeCode)</strong>."
+            $historyMessage = "Added an entry on $formattedDate, starting at <strong>$(Format-TimeForHistory $punchInRounded)</strong> and finishing at <strong>$(Format-TimeForHistory $punchOutRounded)</strong> for project <strong>$($payload.projectCode)</strong>, overtime code <strong>$($payload.overtimeCode)</strong>, payment <strong>$($payload.paymentOption)</strong>, and reason <strong>$($payload.reasonCode)</strong>."
             logHistory "Add" $historyMessage $employeeName
             Publish-DataChange -Category "employee" -Resource $employeeCode
 
