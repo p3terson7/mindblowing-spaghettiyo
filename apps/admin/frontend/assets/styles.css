@@ -65,6 +65,11 @@ body {
   min-height: 100%;
 }
 
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+}
+
 body {
   margin: 0;
   background: var(--bg-gradient);
