@@ -33,6 +33,11 @@
                 }
 
                 $entryToDelete = $existingData[$entryIndex]
+                if (-not (Test-CurrentUserCanManageEntry -CurrentUser $currentUser -Entry $entryToDelete)) {
+                    respondWithError $response 403 "You do not have access to this entry's project."
+                    continue
+                }
+
                 $filteredData = @()
                 for ($i = 0; $i -lt $existingData.Count; $i++) {
                     if ($i -ne $entryIndex) {

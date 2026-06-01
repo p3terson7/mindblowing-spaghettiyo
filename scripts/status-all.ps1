@@ -1,3 +1,5 @@
+#!/usr/bin/env pwsh
+
 $ErrorActionPreference = "Stop"
 
 if ($PSVersionTable.PSVersion.Major -lt 5) {

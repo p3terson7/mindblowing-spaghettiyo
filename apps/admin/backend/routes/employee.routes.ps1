@@ -4,8 +4,8 @@ if ($request.Url.AbsolutePath -match "^/employees?") {
         respondWithError $response 401 "Authentication required."
         continue
     }
-    if (-not (Test-CurrentUserRole -CurrentUser $currentUser -AllowedRoles @("admin"))) {
-        respondWithError $response 403 "Admin access is required."
+    if (-not (Test-CurrentUserManager -CurrentUser $currentUser)) {
+        respondWithError $response 403 "Manager access is required."
         continue
     }
 

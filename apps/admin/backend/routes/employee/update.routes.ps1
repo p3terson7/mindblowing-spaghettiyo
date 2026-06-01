@@ -29,10 +29,15 @@
                     respondWithError $response 400 "If provided, projectCode cannot be empty."
                     continue
                 }
-                $projects = Get-Projects
+                $projects = Get-ActiveProjects
                 $projectExists = $projects | Where-Object { $_.projectCode -eq $payload.projectCode }
                 if (-not $projectExists) {
                     respondWithError $response 400 "Invalid projectCode: $($payload.projectCode) does not exist."
+                    continue
+                }
+
+                if (-not (Test-CurrentUserCanAccessProjectCode -CurrentUser $currentUser -ProjectCode ([string]$payload.projectCode)) ) {
+                    respondWithError $response 403 "You do not have access to project $($payload.projectCode)."
                     continue
                 }
             }
@@ -77,6 +82,11 @@
                 $existingEntry = $existingData[$foundIndex]
                 if (-not (Get-EntryIdentifierValue -Entry $existingEntry)) {
                     $existingEntry | Add-Member -NotePropertyName entryId -NotePropertyValue (New-EntryIdentifier) -Force
+                }
+
+                if (-not (Test-CurrentUserCanManageEntry -CurrentUser $currentUser -Entry $existingEntry)) {
+                    respondWithError $response 403 "You do not have access to this entry's project."
+                    continue
                 }
 
                 $originalRoundedPunchIn = [string]$existingEntry.punchIn

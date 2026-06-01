@@ -1,9 +1,15 @@
         # POST /employees: Create a new employee directory record and sign-in account.
         if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/employees") {
+            if (-not (Test-CurrentUserSuperAdmin -CurrentUser $currentUser)) {
+                respondWithError $response 403 "Super admin access is required."
+                continue
+            }
+
             try {
                 $payload = Read-JsonRequestBody -Request $request
                 $employeeCode = if ($null -ne $payload) { [string]$payload.code } else { "" }
                 $displayName = if ($null -ne $payload) { [string]$payload.name } else { "" }
+                $role = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "role")) { Get-NormalizedRoleName -Role ([string]$payload.role) } else { "employee" }
                 $initialPassword = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "initialPassword")) { [string]$payload.initialPassword } else { "" }
                 $mustChangePassword = $true
                 if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "mustChangePassword")) {
@@ -26,7 +32,7 @@
                     continue
                 }
 
-                $createResult = Add-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -InitialPassword $initialPassword -MustChangePassword $mustChangePassword
+                $createResult = Add-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -InitialPassword $initialPassword -MustChangePassword $mustChangePassword -Role $role
                 if (-not $createResult.updated) {
                     $errorMessage = if ($createResult.error) { [string]$createResult.error } else { "Unable to create employee." }
                     respondWithError $response 400 $errorMessage

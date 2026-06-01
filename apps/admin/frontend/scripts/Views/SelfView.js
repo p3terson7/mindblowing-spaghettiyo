@@ -594,7 +594,9 @@ function updateSelfStatus(entries) {
   }
 
   const latestStatus = String(latestEntry.status || "pending").toLowerCase();
-  const timeRange = `${formatTimeString(getEntryExactPunchIn(latestEntry))}${latestEntry.punchOut ? ` -> ${formatTimeString(getEntryExactPunchOut(latestEntry))}` : ""}`;
+  const timeRange = latestEntry.punchOut
+    ? buildTimeRangeText(formatTimeString(getEntryExactPunchIn(latestEntry)), formatTimeString(getEntryExactPunchOut(latestEntry)))
+    : formatTimeString(getEntryExactPunchIn(latestEntry));
   punchState.textContent = t("self.lastEntry", {
     date: formatDateLabel(latestEntry.date),
     timeRange,
@@ -663,7 +665,7 @@ function renderSelfEntries(entries) {
       return `
         <div class="calendar-entry">
           <div class="calendar-entry-main">
-            <span class="calendar-entry-time">${escapeHtml(getEntryRoundedTimeRange(entry))}</span>
+            <span class="calendar-entry-time">${getEntryRoundedTimeRangeMarkup(entry)}</span>
             <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
           </div>
           <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
@@ -699,7 +701,7 @@ function renderSelfEntries(entries) {
         ${liveEntries.map(entry => `
           <article class="calendar-live-card">
             <div class="calendar-entry-main">
-              <span class="calendar-entry-time">${escapeHtml(formatDateLabel(entry.date))} | ${escapeHtml(formatTimeString(getEntryExactPunchIn(entry)))} -> ${escapeHtml(t("shared.inProgress"))}</span>
+              <span class="calendar-entry-time">${escapeHtml(formatDateLabel(entry.date))} | ${buildTimeRangeMarkup(formatTimeString(getEntryExactPunchIn(entry)), t("shared.inProgress"))}</span>
               <span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>
             </div>
             <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>

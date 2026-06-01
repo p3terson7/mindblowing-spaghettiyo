@@ -94,7 +94,7 @@ Legacy commands still work and forward into the merged runtime:
 
 Default bootstrap accounts:
 
-- Admin:
+- Bootstrap Super Admin:
   - username: `admin`
   - password: `ChangeMe123!`
 - Employee:
@@ -103,10 +103,11 @@ Default bootstrap accounts:
 
 The app forces a password change when `mustChangePassword = true`.
 
-Password management in the UI:
+Role and password management in the UI:
 
 - any signed-in user can change their own password from the header
-- admins can set or reset employee passwords from the Employees view
+- super admins can set or reset employee passwords from the Employees view
+- super admins can assign each employee one of `employee`, `admin`, or `superAdmin`
 - employee resets default to forcing a password change on next sign-in
 
 ## Process Management
@@ -126,12 +127,14 @@ Recommended commands:
 
 ## Unified App Model
 
-Admins and employees now use the same sign-in screen and the same backend.
+Super admins, admins, and employees now use the same sign-in screen and the same backend.
 
 After sign-in:
 
-- `admin` users see dashboard, employees, logs, and projects
-- `employee` users see only their self-service overtime view
+- `superAdmin` users can manage employees, roles, projects, project admins/backups, approvals, logs, and analytics
+- `admin` users see manager views scoped to projects where they are listed as an admin or backup admin
+- users with an employee code also keep their self-service overtime view
+- archived projects remain visible for historical reporting but are removed from new-entry project pickers
 
 This removes duplicated auth/session logic, removes the need for two listener ports in normal use, and keeps role enforcement in the backend where it belongs.
 

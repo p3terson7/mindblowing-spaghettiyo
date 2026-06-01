@@ -21,12 +21,21 @@
                 $existingData = Read-JsonArrayFile -Path $dataFile
 
                 $found = $false
+                $accessDenied = $false
                 for ($i = 0; $i -lt $existingData.Count; $i++) {
                     if ($existingData[$i].date -eq $payload.date -and $existingData[$i].punchIn -eq $payload.punchIn) {
+                        if (-not (Test-CurrentUserCanManageEntry -CurrentUser $currentUser -Entry $existingData[$i])) {
+                            $accessDenied = $true
+                            break
+                        }
                         $existingData[$i].message = $payload.message
                         $found = $true
                         break
                     }
+                }
+                if ($accessDenied) {
+                    respondWithError $response 403 "You do not have access to this entry's project."
+                    continue
                 }
                 if (-not $found) {
                     respondWithError $response 404 "Entry not found"

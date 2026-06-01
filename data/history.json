@@ -136,5 +136,35 @@
     "message": "Approved an entry on May 21, 2026 from <strong>14h15</strong> to <strong>15h45</strong>.",
     "employee": "Peter-Nicholas Sarateanu",
     "timestamp": "2026-05-22 12:36:44"
+  },
+  {
+    "action": "Update",
+    "message": "Updated the project <strong>INF-330</strong>.",
+    "employee": "Administrator",
+    "timestamp": "2026-06-01 12:12:54"
+  },
+  {
+    "action": "Update",
+    "message": "Updated the project <strong>OPS-410</strong>.",
+    "employee": "Administrator",
+    "timestamp": "2026-06-01 12:13:07"
+  },
+  {
+    "action": "Update",
+    "message": "Updated the employee profile for <strong>Peter-Nicholas Sarateanu</strong>.",
+    "employee": "Peter-Nicholas Sarateanu",
+    "timestamp": "2026-06-01 12:38:20"
+  },
+  {
+    "action": "Update",
+    "message": "Updated the project <strong>OPS-410</strong>.",
+    "employee": "Administrator",
+    "timestamp": "2026-06-01 12:38:20"
+  },
+  {
+    "action": "Add",
+    "message": "Created an employee profile for <strong>Christian Giroux</strong> with code <strong>000457123</strong>.",
+    "employee": "Christian Giroux",
+    "timestamp": "2026-06-01 14:04:05"
   }
 ]

@@ -156,10 +156,10 @@ function Get-EmployeeDataSnapshot {
         $employees = @()
         $entriesByEmployee = @{}
         $flattenedEntries = @()
-        $users = @(Get-Users | Where-Object { [string]$_.role -eq "employee" -and -not [bool]$_.disabled } | Sort-Object username)
+        $users = @(Get-Users | Where-Object { (Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode "") -and -not [bool]$_.disabled } | Sort-Object username)
 
         foreach ($user in $users) {
-            $employeeCode = if ($user.employeeCode) { [string]$user.employeeCode } else { [string]$user.username }
+            $employeeCode = Get-UserEmployeeCodeValue -UserRecord $user
             $displayName = if ($user.displayName) { [string]$user.displayName } else { [string](Get-EmployeeName $employeeCode) }
             $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
             $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
@@ -176,6 +176,7 @@ function Get-EmployeeDataSnapshot {
                 name       = $displayName
                 entryCount = $entries.Count
                 projectCodes = $projectCodes
+                role       = Get-EffectiveUserRole -UserRecord $user
             }
 
             $entriesByEmployee[$employeeCode] = $entries
@@ -191,6 +192,71 @@ function Get-EmployeeDataSnapshot {
             flattenedEntries = $flattenedEntries
         }
     })
+}
+
+function Get-ScopedEmployeeDataSnapshot {
+    param($CurrentUser)
+
+    $snapshot = Get-EmployeeDataSnapshot
+    if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) {
+        return $snapshot
+    }
+
+    if (-not (Test-CurrentUserManager -CurrentUser $CurrentUser)) {
+        return [PSCustomObject]@{
+            employees         = @()
+            entriesByEmployee = @{}
+            flattenedEntries  = @()
+        }
+    }
+
+    $visibleProjectCodes = @(Get-ProjectCodesForCurrentUser -CurrentUser $CurrentUser)
+    if ($visibleProjectCodes.Count -eq 0) {
+        return [PSCustomObject]@{
+            employees         = @()
+            entriesByEmployee = @{}
+            flattenedEntries  = @()
+        }
+    }
+
+    $employees = @()
+    $entriesByEmployee = @{}
+    $flattenedEntries = @()
+
+    foreach ($employee in @($snapshot.employees)) {
+        $employeeCode = [string]$employee.code
+        $entries = if ($snapshot.entriesByEmployee.ContainsKey($employeeCode)) { @($snapshot.entriesByEmployee[$employeeCode]) } else { @() }
+        $visibleEntries = @($entries | Where-Object { $visibleProjectCodes -contains [string]$_.projectCode })
+        if ($visibleEntries.Count -eq 0) {
+            continue
+        }
+
+        $projectCodes = @(
+            $visibleEntries |
+                Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.projectCode) } |
+                ForEach-Object { [string]$_.projectCode } |
+                Sort-Object -Unique
+        )
+
+        $employees += [PSCustomObject]@{
+            code         = $employeeCode
+            name         = [string]$employee.name
+            entryCount   = $visibleEntries.Count
+            projectCodes = $projectCodes
+            role         = if ($employee.PSObject.Properties.Name -contains "role") { [string]$employee.role } else { "employee" }
+        }
+
+        $entriesByEmployee[$employeeCode] = $visibleEntries
+        foreach ($entry in $visibleEntries) {
+            $flattenedEntries += (New-EmployeeEntryProjection -EmployeeCode $employeeCode -EmployeeName ([string]$employee.name) -Entry $entry)
+        }
+    }
+
+    return [PSCustomObject]@{
+        employees         = $employees
+        entriesByEmployee = $entriesByEmployee
+        flattenedEntries  = $flattenedEntries
+    }
 }
 
 function Get-FilteredEmployeeEntriesSnapshot {
@@ -276,11 +342,15 @@ function Get-RecentHistoryEntriesSnapshot {
 }
 
 function Get-DashboardBootstrapModel {
-    param([string]$SelectedEmployeeCode)
+    param(
+        [string]$SelectedEmployeeCode,
+        $CurrentUser
+    )
 
-    $cacheKey = "dashboard-bootstrap|{0}" -f [string]$SelectedEmployeeCode
+    $scopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@(Get-ProjectCodesForCurrentUser -CurrentUser $CurrentUser) -join ",") }
+    $cacheKey = "dashboard-bootstrap|{0}|{1}" -f [string]$SelectedEmployeeCode, $scopeKey
     return (Invoke-ReadModelCache -Key $cacheKey -Factory {
-        $snapshot = Get-EmployeeDataSnapshot
+        $snapshot = Get-ScopedEmployeeDataSnapshot -CurrentUser $CurrentUser
         $flattenedEntries = @($snapshot.flattenedEntries)
         $now = Get-Date
         $currentMonthEntries = @()
@@ -317,6 +387,7 @@ function Get-DashboardBootstrapModel {
             pendingApprovals      = @($flattenedEntries | Where-Object { [string]$_.status -eq "pending" }).Count
             activeEmployees       = $activeEntries.Count
             trackedEmployees      = $snapshot.employees.Count
+            projects              = @(Get-ProjectsForCurrentUser -CurrentUser $CurrentUser)
             pendingQueue          = @($pendingEntries | Select-Object -First 6)
             activeSessions        = @($activeEntries | Select-Object -First 6)
             recentHistory         = Get-RecentHistoryEntriesSnapshot -Limit 7
@@ -328,18 +399,23 @@ function Get-DashboardBootstrapModel {
 }
 
 function Get-ApprovalsEntriesModel {
-    return (Invoke-ReadModelCache -Key "approvals-entries" -Factory {
-        return @((Get-EmployeeDataSnapshot).flattenedEntries | Sort-Object { Get-EntryDateTimeOrMin -Entry $_ } -Descending)
+    param($CurrentUser)
+
+    $scopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@(Get-ProjectCodesForCurrentUser -CurrentUser $CurrentUser) -join ",") }
+    return (Invoke-ReadModelCache -Key "approvals-entries|$scopeKey" -Factory {
+        return @((Get-ScopedEmployeeDataSnapshot -CurrentUser $CurrentUser).flattenedEntries | Sort-Object { Get-EntryDateTimeOrMin -Entry $_ } -Descending)
     })
 }
 
 function Get-ProjectStatisticsOverview {
     param(
         [string]$StartDate,
-        [string]$EndDate
+        [string]$EndDate,
+        $CurrentUser
     )
 
-    $cacheKey = "project-statistics-overview|{0}|{1}" -f [string]$StartDate, [string]$EndDate
+    $scopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@(Get-ProjectCodesForCurrentUser -CurrentUser $CurrentUser) -join ",") }
+    $cacheKey = "project-statistics-overview|{0}|{1}|{2}" -f [string]$StartDate, [string]$EndDate, $scopeKey
     return (Invoke-ReadModelCache -Key $cacheKey -Factory {
         $stats = @{}
         $entries = @(Get-FilteredEmployeeEntriesSnapshot -StartDate $StartDate -EndDate $EndDate)
@@ -350,6 +426,10 @@ function Get-ProjectStatisticsOverview {
             }
 
             $projectCode = [string]$entry.projectCode
+            if (-not (Test-CurrentUserCanAccessProjectCode -CurrentUser $CurrentUser -ProjectCode $projectCode)) {
+                continue
+            }
+
             $seconds = Get-OvertimeSecondsFromText -Value ([string]$entry.overtime)
 
             if (-not $stats.ContainsKey($projectCode)) {
@@ -404,11 +484,12 @@ function Get-ProjectStatisticsOverview {
 function Get-ProjectSummaryList {
     param(
         [string]$StartDate,
-        [string]$EndDate
+        [string]$EndDate,
+        $CurrentUser
     )
 
-    $projects = @(Get-Projects)
-    $stats = Get-ProjectStatisticsOverview -StartDate $StartDate -EndDate $EndDate
+    $projects = @(Get-ProjectsForCurrentUser -CurrentUser $CurrentUser)
+    $stats = Get-ProjectStatisticsOverview -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser
     $orderedCodes = New-Object System.Collections.ArrayList
 
     foreach ($project in ($projects | Sort-Object projectCode)) {
@@ -432,10 +513,18 @@ function Get-ProjectSummaryList {
         $averageSeconds = if ($entryCount -gt 0) { [math]::Round($totalSeconds / $entryCount) } else { 0 }
         $minSeconds = if ($projectStats -and $null -ne $projectStats.minSeconds) { [double]$projectStats.minSeconds } else { 0 }
         $maxSeconds = if ($projectStats -and $null -ne $projectStats.maxSeconds) { [double]$projectStats.maxSeconds } else { 0 }
+        $adminCodes = if ($project) { @(Get-ProjectAdminCodes -Project $project) } else { @() }
+        $backupAdminCodes = if ($project) { @(Get-ProjectBackupAdminCodes -Project $project) } else { @() }
 
         $summaries += [PSCustomObject]@{
             projectCode     = [string]$projectCode
             projectName     = if ($project) { [string]$project.projectName } else { [string]$projectCode }
+            sector          = if ($project) { [string]$project.sector } else { "" }
+            admins          = $adminCodes
+            backupAdmins    = $backupAdminCodes
+            adminDisplay    = @(New-ProjectAdminDisplayList -Codes $adminCodes)
+            backupAdminDisplay = @(New-ProjectAdminDisplayList -Codes $backupAdminCodes)
+            archived        = if ($project) { Test-ProjectArchived -Project $project } else { $false }
             totalOvertime   = Convert-SecondsToTimeText -Seconds $totalSeconds
             entryCount      = $entryCount
             averageOvertime = Convert-SecondsToTimeText -Seconds $averageSeconds
@@ -447,20 +536,35 @@ function Get-ProjectSummaryList {
     return $summaries
 }
 
+function New-ProjectAdminDisplayList {
+    param($Codes)
+
+    $displayList = @()
+    foreach ($code in @(ConvertTo-CodeArray -Value $Codes)) {
+        $displayList += [PSCustomObject]@{
+            code = [string]$code
+            name = [string](Get-EmployeeName ([string]$code))
+        }
+    }
+
+    return @($displayList)
+}
+
 function Get-ProjectDetailModel {
     param(
         [Parameter(Mandatory = $true)][string]$ProjectCode,
         [string]$StartDate,
-        [string]$EndDate
+        [string]$EndDate,
+        $CurrentUser
     )
 
-    $summaries = @(Get-ProjectSummaryList -StartDate $StartDate -EndDate $EndDate)
+    $summaries = @(Get-ProjectSummaryList -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser)
     $projectSummary = $summaries | Where-Object { [string]$_.projectCode -eq [string]$ProjectCode } | Select-Object -First 1
     if ($null -eq $projectSummary) {
         return $null
     }
 
-    $stats = Get-ProjectStatisticsOverview -StartDate $StartDate -EndDate $EndDate
+    $stats = Get-ProjectStatisticsOverview -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser
     $projectStats = if ($stats.ContainsKey($ProjectCode)) { $stats[$ProjectCode] } else { $null }
     $breakdown = @()
 
@@ -480,6 +584,12 @@ function Get-ProjectDetailModel {
     return [PSCustomObject]@{
         projectCode         = [string]$projectSummary.projectCode
         projectName         = [string]$projectSummary.projectName
+        sector              = if ($projectSummary.PSObject.Properties.Name -contains "sector") { [string]$projectSummary.sector } else { "" }
+        admins              = if ($projectSummary.PSObject.Properties.Name -contains "admins") { @($projectSummary.admins) } else { @() }
+        backupAdmins        = if ($projectSummary.PSObject.Properties.Name -contains "backupAdmins") { @($projectSummary.backupAdmins) } else { @() }
+        adminDisplay        = if ($projectSummary.PSObject.Properties.Name -contains "adminDisplay") { @($projectSummary.adminDisplay) } else { @() }
+        backupAdminDisplay  = if ($projectSummary.PSObject.Properties.Name -contains "backupAdminDisplay") { @($projectSummary.backupAdminDisplay) } else { @() }
+        archived            = if ($projectSummary.PSObject.Properties.Name -contains "archived") { [bool]$projectSummary.archived } else { $false }
         totalOvertime       = [string]$projectSummary.totalOvertime
         entryCount          = [int]$projectSummary.entryCount
         averageOvertime     = [string]$projectSummary.averageOvertime
@@ -492,16 +602,22 @@ function Get-ProjectDetailModel {
 function Get-ProjectTrendModel {
     param(
         [string]$StartDate,
-        [string]$EndDate
+        [string]$EndDate,
+        $CurrentUser
     )
 
-    $cacheKey = "project-trends|{0}|{1}" -f [string]$StartDate, [string]$EndDate
+    $scopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@(Get-ProjectCodesForCurrentUser -CurrentUser $CurrentUser) -join ",") }
+    $cacheKey = "project-trends|{0}|{1}|{2}" -f [string]$StartDate, [string]$EndDate, $scopeKey
     return (Invoke-ReadModelCache -Key $cacheKey -Factory {
         $trendStats = @{}
         $entries = @(Get-FilteredEmployeeEntriesSnapshot -StartDate $StartDate -EndDate $EndDate)
 
         foreach ($entry in $entries) {
             if ([string]::IsNullOrWhiteSpace([string]$entry.projectCode) -or [string]::IsNullOrWhiteSpace([string]$entry.date) -or [string]$entry.date -notmatch '^\d{4}-\d{2}') {
+                continue
+            }
+
+            if (-not (Test-CurrentUserCanAccessProjectCode -CurrentUser $CurrentUser -ProjectCode ([string]$entry.projectCode))) {
                 continue
             }
 
@@ -540,10 +656,11 @@ function Get-ProjectsBootstrapModel {
     param(
         [string]$StartDate,
         [string]$EndDate,
-        [string]$SelectedProjectCode
+        [string]$SelectedProjectCode,
+        $CurrentUser
     )
 
-    $summary = @(Get-ProjectSummaryList -StartDate $StartDate -EndDate $EndDate)
+    $summary = @(Get-ProjectSummaryList -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser)
     $resolvedProjectCode = [string]$SelectedProjectCode
     if ([string]::IsNullOrWhiteSpace($resolvedProjectCode) -or -not ($summary | Where-Object { [string]$_.projectCode -eq $resolvedProjectCode })) {
         if ($summary.Count -gt 0) {
@@ -556,9 +673,9 @@ function Get-ProjectsBootstrapModel {
 
     return [PSCustomObject]@{
         summary             = $summary
-        trends              = Get-ProjectTrendModel -StartDate $StartDate -EndDate $EndDate
+        trends              = Get-ProjectTrendModel -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser
         selectedProjectCode = $resolvedProjectCode
-        selectedProject     = if ($resolvedProjectCode) { Get-ProjectDetailModel -ProjectCode $resolvedProjectCode -StartDate $StartDate -EndDate $EndDate } else { $null }
+        selectedProject     = if ($resolvedProjectCode) { Get-ProjectDetailModel -ProjectCode $resolvedProjectCode -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser } else { $null }
     }
 }
 
@@ -570,7 +687,7 @@ function Get-SelfBootstrapModel {
 
     return [PSCustomObject]@{
         entries        = $entries
-        projects       = @(Get-Projects)
+        projects       = @(Get-ActiveProjects)
         overtimeCodes  = @(Get-OvertimeCodes)
         paymentOptions = @(Get-PaymentOptions)
         reasonCodes    = @(Get-ReasonCodes)

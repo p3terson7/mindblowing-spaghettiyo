@@ -1,5 +1,10 @@
         # POST /employee/password/{employeeCode}: Reset or create an employee account password.
         if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -match "^/employee/password/(\d+)$") {
+            if (-not (Test-CurrentUserSuperAdmin -CurrentUser $currentUser)) {
+                respondWithError $response 403 "Super admin access is required."
+                continue
+            }
+
             $employeeCode = $matches[1]
 
             try {

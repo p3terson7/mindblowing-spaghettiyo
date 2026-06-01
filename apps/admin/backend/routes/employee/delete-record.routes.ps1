@@ -1,5 +1,10 @@
         # DELETE /employees/{employeeCode}: Disable an employee directory record.
         if ($request.HttpMethod -eq "DELETE" -and $request.Url.AbsolutePath -match "^/employees/(\d+)$") {
+            if (-not (Test-CurrentUserSuperAdmin -CurrentUser $currentUser)) {
+                respondWithError $response 403 "Super admin access is required."
+                continue
+            }
+
             $employeeCode = $matches[1]
 
             try {

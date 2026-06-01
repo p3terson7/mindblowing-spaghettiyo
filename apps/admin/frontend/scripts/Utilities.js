@@ -7,6 +7,22 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function timeRangeArrowIconMarkup() {
+  return '<i class="fa-solid fa-arrow-right-long time-range-arrow" aria-hidden="true"></i>';
+}
+
+function timeRangeArrowText() {
+  return "→";
+}
+
+function buildTimeRangeText(start, end) {
+  return `${start} ${timeRangeArrowText()} ${end}`;
+}
+
+function buildTimeRangeMarkup(start, end) {
+  return `${escapeHtml(start)} ${timeRangeArrowIconMarkup()} ${escapeHtml(end)}`;
+}
+
 function getCurrentLocale() {
   if (typeof window.getI18nLocale === "function") {
     return window.getI18nLocale();
@@ -109,7 +125,7 @@ function buildDateRangeLabel(startDate, endDate) {
   const normalizedEnd = normalizeDateInputValue(endDate);
 
   if (normalizedStart && normalizedEnd) {
-    return `${formatDateLabel(normalizedStart)} -> ${formatDateLabel(normalizedEnd)}`;
+    return buildTimeRangeText(formatDateLabel(normalizedStart), formatDateLabel(normalizedEnd));
   }
 
   if (normalizedStart) {
@@ -211,7 +227,7 @@ function secondsToDurationLabel(totalSeconds) {
   const safeSeconds = Math.max(0, Number(totalSeconds) || 0);
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
-  return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m`;
+  return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}`;
 }
 
 function updateTotalOvertime(entries) {
@@ -223,6 +239,11 @@ function updateTotalOvertime(entries) {
 }
 
 const overtimeEntryLookupCache = {
+  apiUrl: null,
+  payload: null,
+};
+
+const scopedProjectLookupCache = {
   apiUrl: null,
   payload: null,
 };
@@ -452,7 +473,13 @@ function getEntryExactPunchOut(entry) {
 function getEntryRoundedTimeRange(entry) {
   const roundedPunchIn = formatTimeString(entry && entry.punchIn);
   const roundedPunchOut = entry && entry.punchOut ? formatTimeString(entry.punchOut) : t("shared.inProgress");
-  return `${roundedPunchIn} -> ${roundedPunchOut}`;
+  return buildTimeRangeText(roundedPunchIn, roundedPunchOut);
+}
+
+function getEntryRoundedTimeRangeMarkup(entry) {
+  const roundedPunchIn = formatTimeString(entry && entry.punchIn);
+  const roundedPunchOut = entry && entry.punchOut ? formatTimeString(entry.punchOut) : t("shared.inProgress");
+  return buildTimeRangeMarkup(roundedPunchIn, roundedPunchOut);
 }
 
 function getEntryExactTimeLabel(entry) {
@@ -860,6 +887,25 @@ async function fetchOvertimeEntryLookups(forceRefresh = false) {
   overtimeEntryLookupCache.apiUrl = currentApiUrl;
   overtimeEntryLookupCache.payload = normalizedPayload;
   return normalizedPayload;
+}
+
+async function fetchScopedProjects(forceRefresh = false) {
+  const currentApiUrl = window.apiUrl || "";
+  if (!forceRefresh && scopedProjectLookupCache.payload && scopedProjectLookupCache.apiUrl === currentApiUrl) {
+    return scopedProjectLookupCache.payload;
+  }
+
+  const response = await fetch(apiUrl + "projects");
+  const payload = await parseResponse(response);
+  const projects = Array.isArray(payload) ? payload : [];
+  scopedProjectLookupCache.apiUrl = currentApiUrl;
+  scopedProjectLookupCache.payload = projects;
+  return projects;
+}
+
+function clearScopedProjectLookupCache() {
+  scopedProjectLookupCache.apiUrl = null;
+  scopedProjectLookupCache.payload = null;
 }
 
 function normalizeToastMessage(message) {

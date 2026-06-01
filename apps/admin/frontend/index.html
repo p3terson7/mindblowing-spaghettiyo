@@ -119,7 +119,7 @@
           <section class="metrics-grid metrics-grid-three">
             <article class="metric-card">
               <span class="metric-label" data-i18n="self.thisMonth">This Month</span>
-              <strong class="metric-value mono" id="selfTotalOvertime">00h 00m</strong>
+              <strong class="metric-value mono" id="selfTotalOvertime">00h 00</strong>
               <span class="metric-hint" data-i18n="self.approvedPendingCombined">Approved and pending overtime combined</span>
             </article>
             <article class="metric-card">
@@ -198,7 +198,7 @@
           <section class="metrics-grid metrics-grid-four">
             <article class="metric-card">
               <span class="metric-label" data-i18n="dashboard.orgOvertime">Org Overtime This Month</span>
-              <strong class="metric-value mono" id="totalOvertime">00h 00m</strong>
+              <strong class="metric-value mono" id="totalOvertime">00h 00</strong>
               <span class="metric-hint" data-i18n="dashboard.acrossEmployees">Across all tracked employees</span>
             </article>
             <article class="metric-card metric-card-attention">
@@ -239,6 +239,15 @@
                   <span class="panel-note" id="dashboardActiveQueueMeta" data-i18n="dashboard.activeQueueMeta">Live overtime sessions</span>
                 </div>
                 <div id="dashboardActiveList" class="queue-list dashboard-scroll-list"></div>
+              </section>
+
+              <section class="panel-shell dashboard-project-scope-card d-none" id="dashboardProjectScopeCard">
+                <div class="panel-header-row">
+                  <div>
+                    <div class="panel-kicker" data-i18n="dashboard.responsibleProjects">Responsible Projects</div>
+                  </div>
+                </div>
+                <div id="dashboardResponsibleProjects" class="dashboard-project-scope-list"></div>
               </section>
 
               <section class="panel-shell dashboard-inspector-card">
@@ -390,6 +399,12 @@
                     <label for="reviewEmployeeFilter" class="filter-caption" data-i18n="dashboard.employee">Employee</label>
                     <select id="reviewEmployeeFilter" class="form-select">
                       <option value="" data-i18n="filters.allEmployees">All employees</option>
+                    </select>
+                  </div>
+                  <div class="field-block filter-field filter-field-project">
+                    <label for="reviewProjectFilter" class="filter-caption" data-i18n="shared.project">Project</label>
+                    <select id="reviewProjectFilter" class="form-select">
+                      <option value="" data-i18n="filters.allProjects">All projects</option>
                     </select>
                   </div>
                   <div class="field-block filter-field filter-range-field">
@@ -801,7 +816,7 @@
   </div>
 
   <div class="modal fade" id="employeeEditorModal" tabindex="-1" aria-labelledby="employeeEditorModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-dialog-wide">
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title" id="employeeEditorModalLabel" data-i18n="employees.addEmployee">Add Employee</h3>
@@ -819,6 +834,19 @@
             <div class="field-block">
               <label for="employeeEditorNameInput" class="form-label" data-i18n="employees.employeeName">Employee Name</label>
               <input type="text" class="form-control" id="employeeEditorNameInput" autocomplete="off">
+            </div>
+            <div class="field-block">
+              <label for="employeeEditorRoleSelect" class="form-label" data-i18n="employees.role">Role</label>
+              <select id="employeeEditorRoleSelect" class="form-select">
+                <option value="employee" data-i18n="employees.role.employee">Employee</option>
+                <option value="admin" data-i18n="employees.role.admin">Admin</option>
+                <option value="superAdmin" data-i18n="employees.role.superAdmin">Super Admin</option>
+              </select>
+            </div>
+            <div class="field-block assignment-picker d-none" id="employeeEditorProjectAssignmentsPanel">
+              <label for="employeeEditorProjectSearchInput" class="form-label" data-i18n="employees.assignedProjects">Assigned Projects</label>
+              <input type="text" id="employeeEditorProjectSearchInput" class="form-control" autocomplete="off" data-i18n-placeholder="employees.projectSearchPlaceholder" placeholder="Search projects by code or name">
+              <div id="employeeEditorProjectAssignmentsList" class="assignment-checklist" role="group" aria-label="Assigned projects"></div>
             </div>
             <div id="employeeEditorPasswordFields">
               <div class="field-block">
@@ -848,7 +876,7 @@
   </div>
 
   <div class="modal fade" id="projectEditorModal" tabindex="-1" aria-labelledby="projectEditorModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-dialog-wide">
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title" id="projectEditorModalLabel" data-i18n="projects.addProject">Add Project</h3>
@@ -866,10 +894,24 @@
               <label for="projectEditorNameInput" class="form-label" data-i18n="projects.projectName">Project Name</label>
               <input type="text" class="form-control" id="projectEditorNameInput" autocomplete="off">
             </div>
+            <div class="field-block">
+              <label for="projectEditorSectorInput" class="form-label" data-i18n="projects.sector">Sector</label>
+              <input type="text" class="form-control" id="projectEditorSectorInput" autocomplete="off">
+            </div>
+            <div class="field-block assignment-picker">
+              <label for="projectEditorAdminsSearchInput" class="form-label" data-i18n="projects.admins">Admins</label>
+              <input type="text" id="projectEditorAdminsSearchInput" class="form-control" autocomplete="off" data-i18n-placeholder="projects.employeeSearchPlaceholder" placeholder="Search employees by name or code">
+              <div id="projectEditorAdminsList" class="assignment-checklist" role="group" aria-label="Admins"></div>
+            </div>
+            <div class="field-block assignment-picker">
+              <label for="projectEditorBackupAdminsSearchInput" class="form-label" data-i18n="projects.backupAdmins">Backup Admins</label>
+              <input type="text" id="projectEditorBackupAdminsSearchInput" class="form-control" autocomplete="off" data-i18n-placeholder="projects.employeeSearchPlaceholder" placeholder="Search employees by name or code">
+              <div id="projectEditorBackupAdminsList" class="assignment-checklist" role="group" aria-label="Backup admins"></div>
+            </div>
           </form>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-danger d-none me-auto" id="projectEditorRemoveButton" data-i18n="action.remove">Remove</button>
+          <button type="button" class="btn btn-outline-danger d-none me-auto" id="projectEditorRemoveButton" data-i18n="action.archive">Archive</button>
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
           <button type="button" class="btn btn-primary" id="projectEditorSaveButton" data-i18n="action.saveChanges">Save Changes</button>
         </div>

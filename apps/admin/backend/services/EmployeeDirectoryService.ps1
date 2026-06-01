@@ -82,21 +82,35 @@ function Update-EmployeeEntryDisplayName {
 
 function Get-EmployeeDirectoryList {
     param(
-        [bool]$IncludeDisabled = $false
+        [bool]$IncludeDisabled = $false,
+        $CurrentUser
     )
 
     $directory = @()
-    $users = @(Get-Users | Where-Object { [string]$_.role -eq "employee" })
+    $visibleProjectCodes = @()
+    $isScopedManager = $false
+    if ($null -ne $CurrentUser -and -not (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) -and (Test-CurrentUserManager -CurrentUser $CurrentUser)) {
+        $isScopedManager = $true
+        $visibleProjectCodes = @(Get-ProjectCodesForCurrentUser -CurrentUser $CurrentUser)
+    }
+
+    $users = @(Get-Users | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode "" })
     foreach ($user in ($users | Sort-Object username)) {
         $isArchived = [bool]$user.disabled
         if ($isArchived -and -not $IncludeDisabled) {
             continue
         }
 
-        $employeeCode = if ($user.employeeCode) { [string]$user.employeeCode } else { [string]$user.username }
+        $employeeCode = Get-UserEmployeeCodeValue -UserRecord $user
         $displayName = if ($user.displayName) { [string]$user.displayName } else { [string](Get-EmployeeName $employeeCode) }
         $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
         $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
+        if ($isScopedManager) {
+            $entries = @($entries | Where-Object { $visibleProjectCodes -contains [string]$_.projectCode })
+            if ($entries.Count -eq 0) {
+                continue
+            }
+        }
         $entryCount = $entries.Count
         $projectCodes = @(
             $entries |
@@ -111,6 +125,7 @@ function Get-EmployeeDirectoryList {
             entryCount = $entryCount
             projectCodes = $projectCodes
             archived  = $isArchived
+            role      = Get-EffectiveUserRole -UserRecord $user
         }
     }
 
@@ -122,10 +137,11 @@ function Add-EmployeeDirectoryRecord {
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
         [Parameter(Mandatory = $true)][string]$DisplayName,
         [string]$InitialPassword,
-        [bool]$MustChangePassword = $true
+        [bool]$MustChangePassword = $true,
+        [string]$Role = "employee"
     )
 
-    $userResult = Ensure-EmployeeUser -EmployeeCode $EmployeeCode -DisplayName $DisplayName -InitialPassword $InitialPassword -MustChangePassword $MustChangePassword
+    $userResult = Ensure-EmployeeUser -EmployeeCode $EmployeeCode -DisplayName $DisplayName -InitialPassword $InitialPassword -MustChangePassword $MustChangePassword -Role $Role
     if (-not $userResult.updated) {
         return $userResult
     }
@@ -148,7 +164,8 @@ function Add-EmployeeDirectoryRecord {
 function Update-EmployeeDirectoryRecord {
     param(
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
-        [Parameter(Mandatory = $true)][string]$DisplayName
+        [Parameter(Mandatory = $true)][string]$DisplayName,
+        [string]$Role
     )
 
     $mappingLock = Acquire-ResourceLock -ResourcePath $mappingFile
@@ -162,6 +179,9 @@ function Update-EmployeeDirectoryRecord {
     }
 
     $userUpdated = Set-EmployeeUserDisplayName -EmployeeCode $EmployeeCode -DisplayName $DisplayName
+    if (-not [string]::IsNullOrWhiteSpace($Role)) {
+        $userUpdated = (Set-EmployeeUserRole -EmployeeCode $EmployeeCode -Role $Role) -or $userUpdated
+    }
     Update-EmployeeEntryDisplayName -EmployeeCode $EmployeeCode -DisplayName $DisplayName | Out-Null
 
     return [PSCustomObject]@{

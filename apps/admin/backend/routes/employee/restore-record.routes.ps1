@@ -1,5 +1,10 @@
         # POST /employees/{employeeCode}/restore: Re-enable an archived employee directory record.
         if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -match "^/employees/(\d+)/restore$") {
+            if (-not (Test-CurrentUserSuperAdmin -CurrentUser $currentUser)) {
+                respondWithError $response 403 "Super admin access is required."
+                continue
+            }
+
             $employeeCode = $matches[1]
 
             try {

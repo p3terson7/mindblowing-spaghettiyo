@@ -6,7 +6,7 @@
             $endDate = $query["endDate"]
     
             try {
-                $result = Get-ProjectTrendModel -StartDate $startDate -EndDate $endDate
+                $result = Get-ProjectTrendModel -StartDate $startDate -EndDate $endDate -CurrentUser $currentUser
                 respondWithSuccess $response ($result | ConvertTo-Json -Depth 4)
             }
             catch {

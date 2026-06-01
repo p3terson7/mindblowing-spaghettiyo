@@ -36,10 +36,15 @@
             }
 
             # Validate that the provided projectCode exists in the projects list.
-            $projects = Get-Projects
+            $projects = Get-ActiveProjects
             $projectExists = $projects | Where-Object { $_.projectCode -eq $payload.projectCode }
             if (-not $projectExists) {
                 respondWithError $response 400 "Invalid projectCode: $($payload.projectCode) does not exist."
+                continue
+            }
+
+            if (-not (Test-CurrentUserCanAccessProjectCode -CurrentUser $currentUser -ProjectCode ([string]$payload.projectCode))) {
+                respondWithError $response 403 "You do not have access to project $($payload.projectCode)."
                 continue
             }
 

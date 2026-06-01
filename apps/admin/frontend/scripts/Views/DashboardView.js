@@ -4,6 +4,7 @@ const dashboardState = {
   history: [],
   historyLoaded: false,
   bootstrap: null,
+  projects: [],
 };
 
 function buildEmployeeOptions(employees) {
@@ -12,6 +13,125 @@ function buildEmployeeOptions(employees) {
 
 function buildProjectFilterOptions(projects) {
   return buildProjectOptions(projects || [], t("filters.allProjects"), document.getElementById("projectFilter")?.value || "");
+}
+
+function isArchivedDashboardProject(project) {
+  if (!project) {
+    return false;
+  }
+  const archivedValue = project.archived;
+  if (typeof archivedValue === "boolean") {
+    return archivedValue;
+  }
+  if (typeof archivedValue === "number") {
+    return archivedValue !== 0;
+  }
+  const normalizedValue = String(archivedValue || "").trim().toLowerCase();
+  return normalizedValue === "true" || normalizedValue === "1" || normalizedValue === "yes";
+}
+
+function getDashboardProjectCode(project) {
+  return String(project && project.projectCode || "").trim();
+}
+
+function sortDashboardProjects(projects) {
+  return (Array.isArray(projects) ? projects : [])
+    .filter(project => getDashboardProjectCode(project))
+    .sort((left, right) => getDashboardProjectCode(left).localeCompare(getDashboardProjectCode(right)));
+}
+
+function getDashboardScopedProjects(fallbackProjects = []) {
+  const scopedProjects = Array.isArray(dashboardState.projects) ? dashboardState.projects : [];
+  return scopedProjects.length > 0 ? scopedProjects : (Array.isArray(fallbackProjects) ? fallbackProjects : []);
+}
+
+function getDashboardEntryProjects(fallbackProjects, selectedProjectCode = "") {
+  const projects = sortDashboardProjects(getDashboardScopedProjects(fallbackProjects));
+  const activeProjects = projects.filter(project => !isArchivedDashboardProject(project));
+  const normalizedSelectedProjectCode = String(selectedProjectCode || "").trim();
+  if (!normalizedSelectedProjectCode || activeProjects.some(project => getDashboardProjectCode(project) === normalizedSelectedProjectCode)) {
+    return activeProjects;
+  }
+
+  const selectedProject = projects.find(project => getDashboardProjectCode(project) === normalizedSelectedProjectCode);
+  return selectedProject ? activeProjects.concat([selectedProject]) : activeProjects;
+}
+
+function populateDashboardProjectFilter(projects) {
+  const projectFilter = document.getElementById("projectFilter");
+  if (!projectFilter) {
+    return;
+  }
+
+  const previousValue = projectFilter.value || "";
+  const projectItems = sortDashboardProjects(projects);
+  projectFilter.innerHTML = buildProjectFilterOptions(projectItems);
+  if (previousValue && projectItems.some(project => getDashboardProjectCode(project) === previousValue)) {
+    projectFilter.value = previousValue;
+  }
+}
+
+function getDashboardProjectCodeArray(codes) {
+  return (Array.isArray(codes) ? codes : [])
+    .map(code => String(code || "").trim())
+    .filter(Boolean);
+}
+
+function getDashboardProjectResponsibility(project) {
+  const currentUser = typeof getCurrentUser === "function" ? getCurrentUser() : null;
+  const employeeCode = String(currentUser && currentUser.employeeCode || "").trim();
+  if (!employeeCode) {
+    return "";
+  }
+
+  if (getDashboardProjectCodeArray(project && project.admins).indexOf(employeeCode) >= 0) {
+    return t("dashboard.primaryAdmin");
+  }
+
+  if (getDashboardProjectCodeArray(project && project.backupAdmins).indexOf(employeeCode) >= 0) {
+    return t("dashboard.backupAdmin");
+  }
+
+  return "";
+}
+
+function renderDashboardResponsibleProjects() {
+  const card = document.getElementById("dashboardProjectScopeCard");
+  const container = document.getElementById("dashboardResponsibleProjects");
+  const currentUser = typeof getCurrentUser === "function" ? getCurrentUser() : null;
+  const isAdmin = currentUser && normalizeClientRole(currentUser.role) === "admin";
+
+  if (!card || !container) {
+    return;
+  }
+
+  card.classList.toggle("d-none", !isAdmin);
+  if (!isAdmin) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const projects = sortDashboardProjects(dashboardState.projects);
+  if (projects.length === 0) {
+    container.innerHTML = createEmptyState(t("dashboard.noResponsibleProjects"));
+    return;
+  }
+
+  container.innerHTML = projects.map(project => {
+    const projectCode = getDashboardProjectCode(project);
+    const projectName = String(project.projectName || projectCode);
+    const sector = String(project.sector || "").trim();
+    const responsibility = getDashboardProjectResponsibility(project);
+    return `
+      <div class="project-scope-pill">
+        <span class="inline-code-pill">${escapeHtml(projectCode)}</span>
+        <span class="project-scope-name">${escapeHtml(projectName)}</span>
+        ${sector ? `<span class="meta-pill">${escapeHtml(sector)}</span>` : ""}
+        ${responsibility ? `<span class="meta-pill">${escapeHtml(responsibility)}</span>` : ""}
+        ${isArchivedDashboardProject(project) ? `<span class="meta-pill">${escapeHtml(t("projects.archived"))}</span>` : ""}
+      </div>
+    `;
+  }).join("");
 }
 
 function groupEntriesByDate(entries) {
@@ -288,22 +408,12 @@ function applyDashboardBootstrap(payload) {
   dashboardState.employees = Array.isArray(model.employees) ? model.employees : [];
   dashboardState.history = Array.isArray(model.recentHistory) ? model.recentHistory : [];
   dashboardState.historyLoaded = true;
+  dashboardState.projects = sortDashboardProjects(model.projects || []);
 
   const employeeSelect = document.getElementById("employeeSelect");
   employeeSelect.innerHTML = buildEmployeeOptions(dashboardState.employees);
-  fetchOvertimeEntryLookups().then(lookups => {
-    const projectFilter = document.getElementById("projectFilter");
-    if (projectFilter) {
-      const previousValue = projectFilter.value || "";
-      projectFilter.innerHTML = buildProjectOptions(lookups.projects, t("filters.allProjects"), previousValue);
-      projectFilter.value = previousValue;
-    }
-  }).catch(() => {
-    const projectFilter = document.getElementById("projectFilter");
-    if (projectFilter) {
-      projectFilter.innerHTML = `<option value="">${escapeHtml(t("filters.allProjects"))}</option>`;
-    }
-  });
+  populateDashboardProjectFilter(dashboardState.projects);
+  renderDashboardResponsibleProjects();
 
   const savedEmployee = localStorage.getItem("selectedEmployee");
   const desiredEmployee = savedEmployee && dashboardState.employees.some(employee => employee.code === savedEmployee)
@@ -538,6 +648,10 @@ window.handleSyncStateChange = function (syncState) {
     dashboardState.history = [];
     dashboardState.historyLoaded = false;
     dashboardState.bootstrap = null;
+    dashboardState.projects = [];
+    if (typeof clearScopedProjectLookupCache === "function") {
+      clearScopedProjectLookupCache();
+    }
     if (typeof clearProjectDetailCache === "function") {
       clearProjectDetailCache();
     }
@@ -552,6 +666,11 @@ window.handleSyncStateChange = function (syncState) {
   }
 
   if (category === "project") {
+    dashboardState.projects = [];
+    dashboardState.bootstrap = null;
+    if (typeof clearScopedProjectLookupCache === "function") {
+      clearScopedProjectLookupCache();
+    }
     if (typeof clearProjectDetailCache === "function") {
       clearProjectDetailCache();
     }
@@ -574,7 +693,16 @@ window.handleSyncStateChange = function (syncState) {
 
 async function populateEntryLookups(projectSelectId, overtimeCodeSelectId, selectedProjectCode = "", selectedOvertimeCode = "", paymentSelectId = "", reasonSelectId = "", selectedPaymentOption = "", selectedReasonCode = "") {
   const lookups = await fetchOvertimeEntryLookups();
-  document.getElementById(projectSelectId).innerHTML = buildProjectOptions(lookups.projects, t("shared.selectProject"), selectedProjectCode);
+  if (dashboardState.projects.length === 0) {
+    try {
+      dashboardState.projects = sortDashboardProjects(await fetchScopedProjects());
+      populateDashboardProjectFilter(dashboardState.projects);
+      renderDashboardResponsibleProjects();
+    } catch (error) {
+      console.warn("Unable to load scoped projects for entry modal:", error);
+    }
+  }
+  document.getElementById(projectSelectId).innerHTML = buildProjectOptions(getDashboardEntryProjects(lookups.projects, selectedProjectCode), t("shared.selectProject"), selectedProjectCode);
   document.getElementById(overtimeCodeSelectId).innerHTML = buildOvertimeCodeOptions(lookups.overtimeCodes, t("shared.selectOvertimeCode"), selectedOvertimeCode);
   if (paymentSelectId) {
     document.getElementById(paymentSelectId).innerHTML = buildPaymentOptionOptions(lookups.paymentOptions, t("shared.selectPaymentOption"), selectedPaymentOption);

@@ -1,0 +1,16 @@
+{
+  "entryId": "feb4f4d39a4943f4b86cdf162b39e936",
+  "name": "Christian Giroux",
+  "date": "2026-06-01",
+  "punchIn": "14:00:00",
+  "exactPunchIn": "14:04:00",
+  "punchOut": "14:00:00",
+  "exactPunchOut": "14:05:00",
+  "overtime": "00:00:00",
+  "status": "pending",
+  "message": "",
+  "projectCode": "OPS-410",
+  "overtimeCode": "260",
+  "paymentOption": "cash",
+  "reasonCode": "D"
+}

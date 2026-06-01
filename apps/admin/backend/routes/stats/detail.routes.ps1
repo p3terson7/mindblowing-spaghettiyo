@@ -9,11 +9,16 @@
             try {
                 $projects = @(Get-Projects)
                 $projObj = $projects | Where-Object { [string]$_.projectCode -eq [string]$projectCode } | Select-Object -First 1
-                if ($null -eq $projObj -and -not (Get-ProjectStatistics -startDate $startDate -endDate $endDate).ContainsKey($projectCode)) {
+                if (-not (Test-CurrentUserCanAccessProjectCode -CurrentUser $currentUser -ProjectCode $projectCode)) {
+                    respondWithError $response 403 "You do not have access to project $projectCode."
+                    continue
+                }
+
+                if ($null -eq $projObj -and -not (Get-ProjectStatistics -startDate $startDate -endDate $endDate -CurrentUser $currentUser).ContainsKey($projectCode)) {
                     respondWithError $response 404 "Project with code $projectCode was not found."
                     continue
                 }
-                $result = Get-ProjectDetailModel -ProjectCode $projectCode -StartDate $startDate -EndDate $endDate
+                $result = Get-ProjectDetailModel -ProjectCode $projectCode -StartDate $startDate -EndDate $endDate -CurrentUser $currentUser
                 $jsonResult = $result | ConvertTo-Json -Depth 4
                 $bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonResult)
                 $response.ContentType = "application/json"

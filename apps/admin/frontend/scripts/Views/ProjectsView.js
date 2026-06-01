@@ -4,11 +4,137 @@ let currentProjectCode = null;
 let pendingProjectChartFrameId = null;
 const projectsViewState = {
   projects: [],
+  employees: [],
+  editorAssignments: {
+    admins: new Set(),
+    backupAdmins: new Set(),
+    adminsSearch: "",
+    backupAdminsSearch: "",
+  },
   customRange: {
     startDate: "",
     endDate: "",
   },
 };
+
+function canManageProjects() {
+  return typeof isSuperAdminUser === "function" && isSuperAdminUser();
+}
+
+function formatProjectAdminDisplay(displayItems, fallbackCodes) {
+  const items = Array.isArray(displayItems) ? displayItems : [];
+  if (items.length > 0) {
+    return items.map(item => {
+      const code = String(item && item.code ? item.code : "").trim();
+      const name = String(item && item.name ? item.name : code).trim();
+      return code && name && name !== code ? `${name} (${code})` : (name || code);
+    }).filter(Boolean);
+  }
+
+  return (Array.isArray(fallbackCodes) ? fallbackCodes : [])
+    .map(code => String(code || "").trim())
+    .filter(Boolean);
+}
+
+function renderProjectAdminMeta(labelKey, displayItems, fallbackCodes, className = "") {
+  const labels = formatProjectAdminDisplay(displayItems, fallbackCodes);
+  if (labels.length === 0) {
+    return "";
+  }
+
+  const extraClass = className ? ` ${className}` : "";
+  return `<span class="meta-pill${extraClass}">${escapeHtml(t(labelKey))}: ${escapeHtml(labels.join(", "))}</span>`;
+}
+
+async function ensureProjectEditorEmployees(forceRefresh = false) {
+  if (!forceRefresh && projectsViewState.employees.length > 0) {
+    return;
+  }
+
+  const response = await fetch(apiUrl + "employees?scope=all");
+  const employees = await parseResponse(response);
+  projectsViewState.employees = Array.isArray(employees) ? employees : [];
+}
+
+function normalizeAssignmentCodes(codes) {
+  return new Set((Array.isArray(codes) ? codes : [])
+    .map(code => String(code || "").trim())
+    .filter(Boolean));
+}
+
+function getProjectEditorAssignmentKindConfig(kind) {
+  if (kind === "backupAdmins") {
+    return {
+      selected: projectsViewState.editorAssignments.backupAdmins,
+      searchValue: projectsViewState.editorAssignments.backupAdminsSearch,
+      inputClass: "project-editor-backup-admin-checkbox",
+      listId: "projectEditorBackupAdminsList",
+      emptyKey: "projects.noMatchingEmployees",
+    };
+  }
+
+  return {
+    selected: projectsViewState.editorAssignments.admins,
+    searchValue: projectsViewState.editorAssignments.adminsSearch,
+    inputClass: "project-editor-admin-checkbox",
+    listId: "projectEditorAdminsList",
+    emptyKey: "projects.noMatchingEmployees",
+  };
+}
+
+function employeeMatchesProjectEditorSearch(employee, searchValue) {
+  const normalizedSearch = String(searchValue || "").trim().toLowerCase();
+  if (!normalizedSearch) {
+    return true;
+  }
+
+  const code = String(employee && employee.code ? employee.code : "");
+  const name = String(employee && employee.name ? employee.name : "");
+  return `${code} ${name}`.toLowerCase().includes(normalizedSearch);
+}
+
+function renderProjectEditorAssignmentList(kind) {
+  const config = getProjectEditorAssignmentKindConfig(kind);
+  const container = document.getElementById(config.listId);
+  if (!container) {
+    return;
+  }
+
+  const employees = (projectsViewState.employees || []).filter(employee => employeeMatchesProjectEditorSearch(employee, config.searchValue));
+  if (employees.length === 0) {
+    container.innerHTML = createEmptyState(t(config.emptyKey));
+    return;
+  }
+
+  container.innerHTML = employees.map(employee => {
+    const code = String(employee.code || "");
+    const name = String(employee.name || code);
+    const inputId = `${config.listId}_${code}`.replace(/[^A-Za-z0-9_-]/g, "_");
+    const checked = config.selected.has(code) ? " checked" : "";
+    const role = typeof normalizeClientRole === "function" ? normalizeClientRole(employee.role || "employee") : "employee";
+    const roleLabel = t(`employees.role.${role}`);
+    const archived = employee.archived ? ` | ${t("employees.archived")}` : "";
+    return `
+      <label class="assignment-checkitem" for="${escapeHtml(inputId)}">
+        <input class="form-check-input ${config.inputClass}" type="checkbox" id="${escapeHtml(inputId)}" value="${escapeHtml(code)}" data-assignment-kind="${escapeHtml(kind)}"${checked}>
+        <span class="assignment-checkitem-main">
+          <span class="assignment-checkitem-title">${escapeHtml(name)}</span>
+          <span class="assignment-checkitem-meta">${escapeHtml(code)} | ${escapeHtml(roleLabel)}${escapeHtml(archived)}</span>
+        </span>
+      </label>
+    `;
+  }).join("");
+}
+
+function renderProjectEditorAssignmentLists() {
+  renderProjectEditorAssignmentList("admins");
+  renderProjectEditorAssignmentList("backupAdmins");
+}
+
+function getProjectEditorAssignmentCodes(kind) {
+  const config = getProjectEditorAssignmentKindConfig(kind);
+  return Array.from(config.selected).filter(Boolean).sort();
+}
 
 function setProjectEditorMessage(message, type) {
   const messageBox = document.getElementById("projectEditorMessage");
@@ -28,12 +154,28 @@ function resetProjectEditorForm() {
   document.getElementById("projectEditorCodeInput").value = "";
   document.getElementById("projectEditorCodeInput").readOnly = false;
   document.getElementById("projectEditorNameInput").value = "";
+  document.getElementById("projectEditorSectorInput").value = "";
+  projectsViewState.editorAssignments.admins = new Set();
+  projectsViewState.editorAssignments.backupAdmins = new Set();
+  projectsViewState.editorAssignments.adminsSearch = "";
+  projectsViewState.editorAssignments.backupAdminsSearch = "";
+  document.getElementById("projectEditorAdminsSearchInput").value = "";
+  document.getElementById("projectEditorBackupAdminsSearchInput").value = "";
+  document.getElementById("projectEditorAdminsList").innerHTML = "";
+  document.getElementById("projectEditorBackupAdminsList").innerHTML = "";
   document.getElementById("projectEditorRemoveButton").classList.add("d-none");
   setProjectEditorMessage("");
 }
 
-function openProjectEditorModal(mode, project) {
+async function openProjectEditorModal(mode, project) {
   resetProjectEditorForm();
+  await ensureProjectEditorEmployees(true);
+
+  const admins = project && Array.isArray(project.admins) ? project.admins : [];
+  const backupAdmins = project && Array.isArray(project.backupAdmins) ? project.backupAdmins : [];
+  projectsViewState.editorAssignments.admins = normalizeAssignmentCodes(admins);
+  projectsViewState.editorAssignments.backupAdmins = normalizeAssignmentCodes(backupAdmins);
+  renderProjectEditorAssignmentLists();
 
   if (mode === "edit" && project) {
     document.getElementById("projectEditorMode").value = "edit";
@@ -41,7 +183,8 @@ function openProjectEditorModal(mode, project) {
     document.getElementById("projectEditorCodeInput").value = project.projectCode || "";
     document.getElementById("projectEditorCodeInput").readOnly = true;
     document.getElementById("projectEditorNameInput").value = project.projectName || "";
-    document.getElementById("projectEditorRemoveButton").classList.remove("d-none");
+    document.getElementById("projectEditorSectorInput").value = project.sector || "";
+    document.getElementById("projectEditorRemoveButton").classList.toggle("d-none", Boolean(project.archived));
   }
 
   const modal = new bootstrap.Modal(document.getElementById("projectEditorModal"));
@@ -206,6 +349,10 @@ async function refreshProjectsView() {
   clearProjectDetailCache();
   syncProjectRangeButtons();
   syncProjectCustomRangeInputs();
+  const addButton = document.getElementById("addProjectButton");
+  if (addButton) {
+    addButton.classList.toggle("d-none", !canManageProjects());
+  }
   setLoadingState("projectsSummaryContainer", "grid", 4);
   setLoadingState("projectDetailContainer", "detail", 1);
   setChartLoadingState("projectChartContainer");
@@ -251,21 +398,29 @@ function renderProjectSummaryCards(projectDetails) {
     const total = secondsToDurationLabel(timeStringToSeconds(detail.totalOvertime || "00:00:00"));
     const minValue = secondsToDurationLabel(timeStringToSeconds(detail.minOvertime || "00:00:00"));
     const maxValue = secondsToDurationLabel(timeStringToSeconds(detail.maxOvertime || "00:00:00"));
+    const admins = Array.isArray(detail.admins) ? detail.admins : [];
+    const backupAdmins = Array.isArray(detail.backupAdmins) ? detail.backupAdmins : [];
+    const archivedBadge = detail.archived ? `<span class="status-badge rejected">${escapeHtml(t("projects.archived"))}</span>` : "";
     return `
-      <article class="project-summary-card${currentProjectCode === detail.projectCode ? " is-active" : ""}" data-project-code="${escapeHtml(detail.projectCode)}">
+      <article class="project-summary-card${currentProjectCode === detail.projectCode ? " is-active" : ""}${detail.archived ? " is-archived" : ""}" data-project-code="${escapeHtml(detail.projectCode)}">
         <div class="project-card-header">
           <div>
             <div class="project-card-title">${escapeHtml(detail.projectName)}</div>
-            <div class="employee-card-note">${escapeHtml(detail.projectCode)}</div>
+            <div class="employee-card-note">${escapeHtml([detail.projectCode, detail.sector].filter(Boolean).join(" | "))}</div>
           </div>
-          <span class="inline-code-pill">${escapeHtml(total)}</span>
+          <div class="project-card-status-stack">
+            ${archivedBadge}
+            <span class="inline-code-pill">${escapeHtml(total)}</span>
+          </div>
         </div>
         <div class="project-card-meta">
           <span class="meta-pill">${escapeHtml(t("projects.entries", { count: detail.entryCount }))}</span>
           <span class="meta-pill">${escapeHtml(t("projects.min", { value: minValue }))}</span>
           <span class="meta-pill">${escapeHtml(t("projects.max", { value: maxValue }))}</span>
+          ${renderProjectAdminMeta("projects.admins", detail.adminDisplay, admins, "meta-pill-owner")}
+          ${renderProjectAdminMeta("projects.backupAdmins", detail.backupAdminDisplay, backupAdmins)}
         </div>
-        <div class="employee-card-actions">
+        <div class="employee-card-actions${canManageProjects() ? "" : " d-none"}">
           <button type="button" class="btn btn-outline-secondary btn-sm project-edit-button" data-project-code="${escapeHtml(detail.projectCode)}">${escapeHtml(t("action.edit"))}</button>
         </div>
       </article>
@@ -291,7 +446,7 @@ function renderProjectEmployeeEntries(entries) {
           <div class="project-entry-row">
             <span class="project-entry-date">${escapeHtml(formatDateLabel(entry.date))}</span>
             <span class="project-entry-time mono">
-              ${escapeHtml(getEntryRoundedTimeRange(entry))}
+              ${getEntryRoundedTimeRangeMarkup(entry)}
               ${exactTimeLabel ? `<span class="panel-note d-block">${escapeHtml(exactTimeLabel)}</span>` : ""}
             </span>
             <span class="project-entry-overtime mono">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(entry.overtime)))}</span>
@@ -310,15 +465,23 @@ function renderProjectDetail(detail) {
   }
 
   const touchedBy = (detail.breakdownByEmployee && detail.breakdownByEmployee.length) || 0;
-  const total = detail.totalOvertime ? secondsToDurationLabel(timeStringToSeconds(detail.totalOvertime)) : "00h 00m";
-  const minValue = detail.minOvertime ? secondsToDurationLabel(timeStringToSeconds(detail.minOvertime)) : "00h 00m";
-  const maxValue = detail.maxOvertime ? secondsToDurationLabel(timeStringToSeconds(detail.maxOvertime)) : "00h 00m";
+  const total = detail.totalOvertime ? secondsToDurationLabel(timeStringToSeconds(detail.totalOvertime)) : "00h 00";
+  const minValue = detail.minOvertime ? secondsToDurationLabel(timeStringToSeconds(detail.minOvertime)) : "00h 00";
+  const maxValue = detail.maxOvertime ? secondsToDurationLabel(timeStringToSeconds(detail.maxOvertime)) : "00h 00";
+  const admins = Array.isArray(detail.admins) ? detail.admins : [];
+  const backupAdmins = Array.isArray(detail.backupAdmins) ? detail.backupAdmins : [];
 
   container.innerHTML = `
     <article class="project-detail-card">
       <div class="project-detail-title">
         <h4 class="m-0">${escapeHtml(detail.projectName || detail.projectCode)}</h4>
         <span class="inline-code-pill">${escapeHtml(detail.projectCode)}</span>
+        ${detail.archived ? `<span class="status-badge rejected">${escapeHtml(t("projects.archived"))}</span>` : ""}
+      </div>
+      <div class="project-card-meta">
+        ${detail.sector ? `<span class="meta-pill">${escapeHtml(t("projects.sector"))}: ${escapeHtml(detail.sector)}</span>` : ""}
+        ${renderProjectAdminMeta("projects.admins", detail.adminDisplay, admins, "meta-pill-owner")}
+        ${renderProjectAdminMeta("projects.backupAdmins", detail.backupAdminDisplay, backupAdmins)}
       </div>
       <div class="project-summary">
         <div class="project-summary-item">
@@ -387,6 +550,10 @@ async function submitProjectEditor() {
   const mode = document.getElementById("projectEditorMode").value;
   const projectCode = document.getElementById("projectEditorCodeInput").value.trim();
   const projectName = document.getElementById("projectEditorNameInput").value.trim();
+  const sector = document.getElementById("projectEditorSectorInput").value.trim();
+  const admins = getProjectEditorAssignmentCodes("admins");
+  const backupAdmins = getProjectEditorAssignmentCodes("backupAdmins");
+  const existingProject = getProjectByCode(projectCode);
 
   if (!projectCode || !projectName) {
     setProjectEditorMessage(t("projects.codeAndNameRequired"), "danger");
@@ -402,10 +569,20 @@ async function submitProjectEditor() {
       body: JSON.stringify({
         projectCode,
         projectName,
+        sector,
+        admins,
+        backupAdmins,
+        archived: existingProject ? Boolean(existingProject.archived) : false,
       }),
     });
 
     await parseResponse(response);
+    if (typeof fetchOvertimeEntryLookups === "function") {
+      await fetchOvertimeEntryLookups(true);
+    }
+    if (typeof fetchScopedProjects === "function") {
+      await fetchScopedProjects(true);
+    }
     const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
     if (modal) {
       modal.hide();
@@ -419,12 +596,12 @@ async function submitProjectEditor() {
   }
 }
 
-async function removeProject(project) {
+async function archiveProject(project) {
   if (!project || !project.projectCode) {
     return;
   }
 
-  const confirmed = window.confirm(t("projects.removeConfirm", { name: project.projectName, code: project.projectCode }));
+  const confirmed = window.confirm(t("projects.archiveConfirm", { name: project.projectName, code: project.projectCode }));
   if (!confirmed) {
     return;
   }
@@ -434,14 +611,20 @@ async function removeProject(project) {
       method: "DELETE",
     });
     await parseResponse(response);
+    if (typeof fetchOvertimeEntryLookups === "function") {
+      await fetchOvertimeEntryLookups(true);
+    }
+    if (typeof fetchScopedProjects === "function") {
+      await fetchScopedProjects(true);
+    }
     if (currentProjectCode === project.projectCode) {
       currentProjectCode = null;
     }
-    showToast(t("projects.projectRemoved"), "success");
+    showToast(t("projects.projectArchived"), "success");
     await refreshProjectsView();
   } catch (error) {
-    console.error("Error removing project:", error);
-    showToast(error.message || t("projects.removeError"), "error");
+    console.error("Error archiving project:", error);
+    showToast(error.message || t("projects.archiveError"), "error");
   }
 }
 
@@ -563,7 +746,10 @@ document.getElementById("projectsSummaryContainer").addEventListener("click", ev
     event.stopPropagation();
     const project = getProjectByCode(editButton.getAttribute("data-project-code"));
     if (project) {
-      openProjectEditorModal("edit", project);
+      openProjectEditorModal("edit", project).catch(error => {
+        console.error("Unable to open project editor:", error);
+        showToast(t("projects.unableToLoad"), "error");
+      });
     }
     return;
   }
@@ -626,7 +812,10 @@ document.getElementById("projectClearCustomRangeButton").addEventListener("click
   setProjectRange("6M");
 });
 document.getElementById("addProjectButton").addEventListener("click", () => {
-  openProjectEditorModal("create");
+  openProjectEditorModal("create").catch(error => {
+    console.error("Unable to open project editor:", error);
+    showToast(t("projects.unableToLoad"), "error");
+  });
 });
 document.getElementById("projectEditorRemoveButton").addEventListener("click", async () => {
   const project = getProjectByCode(document.getElementById("projectEditorCodeInput").value.trim());
@@ -634,7 +823,45 @@ document.getElementById("projectEditorRemoveButton").addEventListener("click", a
   if (modal) {
     modal.hide();
   }
-  await removeProject(project);
+  await archiveProject(project);
+});
+document.getElementById("projectEditorAdminsSearchInput").addEventListener("input", event => {
+  projectsViewState.editorAssignments.adminsSearch = event.target.value || "";
+  renderProjectEditorAssignmentList("admins");
+});
+document.getElementById("projectEditorBackupAdminsSearchInput").addEventListener("input", event => {
+  projectsViewState.editorAssignments.backupAdminsSearch = event.target.value || "";
+  renderProjectEditorAssignmentList("backupAdmins");
+});
+document.getElementById("projectEditorAdminsList").addEventListener("change", event => {
+  const checkbox = event.target.closest(".project-editor-admin-checkbox");
+  if (!checkbox) {
+    return;
+  }
+  const employeeCode = String(checkbox.value || "").trim();
+  if (!employeeCode) {
+    return;
+  }
+  if (checkbox.checked) {
+    projectsViewState.editorAssignments.admins.add(employeeCode);
+  } else {
+    projectsViewState.editorAssignments.admins.delete(employeeCode);
+  }
+});
+document.getElementById("projectEditorBackupAdminsList").addEventListener("change", event => {
+  const checkbox = event.target.closest(".project-editor-backup-admin-checkbox");
+  if (!checkbox) {
+    return;
+  }
+  const employeeCode = String(checkbox.value || "").trim();
+  if (!employeeCode) {
+    return;
+  }
+  if (checkbox.checked) {
+    projectsViewState.editorAssignments.backupAdmins.add(employeeCode);
+  } else {
+    projectsViewState.editorAssignments.backupAdmins.delete(employeeCode);
+  }
 });
 document.getElementById("projectEditorSaveButton").addEventListener("click", submitProjectEditor);
 document.getElementById("projectEditorForm").addEventListener("submit", event => {

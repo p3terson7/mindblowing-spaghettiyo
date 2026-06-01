@@ -71,18 +71,34 @@ if (!(Test-Path -Path $projectsFile)) {
         @{
             projectCode = "P001"
             projectName = "Project Alpha"
+            sector = ""
+            admins = @()
+            backupAdmins = @()
+            archived = $false
         },
         @{
             projectCode = "P002"
             projectName = "Project Beta"
+            sector = ""
+            admins = @()
+            backupAdmins = @()
+            archived = $false
         },
         @{
             projectCode = "P003"
             projectName = "Project Gamma"
+            sector = ""
+            admins = @()
+            backupAdmins = @()
+            archived = $false
         },
         @{
             projectCode = "P004"
             projectName = "Project Charlie"
+            sector = ""
+            admins = @()
+            backupAdmins = @()
+            archived = $false
         }
     )
     # Save the default projects to projects.json.

@@ -55,7 +55,7 @@
             }
 
             $optionsPayload = [PSCustomObject]@{
-                projects      = @(Get-Projects)
+                projects      = @(Get-ActiveProjects)
                 overtimeCodes = @(Get-OvertimeCodes)
                 paymentOptions = @(Get-PaymentOptions)
                 reasonCodes    = @(Get-ReasonCodes)
@@ -99,7 +99,7 @@
                         continue
                     }
 
-                    $projects = @(Get-Projects)
+                    $projects = @(Get-ActiveProjects)
                     if (-not ($projects | Where-Object { [string]$_.projectCode -eq $projectCode })) {
                         respondWithError $response 400 "Invalid project code: $projectCode."
                         continue

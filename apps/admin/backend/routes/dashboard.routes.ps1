@@ -5,15 +5,15 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/dashboard
         continue
     }
 
-    if (-not (Test-CurrentUserRole -CurrentUser $currentUser -AllowedRoles @("admin"))) {
-        respondWithError $response 403 "Admin access is required."
+    if (-not (Test-CurrentUserManager -CurrentUser $currentUser)) {
+        respondWithError $response 403 "Manager access is required."
         continue
     }
 
     try {
         $query = [System.Web.HttpUtility]::ParseQueryString($request.Url.Query)
         $employeeCode = $query["employeeCode"]
-        $payload = Get-DashboardBootstrapModel -SelectedEmployeeCode $employeeCode
+        $payload = Get-DashboardBootstrapModel -SelectedEmployeeCode $employeeCode -CurrentUser $currentUser
         respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
     }
     catch {
@@ -29,13 +29,13 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/approvals
         continue
     }
 
-    if (-not (Test-CurrentUserRole -CurrentUser $currentUser -AllowedRoles @("admin"))) {
-        respondWithError $response 403 "Admin access is required."
+    if (-not (Test-CurrentUserManager -CurrentUser $currentUser)) {
+        respondWithError $response 403 "Manager access is required."
         continue
     }
 
     try {
-        $payload = @(Get-ApprovalsEntriesModel)
+        $payload = @(Get-ApprovalsEntriesModel -CurrentUser $currentUser)
         respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
     }
     catch {
@@ -51,14 +51,14 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/review/bo
         continue
     }
 
-    if (-not (Test-CurrentUserRole -CurrentUser $currentUser -AllowedRoles @("admin"))) {
-        respondWithError $response 403 "Admin access is required."
+    if (-not (Test-CurrentUserManager -CurrentUser $currentUser)) {
+        respondWithError $response 403 "Manager access is required."
         continue
     }
 
     try {
         $payload = [PSCustomObject]@{
-            approvals = @(Get-ApprovalsEntriesModel)
+            approvals = @(Get-ApprovalsEntriesModel -CurrentUser $currentUser)
             history   = @(Get-HistoryEntriesSnapshot)
         }
         respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)

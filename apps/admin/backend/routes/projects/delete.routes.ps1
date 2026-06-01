@@ -1,31 +1,25 @@
-        # DELETE /projects/{projectCode}: Delete an existing project.
+        # DELETE /projects/{projectCode}: Archive an existing project.
         if ($request.HttpMethod -eq "DELETE" -and $request.Url.AbsolutePath -match "^/projects/([^/]+)$") {
+            if (-not (Test-CurrentUserSuperAdmin -CurrentUser $currentUser)) {
+                respondWithError $response 403 "Super admin access is required."
+                continue
+            }
+
             $projectCode = $matches[1]
 
             $lockHandle = Acquire-ResourceLock -ResourcePath $projectsFile
             try {
-                $projectInUse = $false
-                Get-ChildItem -Path $sharedFolder -Filter "*_data.json" | ForEach-Object {
-                    if ($projectInUse) {
-                        return
-                    }
-
-                    $entries = Read-JsonArrayFile -Path $_.FullName
-                    if ($entries | Where-Object { [string]$_.projectCode -eq $projectCode }) {
-                        $projectInUse = $true
-                    }
-                }
-
-                if ($projectInUse) {
-                    respondWithError $response 400 "This project is already used in overtime entries and cannot be removed."
-                    continue
-                }
-
                 $projects = Get-Projects
-                $originalCount = $projects.Count
-                $projects = $projects | Where-Object { $_.projectCode -ne $projectCode }
+                $found = $false
+                for ($i = 0; $i -lt $projects.Count; $i++) {
+                    if ([string]$projects[$i].projectCode -eq [string]$projectCode) {
+                        $projects[$i].archived = $true
+                        $found = $true
+                        break
+                    }
+                }
 
-                if ($projects.Count -eq $originalCount) {
+                if (-not $found) {
                     respondWithError $response 404 "Project with code $projectCode not found."
                     continue
                 }
@@ -36,8 +30,8 @@
                 Release-ResourceLock -LockHandle $lockHandle
             }
 
-            logHistory "Delete" "Removed the project <strong>$projectCode</strong>." ([string]$currentUser.displayName)
+            logHistory "Archive" "Archived the project <strong>$projectCode</strong>." ([string]$currentUser.displayName)
             Publish-DataChange -Category "project" -Resource $projectCode
-            respondWithSuccess $response '{ "message": "Project deleted successfully." }'
+            respondWithSuccess $response '{ "message": "Project archived successfully." }'
             continue
         }

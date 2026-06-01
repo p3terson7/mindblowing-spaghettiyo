@@ -1,8 +1,8 @@
         # GET /projects: Return the list of projects.
         if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -match "^/projects/?$") {
             try {
-                $projectsData = Get-Projects
-                $jsonResult = $projectsData | ConvertTo-Json -Depth 3
+                $projectsData = Get-ProjectsForCurrentUser -CurrentUser $currentUser
+                $jsonResult = $projectsData | ConvertTo-Json -Depth 6
                 $bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonResult)
                 $response.ContentType = "application/json"
                 $response.StatusCode = 200

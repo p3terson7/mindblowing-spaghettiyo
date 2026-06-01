@@ -1,18 +1,48 @@
 [
   {
     "projectCode": "OPS-410",
-    "projectName": "Month-End Close"
+    "projectName": "Month-End Close",
+    "sector": "Operations",
+    "admins": [
+      "000123456",
+      "000379070",
+      "000789123"
+    ],
+    "backupAdmins": "000456123",
+    "archived": false
   },
   {
     "projectCode": "APP-220",
-    "projectName": "Portal Upgrade"
+    "projectName": "Portal Upgrade",
+    "sector": "Applications",
+    "admins": [
+      "000123456"
+    ],
+    "backupAdmins": [
+      "000789123"
+    ],
+    "archived": false
   },
   {
     "projectCode": "INF-330",
-    "projectName": "Infrastructure Maintenance"
+    "projectName": "Infrastructure Maintenance",
+    "sector": "Infrastructure",
+    "admins": [],
+    "backupAdmins": [
+      "000379070"
+    ],
+    "archived": false
   },
   {
     "projectCode": "CLT-120",
-    "projectName": "Client Rollout"
+    "projectName": "Client Rollout",
+    "sector": "Client Services",
+    "admins": [
+      "000789123"
+    ],
+    "backupAdmins": [
+      "000123456"
+    ],
+    "archived": false
   }
 ]

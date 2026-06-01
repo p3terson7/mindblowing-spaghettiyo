@@ -457,6 +457,40 @@ code,
   gap: 8px;
 }
 
+.dashboard-project-scope-card {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-project-scope-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.project-scope-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px;
+  border: 1px solid rgba(31, 35, 41, 0.08);
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.project-scope-name {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
 .dashboard-scroll-list {
   display: grid;
   gap: 8px;
@@ -1067,6 +1101,15 @@ code,
   color: var(--text-primary);
 }
 
+:root[data-theme="dark"] .form-check-input:checked {
+  background-color: #6ea0ff;
+  border-color: #6ea0ff;
+}
+
+:root[data-theme="dark"] .form-check-input:checked[type="checkbox"] {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23131518' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
+}
+
 :root[data-theme="dark"] .form-control::placeholder {
   color: #737985;
 }
@@ -1126,6 +1169,9 @@ code,
 :root[data-theme="dark"] .dashboard-note-trigger,
 :root[data-theme="dark"] .calendar-entry,
 :root[data-theme="dark"] .calendar-entry-note,
+:root[data-theme="dark"] .project-scope-pill,
+:root[data-theme="dark"] .assignment-checklist,
+:root[data-theme="dark"] .assignment-checkitem,
 :root[data-theme="dark"] .filter-toolbar,
 :root[data-theme="dark"] .hero-action-panel,
 :root[data-theme="dark"] .employee-insight-strip,
@@ -2500,6 +2546,10 @@ code,
   max-width: 560px;
 }
 
+.modal-dialog-wide {
+  max-width: 720px;
+}
+
 .modal-content {
   border-radius: 6px;
   overflow: hidden;
@@ -2518,6 +2568,90 @@ code,
 .modal-title {
   font-size: 1.08rem;
   font-weight: 700;
+}
+
+.assignment-picker {
+  gap: 8px;
+}
+
+.assignment-checklist {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid rgba(31, 35, 41, 0.1);
+  border-radius: 4px;
+  background: #f7f8fb;
+}
+
+.assignment-checkitem {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid rgba(31, 35, 41, 0.08);
+  border-radius: 4px;
+  background: #ffffff;
+  color: var(--text-primary);
+}
+
+.assignment-checkitem .form-check-input {
+  margin: 0;
+}
+
+.assignment-checkitem-main {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.assignment-checkitem-title,
+.assignment-checkitem-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assignment-checkitem-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.assignment-checkitem-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.time-range-arrow {
+  margin: 0 5px;
+  font-size: 0.78em;
+  color: var(--text-muted);
+}
+
+.project-card-status-stack {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+
+.meta-pill-owner {
+  border-color: rgba(53, 116, 240, 0.24);
+  background: rgba(53, 116, 240, 0.08);
+  color: var(--text-primary);
+}
+
+.project-summary-card.is-archived {
+  opacity: 0.82;
+}
+
+.form-check-input:checked {
+  background-color: #3574f0;
+  border-color: #3574f0;
 }
 
 .d-none {

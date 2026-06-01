@@ -1,5 +1,10 @@
         # POST /projects: Create a new project.
         if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/projects") {
+            if (-not (Test-CurrentUserSuperAdmin -CurrentUser $currentUser)) {
+                respondWithError $response 403 "Super admin access is required."
+                continue
+            }
+
             $payload = Read-JsonRequestBody -Request $request
             
             # Validate that projectCode and projectName are provided.
@@ -7,6 +12,10 @@
                 respondWithError $response 400 "Missing required fields: projectCode and projectName are required."
                 continue
             }
+
+            $sector = if ($payload.PSObject.Properties.Name -contains "sector") { [string]$payload.sector } else { "" }
+            $admins = if ($payload.PSObject.Properties.Name -contains "admins") { @(ConvertTo-CodeArray -Value $payload.admins) } else { @() }
+            $backupAdmins = if ($payload.PSObject.Properties.Name -contains "backupAdmins") { @(ConvertTo-CodeArray -Value $payload.backupAdmins) } else { @() }
 
             $lockHandle = Acquire-ResourceLock -ResourcePath $projectsFile
             try {
@@ -20,8 +29,12 @@
 
                 # Append the new project.
                 $projects += [PSCustomObject]@{
-                    projectCode = [string]$payload.projectCode
-                    projectName = [string]$payload.projectName
+                    projectCode  = [string]$payload.projectCode
+                    projectName  = [string]$payload.projectName
+                    sector       = $sector
+                    admins       = $admins
+                    backupAdmins = $backupAdmins
+                    archived     = $false
                 }
                 Write-JsonAtomic -Path $projectsFile -Value $projects -Depth 6
             }

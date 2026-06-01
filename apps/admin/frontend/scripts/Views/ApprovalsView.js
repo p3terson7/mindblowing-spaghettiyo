@@ -1,4 +1,5 @@
 let allApprovalEntries = [];
+let approvalScopedProjects = [];
 
 function buildApprovalEmployeeOptions(entries) {
   const currentValue = document.getElementById("reviewEmployeeFilter")?.value || "";
@@ -18,14 +19,70 @@ function buildApprovalEmployeeOptions(entries) {
   return options.join("");
 }
 
+function buildApprovalProjectOptions(projects, entries) {
+  const currentValue = document.getElementById("reviewProjectFilter")?.value || "";
+  const projectMap = {};
+
+  (Array.isArray(projects) ? projects : []).forEach(project => {
+    const projectCode = String(project && project.projectCode || "").trim();
+    if (projectCode) {
+      projectMap[projectCode] = String(project.projectName || projectCode);
+    }
+  });
+
+  (Array.isArray(entries) ? entries : []).forEach(entry => {
+    const projectCode = String(entry && entry.projectCode || "").trim();
+    if (projectCode && !projectMap[projectCode]) {
+      projectMap[projectCode] = projectCode;
+    }
+  });
+
+  const options = [`<option value="">${escapeHtml(t("filters.allProjects"))}</option>`]
+    .concat(Object.keys(projectMap).sort((left, right) => left.localeCompare(right)).map(projectCode => {
+      const selected = currentValue === projectCode ? " selected" : "";
+      return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(projectCode)} | ${escapeHtml(projectMap[projectCode])}</option>`;
+    }));
+
+  return options.join("");
+}
+
+function populateApprovalProjectFilter(projects, entries) {
+  const projectFilter = document.getElementById("reviewProjectFilter");
+  if (!projectFilter) {
+    return;
+  }
+
+  const previousValue = projectFilter.value || "";
+  projectFilter.innerHTML = buildApprovalProjectOptions(projects, entries);
+  if (previousValue && Array.from(projectFilter.options).some(option => option.value === previousValue)) {
+    projectFilter.value = previousValue;
+  }
+}
+
+async function refreshApprovalProjectFilter() {
+  try {
+    approvalScopedProjects = await fetchScopedProjects();
+  } catch (error) {
+    console.warn("Unable to load scoped projects for approvals:", error);
+    approvalScopedProjects = [];
+  }
+
+  populateApprovalProjectFilter(approvalScopedProjects, allApprovalEntries);
+}
+
 function getFilteredApprovalEntries() {
   const searchTerm = document.getElementById("approvalsSearchInput").value;
   const selectedEmployee = document.getElementById("reviewEmployeeFilter").value;
+  const selectedProject = document.getElementById("reviewProjectFilter")?.value || "";
   const startDate = document.getElementById("reviewStartDate").value;
   const endDate = document.getElementById("reviewEndDate").value;
 
   return filterEntries(allApprovalEntries, searchTerm).filter(entry => {
     if (selectedEmployee && String(entry.employeeCode || "") !== selectedEmployee) {
+      return false;
+    }
+
+    if (selectedProject && String(entry.projectCode || "") !== selectedProject) {
       return false;
     }
 
@@ -41,6 +98,7 @@ async function loadApprovalsView() {
     const entries = await fetch(apiUrl + "approvals/entries").then(parseResponse);
     allApprovalEntries = Array.isArray(entries) ? entries : [];
     document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(allApprovalEntries);
+    await refreshApprovalProjectFilter();
     applyApprovalFilters();
   } catch (error) {
     console.error("Error fetching employees for approvals:", error);
@@ -62,6 +120,7 @@ async function loadReviewView() {
     const payload = await fetch(apiUrl + "review/bootstrap").then(parseResponse);
     allApprovalEntries = Array.isArray(payload && payload.approvals) ? payload.approvals : [];
     document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(allApprovalEntries);
+    await refreshApprovalProjectFilter();
     applyApprovalFilters();
 
     if (typeof renderHistoryTabs === "function") {
@@ -187,12 +246,14 @@ async function approveFilteredEntries() {
 
 document.getElementById("approvalsSearchInput").addEventListener("input", applyApprovalFilters);
 document.getElementById("reviewEmployeeFilter").addEventListener("change", applyApprovalFilters);
+document.getElementById("reviewProjectFilter").addEventListener("change", applyApprovalFilters);
 document.getElementById("reviewStartDate").addEventListener("input", applyApprovalFilters);
 document.getElementById("reviewEndDate").addEventListener("input", applyApprovalFilters);
 document.getElementById("approveFilteredBtn").addEventListener("click", approveFilteredEntries);
 document.getElementById("reviewResetFiltersBtn").addEventListener("click", () => {
   document.getElementById("approvalsSearchInput").value = "";
   document.getElementById("reviewEmployeeFilter").value = "";
+  document.getElementById("reviewProjectFilter").value = "";
   document.getElementById("reviewStartDate").value = "";
   document.getElementById("reviewEndDate").value = "";
   applyApprovalFilters();

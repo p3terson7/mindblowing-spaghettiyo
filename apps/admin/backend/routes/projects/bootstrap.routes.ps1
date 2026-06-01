@@ -5,7 +5,7 @@
                 $endDate = $query["endDate"]
                 $projectCode = $query["projectCode"]
 
-                $payload = Get-ProjectsBootstrapModel -StartDate $startDate -EndDate $endDate -SelectedProjectCode $projectCode
+                $payload = Get-ProjectsBootstrapModel -StartDate $startDate -EndDate $endDate -SelectedProjectCode $projectCode -CurrentUser $currentUser
                 respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
             }
             catch {

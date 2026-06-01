@@ -62,6 +62,200 @@ function New-RandomToken {
     return ($token.TrimEnd("=") -replace "\+", "-" -replace "/", "_")
 }
 
+function Get-NormalizedRoleName {
+    param([string]$Role)
+
+    $normalized = ([string]$Role).Trim().ToLowerInvariant() -replace "[\s_-]", ""
+    if ($normalized -eq "superadmin" -or $normalized -eq "super") {
+        return "superAdmin"
+    }
+    if ($normalized -eq "admin") {
+        return "admin"
+    }
+
+    return "employee"
+}
+
+function Get-UserEmployeeCodeValue {
+    param($UserRecord)
+
+    if ($null -eq $UserRecord) {
+        return ""
+    }
+
+    if ($UserRecord.PSObject.Properties.Name -contains "employeeCode" -and -not [string]::IsNullOrWhiteSpace([string]$UserRecord.employeeCode)) {
+        return [string]$UserRecord.employeeCode
+    }
+
+    if ($UserRecord.PSObject.Properties.Name -contains "username" -and [string]$UserRecord.username -match "^\d+$") {
+        return [string]$UserRecord.username
+    }
+
+    return ""
+}
+
+function Get-EffectiveUserRole {
+    param($UserRecord)
+
+    if ($null -eq $UserRecord) {
+        return "employee"
+    }
+
+    $role = Get-NormalizedRoleName -Role ([string]$UserRecord.role)
+    $employeeCode = Get-UserEmployeeCodeValue -UserRecord $UserRecord
+
+    if ($role -eq "admin" -and [string]::IsNullOrWhiteSpace($employeeCode)) {
+        return "superAdmin"
+    }
+
+    if ($role -eq "admin" -and [string]$UserRecord.username -eq $bootstrapAdminUsername) {
+        return "superAdmin"
+    }
+
+    return $role
+}
+
+function Test-EmployeeUserRecord {
+    param(
+        $UserRecord,
+        [string]$EmployeeCode
+    )
+
+    if ($null -eq $UserRecord) {
+        return $false
+    }
+
+    $recordEmployeeCode = Get-UserEmployeeCodeValue -UserRecord $UserRecord
+    if ([string]::IsNullOrWhiteSpace($recordEmployeeCode)) {
+        return $false
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($EmployeeCode) -and $recordEmployeeCode -ne $EmployeeCode) {
+        return $false
+    }
+
+    return $true
+}
+
+function New-AuthenticatedUserProjection {
+    param(
+        $UserRecord,
+        [string]$Token
+    )
+
+    $employeeCode = Get-UserEmployeeCodeValue -UserRecord $UserRecord
+    $role = Get-EffectiveUserRole -UserRecord $UserRecord
+
+    return [PSCustomObject]@{
+        username           = [string]$UserRecord.username
+        displayName        = [string]$UserRecord.displayName
+        role               = $role
+        employeeCode       = $employeeCode
+        mustChangePassword = [bool]$UserRecord.mustChangePassword
+        token              = $Token
+    }
+}
+
+function Get-ProjectCodesForCurrentUser {
+    param($CurrentUser)
+
+    if ($null -eq $CurrentUser) {
+        return @()
+    }
+
+    $role = Get-NormalizedRoleName -Role ([string]$CurrentUser.role)
+    if ($role -eq "superAdmin") {
+        return @((Get-Projects) | ForEach-Object { [string]$_.projectCode } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+    }
+
+    if ($role -ne "admin" -or [string]::IsNullOrWhiteSpace([string]$CurrentUser.employeeCode)) {
+        return @()
+    }
+
+    $employeeCode = [string]$CurrentUser.employeeCode
+    $projectCodes = @()
+    foreach ($project in @(Get-Projects)) {
+        $admins = @(Get-ProjectAdminCodes -Project $project)
+        $backupAdmins = @(Get-ProjectBackupAdminCodes -Project $project)
+        if ($admins -contains $employeeCode -or $backupAdmins -contains $employeeCode) {
+            $projectCodes += [string]$project.projectCode
+        }
+    }
+
+    return @($projectCodes | Sort-Object -Unique)
+}
+
+function Test-CurrentUserSuperAdmin {
+    param($CurrentUser)
+
+    if ($null -eq $CurrentUser) {
+        return $false
+    }
+
+    return ((Get-NormalizedRoleName -Role ([string]$CurrentUser.role)) -eq "superAdmin")
+}
+
+function Test-CurrentUserManager {
+    param($CurrentUser)
+
+    if ($null -eq $CurrentUser) {
+        return $false
+    }
+
+    $role = Get-NormalizedRoleName -Role ([string]$CurrentUser.role)
+    return ($role -eq "admin" -or $role -eq "superAdmin")
+}
+
+function Test-CurrentUserCanAccessProjectCode {
+    param(
+        $CurrentUser,
+        [string]$ProjectCode
+    )
+
+    if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) {
+        return $true
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ProjectCode)) {
+        return $false
+    }
+
+    return (@(Get-ProjectCodesForCurrentUser -CurrentUser $CurrentUser) -contains [string]$ProjectCode)
+}
+
+function Test-CurrentUserCanManageEntry {
+    param(
+        $CurrentUser,
+        $Entry
+    )
+
+    if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) {
+        return $true
+    }
+
+    if ($null -eq $Entry) {
+        return $false
+    }
+
+    $projectCode = if ($Entry.PSObject.Properties.Name -contains "projectCode") { [string]$Entry.projectCode } else { "" }
+    return (Test-CurrentUserCanAccessProjectCode -CurrentUser $CurrentUser -ProjectCode $projectCode)
+}
+
+function Get-ProjectsForCurrentUser {
+    param($CurrentUser)
+
+    if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) {
+        return @(Get-Projects)
+    }
+
+    $projectCodes = @(Get-ProjectCodesForCurrentUser -CurrentUser $CurrentUser)
+    if ($projectCodes.Count -eq 0) {
+        return @()
+    }
+
+    return @((Get-Projects) | Where-Object { $projectCodes -contains [string]$_.projectCode })
+}
+
 function Get-TokenHash {
     param([Parameter(Mandatory = $true)][string]$Token)
 
@@ -98,7 +292,7 @@ function Ensure-AuthStorage {
             $users += [PSCustomObject]@{
                 username           = $bootstrapAdminUsername
                 displayName        = "Administrator"
-                role               = "admin"
+                role               = "superAdmin"
                 employeeCode       = $null
                 disabled           = $false
                 mustChangePassword = $true
@@ -275,14 +469,7 @@ function Get-AuthenticatedUserFromRequest {
         return $null
     }
 
-    return [PSCustomObject]@{
-        username           = [string]$user.username
-        displayName        = [string]$user.displayName
-        role               = [string]$user.role
-        employeeCode       = [string]$user.employeeCode
-        mustChangePassword = [bool]$user.mustChangePassword
-        token              = $token
-    }
+    return (New-AuthenticatedUserProjection -UserRecord $user -Token $token)
 }
 
 function Test-CurrentUserRole {
@@ -294,7 +481,7 @@ function Test-CurrentUserRole {
     if ($null -eq $CurrentUser) {
         return $false
     }
-    return ($AllowedRoles -contains [string]$CurrentUser.role)
+    return ($AllowedRoles -contains (Get-NormalizedRoleName -Role ([string]$CurrentUser.role)))
 }
 
 function New-SessionForUser {
@@ -316,8 +503,8 @@ function New-SessionForUser {
         })
         $sessions += [PSCustomObject]@{
             username     = [string]$UserRecord.username
-            role         = [string]$UserRecord.role
-            employeeCode = [string]$UserRecord.employeeCode
+            role         = Get-EffectiveUserRole -UserRecord $UserRecord
+            employeeCode = Get-UserEmployeeCodeValue -UserRecord $UserRecord
             tokenHash    = (Get-TokenHash -Token $token)
             issuedAtUtc  = $nowUtc.ToString("o")
             expiresAtUtc = $expiresUtc.ToString("o")
@@ -450,7 +637,7 @@ function Set-EmployeeUserPassword {
             $updated = $true
             $created = $true
         }
-        elseif ([string]$targetUser.role -ne "employee") {
+        elseif (-not (Test-EmployeeUserRecord -UserRecord $targetUser -EmployeeCode $EmployeeCode)) {
             return [PSCustomObject]@{
                 updated = $false
                 created = $false
@@ -489,7 +676,8 @@ function Ensure-EmployeeUser {
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
         [Parameter(Mandatory = $true)][string]$DisplayName,
         [string]$InitialPassword,
-        [bool]$MustChangePassword = $true
+        [bool]$MustChangePassword = $true,
+        [string]$Role = "employee"
     )
 
     $effectivePassword = if ([string]::IsNullOrWhiteSpace($InitialPassword)) {
@@ -514,6 +702,7 @@ function Ensure-EmployeeUser {
     $updated = $false
     $created = $false
     $reactivated = $false
+    $effectiveRole = Get-NormalizedRoleName -Role $Role
 
     $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
     try {
@@ -524,7 +713,7 @@ function Ensure-EmployeeUser {
             $users += [PSCustomObject]@{
                 username           = $EmployeeCode
                 displayName        = [string]$DisplayName
-                role               = "employee"
+                role               = $effectiveRole
                 employeeCode       = $EmployeeCode
                 disabled           = $false
                 mustChangePassword = $MustChangePassword
@@ -537,7 +726,7 @@ function Ensure-EmployeeUser {
             $updated = $true
             $created = $true
         }
-        elseif ([string]$targetUser.role -ne "employee") {
+        elseif (-not (Test-EmployeeUserRecord -UserRecord $targetUser -EmployeeCode $EmployeeCode)) {
             return [PSCustomObject]@{
                 updated           = $false
                 created           = $false
@@ -558,6 +747,7 @@ function Ensure-EmployeeUser {
         else {
             $targetUser.displayName = [string]$DisplayName
             $targetUser.employeeCode = $EmployeeCode
+            $targetUser.role = $effectiveRole
             $targetUser.disabled = $false
             $targetUser.passwordSalt = $secret.passwordSalt
             $targetUser.passwordHash = $secret.passwordHash
@@ -597,8 +787,40 @@ function Set-EmployeeUserDisplayName {
     try {
         $users = Read-JsonArrayFile -Path $usersFile
         foreach ($user in $users) {
-            if ($user.username -eq $EmployeeCode -and [string]$user.role -eq "employee") {
+            if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
                 $user.displayName = [string]$DisplayName
+                $user.employeeCode = $EmployeeCode
+                $updated = $true
+                break
+            }
+        }
+
+        if ($updated) {
+            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+        }
+    }
+    finally {
+        Release-ResourceLock -LockHandle $lockHandle
+    }
+
+    return $updated
+}
+
+function Set-EmployeeUserRole {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)][string]$Role
+    )
+
+    $effectiveRole = Get-NormalizedRoleName -Role $Role
+    $updated = $false
+
+    $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
+    try {
+        $users = Read-JsonArrayFile -Path $usersFile
+        foreach ($user in $users) {
+            if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
+                $user.role = $effectiveRole
                 $user.employeeCode = $EmployeeCode
                 $updated = $true
                 break
@@ -627,7 +849,7 @@ function Disable-EmployeeUser {
     try {
         $users = Read-JsonArrayFile -Path $usersFile
         foreach ($user in $users) {
-            if ($user.username -eq $EmployeeCode -and [string]$user.role -eq "employee") {
+            if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
                 $user.disabled = $true
                 $updated = $true
                 break
@@ -656,7 +878,7 @@ function Restore-EmployeeUser {
     try {
         $users = Read-JsonArrayFile -Path $usersFile
         foreach ($user in $users) {
-            if ($user.username -eq $EmployeeCode -and [string]$user.role -eq "employee") {
+            if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
                 $user.disabled = $false
                 $updated = $true
                 break

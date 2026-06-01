@@ -16,14 +16,15 @@
                 }
 
                 $sessionToken = New-SessionForUser -UserRecord $userRecord
+                $userProjection = New-AuthenticatedUserProjection -UserRecord $userRecord -Token $sessionToken
                 $result = [PSCustomObject]@{
                     token = $sessionToken
                     user  = [PSCustomObject]@{
-                        username           = [string]$userRecord.username
-                        displayName        = [string]$userRecord.displayName
-                        role               = [string]$userRecord.role
-                        employeeCode       = [string]$userRecord.employeeCode
-                        mustChangePassword = [bool]$userRecord.mustChangePassword
+                        username           = [string]$userProjection.username
+                        displayName        = [string]$userProjection.displayName
+                        role               = [string]$userProjection.role
+                        employeeCode       = [string]$userProjection.employeeCode
+                        mustChangePassword = [bool]$userProjection.mustChangePassword
                     }
                 }
                 $response.Headers["Set-Cookie"] = Get-SessionCookieHeader -Token $sessionToken

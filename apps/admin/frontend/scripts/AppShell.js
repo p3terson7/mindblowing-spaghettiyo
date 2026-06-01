@@ -4,9 +4,34 @@ const APP_THEME_KEY = "overtimeAppTheme";
 const LEGACY_API_URL_KEYS = ["adminApiUrl", "employeeApiUrl"];
 const LEGACY_SESSION_KEYS = ["adminSession", "employeeSession"];
 const ROLE_VIEW_MAP = {
+  superAdmin: ["dashboardView", "employeesView", "adminView", "projectsView"],
   admin: ["dashboardView", "employeesView", "adminView", "projectsView"],
   employee: ["selfView"],
 };
+
+function normalizeClientRole(role) {
+  const normalized = String(role || "").trim().toLowerCase().replace(/[\s_-]/g, "");
+  if (normalized === "superadmin" || normalized === "super") {
+    return "superAdmin";
+  }
+  if (normalized === "admin") {
+    return "admin";
+  }
+  return "employee";
+}
+
+function isSuperAdminUser(user = getCurrentUser()) {
+  return Boolean(user && normalizeClientRole(user.role) === "superAdmin");
+}
+
+function isManagerUser(user = getCurrentUser()) {
+  const role = user ? normalizeClientRole(user.role) : "";
+  return role === "admin" || role === "superAdmin";
+}
+
+function userHasEmployeeWorkspace(user = getCurrentUser()) {
+  return Boolean(user && user.employeeCode);
+}
 
 function getStoredTheme() {
   return localStorage.getItem(APP_THEME_KEY) === "dark" ? "dark" : "light";
@@ -95,25 +120,25 @@ function getViewsAffectedBySyncState(syncState) {
   }
 
   if (category === "history") {
-    return user.role === "admin"
+    return isManagerUser(user)
       ? ["dashboardView", "adminView"]
       : [];
   }
 
   if (category === "employee-directory") {
-    return user.role === "admin"
+    return isManagerUser(user)
       ? ["dashboardView", "employeesView"]
       : [];
   }
 
   if (category === "project") {
-    return user.role === "admin"
+    return isManagerUser(user)
       ? ["dashboardView", "projectsView"]
       : ["selfView"];
   }
 
   if (category === "auth") {
-    if (user.role === "admin") {
+    if (isManagerUser(user)) {
       return ["employeesView"];
     }
 
@@ -123,8 +148,8 @@ function getViewsAffectedBySyncState(syncState) {
   }
 
   if (category === "employee") {
-    if (user.role === "admin") {
-      return ["dashboardView", "adminView", "projectsView"];
+    if (isManagerUser(user)) {
+      return ["dashboardView", "employeesView", "adminView", "projectsView"];
     }
 
     return resource && user.employeeCode === resource
@@ -322,9 +347,10 @@ function updateSessionSummary() {
   }
 
   const identity = user.displayName || user.username;
-  const suffix = user.role === "employee" && user.employeeCode
+  const role = normalizeClientRole(user.role);
+  const suffix = role === "employee" && user.employeeCode
     ? t("session.employeeCode", { code: user.employeeCode })
-    : t(`session.role.${user.role}`);
+    : t(`session.role.${role}`);
 
   summary.textContent = `${identity} | ${suffix}`;
   changePasswordButton.classList.remove("d-none");
@@ -403,14 +429,35 @@ function clearRoleUi() {
   window.allowedViewIds = [];
   setRoleScopeVisibility("admin", false);
   setRoleScopeVisibility("employee", false);
+  setRoleScopeVisibility("manager", false);
+  setRoleScopeVisibility("superAdmin", false);
 }
 
 function getAllowedViewsForUser(user) {
-  if (!user || !ROLE_VIEW_MAP[user.role]) {
+  if (!user) {
     return [];
   }
 
-  return ROLE_VIEW_MAP[user.role].slice();
+  const views = [];
+  if (userHasEmployeeWorkspace(user)) {
+    views.push("selfView");
+  }
+
+  if (isManagerUser(user)) {
+    ROLE_VIEW_MAP[normalizeClientRole(user.role)].forEach(viewId => {
+      if (views.indexOf(viewId) < 0) {
+        views.push(viewId);
+      }
+    });
+  } else if (normalizeClientRole(user.role) === "employee") {
+    ROLE_VIEW_MAP.employee.forEach(viewId => {
+      if (views.indexOf(viewId) < 0) {
+        views.push(viewId);
+      }
+    });
+  }
+
+  return views;
 }
 
 function resolvePreferredView(user) {
@@ -426,13 +473,15 @@ function resolvePreferredView(user) {
 function configureRoleUi(user) {
   clearRoleUi();
 
-  if (!user || !ROLE_VIEW_MAP[user.role]) {
+  if (!user) {
     window.allowedViewIds = [];
     return;
   }
 
-  setRoleScopeVisibility("admin", user.role === "admin");
-  setRoleScopeVisibility("employee", user.role === "employee");
+  setRoleScopeVisibility("employee", userHasEmployeeWorkspace(user));
+  setRoleScopeVisibility("manager", isManagerUser(user));
+  setRoleScopeVisibility("superAdmin", isSuperAdminUser(user));
+  setRoleScopeVisibility("admin", isManagerUser(user));
   window.allowedViewIds = getAllowedViewsForUser(user);
 
   if (typeof showView === "function") {
@@ -593,7 +642,7 @@ async function bootstrapApplication() {
   markAllowedViewsStale(user);
   configureRoleUi(user);
 
-  if (user.role === "employee" && typeof initializeSelfView === "function") {
+  if (userHasEmployeeWorkspace(user) && typeof initializeSelfView === "function") {
     initializeSelfView();
   }
 
@@ -652,13 +701,16 @@ function validateAuthenticatedUser(user) {
     throw new Error(t("auth.authenticationIncomplete"));
   }
 
-  if (!ROLE_VIEW_MAP[user.role]) {
+  const role = normalizeClientRole(user.role);
+  if (!ROLE_VIEW_MAP[role]) {
     throw new Error(`Unsupported role: ${user.role}`);
   }
 
-  if (user.role === "employee" && !user.employeeCode) {
+  if (role === "employee" && !user.employeeCode) {
     throw new Error(t("auth.employeeCodeRequired"));
   }
+
+  user.role = role;
 }
 
 async function applySession(authResult) {

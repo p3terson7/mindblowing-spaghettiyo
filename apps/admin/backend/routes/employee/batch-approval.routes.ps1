@@ -59,6 +59,10 @@
                             }
 
                             $entry = $existingData[$entryIndex]
+                            if (-not (Test-CurrentUserCanManageEntry -CurrentUser $currentUser -Entry $entry)) {
+                                continue
+                            }
+
                             if (-not $entry.punchOut) {
                                 continue
                             }

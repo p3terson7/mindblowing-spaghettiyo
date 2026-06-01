@@ -1,10 +1,16 @@
         # PUT /employees/{employeeCode}: Update employee directory metadata.
         if ($request.HttpMethod -eq "PUT" -and $request.Url.AbsolutePath -match "^/employees/(\d+)$") {
+            if (-not (Test-CurrentUserSuperAdmin -CurrentUser $currentUser)) {
+                respondWithError $response 403 "Super admin access is required."
+                continue
+            }
+
             $employeeCode = $matches[1]
 
             try {
                 $payload = Read-JsonRequestBody -Request $request
                 $displayName = if ($null -ne $payload) { [string]$payload.name } else { "" }
+                $role = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "role")) { Get-NormalizedRoleName -Role ([string]$payload.role) } else { "" }
 
                 if ([string]::IsNullOrWhiteSpace($displayName)) {
                     respondWithError $response 400 "Employee name is required."
@@ -17,7 +23,7 @@
                     continue
                 }
 
-                $updateResult = Update-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName
+                $updateResult = Update-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -Role $role
                 if (-not $updateResult.updated) {
                     respondWithError $response 500 "Unable to update employee."
                     continue

@@ -6,7 +6,213 @@ const employeesViewState = {
   currentMonthByEmployee: {},
   expandedNotes: {},
   entryLookups: null,
+  editorProjectAssignments: {
+    projects: [],
+    selectedProjectCodes: new Set(),
+    originalProjectCodes: new Set(),
+    search: "",
+  },
 };
+
+function canManageEmployeeProfiles() {
+  return typeof isSuperAdminUser === "function" && isSuperAdminUser();
+}
+
+function getEmployeeRole(employee) {
+  return normalizeClientRole(employee && employee.role ? employee.role : "employee");
+}
+
+function getEmployeeRoleLabel(employee) {
+  return t(`employees.role.${getEmployeeRole(employee)}`);
+}
+
+function normalizeEmployeeEditorCodeArray(codes) {
+  return (Array.isArray(codes) ? codes : [])
+    .map(code => String(code || "").trim())
+    .filter(Boolean);
+}
+
+function normalizeEmployeeEditorCodeSet(codes) {
+  return new Set(normalizeEmployeeEditorCodeArray(codes));
+}
+
+function getEmployeeEditorProjectAdmins(project) {
+  return normalizeEmployeeEditorCodeArray(project && project.admins ? project.admins : []);
+}
+
+function getEmployeeEditorProjectBackupAdmins(project) {
+  return normalizeEmployeeEditorCodeArray(project && project.backupAdmins ? project.backupAdmins : []);
+}
+
+function getEmployeeEditorProjectCodesForEmployee(employeeCode, projects) {
+  const normalizedEmployeeCode = String(employeeCode || "").trim();
+  if (!normalizedEmployeeCode) {
+    return [];
+  }
+
+  return (Array.isArray(projects) ? projects : [])
+    .filter(project => getEmployeeEditorProjectAdmins(project).indexOf(normalizedEmployeeCode) >= 0)
+    .map(project => String(project.projectCode || "").trim())
+    .filter(Boolean)
+    .sort();
+}
+
+function employeeEditorProjectMatchesSearch(project, searchValue) {
+  const normalizedSearch = String(searchValue || "").trim().toLowerCase();
+  if (!normalizedSearch) {
+    return true;
+  }
+
+  const projectCode = String(project && project.projectCode ? project.projectCode : "");
+  const projectName = String(project && project.projectName ? project.projectName : "");
+  const sector = String(project && project.sector ? project.sector : "");
+  return `${projectCode} ${projectName} ${sector}`.toLowerCase().includes(normalizedSearch);
+}
+
+function areEmployeeEditorSetsEqual(left, right) {
+  if (left.size !== right.size) {
+    return false;
+  }
+
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function ensureEmployeeEditorProjects(forceRefresh = false) {
+  if (!forceRefresh && employeesViewState.editorProjectAssignments.projects.length > 0) {
+    return employeesViewState.editorProjectAssignments.projects;
+  }
+
+  const projects = await fetchScopedProjects(forceRefresh);
+  employeesViewState.editorProjectAssignments.projects = Array.isArray(projects) ? projects : [];
+  return employeesViewState.editorProjectAssignments.projects;
+}
+
+function getEmployeeEditorSelectedProjectCodesForRole(role) {
+  if (normalizeClientRole(role) !== "admin") {
+    return [];
+  }
+
+  return Array.from(employeesViewState.editorProjectAssignments.selectedProjectCodes).filter(Boolean).sort();
+}
+
+function employeeEditorProjectAssignmentsChanged(role) {
+  const selectedCodes = normalizeEmployeeEditorCodeSet(getEmployeeEditorSelectedProjectCodesForRole(role));
+  return !areEmployeeEditorSetsEqual(selectedCodes, employeesViewState.editorProjectAssignments.originalProjectCodes);
+}
+
+function renderEmployeeEditorProjectAssignments() {
+  const container = document.getElementById("employeeEditorProjectAssignmentsList");
+  if (!container) {
+    return;
+  }
+
+  const projects = employeesViewState.editorProjectAssignments.projects
+    .filter(project => employeeEditorProjectMatchesSearch(project, employeesViewState.editorProjectAssignments.search));
+
+  if (projects.length === 0) {
+    container.innerHTML = createEmptyState(t("employees.noMatchingProjects"));
+    return;
+  }
+
+  container.innerHTML = projects.map(project => {
+    const projectCode = String(project.projectCode || "").trim();
+    const projectName = String(project.projectName || projectCode);
+    const sector = String(project.sector || "").trim();
+    const inputId = `employeeEditorProject_${projectCode}`.replace(/[^A-Za-z0-9_-]/g, "_");
+    const checked = employeesViewState.editorProjectAssignments.selectedProjectCodes.has(projectCode) ? " checked" : "";
+    const meta = sector ? `${projectCode} | ${sector}` : projectCode;
+    return `
+      <label class="assignment-checkitem" for="${escapeHtml(inputId)}">
+        <input class="form-check-input employee-editor-project-checkbox" type="checkbox" id="${escapeHtml(inputId)}" value="${escapeHtml(projectCode)}"${checked}>
+        <span class="assignment-checkitem-main">
+          <span class="assignment-checkitem-title">${escapeHtml(projectName)}</span>
+          <span class="assignment-checkitem-meta">${escapeHtml(meta)}</span>
+        </span>
+      </label>
+    `;
+  }).join("");
+}
+
+function syncEmployeeEditorProjectAssignmentsPanel() {
+  const role = document.getElementById("employeeEditorRoleSelect").value || "employee";
+  const panel = document.getElementById("employeeEditorProjectAssignmentsPanel");
+  if (!panel) {
+    return;
+  }
+
+  const showAssignments = normalizeClientRole(role) === "admin";
+  panel.classList.toggle("d-none", !showAssignments);
+  if (showAssignments) {
+    renderEmployeeEditorProjectAssignments();
+  }
+}
+
+async function saveEmployeeEditorProjectAssignments(employeeCode, role) {
+  const normalizedEmployeeCode = String(employeeCode || "").trim();
+  if (!normalizedEmployeeCode) {
+    return false;
+  }
+
+  const selectedCodes = new Set(getEmployeeEditorSelectedProjectCodesForRole(role));
+  const projects = await ensureEmployeeEditorProjects(false);
+  const updates = [];
+
+  projects.forEach(project => {
+    const projectCode = String(project.projectCode || "").trim();
+    if (!projectCode) {
+      return;
+    }
+
+    const currentAdmins = getEmployeeEditorProjectAdmins(project);
+    const hasEmployee = currentAdmins.indexOf(normalizedEmployeeCode) >= 0;
+    const shouldHaveEmployee = selectedCodes.has(projectCode);
+    if (hasEmployee === shouldHaveEmployee) {
+      return;
+    }
+
+    const nextAdmins = shouldHaveEmployee
+      ? Array.from(new Set(currentAdmins.concat([normalizedEmployeeCode]))).sort()
+      : currentAdmins.filter(code => code !== normalizedEmployeeCode);
+
+    updates.push({
+      project,
+      nextAdmins,
+    });
+  });
+
+  for (const update of updates) {
+    const projectCode = String(update.project.projectCode || "").trim();
+    const response = await fetch(apiUrl + "projects/" + encodeURIComponent(projectCode), {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        projectCode,
+        projectName: String(update.project.projectName || projectCode),
+        sector: String(update.project.sector || ""),
+        admins: update.nextAdmins,
+        backupAdmins: getEmployeeEditorProjectBackupAdmins(update.project),
+      }),
+    });
+    await parseResponse(response);
+  }
+
+  if (updates.length > 0) {
+    employeesViewState.editorProjectAssignments.projects = await fetchScopedProjects(true);
+    employeesViewState.editorProjectAssignments.originalProjectCodes = normalizeEmployeeEditorCodeSet(
+      getEmployeeEditorProjectCodesForEmployee(normalizedEmployeeCode, employeesViewState.editorProjectAssignments.projects)
+    );
+  }
+
+  return updates.length > 0;
+}
 
 function setEmployeeEditorMessage(message, type) {
   const messageBox = document.getElementById("employeeEditorMessage");
@@ -27,6 +233,13 @@ function resetEmployeeEditorForm() {
   document.getElementById("employeeEditorCodeInput").value = "";
   document.getElementById("employeeEditorCodeInput").readOnly = false;
   document.getElementById("employeeEditorNameInput").value = "";
+  document.getElementById("employeeEditorRoleSelect").value = "employee";
+  employeesViewState.editorProjectAssignments.selectedProjectCodes = new Set();
+  employeesViewState.editorProjectAssignments.originalProjectCodes = new Set();
+  employeesViewState.editorProjectAssignments.search = "";
+  document.getElementById("employeeEditorProjectSearchInput").value = "";
+  document.getElementById("employeeEditorProjectAssignmentsList").innerHTML = "";
+  document.getElementById("employeeEditorProjectAssignmentsPanel").classList.add("d-none");
   document.getElementById("employeeEditorPasswordInput").value = "";
   document.getElementById("employeeEditorPasswordConfirmInput").value = "";
   document.getElementById("employeeEditorMustChangeInput").checked = true;
@@ -36,8 +249,9 @@ function resetEmployeeEditorForm() {
   setEmployeeEditorMessage("");
 }
 
-function openEmployeeEditorModal(mode, employee) {
+async function openEmployeeEditorModal(mode, employee) {
   resetEmployeeEditorForm();
+  const projects = await ensureEmployeeEditorProjects(true);
 
   if (mode === "edit" && employee) {
     document.getElementById("employeeEditorMode").value = "edit";
@@ -46,6 +260,7 @@ function openEmployeeEditorModal(mode, employee) {
     document.getElementById("employeeEditorCodeInput").value = employee.code || "";
     document.getElementById("employeeEditorCodeInput").readOnly = true;
     document.getElementById("employeeEditorNameInput").value = employee.name || "";
+    document.getElementById("employeeEditorRoleSelect").value = getEmployeeRole(employee);
     document.getElementById("employeeEditorPasswordHint").textContent = t("employees.passwordHintEdit");
 
     if (employee.archived) {
@@ -54,6 +269,12 @@ function openEmployeeEditorModal(mode, employee) {
       document.getElementById("employeeEditorRemoveButton").classList.remove("d-none");
     }
   }
+
+  const employeeCode = document.getElementById("employeeEditorCodeInput").value.trim();
+  const assignedProjectCodes = getEmployeeEditorProjectCodesForEmployee(employeeCode, projects);
+  employeesViewState.editorProjectAssignments.selectedProjectCodes = normalizeEmployeeEditorCodeSet(assignedProjectCodes);
+  employeesViewState.editorProjectAssignments.originalProjectCodes = normalizeEmployeeEditorCodeSet(assignedProjectCodes);
+  syncEmployeeEditorProjectAssignmentsPanel();
 
   const modal = new bootstrap.Modal(document.getElementById("employeeEditorModal"));
   modal.show();
@@ -66,6 +287,10 @@ async function submitEmployeeEditor() {
   const employeeCode = document.getElementById("employeeEditorCodeInput").value.trim();
   const employeeName = document.getElementById("employeeEditorNameInput").value.trim();
   const originalName = document.getElementById("employeeEditorOriginalNameInput").value.trim();
+  const role = document.getElementById("employeeEditorRoleSelect").value || "employee";
+  const originalEmployee = getEmployeeByCode(employeeCode);
+  const originalRole = originalEmployee ? getEmployeeRole(originalEmployee) : "employee";
+  const projectAssignmentsChanged = employeeEditorProjectAssignmentsChanged(role);
   const newPassword = document.getElementById("employeeEditorPasswordInput").value;
   const confirmPassword = document.getElementById("employeeEditorPasswordConfirmInput").value;
   const mustChangePassword = document.getElementById("employeeEditorMustChangeInput").checked;
@@ -91,12 +316,16 @@ async function submitEmployeeEditor() {
         body: JSON.stringify({
           code: employeeCode,
           name: employeeName,
+          role,
           initialPassword: newPassword,
           mustChangePassword,
         }),
       });
 
       const result = await parseResponse(response);
+      if (normalizeClientRole(role) === "admin") {
+        await saveEmployeeEditorProjectAssignments(employeeCode, role);
+      }
       const modal = bootstrap.Modal.getInstance(document.getElementById("employeeEditorModal"));
       if (modal) {
         modal.hide();
@@ -116,13 +345,13 @@ async function submitEmployeeEditor() {
     return;
   }
 
-  if (employeeName === originalName && !hasPasswordChange) {
+  if (employeeName === originalName && role === originalRole && !hasPasswordChange && !projectAssignmentsChanged) {
     setEmployeeEditorMessage(t("dashboard.noChanges"), "info");
     return;
   }
 
   try {
-    if (employeeName !== originalName) {
+    if (employeeName !== originalName || role !== originalRole) {
       const response = await fetch(apiUrl + "employees/" + encodeURIComponent(employeeCode), {
         method: "PUT",
         headers: {
@@ -130,6 +359,7 @@ async function submitEmployeeEditor() {
         },
         body: JSON.stringify({
           name: employeeName,
+          role,
         }),
       });
 
@@ -151,13 +381,17 @@ async function submitEmployeeEditor() {
       await parseResponse(passwordResponse);
     }
 
+    if (projectAssignmentsChanged) {
+      await saveEmployeeEditorProjectAssignments(employeeCode, role);
+    }
+
     const modal = bootstrap.Modal.getInstance(document.getElementById("employeeEditorModal"));
     if (modal) {
       modal.hide();
     }
     resetEmployeeEditorForm();
     let successKey = "employees.employeeUpdated";
-    if (employeeName !== originalName && hasPasswordChange) {
+    if ((employeeName !== originalName || role !== originalRole) && hasPasswordChange) {
       successKey = "employees.employeeUpdatedAndPassword";
     } else if (hasPasswordChange) {
       successKey = "employees.passwordUpdated";
@@ -713,6 +947,11 @@ window.refreshPeopleEmployeeDetail = refreshPeopleEmployeeDetail;
 function renderEmployeesDirectory(employees) {
   const container = document.getElementById("employeesDirectoryContainer");
   const detailContainer = document.getElementById("employeeDetailContainer");
+  const canManageProfiles = canManageEmployeeProfiles();
+  const addButton = document.getElementById("addEmployeeButton");
+  if (addButton) {
+    addButton.classList.toggle("d-none", !canManageProfiles);
+  }
   document.getElementById("employeesDirectoryCount").textContent = tn("shared.employee", employees.length);
 
   if (!employees || employees.length === 0) {
@@ -733,16 +972,17 @@ function renderEmployeesDirectory(employees) {
           <div class="employee-avatar">${escapeHtml(getEmployeeInitials(employee.name))}</div>
           <div>
             <div class="employee-card-title">${escapeHtml(employee.name)}</div>
-            <div class="employee-card-note">${escapeHtml(isArchivedEmployee(employee) ? t("employees.archived") : t("shared.employeeAccount"))}</div>
+            <div class="employee-card-note">${escapeHtml(isArchivedEmployee(employee) ? t("employees.archived") : getEmployeeRoleLabel(employee))}</div>
           </div>
         </div>
       </div>
       <div class="employee-card-meta">
         <span class="inline-code-pill">EMP ${escapeHtml(employee.code)}</span>
+        <span class="meta-pill">${escapeHtml(getEmployeeRoleLabel(employee))}</span>
         <span class="meta-pill">${escapeHtml(t("employees.entryCount", { count: employee.entryCount || 0 }))}</span>
         ${isArchivedEmployee(employee) ? `<span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span>` : ""}
       </div>
-      <div class="employee-card-actions">
+      <div class="employee-card-actions${canManageProfiles ? "" : " d-none"}">
         <button type="button" class="btn btn-outline-secondary btn-sm employee-edit-button" data-employee-code="${escapeHtml(employee.code)}">${escapeHtml(t("action.edit"))}</button>
       </div>
     </article>
@@ -759,6 +999,7 @@ function renderEmployeeDetail(employee) {
   }
 
   const entries = getVisibleEmployeeEntries(employee.code);
+  const canManageProfiles = canManageEmployeeProfiles();
   const liveEntries = sortEntriesByDateTime(entries.filter(entry => isEntryOpen(entry)), true);
   const activeMonthKey = getDefaultEmployeeMonthKey(employee.code, entries);
   employeesViewState.currentMonthByEmployee[employee.code] = activeMonthKey;
@@ -821,7 +1062,7 @@ function renderEmployeeDetail(employee) {
       return `
         <div class="calendar-entry">
           <div class="calendar-entry-main">
-            <span class="calendar-entry-time">${escapeHtml(getEntryRoundedTimeRange(entry))}</span>
+            <span class="calendar-entry-time">${getEntryRoundedTimeRangeMarkup(entry)}</span>
             <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
           </div>
           <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
@@ -869,7 +1110,7 @@ function renderEmployeeDetail(employee) {
           return `
             <article class="calendar-live-card">
               <div class="calendar-entry-main">
-                <span class="calendar-entry-time">${escapeHtml(formatDateLabel(entry.date))} | ${escapeHtml(formatTimeString(getEntryExactPunchIn(entry)))} -> ${escapeHtml(t("shared.inProgress"))}</span>
+                <span class="calendar-entry-time">${escapeHtml(formatDateLabel(entry.date))} | ${buildTimeRangeMarkup(formatTimeString(getEntryExactPunchIn(entry)), t("shared.inProgress"))}</span>
                 <span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>
               </div>
               <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
@@ -961,16 +1202,17 @@ function renderEmployeeDetail(employee) {
           <div class="employee-avatar employee-avatar-large">${escapeHtml(getEmployeeInitials(employee.name))}</div>
           <div>
             <div class="employee-detail-title">${escapeHtml(employee.name)}</div>
-            <div class="employee-card-note">${escapeHtml(isArchivedEmployee(employee) ? t("employees.archived") : t("shared.employeeAccount"))}</div>
+            <div class="employee-card-note">${escapeHtml(isArchivedEmployee(employee) ? t("employees.archived") : getEmployeeRoleLabel(employee))}</div>
           </div>
         </div>
         <div class="employee-detail-actions">
           ${isArchivedEmployee(employee) ? "" : `<button type="button" class="btn btn-primary btn-sm people-add-entry-button" data-employee-code="${escapeHtml(employee.code)}"><i class="fa-solid fa-plus"></i> ${escapeHtml(t("dashboard.addEntry"))}</button>`}
-          <button type="button" class="btn btn-outline-secondary btn-sm employee-edit-button" data-employee-code="${escapeHtml(employee.code)}">${escapeHtml(t("action.edit"))}</button>
+          ${canManageProfiles ? `<button type="button" class="btn btn-outline-secondary btn-sm employee-edit-button" data-employee-code="${escapeHtml(employee.code)}">${escapeHtml(t("action.edit"))}</button>` : ""}
         </div>
       </div>
       <div class="employee-detail-meta">
         <span class="inline-code-pill">EMP ${escapeHtml(employee.code)}</span>
+        <span class="meta-pill">${escapeHtml(getEmployeeRoleLabel(employee))}</span>
         <span class="meta-pill">${escapeHtml(t("employees.entryCount", { count: entries.length }))}</span>
         ${employeesViewState.selectedProjectCode ? `<span class="meta-pill">${escapeHtml(employeesViewState.selectedProjectCode)}</span>` : ""}
         ${isArchivedEmployee(employee) ? `<span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span>` : `<span class="status-badge approved">${escapeHtml(t("employees.scopeActive"))}</span>`}
@@ -1034,12 +1276,20 @@ function loadEmployeesView() {
       console.warn("Unable to preload entry lookups for employee exports:", error);
       return null;
     }),
+    fetchScopedProjects().catch(error => {
+      console.warn("Unable to load scoped projects for employees view:", error);
+      return [];
+    }),
   ])
-    .then(([employees, lookups]) => {
+    .then(([employees, lookups, scopedProjects]) => {
+      const projectItems = Array.isArray(scopedProjects) ? scopedProjects : [];
       if (lookups) {
-        employeesViewState.entryLookups = lookups;
-        populateEmployeesProjectFilter(lookups.projects);
+        employeesViewState.entryLookups = {
+          ...lookups,
+          projects: projectItems,
+        };
       }
+      populateEmployeesProjectFilter(projectItems);
       employeesViewState.employees = filterEmployeesByScope(employees, scope);
       applyEmployeeSearchFilter();
     })
@@ -1084,7 +1334,10 @@ document.getElementById("employeesDirectoryContainer").addEventListener("click",
   if (editButton) {
     const employee = getEmployeeByCode(editButton.getAttribute("data-employee-code"));
     if (employee) {
-      openEmployeeEditorModal("edit", employee);
+      openEmployeeEditorModal("edit", employee).catch(error => {
+        console.error("Unable to open employee editor:", error);
+        showToast(t("employees.loadError"), "error");
+      });
     }
     return;
   }
@@ -1264,7 +1517,10 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
   if (editButton) {
     const employee = getEmployeeByCode(editButton.getAttribute("data-employee-code"));
     if (employee) {
-      openEmployeeEditorModal("edit", employee);
+      openEmployeeEditorModal("edit", employee).catch(error => {
+        console.error("Unable to open employee editor:", error);
+        showToast(t("employees.loadError"), "error");
+      });
     }
     return;
   }
@@ -1294,7 +1550,10 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
 });
 
 document.getElementById("addEmployeeButton").addEventListener("click", () => {
-  openEmployeeEditorModal("create");
+  openEmployeeEditorModal("create").catch(error => {
+    console.error("Unable to open employee editor:", error);
+    showToast(t("employees.loadError"), "error");
+  });
 });
 document.getElementById("employeeEditorRemoveButton").addEventListener("click", async () => {
   const employee = getEmployeeByCode(document.getElementById("employeeEditorCodeInput").value.trim());
@@ -1316,6 +1575,28 @@ document.getElementById("employeeEditorSaveButton").addEventListener("click", su
 document.getElementById("employeeEditorForm").addEventListener("submit", event => {
   event.preventDefault();
   submitEmployeeEditor();
+});
+document.getElementById("employeeEditorRoleSelect").addEventListener("change", syncEmployeeEditorProjectAssignmentsPanel);
+document.getElementById("employeeEditorProjectSearchInput").addEventListener("input", event => {
+  employeesViewState.editorProjectAssignments.search = event.target.value || "";
+  renderEmployeeEditorProjectAssignments();
+});
+document.getElementById("employeeEditorProjectAssignmentsList").addEventListener("change", event => {
+  const checkbox = event.target.closest(".employee-editor-project-checkbox");
+  if (!checkbox) {
+    return;
+  }
+
+  const projectCode = String(checkbox.value || "").trim();
+  if (!projectCode) {
+    return;
+  }
+
+  if (checkbox.checked) {
+    employeesViewState.editorProjectAssignments.selectedProjectCodes.add(projectCode);
+  } else {
+    employeesViewState.editorProjectAssignments.selectedProjectCodes.delete(projectCode);
+  }
 });
 document.getElementById("employeesSearchInput").addEventListener("input", applyEmployeeSearchFilter);
 document.getElementById("employeesScopeSelect").addEventListener("change", loadEmployeesView);

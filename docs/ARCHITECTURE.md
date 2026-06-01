@@ -14,12 +14,15 @@
 
 ## Role Model
 
+- `superAdmin`
+  - Global dashboard and project analytics
+  - Employee, password, and role management
+  - Project metadata, sector, admin, and backup admin management
+  - Project archiving for inactive projects while preserving historical records
+  - Global approval/history views
 - `admin`
-  - Dashboard
-  - Employee management
-  - Approval/history views
-  - Project analytics
-  - Employee password reset tools
+  - Dashboard, approvals, employee timelines, and project analytics scoped to assigned projects
+  - Entry modify/approve/delete rights for projects where the employee code is listed in `admins` or `backupAdmins`
 - `employee`
   - Self-service overtime entries
   - Punch in/out

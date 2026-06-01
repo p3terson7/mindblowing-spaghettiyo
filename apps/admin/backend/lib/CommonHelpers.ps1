@@ -35,13 +35,152 @@ function Get-Projects {
             return @()
         }
         if (-not ($projects -is [System.Collections.IEnumerable]) -or ($projects -is [string])) {
-            return @($projects)
+            return @((ConvertTo-NormalizedProjectObject -Project $projects))
         }
-        return $projects
+        return @($projects | ForEach-Object { ConvertTo-NormalizedProjectObject -Project $_ })
     }
     catch {
         return @()
     }
+}
+
+function ConvertTo-CodeArray {
+    param($Value)
+
+    $codes = @()
+    if ($null -eq $Value) {
+        return $codes
+    }
+
+    if ($Value -is [string]) {
+        $codes = @($Value -split "[,;]" | ForEach-Object { ([string]$_).Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    }
+    elseif (($Value -is [System.Collections.IEnumerable])) {
+        foreach ($item in @($Value)) {
+            if ($null -eq $item) {
+                continue
+            }
+
+            if ($item -is [string]) {
+                $candidate = ([string]$item).Trim()
+            }
+            elseif ($item.PSObject.Properties.Name -contains "employeeCode") {
+                $candidate = ([string]$item.employeeCode).Trim()
+            }
+            elseif ($item.PSObject.Properties.Name -contains "code") {
+                $candidate = ([string]$item.code).Trim()
+            }
+            else {
+                $candidate = ([string]$item).Trim()
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+                $codes += $candidate
+            }
+        }
+    }
+    else {
+        $candidate = ([string]$Value).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+            $codes += $candidate
+        }
+    }
+
+    return @($codes | Sort-Object -Unique)
+}
+
+function Get-ProjectAdminCodes {
+    param($Project)
+
+    if ($null -eq $Project) {
+        return @()
+    }
+
+    if ($Project.PSObject.Properties.Name -contains "admins") {
+        return (ConvertTo-CodeArray -Value $Project.admins)
+    }
+    if ($Project.PSObject.Properties.Name -contains "adminEmployeeCodes") {
+        return (ConvertTo-CodeArray -Value $Project.adminEmployeeCodes)
+    }
+    if ($Project.PSObject.Properties.Name -contains "adminEmployeeCode") {
+        return (ConvertTo-CodeArray -Value $Project.adminEmployeeCode)
+    }
+    if ($Project.PSObject.Properties.Name -contains "admin") {
+        return (ConvertTo-CodeArray -Value $Project.admin)
+    }
+
+    return @()
+}
+
+function Get-ProjectBackupAdminCodes {
+    param($Project)
+
+    if ($null -eq $Project) {
+        return @()
+    }
+
+    if ($Project.PSObject.Properties.Name -contains "backupAdmins") {
+        return (ConvertTo-CodeArray -Value $Project.backupAdmins)
+    }
+    if ($Project.PSObject.Properties.Name -contains "backupAdminEmployeeCodes") {
+        return (ConvertTo-CodeArray -Value $Project.backupAdminEmployeeCodes)
+    }
+    if ($Project.PSObject.Properties.Name -contains "backupAdminEmployeeCode") {
+        return (ConvertTo-CodeArray -Value $Project.backupAdminEmployeeCode)
+    }
+    if ($Project.PSObject.Properties.Name -contains "backupAdmin") {
+        return (ConvertTo-CodeArray -Value $Project.backupAdmin)
+    }
+
+    return @()
+}
+
+function Test-ProjectArchived {
+    param($Project)
+
+    if ($null -eq $Project -or -not ($Project.PSObject.Properties.Name -contains "archived")) {
+        return $false
+    }
+
+    $archivedValue = $Project.archived
+    if ($archivedValue -is [bool]) {
+        return [bool]$archivedValue
+    }
+    if ($archivedValue -is [int]) {
+        return ([int]$archivedValue -ne 0)
+    }
+
+    $normalizedValue = ([string]$archivedValue).Trim().ToLowerInvariant()
+    return ($normalizedValue -eq "true" -or $normalizedValue -eq "1" -or $normalizedValue -eq "yes")
+}
+
+function ConvertTo-NormalizedProjectObject {
+    param($Project)
+
+    if ($null -eq $Project) {
+        return $null
+    }
+
+    $sector = ""
+    if ($Project.PSObject.Properties.Name -contains "sector") {
+        $sector = [string]$Project.sector
+    }
+    elseif ($Project.PSObject.Properties.Name -contains "secteur") {
+        $sector = [string]$Project.secteur
+    }
+
+    return [PSCustomObject]@{
+        projectCode  = [string]$Project.projectCode
+        projectName  = [string]$Project.projectName
+        sector       = $sector
+        admins       = @(Get-ProjectAdminCodes -Project $Project)
+        backupAdmins = @(Get-ProjectBackupAdminCodes -Project $Project)
+        archived     = Test-ProjectArchived -Project $Project
+    }
+}
+
+function Get-ActiveProjects {
+    return @((Get-Projects) | Where-Object { -not (Test-ProjectArchived -Project $_) })
 }
 
 function Get-OvertimeCodes {

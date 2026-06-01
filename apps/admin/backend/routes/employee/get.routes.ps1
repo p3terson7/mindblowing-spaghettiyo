@@ -9,6 +9,9 @@
             }
 
             $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
+            if (-not (Test-CurrentUserSuperAdmin -CurrentUser $currentUser)) {
+                $entries = @($entries | Where-Object { Test-CurrentUserCanManageEntry -CurrentUser $currentUser -Entry $_ })
+            }
             respondWithSuccess $response ($entries | ConvertTo-Json -Depth 6)
             continue
         }

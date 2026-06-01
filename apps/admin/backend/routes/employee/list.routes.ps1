@@ -8,7 +8,7 @@
                 $includeDisabled = $true
             }
 
-            $employees = @(Get-EmployeeDirectoryList -IncludeDisabled:$includeDisabled)
+            $employees = @(Get-EmployeeDirectoryList -IncludeDisabled:$includeDisabled -CurrentUser $currentUser)
             if ($scope -eq "archived") {
                 $employees = @($employees | Where-Object { [bool]$_.archived })
             }

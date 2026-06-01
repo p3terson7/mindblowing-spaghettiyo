@@ -41,6 +41,11 @@
                 }
 
                 $entry = $existingData[$entryIndex]
+                if (-not (Test-CurrentUserCanManageEntry -CurrentUser $currentUser -Entry $entry)) {
+                    respondWithError $response 403 "You do not have access to this entry's project."
+                    continue
+                }
+
                 if (-not $entry.punchOut) {
                     respondWithError $response 400 "Open overtime sessions must be completed before they can be approved or rejected."
                     continue

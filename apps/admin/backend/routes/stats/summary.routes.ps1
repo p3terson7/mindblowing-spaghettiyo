@@ -1,7 +1,10 @@
         # GET /stats/projects: Return a summary of overtime statistics for each project.
         if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -match "^/stats/projects/?$") {
             try {
-                $result = @(Get-ProjectSummaryList)
+                $query = [System.Web.HttpUtility]::ParseQueryString($request.Url.Query)
+                $startDate = $query["startDate"]
+                $endDate = $query["endDate"]
+                $result = @(Get-ProjectSummaryList -StartDate $startDate -EndDate $endDate -CurrentUser $currentUser)
                 if ($result.Count -eq 0) {
                     $jsonResult = "[]"
                 }
