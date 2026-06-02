@@ -166,5 +166,21 @@
     "message": "Created an employee profile for <strong>Christian Giroux</strong> with code <strong>000457123</strong>.",
     "employee": "Christian Giroux",
     "timestamp": "2026-06-01 14:04:05"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on June 01, 2026 from <strong>14h00</strong> to <strong>14h00</strong>.",
+    "employee": "Christian Giroux",
+    "timestamp": "2026-06-01 14:13:38"
+  },
+  {
+    "action": "Seed",
+    "message": "Generated <strong>28</strong> demo overtime entries for <strong>5</strong> employees across <strong>4</strong> projects.",
+    "employee": "Demo data",
+    "targetEmployee": "Demo data",
+    "author": "Administrator",
+    "authorUsername": "admin",
+    "authorRole": "superAdmin",
+    "timestamp": "2026-06-02 07:47:58"
   }
 ]

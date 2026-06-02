@@ -14,6 +14,7 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 . (Join-Path -Path $scriptDir -ChildPath "services/SyncService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/ProjectStatsService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/HistoryService.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "services/SeedService.ps1")
 
 function Register-RouteScriptBlock {
     param([Parameter(Mandatory = $true)][string]$RelativePath)
@@ -38,6 +39,7 @@ $script:RouteScriptBlocks = @{}
     "routes/frontend.routes.ps1",
     "routes/auth.routes.ps1",
     "routes/sync.routes.ps1",
+    "routes/seed.routes.ps1",
     "routes/self.routes.ps1",
     "routes/history.routes.ps1",
     "routes/dashboard.routes.ps1",
@@ -98,6 +100,7 @@ while ($true) {
         . $script:RouteScriptBlocks["routes/frontend.routes.ps1"]
         . $script:RouteScriptBlocks["routes/auth.routes.ps1"]
         . $script:RouteScriptBlocks["routes/sync.routes.ps1"]
+        . $script:RouteScriptBlocks["routes/seed.routes.ps1"]
         . $script:RouteScriptBlocks["routes/self.routes.ps1"]
         . $script:RouteScriptBlocks["routes/history.routes.ps1"]
         . $script:RouteScriptBlocks["routes/dashboard.routes.ps1"]

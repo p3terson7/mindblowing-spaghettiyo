@@ -2,9 +2,13 @@ const projectDetailCache = {};
 let currentProjectFilter = "6M";
 let currentProjectCode = null;
 let pendingProjectChartFrameId = null;
+let pendingProjectInsightFrameId = null;
+const projectInsightChartInstances = {};
+const projectPalette = ["#3574f0", "#46a35b", "#d18900", "#d14343", "#7d5cf5", "#0096b2", "#c95c9b", "#6f7b2f", "#8a6f4d"];
 const projectsViewState = {
   projects: [],
   employees: [],
+  trends: {},
   editorAssignments: {
     admins: new Set(),
     backupAdmins: new Set(),
@@ -15,6 +19,7 @@ const projectsViewState = {
     startDate: "",
     endDate: "",
   },
+  portfolioSearch: "",
 };
 
 function canManageProjects() {
@@ -36,6 +41,39 @@ function formatProjectAdminDisplay(displayItems, fallbackCodes) {
     .filter(Boolean);
 }
 
+function getProjectPersonInitials(nameOrCode) {
+  const parts = String(nameOrCode || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return "--";
+  }
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0].slice(0, 1)}${parts[parts.length - 1].slice(0, 1)}`.toUpperCase();
+}
+
+function formatProjectAssignmentPeople(displayItems, fallbackCodes) {
+  const items = Array.isArray(displayItems) ? displayItems : [];
+  if (items.length > 0) {
+    return items.map(item => {
+      const code = String(item && item.code ? item.code : "").trim();
+      const name = String(item && item.name ? item.name : code).trim();
+      return {
+        code,
+        name: name || code,
+        label: code && name && name !== code ? `${name} (${code})` : (name || code),
+      };
+    }).filter(person => person.label);
+  }
+
+  return (Array.isArray(fallbackCodes) ? fallbackCodes : [])
+    .map(code => String(code || "").trim())
+    .filter(Boolean)
+    .map(code => ({ code, name: code, label: code }));
+}
+
 function renderProjectAdminMeta(labelKey, displayItems, fallbackCodes, className = "") {
   const labels = formatProjectAdminDisplay(displayItems, fallbackCodes);
   if (labels.length === 0) {
@@ -44,6 +82,68 @@ function renderProjectAdminMeta(labelKey, displayItems, fallbackCodes, className
 
   const extraClass = className ? ` ${className}` : "";
   return `<span class="meta-pill${extraClass}">${escapeHtml(t(labelKey))}: ${escapeHtml(labels.join(", "))}</span>`;
+}
+
+function renderProjectAssignmentLine(labelKey, displayItems, fallbackCodes) {
+  const people = formatProjectAssignmentPeople(displayItems, fallbackCodes);
+  if (people.length === 0) {
+    return "";
+  }
+
+  const label = t(labelKey);
+  const title = `${label}: ${people.map(person => person.label).join(", ")}`;
+  return `
+    <div class="project-assignment-line" title="${escapeHtml(title)}">
+      <div class="project-assignment-label">${escapeHtml(label)}</div>
+      <div class="project-assignment-people">
+        ${people.map(person => `
+          <span class="project-assignment-person">
+            <span class="project-person-avatar">${escapeHtml(getProjectPersonInitials(person.name || person.code))}</span>
+            <span class="project-person-text">${escapeHtml(person.label)}</span>
+          </span>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function getProjectPortfolioSearchValue() {
+  const input = document.getElementById("projectPortfolioSearchInput");
+  return String(input && input.value || "").trim().toLowerCase();
+}
+
+function projectMatchesPortfolioSearch(project) {
+  const searchValue = String(projectsViewState.portfolioSearch || "").trim().toLowerCase();
+  if (!searchValue) {
+    return true;
+  }
+
+  const adminLabels = formatProjectAdminDisplay(project && project.adminDisplay, project && project.admins).join(" ");
+  const backupLabels = formatProjectAdminDisplay(project && project.backupAdminDisplay, project && project.backupAdmins).join(" ");
+  const haystack = [
+    project && project.projectCode,
+    project && project.projectName,
+    project && project.sector,
+    adminLabels,
+    backupLabels,
+  ].map(value => String(value || "").toLowerCase()).join(" ");
+
+  return searchValue.split(/\s+/).every(token => haystack.includes(token));
+}
+
+function getVisibleProjectSummaries(projects) {
+  return (Array.isArray(projects) ? projects : []).filter(project => projectMatchesPortfolioSearch(project));
+}
+
+function updateProjectPortfolioCount(visibleCount, totalCount) {
+  const countElement = document.getElementById("projectPortfolioCount");
+  if (!countElement) {
+    return;
+  }
+
+  countElement.textContent = visibleCount === totalCount
+    ? t("projects.count", { count: totalCount })
+    : t("projects.countFiltered", { visible: visibleCount, total: totalCount });
 }
 
 async function ensureProjectEditorEmployees(forceRefresh = false) {
@@ -210,6 +310,295 @@ function ensureProjectChartCanvas() {
   return canvas;
 }
 
+function getProjectInsightStage(canvasId) {
+  return document.querySelector(`[data-project-insight-stage="${canvasId}"]`);
+}
+
+function ensureProjectInsightCanvas(canvasId) {
+  const stage = getProjectInsightStage(canvasId);
+  if (!stage) {
+    return null;
+  }
+
+  let canvas = document.getElementById(canvasId);
+  if (!canvas) {
+    stage.innerHTML = `<canvas id="${canvasId}"></canvas>`;
+    canvas = document.getElementById(canvasId);
+  }
+
+  return canvas;
+}
+
+function destroyProjectInsightChart(canvasId) {
+  if (projectInsightChartInstances[canvasId]) {
+    projectInsightChartInstances[canvasId].destroy();
+    delete projectInsightChartInstances[canvasId];
+  }
+}
+
+function setProjectInsightEmptyState(canvasId, messageKey = "projects.noChartData") {
+  destroyProjectInsightChart(canvasId);
+  const stage = getProjectInsightStage(canvasId);
+  if (stage) {
+    stage.innerHTML = createEmptyState(t(messageKey));
+  }
+}
+
+function setProjectInsightsLoadingState() {
+  setLoadingState("projectInsightsSummary", "grid", 4);
+  document.querySelectorAll(".project-insight-stage").forEach(stage => {
+    stage.innerHTML = createLoadingState("chart", 1);
+  });
+}
+
+function getProjectChartTheme() {
+  const rootStyles = getComputedStyle(document.documentElement);
+  return {
+    textPrimary: rootStyles.getPropertyValue("--text-primary").trim() || "#1f2329",
+    textSecondary: rootStyles.getPropertyValue("--text-secondary").trim() || "#5e646f",
+    textMuted: rootStyles.getPropertyValue("--text-muted").trim() || "#7a828f",
+    grid: document.documentElement.getAttribute("data-theme") === "dark"
+      ? "rgba(255, 255, 255, 0.1)"
+      : "rgba(31, 35, 41, 0.08)",
+  };
+}
+
+function getProjectChartColors(count) {
+  return Array.from({ length: count }, (_, index) => projectPalette[index % projectPalette.length]);
+}
+
+function normalizeProjectAssignmentCodes(value) {
+  if (Array.isArray(value)) {
+    return value.map(code => String(code || "").trim()).filter(Boolean);
+  }
+
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return [];
+  }
+
+  return normalized.split(/[;,]/).map(code => code.trim()).filter(Boolean);
+}
+
+function isProjectArchived(project) {
+  const archivedValue = project && project.archived;
+  if (typeof archivedValue === "boolean") {
+    return archivedValue;
+  }
+  if (typeof archivedValue === "number") {
+    return archivedValue !== 0;
+  }
+
+  return ["true", "1", "yes"].indexOf(String(archivedValue || "").trim().toLowerCase()) >= 0;
+}
+
+function getProjectTotalSeconds(project) {
+  return timeStringToSeconds(project && project.totalOvertime || "00:00:00");
+}
+
+function getProjectSector(project) {
+  return String(project && project.sector || "").trim() || t("projects.noSector");
+}
+
+function addProjectCountMetric(metrics, label, count) {
+  if (!metrics[label]) {
+    metrics[label] = 0;
+  }
+  metrics[label] += count;
+}
+
+function compactProjectChartItems(items, maxItems = 6) {
+  const sortedItems = (Array.isArray(items) ? items : [])
+    .filter(item => Number(item.value || 0) > 0)
+    .sort((left, right) => Number(right.value || 0) - Number(left.value || 0));
+
+  if (sortedItems.length <= maxItems) {
+    return sortedItems;
+  }
+
+  const visibleItems = sortedItems.slice(0, maxItems - 1);
+  const otherValue = sortedItems.slice(maxItems - 1).reduce((sum, item) => sum + Number(item.value || 0), 0);
+  visibleItems.push({ label: t("projects.other"), value: otherValue });
+  return visibleItems;
+}
+
+function createProjectTooltipLabel(context, valueType) {
+  const rawValue = Number(context.parsed && typeof context.parsed === "object"
+    ? (context.parsed.x != null ? context.parsed.x : context.parsed.y)
+    : context.parsed || 0);
+  const dataset = context.dataset && Array.isArray(context.dataset.data) ? context.dataset.data : [];
+  const total = dataset.reduce((sum, item) => sum + Number(item || 0), 0);
+  const percent = total > 0 ? Math.round((rawValue / total) * 100) : 0;
+  const label = context.label || context.dataset.label || "";
+
+  if (valueType === "duration") {
+    return `${label}: ${secondsToDurationLabel(rawValue)} (${percent}%)`;
+  }
+
+  return `${label}: ${t("projects.projectCountValue", { count: rawValue })} (${percent}%)`;
+}
+
+function renderProjectDoughnutInsight(canvasId, items, valueType = "count") {
+  const chartItems = compactProjectChartItems(items);
+  if (chartItems.length === 0) {
+    setProjectInsightEmptyState(canvasId);
+    return;
+  }
+
+  const canvas = ensureProjectInsightCanvas(canvasId);
+  if (!canvas) {
+    return;
+  }
+
+  const theme = getProjectChartTheme();
+  destroyProjectInsightChart(canvasId);
+  projectInsightChartInstances[canvasId] = new Chart(canvas.getContext("2d"), {
+    type: "doughnut",
+    data: {
+      labels: chartItems.map(item => item.label),
+      datasets: [{
+        data: chartItems.map(item => item.value),
+        backgroundColor: getProjectChartColors(chartItems.length),
+        borderColor: document.documentElement.getAttribute("data-theme") === "dark" ? "#303236" : "#ffffff",
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: "62%",
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: {
+            color: theme.textSecondary,
+            usePointStyle: true,
+            boxWidth: 8,
+          },
+        },
+        tooltip: {
+          backgroundColor: "rgba(31, 35, 41, 0.94)",
+          titleColor: "#ffffff",
+          bodyColor: "#ffffff",
+          callbacks: {
+            label: context => createProjectTooltipLabel(context, valueType),
+          },
+        },
+      },
+    },
+  });
+}
+
+function compactProjectTrendData(trendData, maxDatasets = 6) {
+  const source = trendData && typeof trendData === "object" ? trendData : {};
+  const projectCodes = Object.keys(source);
+  if (projectCodes.length <= maxDatasets) {
+    return source;
+  }
+
+  const sortedCodes = projectCodes
+    .map(projectCode => ({
+      projectCode,
+      total: (Array.isArray(source[projectCode]) ? source[projectCode] : [])
+        .reduce((sum, item) => sum + Number(item && item.overtime || 0), 0),
+    }))
+    .sort((left, right) => right.total - left.total);
+
+  const visibleCodes = sortedCodes.slice(0, maxDatasets - 1).map(item => item.projectCode);
+  const groupedCodes = sortedCodes.slice(maxDatasets - 1).map(item => item.projectCode);
+  const compacted = {};
+
+  visibleCodes.forEach(projectCode => {
+    compacted[projectCode] = source[projectCode];
+  });
+
+  const otherByMonth = {};
+  groupedCodes.forEach(projectCode => {
+    (Array.isArray(source[projectCode]) ? source[projectCode] : []).forEach(item => {
+      const month = item && item.month;
+      if (!month) {
+        return;
+      }
+      otherByMonth[month] = (otherByMonth[month] || 0) + Number(item && item.overtime || 0);
+    });
+  });
+
+  compacted[t("projects.other")] = Object.keys(otherByMonth)
+    .sort()
+    .map(month => ({ month, overtime: otherByMonth[month] }));
+
+  return compacted;
+}
+
+function renderProjectInsights(projects) {
+  const projectList = Array.isArray(projects) ? projects : [];
+  const summaryContainer = document.getElementById("projectInsightsSummary");
+
+  if (!summaryContainer) {
+    return;
+  }
+
+  if (typeof Chart !== "function") {
+    summaryContainer.innerHTML = createEmptyState(t("projects.chartLibraryFailed"));
+    setProjectInsightEmptyState("projectOvertimeShareChart", "projects.chartLibraryFailed");
+    return;
+  }
+
+  if (projectList.length === 0) {
+    summaryContainer.innerHTML = createEmptyState(t("projects.noStats"));
+    setProjectInsightEmptyState("projectOvertimeShareChart");
+    return;
+  }
+
+  const activeProjects = projectList.filter(project => !isProjectArchived(project));
+  const archivedProjects = projectList.filter(project => isProjectArchived(project));
+  const sectorMetrics = {};
+  const totalSeconds = projectList.reduce((sum, project) => sum + getProjectTotalSeconds(project), 0);
+  const missingPrimaryCount = activeProjects.filter(project => normalizeProjectAssignmentCodes(project.admins).length === 0).length;
+  const missingBackupCount = activeProjects.filter(project => normalizeProjectAssignmentCodes(project.backupAdmins).length === 0).length;
+
+  projectList.forEach(project => {
+    addProjectCountMetric(sectorMetrics, getProjectSector(project), 1);
+  });
+
+  summaryContainer.innerHTML = `
+    <div class="project-insight-stat">
+      <span class="metric-label">${escapeHtml(t("projects.insightTotalOvertime"))}</span>
+      <strong class="metric-value mono">${escapeHtml(secondsToDurationLabel(totalSeconds))}</strong>
+      <span class="metric-hint">${escapeHtml(t("projects.insightSelectedPeriod"))}</span>
+    </div>
+    <div class="project-insight-stat">
+      <span class="metric-label">${escapeHtml(t("projects.insightActiveProjects"))}</span>
+      <strong class="metric-value mono">${escapeHtml(`${activeProjects.length}/${projectList.length}`)}</strong>
+      <span class="metric-hint">${escapeHtml(t("projects.insightArchivedHint", { count: archivedProjects.length }))}</span>
+    </div>
+    <div class="project-insight-stat">
+      <span class="metric-label">${escapeHtml(t("projects.insightSectors"))}</span>
+      <strong class="metric-value mono">${escapeHtml(Object.keys(sectorMetrics).length)}</strong>
+      <span class="metric-hint">${escapeHtml(t("projects.insightSectorHint"))}</span>
+    </div>
+    <div class="project-insight-stat">
+      <span class="metric-label">${escapeHtml(t("projects.insightCoverage"))}</span>
+      <strong class="metric-value mono">${escapeHtml(missingPrimaryCount + missingBackupCount)}</strong>
+      <span class="metric-hint">${escapeHtml(t("projects.insightCoverageHint", { primary: missingPrimaryCount, backup: missingBackupCount }))}</span>
+    </div>
+  `;
+
+  if (pendingProjectInsightFrameId) {
+    window.cancelAnimationFrame(pendingProjectInsightFrameId);
+    pendingProjectInsightFrameId = null;
+  }
+
+  const overtimeItems = projectList.map(project => ({
+    label: String(project.projectCode || project.projectName || t("shared.project")),
+    value: getProjectTotalSeconds(project),
+  }));
+  pendingProjectInsightFrameId = window.requestAnimationFrame(() => {
+    renderProjectDoughnutInsight("projectOvertimeShareChart", overtimeItems, "duration");
+    pendingProjectInsightFrameId = null;
+  });
+}
+
 function clearProjectDetailCache() {
   Object.keys(projectDetailCache).forEach(cacheKey => {
     delete projectDetailCache[cacheKey];
@@ -356,19 +745,28 @@ async function refreshProjectsView() {
   setLoadingState("projectsSummaryContainer", "grid", 4);
   setLoadingState("projectDetailContainer", "detail", 1);
   setChartLoadingState("projectChartContainer");
+  setProjectInsightsLoadingState();
 
   try {
     const response = await fetch(buildProjectBootstrapUrl(currentProjectFilter, currentProjectCode));
     const payload = await parseResponse(response);
     const summary = Array.isArray(payload && payload.summary) ? payload.summary : [];
+    const trends = payload && payload.trends ? payload.trends : {};
     projectsViewState.projects = summary;
+    projectsViewState.trends = trends;
+    projectsViewState.portfolioSearch = getProjectPortfolioSearchValue();
 
     currentProjectCode = payload && payload.selectedProjectCode ? payload.selectedProjectCode : (summary[0] ? summary[0].projectCode : null);
+    const visibleProjects = getVisibleProjectSummaries(summary);
+    if (currentProjectCode && !visibleProjects.some(project => String(project.projectCode || "") === String(currentProjectCode))) {
+      currentProjectCode = visibleProjects.length > 0 ? visibleProjects[0].projectCode : null;
+    }
 
     renderProjectSummaryCards(summary);
-    renderProjectMultiLineChart(payload && payload.trends ? payload.trends : {});
+    renderProjectMultiLineChart(trends);
+    renderProjectInsights(summary);
 
-    if (payload && payload.selectedProject) {
+    if (payload && payload.selectedProject && String(payload.selectedProject.projectCode || "") === String(currentProjectCode || "")) {
       projectDetailCache[getProjectDetailCacheKey(payload.selectedProject.projectCode, currentProjectFilter)] = payload.selectedProject;
       renderProjectDetail(payload.selectedProject);
     } else if (currentProjectCode) {
@@ -384,17 +782,28 @@ async function refreshProjectsView() {
     if (chartStage) {
       chartStage.innerHTML = createEmptyState(t("projects.chartLoadError"));
     }
+    document.getElementById("projectInsightsSummary").innerHTML = createEmptyState(t("projects.unableToLoad"));
+    setProjectInsightEmptyState("projectOvertimeShareChart", "projects.chartLoadError");
   }
 }
 
 function renderProjectSummaryCards(projectDetails) {
   const container = document.getElementById("projectsSummaryContainer");
-  if (!projectDetails || projectDetails.length === 0) {
+  const allProjects = Array.isArray(projectDetails) ? projectDetails : [];
+  const visibleProjects = getVisibleProjectSummaries(allProjects);
+  updateProjectPortfolioCount(visibleProjects.length, allProjects.length);
+
+  if (allProjects.length === 0) {
     container.innerHTML = createEmptyState(t("projects.noStats"));
     return;
   }
 
-  container.innerHTML = projectDetails.map(detail => {
+  if (visibleProjects.length === 0) {
+    container.innerHTML = createEmptyState(t("projects.noMatchingProjects"));
+    return;
+  }
+
+  container.innerHTML = visibleProjects.map(detail => {
     const total = secondsToDurationLabel(timeStringToSeconds(detail.totalOvertime || "00:00:00"));
     const minValue = secondsToDurationLabel(timeStringToSeconds(detail.minOvertime || "00:00:00"));
     const maxValue = secondsToDurationLabel(timeStringToSeconds(detail.maxOvertime || "00:00:00"));
@@ -417,8 +826,10 @@ function renderProjectSummaryCards(projectDetails) {
           <span class="meta-pill">${escapeHtml(t("projects.entries", { count: detail.entryCount }))}</span>
           <span class="meta-pill">${escapeHtml(t("projects.min", { value: minValue }))}</span>
           <span class="meta-pill">${escapeHtml(t("projects.max", { value: maxValue }))}</span>
-          ${renderProjectAdminMeta("projects.admins", detail.adminDisplay, admins, "meta-pill-owner")}
-          ${renderProjectAdminMeta("projects.backupAdmins", detail.backupAdminDisplay, backupAdmins)}
+        </div>
+        <div class="project-card-assignments">
+          ${renderProjectAssignmentLine("projects.admins", detail.adminDisplay, admins)}
+          ${renderProjectAssignmentLine("projects.backupAdmins", detail.backupAdminDisplay, backupAdmins)}
         </div>
         <div class="employee-card-actions${canManageProjects() ? "" : " d-none"}">
           <button type="button" class="btn btn-outline-secondary btn-sm project-edit-button" data-project-code="${escapeHtml(detail.projectCode)}">${escapeHtml(t("action.edit"))}</button>
@@ -426,6 +837,25 @@ function renderProjectSummaryCards(projectDetails) {
       </article>
     `;
   }).join("");
+}
+
+function applyProjectPortfolioSearch(options = {}) {
+  projectsViewState.portfolioSearch = getProjectPortfolioSearchValue();
+  const visibleProjects = getVisibleProjectSummaries(projectsViewState.projects);
+  const selectedProjectVisible = visibleProjects.some(project => String(project.projectCode || "") === String(currentProjectCode || ""));
+
+  if (!selectedProjectVisible) {
+    currentProjectCode = visibleProjects.length > 0 ? visibleProjects[0].projectCode : null;
+    if (options.updateDetail) {
+      if (currentProjectCode) {
+        loadProjectDetailStats(currentProjectCode, currentProjectFilter);
+      } else {
+        document.getElementById("projectDetailContainer").innerHTML = createEmptyState(t("projects.noMatchingProjects"));
+      }
+    }
+  }
+
+  renderProjectSummaryCards(projectsViewState.projects);
 }
 
 function renderProjectEmployeeEntries(entries) {
@@ -647,18 +1077,19 @@ function renderProjectMultiLineChart(trendData) {
     pendingProjectChartFrameId = null;
   }
 
+  const compactedTrendData = compactProjectTrendData(trendData);
   const labelSet = new Set();
-  Object.keys(trendData || {}).forEach(projectCode => {
-    trendData[projectCode].forEach(item => labelSet.add(item.month));
+  Object.keys(compactedTrendData || {}).forEach(projectCode => {
+    compactedTrendData[projectCode].forEach(item => labelSet.add(item.month));
   });
 
   const timeLabels = Array.from(labelSet).sort();
   const formattedLabels = timeLabels.map(formatYMToWords);
   const colors = ["#3574f0", "#46a35b", "#d18900", "#d14343", "#7d5cf5", "#0096b2"];
 
-  const datasets = Object.keys(trendData || {}).map((projectCode, index) => {
+  const datasets = Object.keys(compactedTrendData || {}).map((projectCode, index) => {
     const dataPoints = timeLabels.map(label => {
-      const entry = trendData[projectCode].find(item => item.month === label);
+      const entry = compactedTrendData[projectCode].find(item => item.month === label);
       return entry ? entry.overtime : 0;
     });
 
@@ -767,6 +1198,10 @@ document.getElementById("projectsSummaryContainer").addEventListener("click", ev
   }
 });
 
+document.getElementById("projectPortfolioSearchInput").addEventListener("input", () => {
+  applyProjectPortfolioSearch({ updateDetail: true });
+});
+
 document.getElementById("projectDetailContainer").addEventListener("click", event => {
   const navigatorButton = event.target.closest(".project-people-navigator");
   if (!navigatorButton) {
@@ -867,4 +1302,14 @@ document.getElementById("projectEditorSaveButton").addEventListener("click", sub
 document.getElementById("projectEditorForm").addEventListener("submit", event => {
   event.preventDefault();
   submitProjectEditor();
+});
+
+window.addEventListener("app:theme-changed", () => {
+  const projectsView = document.getElementById("projectsView");
+  if (!projectsView || !projectsView.classList.contains("active")) {
+    return;
+  }
+
+  renderProjectMultiLineChart(projectsViewState.trends || {});
+  renderProjectInsights(projectsViewState.projects || []);
 });

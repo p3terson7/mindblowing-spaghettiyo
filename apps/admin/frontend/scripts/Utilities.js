@@ -240,13 +240,25 @@ function updateTotalOvertime(entries) {
 
 const overtimeEntryLookupCache = {
   apiUrl: null,
+  scopeKey: null,
   payload: null,
 };
 
 const scopedProjectLookupCache = {
   apiUrl: null,
+  scopeKey: null,
   payload: null,
 };
+
+function getLookupCacheScopeKey() {
+  const user = typeof getCurrentUser === "function" ? getCurrentUser() : null;
+  const role = user && typeof normalizeClientRole === "function"
+    ? normalizeClientRole(user.role)
+    : String(user && user.role || "");
+  const username = String(user && user.username || "");
+  const employeeCode = String(user && user.employeeCode || "");
+  return [role, username, employeeCode].join("|");
+}
 
 function parseResponse(response) {
   if (!response.ok) {
@@ -871,7 +883,8 @@ function openMonthlyEntriesExportHtml(config) {
 
 async function fetchOvertimeEntryLookups(forceRefresh = false) {
   const currentApiUrl = window.apiUrl || "";
-  if (!forceRefresh && overtimeEntryLookupCache.payload && overtimeEntryLookupCache.apiUrl === currentApiUrl) {
+  const scopeKey = getLookupCacheScopeKey();
+  if (!forceRefresh && overtimeEntryLookupCache.payload && overtimeEntryLookupCache.apiUrl === currentApiUrl && overtimeEntryLookupCache.scopeKey === scopeKey) {
     return overtimeEntryLookupCache.payload;
   }
 
@@ -885,13 +898,15 @@ async function fetchOvertimeEntryLookups(forceRefresh = false) {
   };
 
   overtimeEntryLookupCache.apiUrl = currentApiUrl;
+  overtimeEntryLookupCache.scopeKey = scopeKey;
   overtimeEntryLookupCache.payload = normalizedPayload;
   return normalizedPayload;
 }
 
 async function fetchScopedProjects(forceRefresh = false) {
   const currentApiUrl = window.apiUrl || "";
-  if (!forceRefresh && scopedProjectLookupCache.payload && scopedProjectLookupCache.apiUrl === currentApiUrl) {
+  const scopeKey = getLookupCacheScopeKey();
+  if (!forceRefresh && scopedProjectLookupCache.payload && scopedProjectLookupCache.apiUrl === currentApiUrl && scopedProjectLookupCache.scopeKey === scopeKey) {
     return scopedProjectLookupCache.payload;
   }
 
@@ -899,13 +914,26 @@ async function fetchScopedProjects(forceRefresh = false) {
   const payload = await parseResponse(response);
   const projects = Array.isArray(payload) ? payload : [];
   scopedProjectLookupCache.apiUrl = currentApiUrl;
+  scopedProjectLookupCache.scopeKey = scopeKey;
   scopedProjectLookupCache.payload = projects;
   return projects;
 }
 
+function clearOvertimeEntryLookupCache() {
+  overtimeEntryLookupCache.apiUrl = null;
+  overtimeEntryLookupCache.scopeKey = null;
+  overtimeEntryLookupCache.payload = null;
+}
+
 function clearScopedProjectLookupCache() {
   scopedProjectLookupCache.apiUrl = null;
+  scopedProjectLookupCache.scopeKey = null;
   scopedProjectLookupCache.payload = null;
+}
+
+function clearLookupCaches() {
+  clearOvertimeEntryLookupCache();
+  clearScopedProjectLookupCache();
 }
 
 function normalizeToastMessage(message) {
@@ -1188,6 +1216,81 @@ function auditMessageToText(message) {
   const scratch = document.createElement("div");
   scratch.innerHTML = renderAuditMessage(message);
   return scratch.textContent.replace(/\s+/g, " ").trim();
+}
+
+function getExplicitHistoryAuthorName(entry) {
+  if (!entry) {
+    return "";
+  }
+
+  const candidates = [entry.author, entry.actor, entry.performedBy, entry.authorName];
+  for (const candidate of candidates) {
+    const normalized = String(candidate || "").trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return "";
+}
+
+function getHistoryAuthorName(entry) {
+  return getExplicitHistoryAuthorName(entry) || t("history.authorNotRecorded");
+}
+
+function isEmployeeTargetedHistoryEntry(entry) {
+  const rawMessage = String(entry && entry.message || "");
+  return /^(Added|Updated|Deleted|Approved|Rejected) an entry on /i.test(rawMessage)
+    || /employee (profile|access)/i.test(rawMessage)
+    || /^Created a sign-in account/i.test(rawMessage)
+    || /^Reset the password/i.test(rawMessage);
+}
+
+function getHistorySubjectName(entry) {
+  if (!entry || !isEmployeeTargetedHistoryEntry(entry)) {
+    return "";
+  }
+
+  const candidates = [entry.targetEmployee, entry.subjectEmployee, entry.employee];
+  const explicitAuthorName = getExplicitHistoryAuthorName(entry);
+  for (const candidate of candidates) {
+    const normalized = String(candidate || "").trim();
+    if (!normalized) {
+      continue;
+    }
+
+    if (explicitAuthorName && normalized.toLowerCase() === explicitAuthorName.toLowerCase()) {
+      continue;
+    }
+
+    return normalized;
+  }
+
+  return "";
+}
+
+function renderHistorySubjectLine(entry) {
+  const subjectName = getHistorySubjectName(entry);
+  if (!subjectName) {
+    return "";
+  }
+
+  return `<div class="timeline-card-subject">${escapeHtml(t("history.concernedEmployee", { name: subjectName }))}</div>`;
+}
+
+function getHistorySearchText(entry) {
+  return [
+    getHistoryAuthorName(entry),
+    getHistorySubjectName(entry),
+    entry && entry.authorUsername,
+    entry && entry.authorRole,
+    entry && entry.employee,
+    entry && entry.timestamp,
+    entry && entry.action,
+    translateHistoryAction(entry && entry.action || "event"),
+    auditMessageToText(entry && entry.message || ""),
+    formatDateToWords(String(entry && entry.timestamp || "").split(" ")[0] || ""),
+  ].join(" ").toLowerCase();
 }
 
 function showToast(message, type = "success") {

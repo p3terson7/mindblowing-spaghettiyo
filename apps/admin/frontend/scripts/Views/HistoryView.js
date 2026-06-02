@@ -33,7 +33,7 @@ function filterHistoryEntries(entries, searchTerm, startDate, endDate) {
       return true;
     }
 
-    const combinedText = [entry.timestamp, entry.action, translateHistoryAction(entry.action), entry.employee, auditMessageToText(entry.message)].join(" ").toLowerCase();
+    const combinedText = getHistorySearchText(entry);
     return tokens.every(token => combinedText.includes(token));
   });
 }
@@ -73,11 +73,12 @@ function renderHistoryList(container, entries) {
     <article class="timeline-card">
       <div class="review-card-header">
         <div>
-          <strong>${escapeHtml(entry.employee || t("shared.system"))}</strong>
+          <strong>${escapeHtml(getHistoryAuthorName(entry))}</strong>
           <div class="worklog-secondary">${escapeHtml(formatHistoryTimestamp(entry.timestamp))} | ${escapeHtml(formatRelativeTime(entry.timestamp))}</div>
         </div>
         ${getActionBadgeHtml(entry.action)}
       </div>
+      ${renderHistorySubjectLine(entry)}
       <div class="timeline-card-message">${renderAuditMessage(entry.message || t("shared.noMessage"))}</div>
     </article>
   `).join("")}</div>`;

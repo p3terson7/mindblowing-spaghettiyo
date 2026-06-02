@@ -59,6 +59,11 @@ function applyAppTheme(theme) {
   document.documentElement.setAttribute("data-theme", resolvedTheme);
   localStorage.setItem(APP_THEME_KEY, resolvedTheme);
   updateThemeToggle(resolvedTheme);
+  window.dispatchEvent(new CustomEvent("app:theme-changed", {
+    detail: {
+      theme: resolvedTheme,
+    },
+  }));
 }
 
 function toggleAppTheme() {
@@ -76,6 +81,20 @@ const appShellState = {
 
 function resetViewState() {
   appShellState.viewState = {};
+}
+
+function clearClientLookupCaches() {
+  if (typeof clearLookupCaches === "function") {
+    clearLookupCaches();
+    return;
+  }
+
+  if (typeof clearOvertimeEntryLookupCache === "function") {
+    clearOvertimeEntryLookupCache();
+  }
+  if (typeof clearScopedProjectLookupCache === "function") {
+    clearScopedProjectLookupCache();
+  }
 }
 
 function ensureViewState(viewId) {
@@ -688,6 +707,7 @@ function handleSessionExpired() {
   stopSyncPolling();
   appShellState.lastSyncVersion = null;
   resetViewState();
+  clearClientLookupCaches();
   clearStoredSession();
   clearRoleUi();
   updateSessionSummary();
@@ -726,6 +746,7 @@ async function applySession(authResult) {
   });
   appShellState.lastSyncVersion = null;
   resetViewState();
+  clearClientLookupCaches();
   markAllowedViewsStale(authResult.user);
   updateSessionSummary();
   configureRoleUi(authResult.user);
@@ -901,6 +922,7 @@ async function submitLogout() {
 
   appShellState.lastSyncVersion = null;
   resetViewState();
+  clearClientLookupCaches();
   clearStoredSession();
   clearRoleUi();
   updateSessionSummary();

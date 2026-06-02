@@ -256,8 +256,7 @@ function renderDashboardApprovalQueue(entries) {
   const container = document.getElementById("dashboardApprovalQueue");
   const queueEntries = entries
     .filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry))
-    .sort((left, right) => toEntryDateTime(right) - toEntryDateTime(left))
-    .slice(0, 6);
+    .sort((left, right) => toEntryDateTime(right) - toEntryDateTime(left));
 
   document.getElementById("dashboardPendingQueueMeta").textContent = queueEntries.length > 0
     ? `${tn("shared.item", queueEntries.length)} ${t("shared.waiting").toLowerCase()}`
@@ -302,8 +301,7 @@ function renderDashboardActiveSessions(entries) {
   const container = document.getElementById("dashboardActiveList");
   const activeEntries = entries
     .filter(entry => isEntryOpen(entry))
-    .sort((left, right) => toEntryDateTime(right) - toEntryDateTime(left))
-    .slice(0, 6);
+    .sort((left, right) => toEntryDateTime(right) - toEntryDateTime(left));
 
   document.getElementById("dashboardActiveQueueMeta").textContent = activeEntries.length > 0
     ? tn("shared.session", activeEntries.length)
@@ -346,13 +344,7 @@ function renderDashboardRecentActivity(entries) {
   const searchTerm = String(searchInput && searchInput.value || "").trim().toLowerCase();
   const filteredEntries = searchTerm
     ? recentEntries.filter(entry => {
-      const combinedText = [
-        entry.employee || t("shared.system"),
-        translateHistoryAction(entry.action || "event"),
-        auditMessageToText(entry.message || ""),
-        entry.timestamp || "",
-        formatDateToWords(String(entry.timestamp || "").split(" ")[0] || ""),
-      ].join(" ").toLowerCase();
+      const combinedText = getHistorySearchText(entry);
       return searchTerm.split(/\s+/).every(token => combinedText.includes(token));
     })
     : recentEntries;
@@ -368,11 +360,12 @@ function renderDashboardRecentActivity(entries) {
       <article class="activity-card">
         <div class="review-card-header">
           <div>
-            <strong>${escapeHtml(entry.employee || t("shared.system"))}</strong>
+            <strong>${escapeHtml(getHistoryAuthorName(entry))}</strong>
             <div class="worklog-secondary">${escapeHtml(formatRelativeTime(entry.timestamp))} | ${escapeHtml(formatDateToWords(String(entry.timestamp || "").split(" ")[0] || ""))}</div>
           </div>
           <span class="action-badge ${escapeHtml(actionTone)}">${escapeHtml(translateHistoryAction(entry.action || "event"))}</span>
         </div>
+        ${renderHistorySubjectLine(entry)}
         <div class="timeline-card-message">${renderAuditMessage(entry.message || t("shared.noMessage"))}</div>
       </article>
     `;

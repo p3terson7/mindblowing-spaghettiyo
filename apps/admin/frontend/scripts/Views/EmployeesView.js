@@ -1,7 +1,9 @@
 const employeesViewState = {
   employees: [],
+  filteredEmployees: [],
   selectedEmployeeCode: "",
   selectedProjectCode: "",
+  autoOpenProjectCode: "",
   entriesByEmployee: {},
   currentMonthByEmployee: {},
   expandedNotes: {},
@@ -13,9 +15,16 @@ const employeesViewState = {
     search: "",
   },
 };
+let pendingEmployeeAnalyticsFrameId = null;
+const employeeAnalyticsChartInstances = {};
+const employeeAnalyticsPalette = ["#3574f0", "#46a35b", "#d18900", "#d14343", "#7d5cf5", "#0096b2", "#c95c9b", "#6f7b2f", "#8a6f4d", "#b65f20"];
 
 function canManageEmployeeProfiles() {
   return typeof isSuperAdminUser === "function" && isSuperAdminUser();
+}
+
+function canSeedDemoEntries() {
+  return canManageEmployeeProfiles();
 }
 
 function getEmployeeRole(employee) {
@@ -450,6 +459,65 @@ async function restoreEmployee(employee) {
   }
 }
 
+async function seedDemoEntries() {
+  if (!canSeedDemoEntries()) {
+    showToast(t("employees.seedDemoEntriesForbidden"), "error");
+    return;
+  }
+
+  const confirmed = window.confirm(t("employees.seedDemoEntriesConfirm"));
+  if (!confirmed) {
+    return;
+  }
+
+  const seedButton = document.getElementById("seedDemoEntriesButton");
+  const originalMarkup = seedButton ? seedButton.innerHTML : "";
+  if (seedButton) {
+    seedButton.disabled = true;
+    seedButton.innerHTML = `<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>${escapeHtml(t("employees.seedDemoEntriesRunning"))}</span>`;
+  }
+
+  try {
+    const response = await fetch(apiUrl + "seed/demo-entries", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        minimumEntriesPerEmployee: 4,
+        maximumEntriesPerEmployee: 8,
+        monthsBack: 6,
+      }),
+    });
+    const result = await parseResponse(response);
+
+    if (typeof clearLookupCaches === "function") {
+      clearLookupCaches();
+    }
+    if (typeof markAllowedViewsStale === "function" && typeof getCurrentUser === "function") {
+      markAllowedViewsStale(getCurrentUser());
+    }
+
+    showToast(t("employees.seedDemoEntriesSuccess", {
+      entries: Number(result && result.entryCount || 0),
+      employees: Number(result && result.employeeCount || 0),
+      projects: Number(result && result.projectCount || 0),
+    }), "success");
+    await loadEmployeesView();
+  } catch (error) {
+    console.error("Unable to seed demo entries:", error);
+    showToast(error.message || t("employees.seedDemoEntriesError"), "error");
+  } finally {
+    if (seedButton) {
+      seedButton.disabled = false;
+      seedButton.innerHTML = originalMarkup;
+      if (typeof applyTranslations === "function") {
+        applyTranslations(seedButton);
+      }
+    }
+  }
+}
+
 function getEmployeeInitials(name) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) {
@@ -518,21 +586,223 @@ function populateEmployeesProjectFilter(projects) {
   }
 
   const currentValue = projectSelect.value || employeesViewState.selectedProjectCode || "";
-  const projectItems = Array.isArray(projects) ? projects : [];
+  const projectItems = (Array.isArray(projects) ? projects : [])
+    .filter(project => String(project && project.projectCode || "").trim());
+  const selectedValue = projectItems.some(project => String(project.projectCode || "") === currentValue)
+    ? currentValue
+    : "";
+
   projectSelect.innerHTML = [`<option value="">${escapeHtml(t("filters.allProjects"))}</option>`]
     .concat(projectItems.map(project => {
       const projectCode = String(project.projectCode || "");
       const projectName = String(project.projectName || projectCode);
-      const selected = projectCode === currentValue ? " selected" : "";
+      const selected = projectCode === selectedValue ? " selected" : "";
       return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(projectCode)} | ${escapeHtml(projectName)}</option>`;
     }))
     .join("");
 
-  if (currentValue && !projectItems.some(project => String(project.projectCode || "") === currentValue)) {
-    projectSelect.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(currentValue)}" selected>${escapeHtml(currentValue)}</option>`);
+  employeesViewState.selectedProjectCode = projectSelect.value;
+}
+
+function getEmployeeAnalyticsStage(canvasId) {
+  return document.querySelector(`[data-employee-analytics-stage="${canvasId}"]`);
+}
+
+function ensureEmployeeAnalyticsCanvas(canvasId) {
+  const stage = getEmployeeAnalyticsStage(canvasId);
+  if (!stage) {
+    return null;
   }
 
-  employeesViewState.selectedProjectCode = projectSelect.value;
+  let canvas = document.getElementById(canvasId);
+  if (!canvas) {
+    stage.innerHTML = `<canvas id="${canvasId}"></canvas>`;
+    canvas = document.getElementById(canvasId);
+  }
+
+  return canvas;
+}
+
+function destroyEmployeeAnalyticsChart(canvasId) {
+  if (employeeAnalyticsChartInstances[canvasId]) {
+    employeeAnalyticsChartInstances[canvasId].destroy();
+    delete employeeAnalyticsChartInstances[canvasId];
+  }
+}
+
+function setEmployeeAnalyticsEmptyState(canvasId, messageKey = "employees.noChartData") {
+  destroyEmployeeAnalyticsChart(canvasId);
+  const stage = getEmployeeAnalyticsStage(canvasId);
+  if (stage) {
+    stage.innerHTML = createEmptyState(t(messageKey));
+  }
+}
+
+function setEmployeeAnalyticsLoadingState() {
+  document.querySelectorAll(".employee-analytics-stage").forEach(stage => {
+    stage.innerHTML = createLoadingState("chart", 1);
+  });
+}
+
+function getEmployeeAnalyticsTheme() {
+  const rootStyles = getComputedStyle(document.documentElement);
+  return {
+    textSecondary: rootStyles.getPropertyValue("--text-secondary").trim() || "#5e646f",
+    textMuted: rootStyles.getPropertyValue("--text-muted").trim() || "#7a828f",
+    grid: document.documentElement.getAttribute("data-theme") === "dark"
+      ? "rgba(255, 255, 255, 0.1)"
+      : "rgba(31, 35, 41, 0.08)",
+    panel: document.documentElement.getAttribute("data-theme") === "dark" ? "#303236" : "#ffffff",
+  };
+}
+
+function getEmployeeAnalyticsColors(count) {
+  return Array.from({ length: count }, (_, index) => employeeAnalyticsPalette[index % employeeAnalyticsPalette.length]);
+}
+
+function getEmployeeProjectAnalyticsStats(employee, projectCode) {
+  const selectedProjectCode = String(projectCode || "").trim();
+  if (!selectedProjectCode) {
+    return null;
+  }
+
+  const projectStats = Array.isArray(employee && employee.projectStats) ? employee.projectStats : [];
+  return projectStats.find(project => String(project.projectCode || "") === selectedProjectCode) || null;
+}
+
+function getEmployeeAnalyticsStats(employee) {
+  const projectStats = getEmployeeProjectAnalyticsStats(employee, getEmployeesProjectFilterValue());
+  if (projectStats) {
+    return {
+      totalOvertimeSeconds: Number(projectStats.totalOvertimeSeconds || 0),
+      entryCount: Number(projectStats.entryCount || 0),
+      approvedCount: Number(projectStats.approvedCount || 0),
+      pendingCount: Number(projectStats.pendingCount || 0),
+      rejectedCount: Number(projectStats.rejectedCount || 0),
+      liveCount: Number(projectStats.liveCount || 0),
+    };
+  }
+
+  return {
+    totalOvertimeSeconds: Number(employee && employee.totalOvertimeSeconds || 0),
+    entryCount: Number(employee && employee.entryCount || 0),
+    approvedCount: Number(employee && employee.approvedCount || 0),
+    pendingCount: Number(employee && employee.pendingCount || 0),
+    rejectedCount: Number(employee && employee.rejectedCount || 0),
+    liveCount: Number(employee && employee.liveCount || 0),
+  };
+}
+
+function compactEmployeeMetricItems(items, maxItems = 8) {
+  const sortedItems = (Array.isArray(items) ? items : [])
+    .filter(item => Number(item.value || 0) > 0)
+    .sort((left, right) => Number(right.value || 0) - Number(left.value || 0));
+
+  if (sortedItems.length <= maxItems) {
+    return sortedItems;
+  }
+
+  const visibleItems = sortedItems.slice(0, maxItems - 1);
+  const otherValue = sortedItems.slice(maxItems - 1).reduce((sum, item) => sum + Number(item.value || 0), 0);
+  visibleItems.push({ label: t("projects.other"), value: otherValue });
+  return visibleItems;
+}
+
+function renderEmployeeOvertimeShareChart(employees) {
+  const items = compactEmployeeMetricItems((employees || []).map(employee => {
+    const stats = getEmployeeAnalyticsStats(employee);
+    return {
+      label: String(employee && employee.name || employee && employee.code || ""),
+      value: stats.totalOvertimeSeconds,
+    };
+  }));
+
+  if (items.length === 0 || typeof Chart !== "function") {
+    setEmployeeAnalyticsEmptyState("employeeOvertimeShareChart", typeof Chart === "function" ? "employees.noChartData" : "projects.chartLibraryFailed");
+    return;
+  }
+
+  const canvas = ensureEmployeeAnalyticsCanvas("employeeOvertimeShareChart");
+  if (!canvas) {
+    return;
+  }
+
+  const theme = getEmployeeAnalyticsTheme();
+  destroyEmployeeAnalyticsChart("employeeOvertimeShareChart");
+  employeeAnalyticsChartInstances.employeeOvertimeShareChart = new Chart(canvas.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels: items.map(item => item.label),
+      datasets: [{
+        label: t("employees.overtimeShare"),
+        data: items.map(item => item.value),
+        backgroundColor: getEmployeeAnalyticsColors(items.length),
+        borderWidth: 0,
+        borderRadius: 4,
+        barThickness: 18,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false,
+        },
+        tooltip: {
+          backgroundColor: "rgba(31, 35, 41, 0.94)",
+          titleColor: "#ffffff",
+          bodyColor: "#ffffff",
+          callbacks: {
+            label: context => {
+              const value = Number(context.parsed || 0);
+              const total = (context.dataset.data || []).reduce((sum, item) => sum + Number(item || 0), 0);
+              const percent = total > 0 ? Math.round((value / total) * 100) : 0;
+              return `${context.label}: ${secondsToDurationLabel(value)} (${percent}%)`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: {
+            color: theme.textSecondary,
+            callback: value => secondsToDurationLabel(Number(value || 0)),
+          },
+          grid: {
+            color: theme.grid,
+          },
+        },
+        y: {
+          ticks: {
+            autoSkip: false,
+            color: theme.textSecondary,
+            font: {
+              size: 11,
+            },
+          },
+          grid: {
+            display: false,
+          },
+        },
+      },
+    },
+  });
+}
+
+function renderEmployeeAnalytics(employees) {
+  const sourceEmployees = Array.isArray(employees) ? employees : employeesViewState.filteredEmployees;
+  if (pendingEmployeeAnalyticsFrameId) {
+    window.cancelAnimationFrame(pendingEmployeeAnalyticsFrameId);
+    pendingEmployeeAnalyticsFrameId = null;
+  }
+
+  pendingEmployeeAnalyticsFrameId = window.requestAnimationFrame(() => {
+    renderEmployeeOvertimeShareChart(sourceEmployees);
+    pendingEmployeeAnalyticsFrameId = null;
+  });
 }
 
 function getVisibleEmployeeEntries(employeeCode) {
@@ -543,6 +813,50 @@ function getVisibleEmployeeEntries(employeeCode) {
   }
 
   return entries.filter(entry => String(entry.projectCode || "") === projectCode);
+}
+
+function getPeopleProjectEntryContext(entry) {
+  const parts = [];
+
+  if (entry && entry.overtimeCode) {
+    parts.push(String(entry.overtimeCode));
+  }
+
+  if (entry && entry.paymentOption) {
+    parts.push(formatPaymentOptionValue(entry.paymentOption));
+  }
+
+  if (entry && entry.reasonCode) {
+    parts.push(String(entry.reasonCode));
+  }
+
+  return parts.length > 0 ? parts.join(" | ") : t("shared.uncoded");
+}
+
+function renderPeopleProjectEntryRows(entries) {
+  const sortedEntries = sortEntriesByDateTime(entries, true);
+  const rowsMarkup = sortedEntries.length > 0
+    ? sortedEntries.map(entry => {
+      const exactTimeLabel = getEntryExactTimeLabel(entry);
+      const duration = secondsToDurationLabel(getEmployeeCalendarEntrySeconds(entry));
+      return `
+        <article class="people-project-entry-row">
+          <div class="people-project-entry-date">${escapeHtml(formatDateLabel(entry.date))}</div>
+          <div class="people-project-entry-main">
+            <div class="people-project-entry-time mono">${getEntryRoundedTimeRangeMarkup(entry)}</div>
+            ${exactTimeLabel ? `<div class="panel-note">${escapeHtml(exactTimeLabel)}</div>` : ""}
+            <div class="people-project-entry-context">${escapeHtml(getPeopleProjectEntryContext(entry))}</div>
+          </div>
+          <div class="people-project-entry-side">
+            <span class="inline-code-pill">${escapeHtml(duration)}</span>
+            <span class="status-badge ${escapeHtml(getStatusTone(entry))}">${escapeHtml(getEntryStatusLabel(entry))}</span>
+          </div>
+        </article>
+      `;
+    }).join("")
+    : createEmptyState(t("employees.noProjectEntries"));
+
+  return rowsMarkup;
 }
 
 async function fetchEmployeeDetailEntries(employeeCode) {
@@ -752,11 +1066,13 @@ function buildEmployeeStatsModel(entries) {
         notes: 0,
         maxSeconds: 0,
         latestEntry: null,
+        entries: [],
         overtimeCodes: {},
       };
     }
 
     const projectBucket = projectBuckets[projectCode];
+    projectBucket.entries.push(entry);
     projectBucket.count += 1;
     projectBucket.seconds += seconds;
     projectBucket.maxSeconds = Math.max(projectBucket.maxSeconds, seconds);
@@ -829,6 +1145,7 @@ function buildEmployeeDetailedStatsMarkup(entries) {
           const latestLabel = project.latestEntry
             ? `${formatDateLabel(project.latestEntry.date)} | ${getEntryRoundedTimeRange(project.latestEntry)}`
             : t("employees.noRecentEntry");
+          const shouldOpenEntries = String(employeesViewState.autoOpenProjectCode || "").trim() === String(project.projectCode || "").trim();
           return `
             <article class="self-project-stat-card">
               <div class="self-project-stat-main">
@@ -850,6 +1167,18 @@ function buildEmployeeDetailedStatsMarkup(entries) {
                 <span>${escapeHtml(latestLabel)}</span>
                 <span>${escapeHtml(t("self.statsSupervisorNotes"))}: ${escapeHtml(String(project.notes))}</span>
               </div>
+              <details class="project-card-entry-toggle" ${shouldOpenEntries ? "open" : ""}>
+                <summary class="project-card-entry-summary">
+                  <span class="project-card-entry-summary-left">
+                    <span class="project-card-entry-arrow"><i class="fa-solid fa-chevron-right"></i></span>
+                    <span>${escapeHtml(t("employees.entriesShort"))}</span>
+                  </span>
+                  <span class="panel-note">${escapeHtml(t("employees.projectEntriesSummary", { count: project.count, duration: secondsToDurationLabel(project.seconds) }))}</span>
+                </summary>
+                <div class="people-project-entry-list people-project-entry-list-compact">
+                  ${renderPeopleProjectEntryRows(project.entries)}
+                </div>
+              </details>
             </article>
           `;
         }).join("")}
@@ -949,8 +1278,12 @@ function renderEmployeesDirectory(employees) {
   const detailContainer = document.getElementById("employeeDetailContainer");
   const canManageProfiles = canManageEmployeeProfiles();
   const addButton = document.getElementById("addEmployeeButton");
+  const seedButton = document.getElementById("seedDemoEntriesButton");
   if (addButton) {
     addButton.classList.toggle("d-none", !canManageProfiles);
+  }
+  if (seedButton) {
+    seedButton.classList.toggle("d-none", !canSeedDemoEntries());
   }
   document.getElementById("employeesDirectoryCount").textContent = tn("shared.employee", employees.length);
 
@@ -971,16 +1304,21 @@ function renderEmployeesDirectory(employees) {
         <div class="d-flex align-items-center gap-3">
           <div class="employee-avatar">${escapeHtml(getEmployeeInitials(employee.name))}</div>
           <div>
-            <div class="employee-card-title">${escapeHtml(employee.name)}</div>
+            <div class="employee-card-title" title="${escapeHtml(employee.name)}">${escapeHtml(employee.name)}</div>
             <div class="employee-card-note">${escapeHtml(isArchivedEmployee(employee) ? t("employees.archived") : getEmployeeRoleLabel(employee))}</div>
           </div>
         </div>
       </div>
       <div class="employee-card-meta">
-        <span class="inline-code-pill">EMP ${escapeHtml(employee.code)}</span>
-        <span class="meta-pill">${escapeHtml(getEmployeeRoleLabel(employee))}</span>
-        <span class="meta-pill">${escapeHtml(t("employees.entryCount", { count: employee.entryCount || 0 }))}</span>
-        ${isArchivedEmployee(employee) ? `<span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span>` : ""}
+        <div class="employee-card-info-row">
+          <span class="employee-card-info-label">EMP</span>
+          <span class="employee-card-info-value mono">${escapeHtml(employee.code)}</span>
+        </div>
+        <div class="employee-card-info-row">
+          <span class="employee-card-info-label">${escapeHtml(t("employees.entriesShort"))}</span>
+          <span class="employee-card-info-value">${escapeHtml(t("employees.entryCount", { count: employee.entryCount || 0 }))}</span>
+        </div>
+        ${isArchivedEmployee(employee) ? `<div class="employee-card-info-row"><span class="employee-card-info-label">${escapeHtml(t("employees.scope"))}</span><span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span></div>` : ""}
       </div>
       <div class="employee-card-actions${canManageProfiles ? "" : " d-none"}">
         <button type="button" class="btn btn-outline-secondary btn-sm employee-edit-button" data-employee-code="${escapeHtml(employee.code)}">${escapeHtml(t("action.edit"))}</button>
@@ -1263,11 +1601,14 @@ function applyEmployeeSearchFilter() {
     const matchesSearch = !searchValue || haystack.includes(searchValue);
     return matchesSearch && employeeMatchesProjectFilter(employee, projectCode);
   });
+  employeesViewState.filteredEmployees = filteredEmployees;
+  renderEmployeeAnalytics(filteredEmployees);
   renderEmployeesDirectory(filteredEmployees);
 }
 
 function loadEmployeesView() {
   setLoadingState("employeesDirectoryContainer", "grid", 4);
+  setEmployeeAnalyticsLoadingState();
   document.getElementById("employeeDetailContainer").innerHTML = "";
   const scope = document.getElementById("employeesScopeSelect").value || "active";
   return Promise.all([
@@ -1309,10 +1650,11 @@ async function openPeopleProjectFilter(employeeCode, projectCode) {
   }
 
   employeesViewState.selectedEmployeeCode = employeeCode || "";
-  employeesViewState.selectedProjectCode = projectCode || "";
+  employeesViewState.selectedProjectCode = "";
+  employeesViewState.autoOpenProjectCode = projectCode || "";
   const projectSelect = document.getElementById("employeesProjectSelect");
   if (projectSelect) {
-    projectSelect.value = projectCode || "";
+    projectSelect.value = "";
   }
   const searchInput = document.getElementById("employeesSearchInput");
   if (searchInput) {
@@ -1328,6 +1670,15 @@ async function openPeopleProjectFilter(employeeCode, projectCode) {
 }
 
 window.openPeopleProjectFilter = openPeopleProjectFilter;
+
+window.addEventListener("app:theme-changed", () => {
+  const employeesView = document.getElementById("employeesView");
+  if (!employeesView || !employeesView.classList.contains("active")) {
+    return;
+  }
+
+  renderEmployeeAnalytics(employeesViewState.filteredEmployees || []);
+});
 
 document.getElementById("employeesDirectoryContainer").addEventListener("click", event => {
   const editButton = event.target.closest(".employee-edit-button");
@@ -1555,6 +1906,7 @@ document.getElementById("addEmployeeButton").addEventListener("click", () => {
     showToast(t("employees.loadError"), "error");
   });
 });
+document.getElementById("seedDemoEntriesButton").addEventListener("click", seedDemoEntries);
 document.getElementById("employeeEditorRemoveButton").addEventListener("click", async () => {
   const employee = getEmployeeByCode(document.getElementById("employeeEditorCodeInput").value.trim());
   const modal = bootstrap.Modal.getInstance(document.getElementById("employeeEditorModal"));
@@ -1602,6 +1954,7 @@ document.getElementById("employeesSearchInput").addEventListener("input", applyE
 document.getElementById("employeesScopeSelect").addEventListener("change", loadEmployeesView);
 document.getElementById("employeesProjectSelect").addEventListener("change", () => {
   employeesViewState.selectedProjectCode = getEmployeesProjectFilterValue();
+  employeesViewState.autoOpenProjectCode = employeesViewState.selectedProjectCode;
   applyEmployeeSearchFilter();
 });
 document.getElementById("employeesResetFiltersBtn").addEventListener("click", () => {
@@ -1609,6 +1962,7 @@ document.getElementById("employeesResetFiltersBtn").addEventListener("click", ()
   document.getElementById("employeesScopeSelect").value = "active";
   document.getElementById("employeesProjectSelect").value = "";
   employeesViewState.selectedProjectCode = "";
+  employeesViewState.autoOpenProjectCode = "";
   loadEmployeesView();
 });
 document.getElementById("employeesDirectoryCount").textContent = tn("shared.employee", 0);

@@ -47,6 +47,110 @@ function Ensure-EmployeeDataFile {
     return $dataFile
 }
 
+function Get-EmployeeDirectoryEntrySeconds {
+    param($Entry)
+
+    if ($null -eq $Entry) {
+        return 0
+    }
+
+    return (Get-OvertimeSecondsFromText -Value ([string]$Entry.overtime))
+}
+
+function Get-EmployeeDirectoryEntryStatus {
+    param($Entry)
+
+    if (Test-EntryOpen -Entry $Entry) {
+        return "live"
+    }
+
+    $status = ([string]$Entry.status).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($status)) {
+        return "pending"
+    }
+
+    return $status
+}
+
+function Get-EmployeeDirectoryStats {
+    param($Entries)
+
+    $totalSeconds = 0
+    $approvedCount = 0
+    $pendingCount = 0
+    $rejectedCount = 0
+    $liveCount = 0
+    $projectBuckets = @{}
+
+    foreach ($entry in @($Entries)) {
+        $seconds = Get-EmployeeDirectoryEntrySeconds -Entry $entry
+        $status = Get-EmployeeDirectoryEntryStatus -Entry $entry
+        $projectCode = ([string]$entry.projectCode).Trim()
+        if ([string]::IsNullOrWhiteSpace($projectCode)) {
+            $projectCode = "__NO_PROJECT__"
+        }
+
+        if (-not $projectBuckets.ContainsKey($projectCode)) {
+            $projectBuckets[$projectCode] = [PSCustomObject]@{
+                projectCode = $projectCode
+                entryCount = 0
+                totalOvertimeSeconds = 0
+                approvedCount = 0
+                pendingCount = 0
+                rejectedCount = 0
+                liveCount = 0
+            }
+        }
+
+        $bucket = $projectBuckets[$projectCode]
+        $bucket.entryCount = [int]$bucket.entryCount + 1
+        $bucket.totalOvertimeSeconds = [int]$bucket.totalOvertimeSeconds + [int]$seconds
+        $totalSeconds += $seconds
+
+        if ($status -eq "approved") {
+            $approvedCount++
+            $bucket.approvedCount = [int]$bucket.approvedCount + 1
+        }
+        elseif ($status -eq "rejected") {
+            $rejectedCount++
+            $bucket.rejectedCount = [int]$bucket.rejectedCount + 1
+        }
+        elseif ($status -eq "live") {
+            $liveCount++
+            $bucket.liveCount = [int]$bucket.liveCount + 1
+        }
+        else {
+            $pendingCount++
+            $bucket.pendingCount = [int]$bucket.pendingCount + 1
+        }
+    }
+
+    $projectStats = @()
+    foreach ($projectCode in ($projectBuckets.Keys | Sort-Object)) {
+        $bucket = $projectBuckets[$projectCode]
+        $projectStats += [PSCustomObject]@{
+            projectCode = [string]$bucket.projectCode
+            entryCount = [int]$bucket.entryCount
+            totalOvertimeSeconds = [int]$bucket.totalOvertimeSeconds
+            totalOvertime = Convert-SecondsToTimeText -Seconds ([int]$bucket.totalOvertimeSeconds)
+            approvedCount = [int]$bucket.approvedCount
+            pendingCount = [int]$bucket.pendingCount
+            rejectedCount = [int]$bucket.rejectedCount
+            liveCount = [int]$bucket.liveCount
+        }
+    }
+
+    return [PSCustomObject]@{
+        totalOvertimeSeconds = [int]$totalSeconds
+        totalOvertime = Convert-SecondsToTimeText -Seconds $totalSeconds
+        approvedCount = [int]$approvedCount
+        pendingCount = [int]$pendingCount
+        rejectedCount = [int]$rejectedCount
+        liveCount = [int]$liveCount
+        projectStats = $projectStats
+    }
+}
+
 function Update-EmployeeEntryDisplayName {
     param(
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
@@ -118,14 +222,22 @@ function Get-EmployeeDirectoryList {
                 ForEach-Object { [string]$_.projectCode } |
                 Sort-Object -Unique
         )
+        $entryStats = Get-EmployeeDirectoryStats -Entries $entries
 
         $directory += [PSCustomObject]@{
-            code      = $employeeCode
-            name      = $displayName
-            entryCount = $entryCount
-            projectCodes = $projectCodes
-            archived  = $isArchived
-            role      = Get-EffectiveUserRole -UserRecord $user
+            code                 = $employeeCode
+            name                 = $displayName
+            entryCount           = $entryCount
+            totalOvertimeSeconds = [int]$entryStats.totalOvertimeSeconds
+            totalOvertime        = [string]$entryStats.totalOvertime
+            approvedCount        = [int]$entryStats.approvedCount
+            pendingCount         = [int]$entryStats.pendingCount
+            rejectedCount        = [int]$entryStats.rejectedCount
+            liveCount            = [int]$entryStats.liveCount
+            projectCodes         = $projectCodes
+            projectStats         = @($entryStats.projectStats)
+            archived             = $isArchived
+            role                 = Get-EffectiveUserRole -UserRecord $user
         }
     }
 
