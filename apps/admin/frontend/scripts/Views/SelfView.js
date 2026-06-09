@@ -637,6 +637,7 @@ function updateSelfSummaryMetrics(allEntries) {
 
 function updateSelfStatus(entries) {
   const primaryButton = document.getElementById("selfPrimaryPunchButton");
+  const lastEntryShell = document.getElementById("selfLastEntryShell");
   const punchState = document.getElementById("selfPunchStateText");
   const statusMessage = document.getElementById("selfStatusMessage");
   const currentStatusValue = document.getElementById("selfCurrentStatusValue");
@@ -653,6 +654,9 @@ function updateSelfStatus(entries) {
     const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
     primaryButton.textContent = isDiverseEntry(activeEntry) ? t("self.endDiverse") : t("self.endOvertime");
     primaryButton.dataset.punchType = "out";
+    if (lastEntryShell) {
+      lastEntryShell.classList.remove("d-none");
+    }
     if (punchState) {
       punchState.textContent = t("self.startedAt", {
         date: formatDateLabel(activeEntry.date),
@@ -699,8 +703,11 @@ function updateSelfStatus(entries) {
   }
 
   if (!latestEntry) {
+    if (lastEntryShell) {
+      lastEntryShell.classList.add("d-none");
+    }
     if (punchState) {
-      punchState.textContent = t("status.noHistory");
+      punchState.textContent = "";
     }
     if (statusMessage) {
       statusMessage.textContent = t("status.idle");
@@ -722,6 +729,9 @@ function updateSelfStatus(entries) {
   const timeRange = latestEntry.punchOut
     ? buildTimeRangeText(formatTimeString(getEntryExactPunchIn(latestEntry)), formatTimeString(getEntryExactPunchOut(latestEntry)))
     : formatTimeString(getEntryExactPunchIn(latestEntry));
+  if (lastEntryShell) {
+    lastEntryShell.classList.remove("d-none");
+  }
   if (punchState) {
     punchState.textContent = t("self.lastEntry", {
       date: formatDateLabel(latestEntry.date),

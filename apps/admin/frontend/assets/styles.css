@@ -816,11 +816,11 @@ code,
 
 .action-strip {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 420px);
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   margin-bottom: 12px;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
 }
 
@@ -917,6 +917,31 @@ code,
   flex: 0 0 auto;
   margin-left: auto;
   min-width: max-content;
+}
+
+.action-strip-last-entry {
+  justify-self: end;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  line-height: 1.25;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .action-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .action-strip-last-entry {
+    justify-self: start;
+    width: 100%;
+    text-align: left;
+  }
 }
 
 .self-stats-panel {
