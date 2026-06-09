@@ -11,9 +11,9 @@
       document.documentElement.setAttribute("data-theme", "light");
     }
   </script>
-  <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260602-demo-seed" />
-  <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260602-demo-seed" />
-  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260602-demo-seed">
+  <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260603-empty-timeline" />
+  <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260603-empty-timeline" />
+  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260608-punch-strip-clean">
 </head>
 <body>
   <div class="app-root">
@@ -92,27 +92,30 @@
             <div class="action-strip-main">
               <button id="selfPrimaryPunchButton" class="btn btn-primary btn-lg" data-i18n="self.startOvertime">Start Overtime</button>
               <div class="self-punch-selectors" id="selfPunchSelectors">
-                <select id="selfProjectCodeSelect" class="form-select form-select-sm" aria-label="Project selection" data-i18n-aria-label="shared.project">
-                  <option value="" data-i18n="shared.project">Project</option>
+                <select id="selfEntryTypeSelect" class="form-select form-select-sm d-none" aria-label="Time category" data-i18n-aria-label="shared.timeCategory">
+                  <option value="overtime" data-i18n="shared.overtime">Overtime</option>
                 </select>
-                <select id="selfOvertimeCodeSelect" class="form-select form-select-sm" aria-label="Overtime code selection" data-i18n-aria-label="shared.overtimeCode">
-                  <option value="" data-i18n="shared.overtimeCode">Overtime Code</option>
-                </select>
-                <select id="selfPaymentOptionSelect" class="form-select form-select-sm" aria-label="Payment option selection" data-i18n-aria-label="shared.paymentOption">
-                  <option value="" data-i18n="shared.paymentOption">Payment</option>
-                </select>
-                <select id="selfReasonCodeSelect" class="form-select form-select-sm" aria-label="Reason code selection" data-i18n-aria-label="shared.reasonCode">
-                  <option value="" data-i18n="shared.reasonCode">Reason Code</option>
-                </select>
+                <div id="selfOvertimeSelectors" class="self-punch-selector-group">
+                  <select id="selfProjectCodeSelect" class="form-select form-select-sm" aria-label="Project selection" data-i18n-aria-label="shared.project">
+                    <option value="" data-i18n="shared.project">Project</option>
+                  </select>
+                  <select id="selfOvertimeCodeSelect" class="form-select form-select-sm" aria-label="Overtime code selection" data-i18n-aria-label="shared.overtimeCode">
+                    <option value="" data-i18n="shared.overtimeCode">Overtime Code</option>
+                  </select>
+                  <select id="selfPaymentOptionSelect" class="form-select form-select-sm" aria-label="Payment option selection" data-i18n-aria-label="shared.paymentOption">
+                    <option value="" data-i18n="shared.paymentOption">Payment</option>
+                  </select>
+                  <select id="selfReasonCodeSelect" class="form-select form-select-sm" aria-label="Reason code selection" data-i18n-aria-label="shared.reasonCode">
+                    <option value="" data-i18n="shared.reasonCode">Reason Code</option>
+                  </select>
+                </div>
+                <div id="selfDiverseStartFields" class="self-diverse-fields d-none">
+                  <input type="text" id="selfDiverseReasonInput" class="form-control form-control-sm" data-i18n-placeholder="self.diverseReasonPlaceholder" placeholder="Reason">
+                </div>
               </div>
-              <div>
-                <div class="hero-status mono" id="selfPunchStateText" data-i18n="status.notCurrentlyClockedIn">Not currently clocked in</div>
-                <div class="panel-note" id="selfStatusMessage" data-i18n="status.idle">Idle</div>
-                <div class="panel-note" id="selfSelectionSummary"></div>
+              <div id="selfDiverseEndFields" class="self-diverse-fields self-diverse-summary-fields d-none">
+                <textarea id="selfDiverseSummaryInput" class="form-control form-control-sm" rows="1" data-i18n-placeholder="self.diverseSummaryPlaceholder" placeholder="Summary of work completed"></textarea>
               </div>
-            </div>
-            <div class="action-strip-meta">
-              <span class="count-chip" id="selfHeroText" data-i18n="status.idle">Idle</span>
             </div>
           </section>
 
@@ -250,56 +253,7 @@
                 <div id="dashboardActiveList" class="queue-list dashboard-scroll-list"></div>
               </section>
 
-              <section class="panel-shell dashboard-inspector-card">
-                <div class="panel-header-row">
-                  <div>
-                    <div class="panel-kicker" data-i18n="dashboard.inspector">Employee Detail</div>
-                    <h3 id="dashboardInspectorTitle" data-i18n="dashboard.timeline">Timeline</h3>
-                  </div>
-                  <div class="panel-header-actions">
-                    <button id="addEntryButton" class="btn btn-primary btn-sm" type="button"><i class="fa-solid fa-plus"></i> <span data-i18n="dashboard.addEntry">Add Entry</span></button>
-                  </div>
-                </div>
 
-                <div class="filter-toolbar filter-toolbar-dashboard">
-                  <div class="filter-toolbar-row dashboard-filter-row dashboard-filter-row-primary">
-                    <div class="field-block filter-field filter-field-grow">
-                      <label for="employeeSelect" class="filter-caption" data-i18n="dashboard.employee">Employee</label>
-                      <select id="employeeSelect" class="form-select">
-                        <option value="" data-i18n="shared.loadingEmployees">Loading employees...</option>
-                      </select>
-                    </div>
-                    <div class="field-block filter-field filter-field-project">
-                      <label for="projectFilter" class="filter-caption" data-i18n="shared.project">Project</label>
-                      <select id="projectFilter" class="form-select">
-                        <option value="" data-i18n="filters.allProjects">All projects</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div class="filter-toolbar-row dashboard-filter-row dashboard-filter-row-secondary">
-                    <div class="field-block filter-field filter-range-field">
-                      <span class="filter-caption" data-i18n="filters.period">Period</span>
-                      <div class="filter-range-cluster">
-                        <input type="date" id="startDateFilter" class="form-control" data-i18n-aria-label="filters.startDate" aria-label="Start" />
-                        <input type="date" id="endDateFilter" class="form-control" data-i18n-aria-label="filters.endDate" aria-label="End" />
-                      </div>
-                    </div>
-                    <div class="field-block filter-field filter-field-toggle">
-                      <span class="filter-caption" data-i18n="dashboard.sort">Sort</span>
-                      <label class="checkbox-chip" for="latestCheck">
-                        <input class="form-check-input" type="checkbox" id="latestCheck" checked>
-                        <span data-i18n="dashboard.newestFirst">Newest first</span>
-                      </label>
-                    </div>
-                    <div class="filter-actions dashboard-filter-actions">
-                      <button id="dashboardResetFiltersBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="panel-note" id="dashboardSelectionHint"></div>
-                <div id="punchClockEntries" class="entry-stack"></div>
-              </section>
             </div>
 
             <aside class="dashboard-activity-rail">
@@ -321,6 +275,58 @@
                 <div id="dashboardRecentActivity" class="activity-feed dashboard-scroll-list"></div>
               </section>
             </aside>
+            <section class="panel-shell dashboard-inspector-card">
+              <div class="panel-header-row">
+                <div>
+                  <div class="panel-kicker" data-i18n="dashboard.inspector">Employee Detail</div>
+                  <h3 id="dashboardInspectorTitle" data-i18n="dashboard.timeline">Timeline</h3>
+                </div>
+                <div class="panel-header-actions">
+                  <button id="addEntryButton" class="btn btn-primary btn-sm" type="button"><i class="fa-solid fa-plus"></i> <span data-i18n="dashboard.addEntry">Add Entry</span></button>
+                </div>
+              </div>
+
+              <div class="filter-toolbar filter-toolbar-dashboard">
+                <div class="filter-toolbar-row dashboard-filter-row dashboard-filter-row-primary">
+                  <div class="field-block filter-field filter-field-grow dashboard-employee-search-field">
+                    <label for="dashboardEmployeeSearchInput" class="filter-caption" data-i18n="dashboard.employee">Employee</label>
+                    <input type="search" id="dashboardEmployeeSearchInput" class="form-control" list="dashboardEmployeeSearchList" data-i18n-placeholder="dashboard.searchEmployeePlaceholder" placeholder="Search employee by name or code" autocomplete="off">
+                    <datalist id="dashboardEmployeeSearchList"></datalist>
+                    <select id="employeeSelect" class="form-select d-none" aria-hidden="true" tabindex="-1">
+                      <option value="" data-i18n="shared.loadingEmployees">Loading employees...</option>
+                    </select>
+                  </div>
+                  <div class="field-block filter-field filter-field-project">
+                    <label for="projectFilter" class="filter-caption" data-i18n="shared.project">Project</label>
+                    <select id="projectFilter" class="form-select">
+                      <option value="" data-i18n="filters.allProjects">All projects</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="filter-toolbar-row dashboard-filter-row dashboard-filter-row-secondary">
+                  <div class="field-block filter-field filter-range-field">
+                    <span class="filter-caption" data-i18n="filters.period">Period</span>
+                    <div class="filter-range-cluster">
+                      <input type="date" id="startDateFilter" class="form-control" data-i18n-aria-label="filters.startDate" aria-label="Start" />
+                      <input type="date" id="endDateFilter" class="form-control" data-i18n-aria-label="filters.endDate" aria-label="End" />
+                    </div>
+                  </div>
+                  <div class="field-block filter-field filter-field-toggle">
+                    <span class="filter-caption" data-i18n="dashboard.sort">Sort</span>
+                    <label class="checkbox-chip" for="latestCheck">
+                      <input class="form-check-input" type="checkbox" id="latestCheck" checked>
+                      <span data-i18n="dashboard.newestFirst">Newest first</span>
+                    </label>
+                  </div>
+                  <div class="filter-actions dashboard-filter-actions">
+                    <button id="dashboardResetFiltersBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel-note" id="dashboardSelectionHint"></div>
+              <div id="punchClockEntries" class="entry-stack"></div>
+            </section>
           </div>
         </div>
 
@@ -567,6 +573,15 @@
                     <canvas id="projectOvertimeShareChart"></canvas>
                   </div>
                 </article>
+                <article class="project-insight-card">
+                  <div class="project-insight-card-header">
+                    <strong data-i18n="projects.sectorMix">Sector Mix</strong>
+                    <span data-i18n="projects.sectorMixHint">By project count</span>
+                  </div>
+                  <div class="project-insight-stage" data-project-insight-stage="projectSectorDistributionChart">
+                    <canvas id="projectSectorDistributionChart"></canvas>
+                  </div>
+                </article>
               </div>
             </section>
 
@@ -673,6 +688,7 @@
             <input type="hidden" id="updateDate" />
             <input type="hidden" id="originalPunchIn" />
             <input type="hidden" id="originalPunchOut" />
+            <input type="hidden" id="updateEntryType" value="overtime" />
             <div class="field-block">
               <label class="form-label" data-i18n="modal.punchIn">Punch In</label>
               <div class="input-group">
@@ -689,33 +705,52 @@
                 <input type="text" class="form-control" id="updatePunchOutMinutes" placeholder="MM" required />
               </div>
             </div>
-            <div class="field-block">
+            <div class="field-block update-overtime-field">
               <label for="updateProjectCode" class="form-label" data-i18n="shared.project">Project</label>
               <input type="hidden" id="originalProjectCode" />
               <select id="updateProjectCode" class="form-select" required>
                 <option value="" data-i18n="shared.loadingProjects">Loading projects...</option>
               </select>
             </div>
-            <div class="field-block">
+            <div class="field-block update-overtime-field">
               <label for="updateOvertimeCode" class="form-label" data-i18n="shared.overtimeCode">Overtime Code</label>
               <input type="hidden" id="originalOvertimeCode" />
               <select id="updateOvertimeCode" class="form-select" required>
                 <option value="" data-i18n="shared.loadingOvertimeCodes">Loading overtime codes...</option>
               </select>
             </div>
-            <div class="field-block">
+            <div class="field-block update-overtime-field">
               <label for="updatePaymentOption" class="form-label" data-i18n="shared.paymentOption">Payment</label>
               <input type="hidden" id="originalPaymentOption" />
               <select id="updatePaymentOption" class="form-select" required>
                 <option value="" data-i18n="shared.loadingPaymentOptions">Loading payment options...</option>
               </select>
             </div>
-            <div class="field-block">
+            <div class="field-block update-overtime-field">
               <label for="updateReasonCode" class="form-label" data-i18n="shared.reasonCode">Reason Code</label>
               <input type="hidden" id="originalReasonCode" />
               <select id="updateReasonCode" class="form-select">
                 <option value="" data-i18n="shared.loadingReasonCodes">Loading reason codes...</option>
               </select>
+            </div>
+            <div class="field-block">
+              <label for="updateEntryStatus" class="form-label" data-i18n="dashboard.tableStatus">Status</label>
+              <input type="hidden" id="originalEntryStatus" />
+              <select id="updateEntryStatus" class="form-select" required>
+                <option value="pending" data-i18n="status.pending">Pending</option>
+                <option value="approved" data-i18n="status.approved">Approved</option>
+                <option value="rejected" data-i18n="status.rejected">Rejected</option>
+              </select>
+            </div>
+            <div class="field-block update-diverse-field d-none">
+              <label for="updateDiverseReason" class="form-label" data-i18n="shared.diverseReason">Diverse Reason</label>
+              <input type="hidden" id="originalDiverseReason" />
+              <input type="text" id="updateDiverseReason" class="form-control">
+            </div>
+            <div class="field-block update-diverse-field d-none">
+              <label for="updateDiverseSummary" class="form-label" data-i18n="shared.diverseSummary">Work Summary</label>
+              <input type="hidden" id="originalDiverseSummary" />
+              <textarea id="updateDiverseSummary" class="form-control" rows="4"></textarea>
             </div>
             <input type="hidden" id="updateEntryId" />
             <div class="field-block">
@@ -895,6 +930,19 @@
                 <option value="superAdmin" data-i18n="employees.role.superAdmin">Super Admin</option>
               </select>
             </div>
+            <div class="field-block">
+              <label class="form-label" data-i18n="employees.timeEntryRights">Time Entry Rights</label>
+              <div class="time-entry-rights">
+                <label class="time-entry-right">
+                  <input class="form-check-input employee-time-entry-type-checkbox" type="checkbox" value="overtime" id="employeeEditorTimeTypeOvertime" checked>
+                  <span data-i18n="shared.overtime">Overtime</span>
+                </label>
+                <label class="time-entry-right">
+                  <input class="form-check-input employee-time-entry-type-checkbox" type="checkbox" value="diverse" id="employeeEditorTimeTypeDiverse">
+                  <span data-i18n="shared.diverse">Diverse</span>
+                </label>
+              </div>
+            </div>
             <div class="field-block assignment-picker d-none" id="employeeEditorProjectAssignmentsPanel">
               <label for="employeeEditorProjectSearchInput" class="form-label" data-i18n="employees.assignedProjects">Assigned Projects</label>
               <input type="text" id="employeeEditorProjectSearchInput" class="form-control" autocomplete="off" data-i18n-placeholder="employees.projectSearchPlaceholder" placeholder="Search projects by code or name">
@@ -971,22 +1019,22 @@
     </div>
   </div>
 
-  <script src="assets/vendor/bootstrap/bootstrap.bundle.min.js?v=20260602-demo-seed"></script>
+  <script src="assets/vendor/bootstrap/bootstrap.bundle.min.js?v=20260603-empty-timeline"></script>
   <script>
     window.defaultApiUrl = (window.location.protocol === "http:" || window.location.protocol === "https:")
       ? window.location.origin + "/"
       : "http://localhost:8081/";
   </script>
-  <script src="assets/vendor/chart.umd.min.js?v=20260602-demo-seed"></script>
-  <script src="scripts/I18n.js?v=20260602-demo-seed"></script>
-  <script src="scripts/Utilities.js?v=20260602-demo-seed"></script>
-  <script src="scripts/AppShell.js?v=20260602-demo-seed"></script>
-  <script src="scripts/Views/ViewSwitching.js?v=20260602-demo-seed"></script>
-  <script src="scripts/Views/SelfView.js?v=20260602-demo-seed"></script>
-  <script src="scripts/Views/EmployeesView.js?v=20260602-demo-seed"></script>
-  <script src="scripts/Views/DashboardView.js?v=20260602-demo-seed"></script>
-  <script src="scripts/Views/ApprovalsView.js?v=20260602-demo-seed"></script>
-  <script src="scripts/Views/HistoryView.js?v=20260602-demo-seed"></script>
-  <script src="scripts/Views/ProjectsView.js?v=20260602-demo-seed"></script>
+  <script src="assets/vendor/chart.umd.min.js?v=20260603-empty-timeline"></script>
+  <script src="scripts/I18n.js?v=20260608-diverse-time"></script>
+  <script src="scripts/Utilities.js?v=20260608-diverse-time"></script>
+  <script src="scripts/AppShell.js?v=20260603-empty-timeline"></script>
+  <script src="scripts/Views/ViewSwitching.js?v=20260603-empty-timeline"></script>
+  <script src="scripts/Views/SelfView.js?v=20260608-punch-strip-clean"></script>
+  <script src="scripts/Views/EmployeesView.js?v=20260608-diverse-time"></script>
+  <script src="scripts/Views/DashboardView.js?v=20260608-diverse-time"></script>
+  <script src="scripts/Views/ApprovalsView.js?v=20260608-diverse-time"></script>
+  <script src="scripts/Views/HistoryView.js?v=20260603-empty-timeline"></script>
+  <script src="scripts/Views/ProjectsView.js?v=20260603-empty-timeline"></script>
 </body>
 </html>

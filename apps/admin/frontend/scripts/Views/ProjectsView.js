@@ -135,6 +135,84 @@ function getVisibleProjectSummaries(projects) {
   return (Array.isArray(projects) ? projects : []).filter(project => projectMatchesPortfolioSearch(project));
 }
 
+function getCurrentProjectUserRole() {
+  const user = typeof getCurrentUser === "function" ? getCurrentUser() : null;
+  return user ? normalizeClientRole(user.role) : "employee";
+}
+
+function getCurrentProjectUserEmployeeCode() {
+  const user = typeof getCurrentUser === "function" ? getCurrentUser() : null;
+  return user && user.employeeCode ? String(user.employeeCode).trim() : "";
+}
+
+function isProjectManagedByCurrentAdmin(project) {
+  const role = getCurrentProjectUserRole();
+  if (role === "superAdmin") {
+    return true;
+  }
+
+  const employeeCode = getCurrentProjectUserEmployeeCode();
+  if (role !== "admin" || !employeeCode) {
+    return false;
+  }
+
+  if (project && project.canModify === true) {
+    return true;
+  }
+
+  const admins = Array.isArray(project && project.admins)
+    ? project.admins.map(code => String(code || "").trim())
+    : [];
+  const backupAdmins = Array.isArray(project && project.backupAdmins)
+    ? project.backupAdmins.map(code => String(code || "").trim())
+    : [];
+  return admins.indexOf(employeeCode) >= 0 || backupAdmins.indexOf(employeeCode) >= 0;
+}
+
+function shouldSectionProjectSummary() {
+  return getCurrentProjectUserRole() === "admin";
+}
+
+function getProjectSummarySections(projects) {
+  const sourceProjects = Array.isArray(projects) ? projects : [];
+  if (!shouldSectionProjectSummary()) {
+    return [
+      {
+        key: "all",
+        title: "",
+        projects: sourceProjects,
+      },
+    ];
+  }
+
+  const managedProjects = [];
+  const otherProjects = [];
+  sourceProjects.forEach(project => {
+    if (isProjectManagedByCurrentAdmin(project)) {
+      managedProjects.push(project);
+    } else {
+      otherProjects.push(project);
+    }
+  });
+
+  return [
+    {
+      key: "managed",
+      title: t("projects.sectionMyProjects"),
+      projects: managedProjects,
+    },
+    {
+      key: "other",
+      title: t("projects.sectionOtherProjects"),
+      projects: otherProjects,
+    },
+  ].filter(section => section.projects.length > 0);
+}
+
+function getProjectSummaryDisplayOrder(projects) {
+  return getProjectSummarySections(projects).reduce((items, section) => items.concat(section.projects), []);
+}
+
 function updateProjectPortfolioCount(visibleCount, totalCount) {
   const countElement = document.getElementById("projectPortfolioCount");
   if (!countElement) {
@@ -200,7 +278,12 @@ function renderProjectEditorAssignmentList(kind) {
     return;
   }
 
-  const employees = (projectsViewState.employees || []).filter(employee => employeeMatchesProjectEditorSearch(employee, config.searchValue));
+  const employees = (projectsViewState.employees || [])
+    .filter(employee => {
+      const role = typeof normalizeClientRole === "function" ? normalizeClientRole(employee && employee.role || "employee") : "employee";
+      return role === "admin" || role === "superAdmin";
+    })
+    .filter(employee => employeeMatchesProjectEditorSearch(employee, config.searchValue));
   if (employees.length === 0) {
     container.innerHTML = createEmptyState(t(config.emptyKey));
     return;
@@ -541,12 +624,14 @@ function renderProjectInsights(projects) {
   if (typeof Chart !== "function") {
     summaryContainer.innerHTML = createEmptyState(t("projects.chartLibraryFailed"));
     setProjectInsightEmptyState("projectOvertimeShareChart", "projects.chartLibraryFailed");
+    setProjectInsightEmptyState("projectSectorDistributionChart", "projects.chartLibraryFailed");
     return;
   }
 
   if (projectList.length === 0) {
     summaryContainer.innerHTML = createEmptyState(t("projects.noStats"));
     setProjectInsightEmptyState("projectOvertimeShareChart");
+    setProjectInsightEmptyState("projectSectorDistributionChart");
     return;
   }
 
@@ -593,8 +678,15 @@ function renderProjectInsights(projects) {
     label: String(project.projectCode || project.projectName || t("shared.project")),
     value: getProjectTotalSeconds(project),
   }));
+  const sectorItems = Object.keys(sectorMetrics)
+    .sort((left, right) => sectorMetrics[right] - sectorMetrics[left])
+    .map(sector => ({
+      label: sector,
+      value: sectorMetrics[sector],
+    }));
   pendingProjectInsightFrameId = window.requestAnimationFrame(() => {
     renderProjectDoughnutInsight("projectOvertimeShareChart", overtimeItems, "duration");
+    renderProjectDoughnutInsight("projectSectorDistributionChart", sectorItems, "count");
     pendingProjectInsightFrameId = null;
   });
 }
@@ -738,6 +830,7 @@ async function refreshProjectsView() {
   clearProjectDetailCache();
   syncProjectRangeButtons();
   syncProjectCustomRangeInputs();
+  const requestedProjectCode = currentProjectCode;
   const addButton = document.getElementById("addProjectButton");
   if (addButton) {
     addButton.classList.toggle("d-none", !canManageProjects());
@@ -756,10 +849,13 @@ async function refreshProjectsView() {
     projectsViewState.trends = trends;
     projectsViewState.portfolioSearch = getProjectPortfolioSearchValue();
 
-    currentProjectCode = payload && payload.selectedProjectCode ? payload.selectedProjectCode : (summary[0] ? summary[0].projectCode : null);
     const visibleProjects = getVisibleProjectSummaries(summary);
+    const visibleProjectOrder = getProjectSummaryDisplayOrder(visibleProjects);
+    currentProjectCode = requestedProjectCode && payload && payload.selectedProjectCode
+      ? payload.selectedProjectCode
+      : (visibleProjectOrder[0] ? visibleProjectOrder[0].projectCode : null);
     if (currentProjectCode && !visibleProjects.some(project => String(project.projectCode || "") === String(currentProjectCode))) {
-      currentProjectCode = visibleProjects.length > 0 ? visibleProjects[0].projectCode : null;
+      currentProjectCode = visibleProjectOrder.length > 0 ? visibleProjectOrder[0].projectCode : null;
     }
 
     renderProjectSummaryCards(summary);
@@ -784,6 +880,7 @@ async function refreshProjectsView() {
     }
     document.getElementById("projectInsightsSummary").innerHTML = createEmptyState(t("projects.unableToLoad"));
     setProjectInsightEmptyState("projectOvertimeShareChart", "projects.chartLoadError");
+    setProjectInsightEmptyState("projectSectorDistributionChart", "projects.chartLoadError");
   }
 }
 
@@ -794,49 +891,72 @@ function renderProjectSummaryCards(projectDetails) {
   updateProjectPortfolioCount(visibleProjects.length, allProjects.length);
 
   if (allProjects.length === 0) {
+    container.classList.remove("is-sectioned");
     container.innerHTML = createEmptyState(t("projects.noStats"));
     return;
   }
 
   if (visibleProjects.length === 0) {
+    container.classList.remove("is-sectioned");
     container.innerHTML = createEmptyState(t("projects.noMatchingProjects"));
     return;
   }
 
-  container.innerHTML = visibleProjects.map(detail => {
-    const total = secondsToDurationLabel(timeStringToSeconds(detail.totalOvertime || "00:00:00"));
-    const minValue = secondsToDurationLabel(timeStringToSeconds(detail.minOvertime || "00:00:00"));
-    const maxValue = secondsToDurationLabel(timeStringToSeconds(detail.maxOvertime || "00:00:00"));
-    const admins = Array.isArray(detail.admins) ? detail.admins : [];
-    const backupAdmins = Array.isArray(detail.backupAdmins) ? detail.backupAdmins : [];
-    const archivedBadge = detail.archived ? `<span class="status-badge rejected">${escapeHtml(t("projects.archived"))}</span>` : "";
+  const sections = getProjectSummarySections(visibleProjects);
+  container.classList.toggle("is-sectioned", shouldSectionProjectSummary());
+  container.innerHTML = sections.map(section => {
+    const cardsMarkup = section.projects.map(renderProjectSummaryCard).join("");
+    if (!section.title) {
+      return cardsMarkup;
+    }
+
     return `
-      <article class="project-summary-card${currentProjectCode === detail.projectCode ? " is-active" : ""}${detail.archived ? " is-archived" : ""}" data-project-code="${escapeHtml(detail.projectCode)}">
-        <div class="project-card-header">
-          <div>
-            <div class="project-card-title">${escapeHtml(detail.projectName)}</div>
-            <div class="employee-card-note">${escapeHtml([detail.projectCode, detail.sector].filter(Boolean).join(" | "))}</div>
-          </div>
-          <div class="project-card-status-stack">
-            ${archivedBadge}
-            <span class="inline-code-pill">${escapeHtml(total)}</span>
-          </div>
+      <section class="project-summary-section" data-project-section="${escapeHtml(section.key)}">
+        <div class="project-summary-section-title">
+          <span>${escapeHtml(section.title)}</span>
+          <span class="project-summary-section-count">${escapeHtml(t("projects.projectCountValue", { count: section.projects.length }))}</span>
         </div>
-        <div class="project-card-meta">
-          <span class="meta-pill">${escapeHtml(t("projects.entries", { count: detail.entryCount }))}</span>
-          <span class="meta-pill">${escapeHtml(t("projects.min", { value: minValue }))}</span>
-          <span class="meta-pill">${escapeHtml(t("projects.max", { value: maxValue }))}</span>
+        <div class="project-summary-section-grid">
+          ${cardsMarkup}
         </div>
-        <div class="project-card-assignments">
-          ${renderProjectAssignmentLine("projects.admins", detail.adminDisplay, admins)}
-          ${renderProjectAssignmentLine("projects.backupAdmins", detail.backupAdminDisplay, backupAdmins)}
-        </div>
-        <div class="employee-card-actions${canManageProjects() ? "" : " d-none"}">
-          <button type="button" class="btn btn-outline-secondary btn-sm project-edit-button" data-project-code="${escapeHtml(detail.projectCode)}">${escapeHtml(t("action.edit"))}</button>
-        </div>
-      </article>
+      </section>
     `;
   }).join("");
+}
+
+function renderProjectSummaryCard(detail) {
+  const total = secondsToDurationLabel(timeStringToSeconds(detail.totalOvertime || "00:00:00"));
+  const minValue = secondsToDurationLabel(timeStringToSeconds(detail.minOvertime || "00:00:00"));
+  const maxValue = secondsToDurationLabel(timeStringToSeconds(detail.maxOvertime || "00:00:00"));
+  const admins = Array.isArray(detail.admins) ? detail.admins : [];
+  const backupAdmins = Array.isArray(detail.backupAdmins) ? detail.backupAdmins : [];
+  const archivedBadge = detail.archived ? `<span class="status-badge rejected">${escapeHtml(t("projects.archived"))}</span>` : "";
+  return `
+    <article class="project-summary-card${currentProjectCode === detail.projectCode ? " is-active" : ""}${detail.archived ? " is-archived" : ""}" data-project-code="${escapeHtml(detail.projectCode)}">
+      <div class="project-card-header">
+        <div>
+          <div class="project-card-title">${escapeHtml(detail.projectName)}</div>
+          <div class="employee-card-note">${escapeHtml([detail.projectCode, detail.sector].filter(Boolean).join(" | "))}</div>
+        </div>
+        <div class="project-card-status-stack">
+          ${archivedBadge}
+          <span class="inline-code-pill">${escapeHtml(total)}</span>
+        </div>
+      </div>
+      <div class="project-card-meta">
+        <span class="meta-pill">${escapeHtml(t("projects.entries", { count: detail.entryCount }))}</span>
+        <span class="meta-pill">${escapeHtml(t("projects.min", { value: minValue }))}</span>
+        <span class="meta-pill">${escapeHtml(t("projects.max", { value: maxValue }))}</span>
+      </div>
+      <div class="project-card-assignments">
+        ${renderProjectAssignmentLine("projects.admins", detail.adminDisplay, admins)}
+        ${renderProjectAssignmentLine("projects.backupAdmins", detail.backupAdminDisplay, backupAdmins)}
+      </div>
+      <div class="employee-card-actions${canManageProjects() ? "" : " d-none"}">
+        <button type="button" class="btn btn-outline-secondary btn-sm project-edit-button" data-project-code="${escapeHtml(detail.projectCode)}">${escapeHtml(t("action.edit"))}</button>
+      </div>
+    </article>
+  `;
 }
 
 function applyProjectPortfolioSearch(options = {}) {
@@ -845,7 +965,8 @@ function applyProjectPortfolioSearch(options = {}) {
   const selectedProjectVisible = visibleProjects.some(project => String(project.projectCode || "") === String(currentProjectCode || ""));
 
   if (!selectedProjectVisible) {
-    currentProjectCode = visibleProjects.length > 0 ? visibleProjects[0].projectCode : null;
+    const visibleProjectOrder = getProjectSummaryDisplayOrder(visibleProjects);
+    currentProjectCode = visibleProjectOrder.length > 0 ? visibleProjectOrder[0].projectCode : null;
     if (options.updateDetail) {
       if (currentProjectCode) {
         loadProjectDetailStats(currentProjectCode, currentProjectFilter);
@@ -1133,6 +1254,7 @@ function renderProjectMultiLineChart(trendData) {
               color: "#5f6673",
               usePointStyle: true,
               boxWidth: 8,
+              padding: 18,
             },
           },
           tooltip: {

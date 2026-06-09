@@ -60,6 +60,7 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/review/bo
         $payload = [PSCustomObject]@{
             approvals = @(Get-ApprovalsEntriesModel -CurrentUser $currentUser)
             history   = @(Get-HistoryEntriesSnapshot)
+            projects  = @(Get-ProjectsForCurrentUser -CurrentUser $currentUser)
         }
         respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
     }

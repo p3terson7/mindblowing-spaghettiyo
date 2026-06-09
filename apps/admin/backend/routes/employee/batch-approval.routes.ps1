@@ -44,6 +44,7 @@
                         continue
                     }
 
+                    $employeeRole = Get-EmployeeRoleByCode -EmployeeCode $employeeCode
                     $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
                     try {
                         $existingData = Read-JsonArrayFile -Path $dataFile
@@ -60,6 +61,10 @@
 
                             $entry = $existingData[$entryIndex]
                             if (-not (Test-CurrentUserCanManageEntry -CurrentUser $currentUser -Entry $entry)) {
+                                continue
+                            }
+
+                            if (-not (Test-CurrentUserCanApproveEmployeeRole -CurrentUser $currentUser -EmployeeRole $employeeRole)) {
                                 continue
                             }
 

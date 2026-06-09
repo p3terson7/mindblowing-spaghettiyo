@@ -1,4 +1,5 @@
 const employeesViewState = {
+  allEmployees: [],
   employees: [],
   filteredEmployees: [],
   selectedEmployeeCode: "",
@@ -8,6 +9,9 @@ const employeesViewState = {
   currentMonthByEmployee: {},
   expandedNotes: {},
   entryLookups: null,
+  projectSearchTextByCode: {},
+  employeeFilterTimerId: null,
+  employeeAnalyticsSignature: "",
   editorProjectAssignments: {
     projects: [],
     selectedProjectCodes: new Set(),
@@ -27,12 +31,80 @@ function canSeedDemoEntries() {
   return canManageEmployeeProfiles();
 }
 
+function getCurrentUserEmployeeCode() {
+  const user = typeof getCurrentUser === "function" ? getCurrentUser() : null;
+  return user && user.employeeCode ? String(user.employeeCode).trim() : "";
+}
+
+function isCurrentUserEmployeeCode(employeeCode) {
+  const currentEmployeeCode = getCurrentUserEmployeeCode();
+  return Boolean(currentEmployeeCode && String(employeeCode || "").trim() === currentEmployeeCode);
+}
+
 function getEmployeeRole(employee) {
   return normalizeClientRole(employee && employee.role ? employee.role : "employee");
 }
 
+function getEmployeeTimeEntryTypes(employee) {
+  const values = Array.isArray(employee && employee.timeEntryTypes) ? employee.timeEntryTypes : ["overtime"];
+  const normalized = values
+    .map(value => String(value || "").trim().toLowerCase())
+    .map(value => value === "diverse" ? "diverse" : value === "overtime" ? "overtime" : "")
+    .filter(Boolean);
+  return normalized.length > 0 ? Array.from(new Set(normalized)).sort() : ["overtime"];
+}
+
+function getEmployeeEditorSelectedTimeEntryTypes() {
+  const selected = Array.from(document.querySelectorAll(".employee-time-entry-type-checkbox:checked"))
+    .map(input => String(input.value || "").trim().toLowerCase())
+    .filter(Boolean);
+  return selected.length > 0 ? Array.from(new Set(selected)).sort() : ["overtime"];
+}
+
+function setEmployeeEditorTimeEntryTypes(timeEntryTypes) {
+  const selected = new Set(Array.isArray(timeEntryTypes) && timeEntryTypes.length > 0 ? timeEntryTypes : ["overtime"]);
+  document.querySelectorAll(".employee-time-entry-type-checkbox").forEach(input => {
+    input.checked = selected.has(String(input.value || "").trim().toLowerCase());
+  });
+  if (!document.querySelector(".employee-time-entry-type-checkbox:checked")) {
+    document.getElementById("employeeEditorTimeTypeOvertime").checked = true;
+  }
+}
+
+function employeeEditorTimeEntryTypesChanged(employee) {
+  const original = getEmployeeTimeEntryTypes(employee);
+  const selected = getEmployeeEditorSelectedTimeEntryTypes();
+  return original.join("|") !== selected.join("|");
+}
+
 function getEmployeeRoleLabel(employee) {
   return t(`employees.role.${getEmployeeRole(employee)}`);
+}
+
+function getEmployeeRoleSortRank(employee) {
+  const role = getEmployeeRole(employee);
+  if (role === "superAdmin") {
+    return 0;
+  }
+  if (role === "admin") {
+    return 1;
+  }
+  return 2;
+}
+
+function compareEmployeesByRoleThenName(left, right) {
+  const leftRoleRank = getEmployeeRoleSortRank(left);
+  const rightRoleRank = getEmployeeRoleSortRank(right);
+  if (leftRoleRank !== rightRoleRank) {
+    return leftRoleRank - rightRoleRank;
+  }
+
+  const nameComparison = String(left && left.name || "").localeCompare(String(right && right.name || ""), undefined, { sensitivity: "base" });
+  if (nameComparison !== 0) {
+    return nameComparison;
+  }
+
+  return String(left && left.code || "").localeCompare(String(right && right.code || ""));
 }
 
 function normalizeEmployeeEditorCodeArray(codes) {
@@ -243,6 +315,7 @@ function resetEmployeeEditorForm() {
   document.getElementById("employeeEditorCodeInput").readOnly = false;
   document.getElementById("employeeEditorNameInput").value = "";
   document.getElementById("employeeEditorRoleSelect").value = "employee";
+  setEmployeeEditorTimeEntryTypes(["overtime"]);
   employeesViewState.editorProjectAssignments.selectedProjectCodes = new Set();
   employeesViewState.editorProjectAssignments.originalProjectCodes = new Set();
   employeesViewState.editorProjectAssignments.search = "";
@@ -270,6 +343,7 @@ async function openEmployeeEditorModal(mode, employee) {
     document.getElementById("employeeEditorCodeInput").readOnly = true;
     document.getElementById("employeeEditorNameInput").value = employee.name || "";
     document.getElementById("employeeEditorRoleSelect").value = getEmployeeRole(employee);
+    setEmployeeEditorTimeEntryTypes(getEmployeeTimeEntryTypes(employee));
     document.getElementById("employeeEditorPasswordHint").textContent = t("employees.passwordHintEdit");
 
     if (employee.archived) {
@@ -299,6 +373,8 @@ async function submitEmployeeEditor() {
   const role = document.getElementById("employeeEditorRoleSelect").value || "employee";
   const originalEmployee = getEmployeeByCode(employeeCode);
   const originalRole = originalEmployee ? getEmployeeRole(originalEmployee) : "employee";
+  const timeEntryTypes = getEmployeeEditorSelectedTimeEntryTypes();
+  const timeEntryTypesChanged = employeeEditorTimeEntryTypesChanged(originalEmployee);
   const projectAssignmentsChanged = employeeEditorProjectAssignmentsChanged(role);
   const newPassword = document.getElementById("employeeEditorPasswordInput").value;
   const confirmPassword = document.getElementById("employeeEditorPasswordConfirmInput").value;
@@ -326,6 +402,7 @@ async function submitEmployeeEditor() {
           code: employeeCode,
           name: employeeName,
           role,
+          timeEntryTypes,
           initialPassword: newPassword,
           mustChangePassword,
         }),
@@ -354,13 +431,13 @@ async function submitEmployeeEditor() {
     return;
   }
 
-  if (employeeName === originalName && role === originalRole && !hasPasswordChange && !projectAssignmentsChanged) {
+  if (employeeName === originalName && role === originalRole && !timeEntryTypesChanged && !hasPasswordChange && !projectAssignmentsChanged) {
     setEmployeeEditorMessage(t("dashboard.noChanges"), "info");
     return;
   }
 
   try {
-    if (employeeName !== originalName || role !== originalRole) {
+    if (employeeName !== originalName || role !== originalRole || timeEntryTypesChanged) {
       const response = await fetch(apiUrl + "employees/" + encodeURIComponent(employeeCode), {
         method: "PUT",
         headers: {
@@ -369,6 +446,7 @@ async function submitEmployeeEditor() {
         body: JSON.stringify({
           name: employeeName,
           role,
+          timeEntryTypes,
         }),
       });
 
@@ -527,6 +605,71 @@ function getEmployeeInitials(name) {
   return parts.slice(0, 2).map(part => part[0].toUpperCase()).join("");
 }
 
+function renderEmployeeProjectBubbles(projects, responsibilityKey, compact) {
+  const visibleProjects = normalizeEmployeeProjectReferenceArray(projects);
+  if (visibleProjects.length === 0) {
+    return "";
+  }
+
+  const maxVisible = compact ? 3 : 12;
+  const shownProjects = visibleProjects.slice(0, maxVisible);
+  const hiddenCount = visibleProjects.length - shownProjects.length;
+  const responsibilityLabel = responsibilityKey === "backup"
+    ? t("dashboard.backupAdmin")
+    : t("dashboard.primaryAdmin");
+
+  return shownProjects.map(project => {
+    const titleParts = [responsibilityLabel, project.projectCode, project.projectName, project.sector].filter(Boolean);
+    return `
+      <span class="employee-project-bubble${responsibilityKey === "backup" ? " is-backup" : ""}" title="${escapeHtml(titleParts.join(" | "))}">
+        ${escapeHtml(project.projectName)}
+      </span>
+    `;
+  }).join("") + (hiddenCount > 0
+    ? `<span class="employee-project-bubble is-more" title="${escapeHtml(t("employees.moreProjects", { count: hiddenCount }))}">+${escapeHtml(String(hiddenCount))}</span>`
+    : "");
+}
+
+function renderEmployeeResponsibilityBubbles(employee, compact) {
+  const supervisedProjects = getEmployeeSupervisedProjects(employee);
+  const backupProjects = getEmployeeBackupProjects(employee);
+  if (supervisedProjects.length === 0 && backupProjects.length === 0) {
+    return "";
+  }
+
+  return `
+    <div class="employee-project-bubble-row${compact ? " is-compact" : ""}">
+      ${renderEmployeeProjectBubbles(supervisedProjects, "supervised", compact)}
+      ${renderEmployeeProjectBubbles(backupProjects, "backup", compact)}
+    </div>
+  `;
+}
+
+function renderEmployeeResponsibilitySummary(employee) {
+  const supervisedProjects = getEmployeeSupervisedProjects(employee);
+  const backupProjects = getEmployeeBackupProjects(employee);
+  if (supervisedProjects.length === 0 && backupProjects.length === 0) {
+    return "";
+  }
+
+  return `
+    <div class="employee-responsibility-strip">
+      ${supervisedProjects.length > 0 ? `
+        <div class="employee-responsibility-group">
+          <span class="employee-responsibility-label">${escapeHtml(t("employees.supervisedProjects"))}</span>
+          <div class="employee-project-bubble-row">${renderEmployeeProjectBubbles(supervisedProjects, "supervised", false)}</div>
+        </div>
+      ` : ""}
+      ${backupProjects.length > 0 ? `
+        <div class="employee-responsibility-group">
+          <span class="employee-responsibility-label">${escapeHtml(t("employees.backupProjects"))}</span>
+          <div class="employee-project-bubble-row">${renderEmployeeProjectBubbles(backupProjects, "backup", false)}</div>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
 function isArchivedEmployee(employee) {
   if (!employee) {
     return false;
@@ -565,6 +708,294 @@ function getEmployeeProjectCodes(employee) {
     .filter(Boolean);
 }
 
+function normalizeEmployeeProjectReferenceArray(projects) {
+  return (Array.isArray(projects) ? projects : [])
+    .map(project => {
+      const projectCode = String(project && project.projectCode ? project.projectCode : "").trim();
+      if (!projectCode) {
+        return null;
+      }
+
+      const projectName = String(project && project.projectName ? project.projectName : projectCode).trim() || projectCode;
+      const sector = String(project && project.sector ? project.sector : "").trim();
+      return {
+        projectCode,
+        projectName,
+        sector,
+        responsibility: String(project && project.responsibility ? project.responsibility : "").trim(),
+      };
+    })
+    .filter(Boolean);
+}
+
+function getEmployeeSupervisedProjects(employee) {
+  return normalizeEmployeeProjectReferenceArray(employee && employee.supervisedProjects ? employee.supervisedProjects : []);
+}
+
+function getEmployeeBackupProjects(employee) {
+  return normalizeEmployeeProjectReferenceArray(employee && employee.backupProjects ? employee.backupProjects : []);
+}
+
+function isAdminDirectoryEmployee(employee) {
+  const role = getEmployeeRole(employee);
+  return role === "admin" || role === "superAdmin";
+}
+
+function getCurrentUserRole() {
+  const user = typeof getCurrentUser === "function" ? getCurrentUser() : null;
+  return user ? normalizeClientRole(user.role) : "employee";
+}
+
+function projectCodeSetFromProjects(projects, predicate) {
+  const codes = new Set();
+  (Array.isArray(projects) ? projects : []).forEach(project => {
+    if (predicate && !predicate(project)) {
+      return;
+    }
+
+    const projectCode = String(project && project.projectCode ? project.projectCode : "").trim();
+    if (projectCode) {
+      codes.add(projectCode);
+    }
+  });
+
+  return codes;
+}
+
+function getCurrentUserManagedProjectCodeSet() {
+  const currentRole = getCurrentUserRole();
+  const currentEmployeeCode = getCurrentUserEmployeeCode();
+  const projects = employeesViewState.entryLookups && Array.isArray(employeesViewState.entryLookups.projects)
+    ? employeesViewState.entryLookups.projects
+    : [];
+
+  if (currentRole === "superAdmin") {
+    return projectCodeSetFromProjects(projects);
+  }
+
+  if (currentRole !== "admin" || !currentEmployeeCode) {
+    return new Set();
+  }
+
+  return projectCodeSetFromProjects(projects, project => {
+    if (project && project.canModify === true) {
+      return true;
+    }
+
+    const admins = Array.isArray(project && project.admins)
+      ? project.admins.map(code => String(code || "").trim())
+      : [];
+    const backupAdmins = Array.isArray(project && project.backupAdmins)
+      ? project.backupAdmins.map(code => String(code || "").trim())
+      : [];
+    return admins.indexOf(currentEmployeeCode) >= 0 || backupAdmins.indexOf(currentEmployeeCode) >= 0;
+  });
+}
+
+function employeeHasEntriesInProjectSet(employee, projectCodeSet) {
+  if (!employee || !projectCodeSet || projectCodeSet.size === 0) {
+    return false;
+  }
+
+  return getEmployeeProjectCodes(employee).some(projectCode => projectCodeSet.has(projectCode));
+}
+
+function getEmployeeDirectorySectionDefinitions(employees) {
+  const managedProjectCodes = getCurrentUserManagedProjectCodeSet();
+  const currentRole = getCurrentUserRole();
+  const sections = [
+    {
+      key: "admins",
+      title: t("employees.sectionAdmins"),
+      employees: [],
+    },
+    {
+      key: "managed",
+      title: currentRole === "superAdmin" ? t("employees.sectionWithEntries") : t("employees.sectionMyProjects"),
+      employees: [],
+    },
+    {
+      key: "other",
+      title: t("employees.sectionOtherEmployees"),
+      employees: [],
+    },
+  ];
+
+  (Array.isArray(employees) ? employees : []).forEach(employee => {
+    if (isAdminDirectoryEmployee(employee)) {
+      sections[0].employees.push(employee);
+      return;
+    }
+
+    if (employeeHasEntriesInProjectSet(employee, managedProjectCodes)) {
+      sections[1].employees.push(employee);
+      return;
+    }
+
+    sections[2].employees.push(employee);
+  });
+
+  return sections.filter(section => section.employees.length > 0);
+}
+
+function renderEmployeeDirectoryCard(employee, canManageProfiles) {
+  const isCurrentUser = isCurrentUserEmployeeCode(employee.code);
+  return `
+    <article class="employee-card${employeesViewState.selectedEmployeeCode === employee.code ? " is-active" : ""}${isCurrentUser ? " is-current-user" : ""}" data-employee-code="${escapeHtml(employee.code)}">
+      <div class="employee-card-header">
+        <div class="d-flex align-items-center gap-3">
+          <div class="employee-avatar">${escapeHtml(getEmployeeInitials(employee.name))}</div>
+          <div>
+            <div class="employee-card-title${isCurrentUser ? " employee-name-self" : ""}" title="${escapeHtml(employee.name)}">
+              ${escapeHtml(employee.name)}
+              ${isCurrentUser ? `<span class="self-card-badge">${escapeHtml(t("employees.currentUser"))}</span>` : ""}
+            </div>
+            <div class="employee-card-note">${escapeHtml(isArchivedEmployee(employee) ? t("employees.archived") : getEmployeeRoleLabel(employee))}</div>
+          </div>
+        </div>
+      </div>
+      ${renderEmployeeResponsibilityBubbles(employee, true)}
+      <div class="employee-card-meta">
+        <div class="employee-card-info-row">
+          <span class="employee-card-info-label">EMP</span>
+          <span class="employee-card-info-value mono">${escapeHtml(employee.code)}</span>
+        </div>
+        <div class="employee-card-info-row">
+          <span class="employee-card-info-label">${escapeHtml(t("employees.entriesShort"))}</span>
+          <span class="employee-card-info-value">${escapeHtml(t("employees.entryCount", { count: employee.entryCount || 0 }))}</span>
+        </div>
+        ${isArchivedEmployee(employee) ? `<div class="employee-card-info-row"><span class="employee-card-info-label">${escapeHtml(t("employees.scope"))}</span><span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span></div>` : ""}
+      </div>
+      <div class="employee-card-actions${canManageProfiles ? "" : " d-none"}">
+        <button type="button" class="btn btn-outline-secondary btn-sm employee-edit-button" data-employee-code="${escapeHtml(employee.code)}">${escapeHtml(t("action.edit"))}</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderEmployeeDirectorySection(section, canManageProfiles) {
+  return `
+    <section class="employee-directory-section" data-employee-section="${escapeHtml(section.key)}">
+      <div class="employee-directory-section-title">
+        <span>${escapeHtml(section.title)}</span>
+        <span class="employee-directory-section-count">${escapeHtml(tn("shared.employee", section.employees.length))}</span>
+      </div>
+      <div class="employee-directory-section-grid">
+        ${section.employees.map(employee => renderEmployeeDirectoryCard(employee, canManageProfiles)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function buildEmployeeProjectSearchText(project) {
+  if (!project) {
+    return "";
+  }
+
+  return [
+    project.projectCode,
+    project.projectName,
+    project.sector,
+  ].map(value => String(value || "").trim()).filter(Boolean).join(" ").toLowerCase();
+}
+
+function setEmployeesProjectSearchIndex(projects) {
+  const index = {};
+  (Array.isArray(projects) ? projects : []).forEach(project => {
+    const projectCode = String(project && project.projectCode ? project.projectCode : "").trim();
+    if (!projectCode) {
+      return;
+    }
+
+    index[projectCode] = buildEmployeeProjectSearchText(project);
+  });
+
+  employeesViewState.projectSearchTextByCode = index;
+}
+
+function getEmployeeEntryProjectSearchText(employee) {
+  const codes = new Set(getEmployeeProjectCodes(employee));
+  (Array.isArray(employee && employee.projectStats) ? employee.projectStats : []).forEach(project => {
+    const projectCode = String(project && project.projectCode ? project.projectCode : "").trim();
+    if (projectCode) {
+      codes.add(projectCode);
+    }
+  });
+
+  return Array.from(codes).map(projectCode => {
+    const projectSearchText = employeesViewState.projectSearchTextByCode[projectCode] || "";
+    return `${projectCode} ${projectSearchText}`;
+  }).join(" ").toLowerCase();
+}
+
+function getEmployeeResponsibilitySearchText(employee) {
+  return getEmployeeSupervisedProjects(employee)
+    .concat(getEmployeeBackupProjects(employee))
+    .map(project => buildEmployeeProjectSearchText(project))
+    .join(" ");
+}
+
+function tokenizeEmployeeSearch(searchValue) {
+  return String(searchValue || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function textMatchesAllEmployeeSearchTokens(text, tokens) {
+  const normalizedText = String(text || "").toLowerCase();
+  return tokens.every(token => normalizedText.includes(token));
+}
+
+function getEmployeeSearchResult(employee, searchValue) {
+  const tokens = tokenizeEmployeeSearch(searchValue);
+  if (tokens.length === 0) {
+    return {
+      matches: true,
+      rank: 0,
+    };
+  }
+
+  const identityText = `${employee && employee.name ? employee.name : ""} ${employee && employee.code ? employee.code : ""} ${getEmployeeRoleLabel(employee)}`.toLowerCase();
+  const responsibilityText = getEmployeeResponsibilitySearchText(employee);
+  const entryProjectText = getEmployeeEntryProjectSearchText(employee);
+  const combinedText = `${identityText} ${responsibilityText} ${entryProjectText}`;
+
+  if (!textMatchesAllEmployeeSearchTokens(combinedText, tokens)) {
+    return {
+      matches: false,
+      rank: 99,
+    };
+  }
+
+  if (textMatchesAllEmployeeSearchTokens(responsibilityText, tokens)) {
+    return {
+      matches: true,
+      rank: 0,
+    };
+  }
+
+  if (textMatchesAllEmployeeSearchTokens(entryProjectText, tokens)) {
+    return {
+      matches: true,
+      rank: 1,
+    };
+  }
+
+  if (textMatchesAllEmployeeSearchTokens(identityText, tokens)) {
+    return {
+      matches: true,
+      rank: 2,
+    };
+  }
+
+  return {
+    matches: true,
+    rank: 3,
+  };
+}
+
 function employeeMatchesProjectFilter(employee, projectCode) {
   const selectedProjectCode = String(projectCode || "").trim();
   if (!selectedProjectCode) {
@@ -588,6 +1019,7 @@ function populateEmployeesProjectFilter(projects) {
   const currentValue = projectSelect.value || employeesViewState.selectedProjectCode || "";
   const projectItems = (Array.isArray(projects) ? projects : [])
     .filter(project => String(project && project.projectCode || "").trim());
+  setEmployeesProjectSearchIndex(projectItems);
   const selectedValue = projectItems.some(project => String(project.projectCode || "") === currentValue)
     ? currentValue
     : "";
@@ -708,6 +1140,27 @@ function compactEmployeeMetricItems(items, maxItems = 8) {
   return visibleItems;
 }
 
+function getEmployeeChartContextValue(context) {
+  if (!context) {
+    return 0;
+  }
+
+  if (typeof context.raw === "number") {
+    return context.raw;
+  }
+
+  if (context.parsed && typeof context.parsed.x === "number") {
+    return context.parsed.x;
+  }
+
+  if (typeof context.parsed === "number") {
+    return context.parsed;
+  }
+
+  const value = Number(context.raw || 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
 function renderEmployeeOvertimeShareChart(employees) {
   const items = compactEmployeeMetricItems((employees || []).map(employee => {
     const stats = getEmployeeAnalyticsStats(employee);
@@ -756,8 +1209,11 @@ function renderEmployeeOvertimeShareChart(employees) {
           bodyColor: "#ffffff",
           callbacks: {
             label: context => {
-              const value = Number(context.parsed || 0);
-              const total = (context.dataset.data || []).reduce((sum, item) => sum + Number(item || 0), 0);
+              const value = getEmployeeChartContextValue(context);
+              const total = (context.dataset.data || []).reduce((sum, item) => {
+                const itemValue = Number(item || 0);
+                return sum + (Number.isFinite(itemValue) ? itemValue : 0);
+              }, 0);
               const percent = total > 0 ? Math.round((value / total) * 100) : 0;
               return `${context.label}: ${secondsToDurationLabel(value)} (${percent}%)`;
             },
@@ -792,8 +1248,31 @@ function renderEmployeeOvertimeShareChart(employees) {
   });
 }
 
-function renderEmployeeAnalytics(employees) {
+function buildEmployeeAnalyticsSignature(employees) {
+  const theme = document.documentElement.getAttribute("data-theme") || "light";
+  const projectCode = getEmployeesProjectFilterValue();
+  return [
+    theme,
+    projectCode,
+    (Array.isArray(employees) ? employees : []).map(employee => {
+      const stats = getEmployeeAnalyticsStats(employee);
+      return [
+        employee && employee.code,
+        stats.totalOvertimeSeconds,
+        stats.entryCount,
+      ].join(":");
+    }).join("|"),
+  ].join("::");
+}
+
+function renderEmployeeAnalytics(employees, options = {}) {
   const sourceEmployees = Array.isArray(employees) ? employees : employeesViewState.filteredEmployees;
+  const signature = buildEmployeeAnalyticsSignature(sourceEmployees);
+  if (!options.force && signature === employeesViewState.employeeAnalyticsSignature) {
+    return;
+  }
+
+  employeesViewState.employeeAnalyticsSignature = signature;
   if (pendingEmployeeAnalyticsFrameId) {
     window.cancelAnimationFrame(pendingEmployeeAnalyticsFrameId);
     pendingEmployeeAnalyticsFrameId = null;
@@ -816,6 +1295,10 @@ function getVisibleEmployeeEntries(employeeCode) {
 }
 
 function getPeopleProjectEntryContext(entry) {
+  if (isDiverseEntry(entry)) {
+    return getEntryContextLabel(entry);
+  }
+
   const parts = [];
 
   if (entry && entry.overtimeCode) {
@@ -833,12 +1316,52 @@ function getPeopleProjectEntryContext(entry) {
   return parts.length > 0 ? parts.join(" | ") : t("shared.uncoded");
 }
 
-function renderPeopleProjectEntryRows(entries) {
+function renderPeopleProjectEntryRows(entries, employeeCode) {
+  const normalizedEmployeeCode = String(employeeCode || employeesViewState.selectedEmployeeCode || "").trim();
   const sortedEntries = sortEntriesByDateTime(entries, true);
   const rowsMarkup = sortedEntries.length > 0
     ? sortedEntries.map(entry => {
       const exactTimeLabel = getEntryExactTimeLabel(entry);
       const duration = secondsToDurationLabel(getEmployeeCalendarEntrySeconds(entry));
+      const isOpen = isEntryOpen(entry);
+      const isPending = String(entry.status || "pending").toLowerCase() === "pending";
+      const canModify = canModifyEntry(entry);
+      const canApprove = canApproveEntry(entry);
+      const entryIdAttribute = ` data-entryid="${escapeHtml(entry.entryId || "")}"`;
+      const exactPunchInAttribute = ` data-exactpunchin="${escapeHtml(getEntryExactPunchIn(entry))}"`;
+      const exactPunchOutAttribute = ` data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`;
+      const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
+      const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
+      const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
+      const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
+      const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
+      const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
+      const statusAttribute = ` data-status="${escapeHtml(entry.status || "pending")}"`;
+      const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
+      const employeeCodeAttribute = ` data-employee-code="${escapeHtml(normalizedEmployeeCode)}"`;
+      const reviewButtons = isPending && !isOpen && !isEntryForgottenClockOut(entry) && canApprove
+        ? `
+          <button type="button" class="btn btn-success btn-sm action-btn people-project-entry-action people-calendar-approve"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.approve"))}">
+            <i class="fa-solid fa-check"></i>
+          </button>
+          <button type="button" class="btn btn-danger btn-sm action-btn people-project-entry-action people-calendar-reject"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.reject"))}">
+            <i class="fa-solid fa-ban"></i>
+          </button>
+        `
+        : "";
+      const manageButtons = canModify
+        ? `
+          <button type="button" class="btn btn-outline-secondary btn-sm action-btn people-project-entry-action people-calendar-edit"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
+            <i class="fa-solid fa-pen"></i>
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm action-btn people-project-entry-action people-calendar-delete"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        `
+        : "";
+      const permissionBadge = !canModify || (isPending && !isOpen && !canApprove)
+        ? getEntryPermissionBadgeMarkup(entry)
+        : "";
       return `
         <article class="people-project-entry-row">
           <div class="people-project-entry-date">${escapeHtml(formatDateLabel(entry.date))}</div>
@@ -850,6 +1373,11 @@ function renderPeopleProjectEntryRows(entries) {
           <div class="people-project-entry-side">
             <span class="inline-code-pill">${escapeHtml(duration)}</span>
             <span class="status-badge ${escapeHtml(getStatusTone(entry))}">${escapeHtml(getEntryStatusLabel(entry))}</span>
+          </div>
+          <div class="people-project-entry-actions">
+            ${reviewButtons}
+            ${manageButtons}
+            ${permissionBadge}
           </div>
         </article>
       `;
@@ -865,7 +1393,15 @@ async function fetchEmployeeDetailEntries(employeeCode) {
     return [];
   }
   const payload = await parseResponse(response);
-  return Array.isArray(payload) ? payload : (payload ? [payload] : []);
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (!payload || (typeof payload === "object" && Object.keys(payload).length === 0)) {
+    return [];
+  }
+
+  return [payload];
 }
 
 function groupEmployeeEntriesByDate(entries) {
@@ -1120,7 +1656,7 @@ function buildEmployeeStatsModel(entries) {
   };
 }
 
-function buildEmployeeDetailedStatsMarkup(entries) {
+function buildEmployeeDetailedStatsMarkup(entries, employeeCode) {
   const model = buildEmployeeStatsModel(entries);
   const averageSeconds = model.totals.count > 0 ? Math.round(model.totals.seconds / model.totals.count) : 0;
   const topCodeLabel = model.topOvertimeCode
@@ -1176,7 +1712,7 @@ function buildEmployeeDetailedStatsMarkup(entries) {
                   <span class="panel-note">${escapeHtml(t("employees.projectEntriesSummary", { count: project.count, duration: secondsToDurationLabel(project.seconds) }))}</span>
                 </summary>
                 <div class="people-project-entry-list people-project-entry-list-compact">
-                  ${renderPeopleProjectEntryRows(project.entries)}
+                  ${renderPeopleProjectEntryRows(project.entries, employeeCode)}
                 </div>
               </details>
             </article>
@@ -1273,6 +1809,17 @@ async function refreshPeopleEmployeeDetail(employeeCode) {
 
 window.refreshPeopleEmployeeDetail = refreshPeopleEmployeeDetail;
 
+function markEntryRelatedViewsStaleFromPeople() {
+  if (typeof window.requestAppViewRefresh === "function") {
+    window.requestAppViewRefresh(["dashboardView", "adminView", "projectsView"]);
+    return;
+  }
+
+  if (typeof window.markAppViewsStale === "function") {
+    window.markAppViewsStale(["dashboardView", "adminView", "projectsView"]);
+  }
+}
+
 function renderEmployeesDirectory(employees) {
   const container = document.getElementById("employeesDirectoryContainer");
   const detailContainer = document.getElementById("employeeDetailContainer");
@@ -1288,6 +1835,7 @@ function renderEmployeesDirectory(employees) {
   document.getElementById("employeesDirectoryCount").textContent = tn("shared.employee", employees.length);
 
   if (!employees || employees.length === 0) {
+    container.classList.remove("is-sectioned");
     container.innerHTML = createEmptyState(t("employees.none"));
     detailContainer.innerHTML = "";
     employeesViewState.selectedEmployeeCode = "";
@@ -1298,33 +1846,10 @@ function renderEmployeesDirectory(employees) {
     employeesViewState.selectedEmployeeCode = "";
   }
 
-  container.innerHTML = employees.map(employee => `
-    <article class="employee-card${employeesViewState.selectedEmployeeCode === employee.code ? " is-active" : ""}" data-employee-code="${escapeHtml(employee.code)}">
-      <div class="employee-card-header">
-        <div class="d-flex align-items-center gap-3">
-          <div class="employee-avatar">${escapeHtml(getEmployeeInitials(employee.name))}</div>
-          <div>
-            <div class="employee-card-title" title="${escapeHtml(employee.name)}">${escapeHtml(employee.name)}</div>
-            <div class="employee-card-note">${escapeHtml(isArchivedEmployee(employee) ? t("employees.archived") : getEmployeeRoleLabel(employee))}</div>
-          </div>
-        </div>
-      </div>
-      <div class="employee-card-meta">
-        <div class="employee-card-info-row">
-          <span class="employee-card-info-label">EMP</span>
-          <span class="employee-card-info-value mono">${escapeHtml(employee.code)}</span>
-        </div>
-        <div class="employee-card-info-row">
-          <span class="employee-card-info-label">${escapeHtml(t("employees.entriesShort"))}</span>
-          <span class="employee-card-info-value">${escapeHtml(t("employees.entryCount", { count: employee.entryCount || 0 }))}</span>
-        </div>
-        ${isArchivedEmployee(employee) ? `<div class="employee-card-info-row"><span class="employee-card-info-label">${escapeHtml(t("employees.scope"))}</span><span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span></div>` : ""}
-      </div>
-      <div class="employee-card-actions${canManageProfiles ? "" : " d-none"}">
-        <button type="button" class="btn btn-outline-secondary btn-sm employee-edit-button" data-employee-code="${escapeHtml(employee.code)}">${escapeHtml(t("action.edit"))}</button>
-      </div>
-    </article>
-  `).join("");
+  container.classList.add("is-sectioned");
+  container.innerHTML = getEmployeeDirectorySectionDefinitions(employees)
+    .map(section => renderEmployeeDirectorySection(section, canManageProfiles))
+    .join("");
 
   renderEmployeeDetail(getEmployeeByCode(employeesViewState.selectedEmployeeCode));
 }
@@ -1338,6 +1863,7 @@ function renderEmployeeDetail(employee) {
 
   const entries = getVisibleEmployeeEntries(employee.code);
   const canManageProfiles = canManageEmployeeProfiles();
+  const isCurrentUser = isCurrentUserEmployeeCode(employee.code);
   const liveEntries = sortEntriesByDateTime(entries.filter(entry => isEntryOpen(entry)), true);
   const activeMonthKey = getDefaultEmployeeMonthKey(employee.code, entries);
   employeesViewState.currentMonthByEmployee[employee.code] = activeMonthKey;
@@ -1345,7 +1871,8 @@ function renderEmployeeDetail(employee) {
   const monthEntries = entries.filter(entry => toMonthKey(entry.date) === activeMonthKey);
   const monthTotalSeconds = monthEntries.reduce((accumulator, entry) => accumulator + getEmployeeCalendarEntrySeconds(entry), 0);
   const employeeInsightsMarkup = buildEmployeeInsightMarkup(entries, monthEntries);
-  const employeeDetailedStatsMarkup = buildEmployeeDetailedStatsMarkup(entries);
+  const employeeDetailedStatsMarkup = buildEmployeeDetailedStatsMarkup(entries, employee.code);
+  const responsibilityMarkup = renderEmployeeResponsibilitySummary(employee);
   const monthBoard = buildEmployeeMonthBoard(entries, activeMonthKey);
   const groupedEntries = groupEmployeeEntriesByDate(monthEntries);
   const [activeYear, activeMonth] = activeMonthKey.split("-").map(Number);
@@ -1369,6 +1896,9 @@ function renderEmployeeDetail(employee) {
       const note = String(entry.message || "").trim();
       const showOverflowToggle = note.length > 120;
       const isExpanded = Boolean(employeesViewState.expandedNotes[entryKey]);
+      const canModify = canModifyEntry(entry);
+      const canApprove = canApproveEntry(entry);
+      const permissionBadge = getEntryPermissionBadgeMarkup(entry);
       const noteMarkup = note
         ? `
           <div class="calendar-entry-note${isExpanded ? " is-expanded" : ""}">
@@ -1385,8 +1915,12 @@ function renderEmployeeDetail(employee) {
       const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
       const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
       const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
+      const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
+      const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
+      const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
+      const statusAttribute = ` data-status="${escapeHtml(entry.status || "pending")}"`;
       const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
-      const reviewButtons = String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry) && !isEntryForgottenClockOut(entry)
+      const reviewButtons = String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry) && !isEntryForgottenClockOut(entry) && canApprove
         ? `
           <button type="button" class="btn btn-success btn-sm action-btn calendar-entry-action-btn calendar-review-btn people-calendar-approve" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.approve"))}">
             <i class="fa-solid fa-check"></i>
@@ -1407,12 +1941,15 @@ function renderEmployeeDetail(employee) {
           ${noteMarkup}
           ${reviewButtons ? `<div class="calendar-entry-actions calendar-entry-actions-review">${reviewButtons}</div>` : ""}
           <div class="calendar-entry-actions calendar-entry-actions-manage">
-            <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
-              <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
-            </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
-              <i class="fa-solid fa-trash"></i> <span class="calendar-action-label">${escapeHtml(t("action.delete"))}</span>
-            </button>
+            ${canModify ? `
+              <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
+                <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
+                <i class="fa-solid fa-trash"></i> <span class="calendar-action-label">${escapeHtml(t("action.delete"))}</span>
+              </button>
+            ` : ""}
+            ${permissionBadge}
           </div>
         </div>
       `;
@@ -1444,7 +1981,13 @@ function renderEmployeeDetail(employee) {
           const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
           const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
           const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
+          const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
+          const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
+          const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
+          const statusAttribute = ` data-status="${escapeHtml(entry.status || "pending")}"`;
           const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
+          const canModify = canModifyEntry(entry);
+          const permissionBadge = getEntryPermissionBadgeMarkup(entry);
           return `
             <article class="calendar-live-card">
               <div class="calendar-entry-main">
@@ -1453,12 +1996,15 @@ function renderEmployeeDetail(employee) {
               </div>
               <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
               <div class="calendar-entry-actions calendar-entry-actions-manage">
-                <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
-                  <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
-                </button>
-                <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
-                  <i class="fa-solid fa-trash"></i> <span class="calendar-action-label">${escapeHtml(t("action.delete"))}</span>
-                </button>
+                ${canModify ? `
+                  <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
+                    <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
+                    <i class="fa-solid fa-trash"></i> <span class="calendar-action-label">${escapeHtml(t("action.delete"))}</span>
+                  </button>
+                ` : ""}
+                ${permissionBadge}
                 <span class="inline-code-pill">${escapeHtml(secondsToDurationLabel(elapsedSeconds))}</span>
               </div>
             </article>
@@ -1539,12 +2085,15 @@ function renderEmployeeDetail(employee) {
         <div class="d-flex align-items-center gap-3">
           <div class="employee-avatar employee-avatar-large">${escapeHtml(getEmployeeInitials(employee.name))}</div>
           <div>
-            <div class="employee-detail-title">${escapeHtml(employee.name)}</div>
+            <div class="employee-detail-title${isCurrentUser ? " employee-name-self" : ""}">
+              ${escapeHtml(employee.name)}
+              ${isCurrentUser ? `<span class="self-card-badge">${escapeHtml(t("employees.currentUser"))}</span>` : ""}
+            </div>
             <div class="employee-card-note">${escapeHtml(isArchivedEmployee(employee) ? t("employees.archived") : getEmployeeRoleLabel(employee))}</div>
           </div>
         </div>
         <div class="employee-detail-actions">
-          ${isArchivedEmployee(employee) ? "" : `<button type="button" class="btn btn-primary btn-sm people-add-entry-button" data-employee-code="${escapeHtml(employee.code)}"><i class="fa-solid fa-plus"></i> ${escapeHtml(t("dashboard.addEntry"))}</button>`}
+          ${isArchivedEmployee(employee) || isCurrentUser ? "" : `<button type="button" class="btn btn-primary btn-sm people-add-entry-button" data-employee-code="${escapeHtml(employee.code)}"><i class="fa-solid fa-plus"></i> ${escapeHtml(t("dashboard.addEntry"))}</button>`}
           ${canManageProfiles ? `<button type="button" class="btn btn-outline-secondary btn-sm employee-edit-button" data-employee-code="${escapeHtml(employee.code)}">${escapeHtml(t("action.edit"))}</button>` : ""}
         </div>
       </div>
@@ -1555,6 +2104,7 @@ function renderEmployeeDetail(employee) {
         ${employeesViewState.selectedProjectCode ? `<span class="meta-pill">${escapeHtml(employeesViewState.selectedProjectCode)}</span>` : ""}
         ${isArchivedEmployee(employee) ? `<span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span>` : `<span class="status-badge approved">${escapeHtml(t("employees.scopeActive"))}</span>`}
       </div>
+      ${responsibilityMarkup}
       ${employeeInsightsMarkup}
       ${employeeDetailedStatsMarkup}
       <div class="employee-detail-section">
@@ -1592,46 +2142,70 @@ async function loadEmployeeDetail(employeeCode) {
 }
 
 function applyEmployeeSearchFilter() {
-  const searchValue = document.getElementById("employeesSearchInput").value.trim().toLowerCase();
+  const searchValue = document.getElementById("employeesSearchInput").value.trim();
   const projectCode = getEmployeesProjectFilterValue();
   employeesViewState.selectedProjectCode = projectCode;
 
-  const filteredEmployees = employeesViewState.employees.filter(employee => {
-    const haystack = `${employee.name} ${employee.code}`.toLowerCase();
-    const matchesSearch = !searchValue || haystack.includes(searchValue);
-    return matchesSearch && employeeMatchesProjectFilter(employee, projectCode);
-  });
+  const searchResults = {};
+  const filteredEmployees = employeesViewState.employees
+    .filter(employee => {
+      const searchResult = getEmployeeSearchResult(employee, searchValue);
+      searchResults[employee.code] = searchResult;
+      return searchResult.matches && employeeMatchesProjectFilter(employee, projectCode);
+    })
+    .sort((left, right) => {
+      if (searchValue) {
+        const leftRank = searchResults[left.code] ? searchResults[left.code].rank : 99;
+        const rightRank = searchResults[right.code] ? searchResults[right.code].rank : 99;
+        if (leftRank !== rightRank) {
+          return leftRank - rightRank;
+        }
+      }
+
+      return compareEmployeesByRoleThenName(left, right);
+    });
   employeesViewState.filteredEmployees = filteredEmployees;
   renderEmployeeAnalytics(filteredEmployees);
   renderEmployeesDirectory(filteredEmployees);
 }
 
+function scheduleEmployeeSearchFilter() {
+  if (employeesViewState.employeeFilterTimerId) {
+    window.clearTimeout(employeesViewState.employeeFilterTimerId);
+  }
+
+  employeesViewState.employeeFilterTimerId = window.setTimeout(() => {
+    employeesViewState.employeeFilterTimerId = null;
+    applyEmployeeSearchFilter();
+  }, 160);
+}
+
+function applyEmployeeScopeFilterFromState() {
+  const scope = document.getElementById("employeesScopeSelect").value || "active";
+  employeesViewState.employees = filterEmployeesByScope(employeesViewState.allEmployees, scope);
+  applyEmployeeSearchFilter();
+}
+
 function loadEmployeesView() {
   setLoadingState("employeesDirectoryContainer", "grid", 4);
   setEmployeeAnalyticsLoadingState();
+  employeesViewState.employeeAnalyticsSignature = "";
   document.getElementById("employeeDetailContainer").innerHTML = "";
   const scope = document.getElementById("employeesScopeSelect").value || "active";
-  return Promise.all([
-    fetch(apiUrl + "employees?scope=all").then(parseResponse),
-    fetchOvertimeEntryLookups().catch(error => {
-      console.warn("Unable to preload entry lookups for employee exports:", error);
-      return null;
-    }),
-    fetchScopedProjects().catch(error => {
-      console.warn("Unable to load scoped projects for employees view:", error);
-      return [];
-    }),
-  ])
-    .then(([employees, lookups, scopedProjects]) => {
+  return fetch(apiUrl + "employees/bootstrap?scope=all")
+    .then(parseResponse)
+    .then(payload => {
+      const employees = Array.isArray(payload && payload.employees) ? payload.employees : [];
+      const lookups = payload && payload.lookups ? payload.lookups : {};
+      const scopedProjects = Array.isArray(payload && payload.projects) ? payload.projects : [];
       const projectItems = Array.isArray(scopedProjects) ? scopedProjects : [];
-      if (lookups) {
-        employeesViewState.entryLookups = {
-          ...lookups,
-          projects: projectItems,
-        };
-      }
+      employeesViewState.entryLookups = {
+        ...(lookups || {}),
+        projects: projectItems,
+      };
       populateEmployeesProjectFilter(projectItems);
-      employeesViewState.employees = filterEmployeesByScope(employees, scope);
+      employeesViewState.allEmployees = Array.isArray(employees) ? employees : [];
+      employeesViewState.employees = filterEmployeesByScope(employeesViewState.allEmployees, scope);
       applyEmployeeSearchFilter();
     })
     .catch(error => {
@@ -1677,7 +2251,7 @@ window.addEventListener("app:theme-changed", () => {
     return;
   }
 
-  renderEmployeeAnalytics(employeesViewState.filteredEmployees || []);
+  renderEmployeeAnalytics(employeesViewState.filteredEmployees || [], { force: true });
 });
 
 document.getElementById("employeesDirectoryContainer").addEventListener("click", event => {
@@ -1775,9 +2349,7 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
         await parseResponse(response);
         showToast(t("dashboard.entryUpdated"), "success");
         await refreshPeopleEmployeeDetail(employeeCode);
-        if (typeof refreshDashboardView === "function") {
-          refreshDashboardView();
-        }
+        markEntryRelatedViewsStaleFromPeople();
       } catch (error) {
         console.error("Error approving entry from calendar:", error);
         showToast(t("dashboard.approvalError", { message: error.message }), "error");
@@ -1813,9 +2385,7 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
         await parseResponse(response);
         showToast(t("dashboard.entryUpdated"), "success");
         await refreshPeopleEmployeeDetail(employeeCode);
-        if (typeof refreshDashboardView === "function") {
-          refreshDashboardView();
-        }
+        markEntryRelatedViewsStaleFromPeople();
       } catch (error) {
         console.error("Error rejecting entry from calendar:", error);
         showToast(t("dashboard.approvalError", { message: error.message }), "error");
@@ -1853,9 +2423,7 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
         await parseResponse(response);
         showToast(t("dashboard.entryDeleted"), "success");
         await refreshPeopleEmployeeDetail(employeeCode);
-        if (typeof refreshDashboardView === "function") {
-          refreshDashboardView();
-        }
+        markEntryRelatedViewsStaleFromPeople();
       } catch (error) {
         console.error("Error deleting entry from calendar:", error);
         showToast(t("dashboard.entryDeleteError", { message: error.message }), "error");
@@ -1933,6 +2501,15 @@ document.getElementById("employeeEditorProjectSearchInput").addEventListener("in
   employeesViewState.editorProjectAssignments.search = event.target.value || "";
   renderEmployeeEditorProjectAssignments();
 });
+document.getElementById("employeeEditorForm").addEventListener("change", event => {
+  if (!event.target.classList.contains("employee-time-entry-type-checkbox")) {
+    return;
+  }
+
+  if (!document.querySelector(".employee-time-entry-type-checkbox:checked")) {
+    event.target.checked = true;
+  }
+});
 document.getElementById("employeeEditorProjectAssignmentsList").addEventListener("change", event => {
   const checkbox = event.target.closest(".employee-editor-project-checkbox");
   if (!checkbox) {
@@ -1950,8 +2527,8 @@ document.getElementById("employeeEditorProjectAssignmentsList").addEventListener
     employeesViewState.editorProjectAssignments.selectedProjectCodes.delete(projectCode);
   }
 });
-document.getElementById("employeesSearchInput").addEventListener("input", applyEmployeeSearchFilter);
-document.getElementById("employeesScopeSelect").addEventListener("change", loadEmployeesView);
+document.getElementById("employeesSearchInput").addEventListener("input", scheduleEmployeeSearchFilter);
+document.getElementById("employeesScopeSelect").addEventListener("change", applyEmployeeScopeFilterFromState);
 document.getElementById("employeesProjectSelect").addEventListener("change", () => {
   employeesViewState.selectedProjectCode = getEmployeesProjectFilterValue();
   employeesViewState.autoOpenProjectCode = employeesViewState.selectedProjectCode;
@@ -1963,6 +2540,6 @@ document.getElementById("employeesResetFiltersBtn").addEventListener("click", ()
   document.getElementById("employeesProjectSelect").value = "";
   employeesViewState.selectedProjectCode = "";
   employeesViewState.autoOpenProjectCode = "";
-  loadEmployeesView();
+  applyEmployeeScopeFilterFromState();
 });
 document.getElementById("employeesDirectoryCount").textContent = tn("shared.employee", 0);

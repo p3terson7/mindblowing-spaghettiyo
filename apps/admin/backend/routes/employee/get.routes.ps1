@@ -1,17 +1,35 @@
         # GET /employee/{employeeCode}: Return overtime data
         if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -match "^/employee/(\d+)$") {
             $employeeCode = $matches[1]
-            $dataFile = Join-Path -Path $sharedFolder -ChildPath "${employeeCode}_data.json"
+            $employeeUser = Get-Users | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode $employeeCode } | Select-Object -First 1
 
-            if (!(Test-Path -Path $dataFile)) {
+            if ($null -eq $employeeUser) {
                 respondWithError $response 404 "Employee not found"
                 continue
             }
 
+            $employeeName = if ($employeeUser.displayName) { [string]$employeeUser.displayName } else { [string](Get-EmployeeName $employeeCode) }
+            $employeeRole = Get-EffectiveUserRole -UserRecord $employeeUser
+            $dataFile = Ensure-EmployeeDataFile -EmployeeCode $employeeCode
             $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
             if (-not (Test-CurrentUserSuperAdmin -CurrentUser $currentUser)) {
-                $entries = @($entries | Where-Object { Test-CurrentUserCanManageEntry -CurrentUser $currentUser -Entry $_ })
+                $visibleProjectCodeSet = (Get-ProjectAccessModelForCurrentUser -CurrentUser $currentUser).ProjectCodeSet
+                $entries = @($entries | Where-Object {
+                    $_ -and
+                    $_.PSObject.Properties.Name -contains "projectCode" -and
+                    $visibleProjectCodeSet.ContainsKey([string]$_.projectCode)
+                })
             }
-            respondWithSuccess $response ($entries | ConvertTo-Json -Depth 6)
+            $projectedEntries = @()
+            foreach ($entry in $entries) {
+                $projectedEntries += (New-EmployeeEntryProjectionForCurrentUser -EmployeeCode $employeeCode -EmployeeName $employeeName -Entry $entry -CurrentUser $currentUser -EmployeeRole $employeeRole)
+            }
+            $entriesJson = if ($projectedEntries.Count -gt 0) {
+                $projectedEntries | ConvertTo-Json -Depth 6
+            }
+            else {
+                "[]"
+            }
+            respondWithSuccess $response $entriesJson
             continue
         }

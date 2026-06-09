@@ -11,6 +11,7 @@
                 $payload = Read-JsonRequestBody -Request $request
                 $displayName = if ($null -ne $payload) { [string]$payload.name } else { "" }
                 $role = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "role")) { Get-NormalizedRoleName -Role ([string]$payload.role) } else { "" }
+                $timeEntryTypes = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "timeEntryTypes")) { @(ConvertTo-TimeEntryTypeArray -Value $payload.timeEntryTypes) } else { $null }
 
                 if ([string]::IsNullOrWhiteSpace($displayName)) {
                     respondWithError $response 400 "Employee name is required."
@@ -23,7 +24,7 @@
                     continue
                 }
 
-                $updateResult = Update-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -Role $role
+                $updateResult = Update-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -Role $role -TimeEntryTypes $timeEntryTypes
                 if (-not $updateResult.updated) {
                     respondWithError $response 500 "Unable to update employee."
                     continue

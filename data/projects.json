@@ -4,22 +4,11 @@
     "projectName": "Month-End Close",
     "sector": "Operations",
     "admins": [
-      "000123456",
-      "000379070",
-      "000789123"
-    ],
-    "backupAdmins": "000456123",
-    "archived": false
-  },
-  {
-    "projectCode": "APP-220",
-    "projectName": "Portal Upgrade",
-    "sector": "Applications",
-    "admins": [
-      "000123456"
+      "000100001",
+      "000100005"
     ],
     "backupAdmins": [
-      "000789123"
+      "000100004"
     ],
     "archived": false
   },
@@ -27,9 +16,25 @@
     "projectCode": "INF-330",
     "projectName": "Infrastructure Maintenance",
     "sector": "Infrastructure",
-    "admins": [],
+    "admins": [
+      "000100002",
+      "000100005"
+    ],
     "backupAdmins": [
-      "000379070"
+      "000100003"
+    ],
+    "archived": false
+  },
+  {
+    "projectCode": "APP-220",
+    "projectName": "Portal Upgrade",
+    "sector": "Applications",
+    "admins": [
+      "000100003",
+      "000100005"
+    ],
+    "backupAdmins": [
+      "000100002"
     ],
     "archived": false
   },
@@ -38,10 +43,84 @@
     "projectName": "Client Rollout",
     "sector": "Client Services",
     "admins": [
-      "000789123"
+      "000100004"
     ],
     "backupAdmins": [
-      "000123456"
+      "000100001",
+      "000100005"
+    ],
+    "archived": false
+  },
+  {
+    "projectCode": "SEC-510",
+    "projectName": "Security Audit",
+    "sector": "Security",
+    "admins": [
+      "000100002"
+    ],
+    "backupAdmins": [
+      "000100000"
+    ],
+    "archived": false
+  },
+  {
+    "projectCode": "FIN-275",
+    "projectName": "Financial Reporting",
+    "sector": "Finance",
+    "admins": [
+      "000100001"
+    ],
+    "backupAdmins": [
+      "000100003"
+    ],
+    "archived": false
+  },
+  {
+    "projectCode": "HR-180",
+    "projectName": "HR Systems Update",
+    "sector": "Corporate Services",
+    "admins": [
+      "000100004"
+    ],
+    "backupAdmins": [
+      "000100001"
+    ],
+    "archived": false
+  },
+  {
+    "projectCode": "NET-640",
+    "projectName": "Network Refresh",
+    "sector": "Infrastructure",
+    "admins": [
+      "000100002"
+    ],
+    "backupAdmins": [
+      "000100005"
+    ],
+    "archived": false
+  },
+  {
+    "projectCode": "DAT-390",
+    "projectName": "Data Cleanup",
+    "sector": "Data",
+    "admins": [
+      "000100003"
+    ],
+    "backupAdmins": [
+      "000100004"
+    ],
+    "archived": false
+  },
+  {
+    "projectCode": "QMS-730",
+    "projectName": "Quality Review",
+    "sector": "Quality",
+    "admins": [
+      "000100000",
+      "000100001"
+    ],
+    "backupAdmins": [
+      "000100002"
     ],
     "archived": false
   }

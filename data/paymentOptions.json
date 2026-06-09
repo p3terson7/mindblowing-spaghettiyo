@@ -2,11 +2,11 @@
   {
     "code": "cash",
     "labelEn": "Cash",
-    "labelFr": "En espèce"
+    "labelFr": "En espece"
   },
   {
     "code": "leave",
     "labelEn": "Leave",
-    "labelFr": "Congé"
+    "labelFr": "Conge"
   }
 ]

@@ -25,6 +25,7 @@
                         role               = [string]$userProjection.role
                         employeeCode       = [string]$userProjection.employeeCode
                         mustChangePassword = [bool]$userProjection.mustChangePassword
+                        timeEntryTypes     = @($userProjection.timeEntryTypes)
                     }
                 }
                 $response.Headers["Set-Cookie"] = Get-SessionCookieHeader -Token $sessionToken
@@ -49,6 +50,7 @@
                 role               = [string]$currentUser.role
                 employeeCode       = [string]$currentUser.employeeCode
                 mustChangePassword = [bool]$currentUser.mustChangePassword
+                timeEntryTypes     = @($currentUser.timeEntryTypes)
             }
             respondWithSuccess $response ($result | ConvertTo-Json -Depth 6)
             continue

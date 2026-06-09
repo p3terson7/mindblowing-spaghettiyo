@@ -2,37 +2,37 @@
   {
     "code": "",
     "labelEn": "Overtime Code",
-    "labelFr": "Code supp."
+    "labelFr": "Code de temps supplementaire"
   },
   {
     "code": "260",
     "labelEn": "OVERTIME, Regular Working Day",
-    "labelFr": "HEURES SUPPLÉMENTAIRES, Jour ouvrable régulier"
+    "labelFr": "HEURES SUPPLEMENTAIRES, Jour ouvrable regulier"
   },
   {
     "code": "261",
     "labelEn": "OVERTIME, First Day of Rest",
-    "labelFr": "HEURES SUPPLÉMENTAIRES, Premier jour de repos"
+    "labelFr": "HEURES SUPPLEMENTAIRES, Premier jour de repos"
   },
   {
     "code": "262",
     "labelEn": "OVERTIME, Second or Subsequent Day of Rest",
-    "labelFr": "HEURES SUPPLÉMENTAIRES, Deuxième jour de repos subséquent"
+    "labelFr": "HEURES SUPPLEMENTAIRES, Deuxieme jour de repos subsequent"
   },
   {
     "code": "263",
     "labelEn": "OVERTIME, Designated Holiday",
-    "labelFr": "HEURES SUPPLÉMENTAIRES, Congé férié"
+    "labelFr": "HEURES SUPPLEMENTAIRES, Conge ferie"
   },
   {
     "code": "089",
     "labelEn": "TRAVEL TIME, Regular Working Day",
-    "labelFr": "TEMPS de DÉPLACEMENT, Jour ouvrable régulier"
+    "labelFr": "TEMPS de DEPLACEMENT, Jour ouvrable regulier"
   },
   {
     "code": "072",
     "labelEn": "TRAVEL TIME, Day of Rest",
-    "labelFr": "TEMPS de DÉPLACEMENT, Jour de repos"
+    "labelFr": "TEMPS de DEPLACEMENT, Jour de repos"
   },
   {
     "code": "009",
@@ -42,7 +42,7 @@
   {
     "code": "050",
     "labelEn": "REPORTING PAY",
-    "labelFr": "INDEMNITÉ DE PRÉSENCE"
+    "labelFr": "INDEMNITE DE PRESENCE"
   },
   {
     "code": "049",
@@ -52,6 +52,6 @@
   {
     "code": "043",
     "labelEn": "PART TIME, Premium Pay for Work on a Holiday",
-    "labelFr": "TEMPS PARTIEL, Prime pour le travail effectué lors d'un jour férié"
+    "labelFr": "TEMPS PARTIEL, Prime pour le travail effectue lors d'un jour ferie"
   }
 ]

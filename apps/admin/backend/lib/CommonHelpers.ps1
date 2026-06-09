@@ -1,17 +1,43 @@
+if (-not $script:EmployeeNameMapCache) {
+    $script:EmployeeNameMapCache = $null
+}
+
+if (-not $script:ProjectsCache) {
+    $script:ProjectsCache = $null
+}
+
 # Helper function to emulate the null-coalescing operator
 function Get-EmployeeNameMap {
     if (!(Test-Path -Path $mappingFile)) {
         Write-JsonAtomic -Path $mappingFile -Value @{} -Depth 3
     }
 
+    $metadata = Get-FileMetadataSnapshot -Path $mappingFile
+    $cacheKey = if ($null -ne $metadata) { "{0}:{1}" -f $metadata.LastWriteTicks, $metadata.Length } else { "missing" }
+    if ($script:EmployeeNameMapCache -and $script:EmployeeNameMapCache.Key -eq $cacheKey) {
+        return $script:EmployeeNameMapCache.Value
+    }
+
     try {
         $map = Read-TextFileCached -Path $mappingFile | ConvertFrom-Json
         if ($null -eq $map) {
+            $script:EmployeeNameMapCache = [PSCustomObject]@{
+                Key = $cacheKey
+                Value = @{}
+            }
             return @{}
+        }
+        $script:EmployeeNameMapCache = [PSCustomObject]@{
+            Key = $cacheKey
+            Value = $map
         }
         return $map
     }
     catch {
+        $script:EmployeeNameMapCache = [PSCustomObject]@{
+            Key = $cacheKey
+            Value = @{}
+        }
         return @{}
     }
 }
@@ -29,17 +55,44 @@ function Get-Projects {
         Write-JsonAtomic -Path $projectsFile -Value @() -Depth 3
     }
 
+    $metadata = Get-FileMetadataSnapshot -Path $projectsFile
+    $cacheKey = if ($null -ne $metadata) { "{0}:{1}" -f $metadata.LastWriteTicks, $metadata.Length } else { "missing" }
+    if ($script:ProjectsCache -and $script:ProjectsCache.Key -eq $cacheKey) {
+        return @($script:ProjectsCache.Value)
+    }
+
     try {
         $projects = Read-TextFileCached -Path $projectsFile | ConvertFrom-Json
         if ($null -eq $projects) {
+            $script:ProjectsCache = [PSCustomObject]@{
+                Key   = $cacheKey
+                Value = @()
+            }
             return @()
         }
+
+        $normalizedProjects = New-Object System.Collections.ArrayList
         if (-not ($projects -is [System.Collections.IEnumerable]) -or ($projects -is [string])) {
-            return @((ConvertTo-NormalizedProjectObject -Project $projects))
+            [void]$normalizedProjects.Add((ConvertTo-NormalizedProjectObject -Project $projects))
         }
-        return @($projects | ForEach-Object { ConvertTo-NormalizedProjectObject -Project $_ })
+        else {
+            foreach ($project in @($projects)) {
+                [void]$normalizedProjects.Add((ConvertTo-NormalizedProjectObject -Project $project))
+            }
+        }
+
+        $result = @($normalizedProjects.ToArray())
+        $script:ProjectsCache = [PSCustomObject]@{
+            Key   = $cacheKey
+            Value = $result
+        }
+        return $result
     }
     catch {
+        $script:ProjectsCache = [PSCustomObject]@{
+            Key   = $cacheKey
+            Value = @()
+        }
         return @()
     }
 }

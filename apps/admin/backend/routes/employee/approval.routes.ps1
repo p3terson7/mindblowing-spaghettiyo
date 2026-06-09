@@ -42,7 +42,13 @@
 
                 $entry = $existingData[$entryIndex]
                 if (-not (Test-CurrentUserCanManageEntry -CurrentUser $currentUser -Entry $entry)) {
-                    respondWithError $response 403 "You do not have access to this entry's project."
+                    respondWithError $response 403 "You can view this entry, but only assigned project admins can modify it."
+                    continue
+                }
+
+                $employeeRole = Get-EmployeeRoleByCode -EmployeeCode $employeeCode
+                if (-not (Test-CurrentUserCanApproveEmployeeRole -CurrentUser $currentUser -EmployeeRole $employeeRole)) {
+                    respondWithError $response 403 "Only super admins can approve or reject admin entries."
                     continue
                 }
 

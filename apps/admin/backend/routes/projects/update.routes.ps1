@@ -17,6 +17,17 @@
             $sector = if ($payload.PSObject.Properties.Name -contains "sector") { [string]$payload.sector } else { "" }
             $admins = if ($payload.PSObject.Properties.Name -contains "admins") { @(ConvertTo-CodeArray -Value $payload.admins) } else { @() }
             $backupAdmins = if ($payload.PSObject.Properties.Name -contains "backupAdmins") { @(ConvertTo-CodeArray -Value $payload.backupAdmins) } else { @() }
+            $invalidAdminCode = ""
+            foreach ($adminCode in @($admins + $backupAdmins)) {
+                if (-not (Test-EmployeeCodeHasAdminRole -EmployeeCode ([string]$adminCode))) {
+                    $invalidAdminCode = [string]$adminCode
+                    break
+                }
+            }
+            if (-not [string]::IsNullOrWhiteSpace($invalidAdminCode)) {
+                respondWithError $response 400 "Project admins and backup admins must be admin users. $invalidAdminCode is not an admin."
+                continue
+            }
             $archivedWasProvided = ($payload.PSObject.Properties.Name -contains "archived")
             $archived = if ($archivedWasProvided) { Test-ProjectArchived -Project $payload } else { $false }
 

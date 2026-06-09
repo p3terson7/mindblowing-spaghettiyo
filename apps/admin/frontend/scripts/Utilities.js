@@ -46,6 +46,9 @@ function filterEntries(entries, searchTerm) {
       entry.overtimeCode,
       entry.paymentOption,
       entry.reasonCode,
+      entry.entryType,
+      entry.diverseReason,
+      entry.diverseSummary,
       getEntryStatusLabel(entry),
       entry.message,
     ].join(" ").toLowerCase();
@@ -373,6 +376,36 @@ function getStatusTone(status) {
   }
 }
 
+function canModifyEntry(entry) {
+  return !entry || entry.canModify !== false;
+}
+
+function canApproveEntry(entry) {
+  return !entry || entry.canApprove !== false;
+}
+
+function getEntryPermissionReason(entry) {
+  if (!canModifyEntry(entry)) {
+    return "readOnlyProject";
+  }
+
+  if (!canApproveEntry(entry)) {
+    return String(entry && entry.permissionReason || "superAdminApproval");
+  }
+
+  return "";
+}
+
+function getEntryPermissionBadgeMarkup(entry) {
+  const reason = getEntryPermissionReason(entry);
+  if (!reason) {
+    return "";
+  }
+
+  const tone = reason === "superAdminApproval" ? "locked" : "readonly";
+  return `<span class="permission-badge ${tone}">${escapeHtml(t(`permissions.${reason}`))}</span>`;
+}
+
 function isEntryForgottenClockOut(entry) {
   if (!entry || typeof entry !== "object") {
     return false;
@@ -444,7 +477,21 @@ function isEntryOpen(entry) {
   return Boolean(entry && entry.punchIn && !entry.punchOut && !isEntryForgottenClockOut(entry));
 }
 
+function getEntryType(entry) {
+  const normalized = String(entry && entry.entryType ? entry.entryType : "overtime").trim().toLowerCase();
+  return normalized === "diverse" ? "diverse" : "overtime";
+}
+
+function isDiverseEntry(entry) {
+  return getEntryType(entry) === "diverse";
+}
+
 function getEntryContextLabel(entry) {
+  if (isDiverseEntry(entry)) {
+    const reason = String(entry && entry.diverseReason || "").trim();
+    return reason ? `${t("shared.diverse")} | ${reason}` : t("shared.diverse");
+  }
+
   const parts = [];
 
   if (entry && entry.projectCode) {
@@ -659,7 +706,7 @@ function buildMonthlyEntriesExportHtml(config) {
   const lookups = config && config.lookups ? config.lookups : {};
   const monthEntries = sortEntriesByDateTime(sourceEntries.filter(entry => {
     const status = String(entry && entry.status || "pending").toLowerCase();
-    return String(entry && entry.date || "").slice(0, 7) === monthKey && status !== "rejected";
+    return String(entry && entry.date || "").slice(0, 7) === monthKey && status !== "rejected" && !isDiverseEntry(entry);
   }), false);
   const totalSeconds = monthEntries.reduce((accumulator, entry) => accumulator + getMonthlyExportEntrySeconds(entry), 0);
   const employeeName = String(config && config.employeeName || t("shared.employee"));
@@ -895,6 +942,7 @@ async function fetchOvertimeEntryLookups(forceRefresh = false) {
     overtimeCodes: Array.isArray(payload && payload.overtimeCodes) ? payload.overtimeCodes : [],
     paymentOptions: Array.isArray(payload && payload.paymentOptions) ? payload.paymentOptions : [],
     reasonCodes: Array.isArray(payload && payload.reasonCodes) ? payload.reasonCodes : [],
+    timeEntryTypes: Array.isArray(payload && payload.timeEntryTypes) ? payload.timeEntryTypes : ["overtime"],
   };
 
   overtimeEntryLookupCache.apiUrl = currentApiUrl;

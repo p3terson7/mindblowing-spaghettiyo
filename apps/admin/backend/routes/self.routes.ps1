@@ -5,7 +5,15 @@
                 continue
             }
 
-            respondWithSuccess $response (($currentUser | Select-Object username, displayName, role, employeeCode, mustChangePassword) | ConvertTo-Json -Depth 6)
+            $profilePayload = [PSCustomObject]@{
+                username           = [string]$currentUser.username
+                displayName        = [string]$currentUser.displayName
+                role               = [string]$currentUser.role
+                employeeCode       = [string]$currentUser.employeeCode
+                mustChangePassword = [bool]$currentUser.mustChangePassword
+                timeEntryTypes     = @(Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $currentUser)
+            }
+            respondWithSuccess $response ($profilePayload | ConvertTo-Json -Depth 6)
             continue
         }
 
@@ -27,7 +35,13 @@
             }
 
             $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
-            respondWithSuccess $response ($entries | ConvertTo-Json -Depth 6)
+            $entriesJson = if ($entries.Count -gt 0) {
+                $entries | ConvertTo-Json -Depth 6
+            }
+            else {
+                "[]"
+            }
+            respondWithSuccess $response $entriesJson
             continue
         }
 
@@ -59,6 +73,7 @@
                 overtimeCodes = @(Get-OvertimeCodes)
                 paymentOptions = @(Get-PaymentOptions)
                 reasonCodes    = @(Get-ReasonCodes)
+                timeEntryTypes = if (-not [string]::IsNullOrWhiteSpace([string]$currentUser.employeeCode)) { @(Get-EmployeeTimeEntryTypesByCode -EmployeeCode ([string]$currentUser.employeeCode)) } else { @("overtime") }
             }
 
             respondWithSuccess $response ($optionsPayload | ConvertTo-Json -Depth 6)
@@ -83,7 +98,28 @@
                     continue
                 }
 
+                $employeeCode = [string]$currentUser.employeeCode
+                $entryType = "overtime"
+                $diverseReason = ""
+                $diverseSummary = ""
+
                 if ($payload.type -eq "in") {
+                    if ($payload.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$payload.entryType)) {
+                        $entryType = ([string]$payload.entryType).Trim().ToLowerInvariant()
+                    }
+
+                    if (@("overtime", "diverse") -notcontains $entryType) {
+                        respondWithError $response 400 "Invalid entry type: $entryType."
+                        continue
+                    }
+
+                    if (-not (Test-EmployeeCanPunchEntryType -EmployeeCode $employeeCode -EntryType $entryType)) {
+                        respondWithError $response 403 "This employee is not allowed to punch this time category."
+                        continue
+                    }
+                }
+
+                if ($payload.type -eq "in" -and $entryType -eq "overtime") {
                     $projectCode = [string]$payload.projectCode
                     $overtimeCode = [string]$payload.overtimeCode
                     $paymentOption = [string]$payload.paymentOption
@@ -123,8 +159,19 @@
                         continue
                     }
                 }
+                elseif ($payload.type -eq "in" -and $entryType -eq "diverse") {
+                    $diverseReason = if ($payload.PSObject.Properties.Name -contains "diverseReason") { ([string]$payload.diverseReason).Trim() } else { "" }
+                    if ([string]::IsNullOrWhiteSpace($diverseReason)) {
+                        respondWithError $response 400 "A reason is required before starting diverse time."
+                        continue
+                    }
+                }
+                elseif ($payload.type -eq "out") {
+                    if ($payload.PSObject.Properties.Name -contains "diverseSummary") {
+                        $diverseSummary = ([string]$payload.diverseSummary).Trim()
+                    }
+                }
 
-                $employeeCode = [string]$currentUser.employeeCode
                 $dataFile = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $employeeCode)
                 if (!(Test-Path -Path $dataFile)) {
                     Write-JsonAtomic -Path $dataFile -Value @()
@@ -171,6 +218,7 @@
 
                         $existingData += [PSCustomObject]@{
                             entryId      = New-EntryIdentifier
+                            entryType    = $entryType
                             name        = Get-EmployeeName $employeeCode
                             date        = $todayText
                             punchIn     = $roundedNowText
@@ -180,10 +228,12 @@
                             overtime    = $null
                             status      = "pending"
                             message     = ""
-                            projectCode = $projectCode
-                            overtimeCode = $overtimeCode
-                            paymentOption = $paymentOption
-                            reasonCode = $reasonCode
+                            projectCode = if ($entryType -eq "overtime") { $projectCode } else { "" }
+                            overtimeCode = if ($entryType -eq "overtime") { $overtimeCode } else { "" }
+                            paymentOption = if ($entryType -eq "overtime") { $paymentOption } else { "" }
+                            reasonCode = if ($entryType -eq "overtime") { $reasonCode } else { "" }
+                            diverseReason = if ($entryType -eq "diverse") { $diverseReason } else { "" }
+                            diverseSummary = ""
                         }
                     }
                     else {
@@ -192,7 +242,17 @@
                             continue
                         }
 
+                        $activeEntryType = if ($activeEntry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$activeEntry.entryType)) { ([string]$activeEntry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
+
+                        if ($activeEntryType -eq "diverse" -and [string]::IsNullOrWhiteSpace($diverseSummary)) {
+                            respondWithError $response 400 "A work summary is required before ending diverse time."
+                            continue
+                        }
+
                         if ([string]$activeEntry.date -ne $todayText) {
+                            if ($activeEntryType -eq "diverse") {
+                                Set-EntryPropertyValue -Entry $activeEntry -Name "diverseSummary" -Value $diverseSummary
+                            }
                             Set-EntryForgottenClockOutReview -Entry $activeEntry -AttemptDate $todayText -AttemptTime $exactNowText
                             $requiresClockOutReview = $true
                             $reviewEntryDate = [string]$activeEntry.date
@@ -204,6 +264,9 @@
                             $punchInTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchIn)", "yyyy-MM-dd HH:mm:ss", $null)
                             $punchOutTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchOut)", "yyyy-MM-dd HH:mm:ss", $null)
                             $activeEntry.overtime = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
+                            if ($activeEntryType -eq "diverse") {
+                                Set-EntryPropertyValue -Entry $activeEntry -Name "diverseSummary" -Value $diverseSummary
+                            }
                         }
                     }
 
@@ -220,6 +283,7 @@
                     time    = $exactNowText
                     requiresClockOutReview = $requiresClockOutReview
                     reviewEntryDate = $reviewEntryDate
+                    entryType = $entryType
                 }
                 respondWithSuccess $response ($result | ConvertTo-Json -Depth 6)
             }

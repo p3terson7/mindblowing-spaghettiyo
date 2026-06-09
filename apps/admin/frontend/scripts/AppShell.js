@@ -77,6 +77,8 @@ const appShellState = {
   lastSyncVersion: null,
   syncRequestInFlight: false,
   viewState: {},
+  storedSession: null,
+  storedSessionLoaded: false,
 };
 
 function resetViewState() {
@@ -118,6 +120,28 @@ function markViewsStale(viewIds) {
 
     const state = ensureViewState(viewId);
     state.stale = true;
+  });
+}
+
+function getActiveViewId() {
+  return document.querySelector(".view.active")?.id || localStorage.getItem("activeView") || "";
+}
+
+function requestViewRefresh(viewIds, options = {}) {
+  const affectedViews = Array.isArray(viewIds) ? viewIds.filter(Boolean) : [];
+  markViewsStale(affectedViews);
+
+  if (options.refreshActive === false) {
+    return Promise.resolve();
+  }
+
+  const activeViewId = getActiveViewId();
+  if (!activeViewId || affectedViews.indexOf(activeViewId) < 0) {
+    return Promise.resolve();
+  }
+
+  return refreshViewById(activeViewId, {
+    force: !!options.forceActive,
   });
 }
 
@@ -251,23 +275,35 @@ function tryReadSession(key) {
 }
 
 function getStoredSession() {
+  if (appShellState.storedSessionLoaded) {
+    return appShellState.storedSession;
+  }
+
   const keysToCheck = [APP_SESSION_KEY].concat(LEGACY_SESSION_KEYS);
   for (const key of keysToCheck) {
     const session = tryReadSession(key);
     if (session && session.token && session.user) {
+      appShellState.storedSession = session;
+      appShellState.storedSessionLoaded = true;
       return session;
     }
   }
 
+  appShellState.storedSession = null;
+  appShellState.storedSessionLoaded = true;
   return null;
 }
 
 function setStoredSession(session) {
+  appShellState.storedSession = session;
+  appShellState.storedSessionLoaded = true;
   localStorage.setItem(APP_SESSION_KEY, JSON.stringify(session));
   LEGACY_SESSION_KEYS.forEach(key => localStorage.removeItem(key));
 }
 
 function clearStoredSession() {
+  appShellState.storedSession = null;
+  appShellState.storedSessionLoaded = true;
   localStorage.removeItem(APP_SESSION_KEY);
   LEGACY_SESSION_KEYS.forEach(key => localStorage.removeItem(key));
 }
@@ -595,6 +631,9 @@ async function refreshViewById(viewId, options) {
 
 window.refreshAppViewById = refreshViewById;
 window.refreshAdminViewById = refreshViewById;
+window.requestAppViewRefresh = requestViewRefresh;
+window.markAppViewsStale = markViewsStale;
+window.getActiveAppViewId = getActiveViewId;
 
 async function refreshActiveView(options) {
   const user = getCurrentUser();
@@ -637,6 +676,9 @@ async function pollSyncState() {
       }
       markViewsStale(getViewsAffectedBySyncState(syncState));
       setSyncStatus(t("status.updatedRev", { version: nextVersion }));
+      if (document.hidden) {
+        return;
+      }
       await refreshActiveView();
       return;
     }
@@ -1002,6 +1044,11 @@ document.addEventListener("visibilitychange", () => {
     return;
   }
 
+  if (!document.hidden) {
+    refreshActiveView().catch(error => {
+      console.error("Unable to refresh active view after returning to app:", error);
+    });
+  }
   scheduleNextSyncPoll(0);
 });
 

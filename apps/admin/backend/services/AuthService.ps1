@@ -6,6 +6,10 @@ if (-not $script:AuthArrayFileCache) {
     $script:AuthArrayFileCache = @{}
 }
 
+if (-not $script:ProjectAccessModelCache) {
+    $script:ProjectAccessModelCache = @{}
+}
+
 function New-PasswordCredential {
     param(
         [Parameter(Mandatory = $true)][string]$Password,
@@ -94,6 +98,94 @@ function Get-UserEmployeeCodeValue {
     return ""
 }
 
+function ConvertTo-TimeEntryTypeArray {
+    param($Value)
+
+    $result = New-Object System.Collections.ArrayList
+    $seen = @{}
+
+    foreach ($item in @($Value)) {
+        $normalized = ([string]$item).Trim().ToLowerInvariant()
+        $entryType = ""
+        if ($normalized -eq "overtime" -or $normalized -eq "ot") {
+            $entryType = "overtime"
+        }
+        elseif ($normalized -eq "diverse") {
+            $entryType = "diverse"
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($entryType) -and -not $seen.ContainsKey($entryType)) {
+            [void]$result.Add($entryType)
+            $seen[$entryType] = $true
+        }
+    }
+
+    if ($result.Count -eq 0) {
+        [void]$result.Add("overtime")
+    }
+
+    return @($result.ToArray())
+}
+
+function Get-EmployeeTimeEntryTypesFromUserRecord {
+    param($UserRecord)
+
+    if ($null -eq $UserRecord) {
+        return @("overtime")
+    }
+
+    if ($UserRecord.PSObject.Properties.Name -contains "timeEntryTypes") {
+        return @(ConvertTo-TimeEntryTypeArray -Value $UserRecord.timeEntryTypes)
+    }
+
+    if ($UserRecord.PSObject.Properties.Name -contains "canPunchDiverse") {
+        $diverseFlagValue = $UserRecord.canPunchDiverse
+        $diverseFlag = $false
+        if ($diverseFlagValue -is [bool]) {
+            $diverseFlag = [bool]$diverseFlagValue
+        }
+        else {
+            $normalizedDiverseFlag = ([string]$diverseFlagValue).Trim().ToLowerInvariant()
+            $diverseFlag = ($normalizedDiverseFlag -eq "true" -or $normalizedDiverseFlag -eq "1" -or $normalizedDiverseFlag -eq "yes")
+        }
+
+        if ($diverseFlag) {
+            return @("overtime", "diverse")
+        }
+    }
+
+    if ($UserRecord.PSObject.Properties.Name -contains "hasDiverse" -and [bool]$UserRecord.hasDiverse) {
+        return @("overtime", "diverse")
+    }
+
+    return @("overtime")
+}
+
+function Get-EmployeeTimeEntryTypesByCode {
+    param([string]$EmployeeCode)
+
+    if ([string]::IsNullOrWhiteSpace($EmployeeCode)) {
+        return @("overtime")
+    }
+
+    $user = Get-Users | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode $EmployeeCode } | Select-Object -First 1
+    return @(Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $user)
+}
+
+function Test-EmployeeCanPunchEntryType {
+    param(
+        [string]$EmployeeCode,
+        [string]$EntryType
+    )
+
+    $normalizedEntryType = ([string]$EntryType).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($normalizedEntryType)) {
+        $normalizedEntryType = "overtime"
+    }
+
+    return (@(Get-EmployeeTimeEntryTypesByCode -EmployeeCode $EmployeeCode) -contains $normalizedEntryType)
+}
+
 function Get-EffectiveUserRole {
     param($UserRecord)
 
@@ -152,6 +244,7 @@ function New-AuthenticatedUserProjection {
         role               = $role
         employeeCode       = $employeeCode
         mustChangePassword = [bool]$UserRecord.mustChangePassword
+        timeEntryTypes     = @(Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $UserRecord)
         token              = $Token
     }
 }
@@ -159,30 +252,134 @@ function New-AuthenticatedUserProjection {
 function Get-ProjectCodesForCurrentUser {
     param($CurrentUser)
 
+    $accessModel = Get-ProjectAccessModelForCurrentUser -CurrentUser $CurrentUser
+    return @($accessModel.ProjectCodes)
+}
+
+function Get-ProjectCodesCurrentUserCanModify {
+    param($CurrentUser)
+
+    $accessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $CurrentUser
+    return @($accessModel.ProjectCodes)
+}
+
+function Get-ProjectAccessCacheVersionKey {
+    $metadata = Get-FileMetadataSnapshot -Path $projectsFile
+    if ($null -eq $metadata) {
+        return "missing"
+    }
+
+    return ("{0}:{1}" -f $metadata.LastWriteTicks, $metadata.Length)
+}
+
+function Get-ProjectAccessCacheUserKey {
+    param($CurrentUser)
+
     if ($null -eq $CurrentUser) {
-        return @()
+        return "anonymous"
     }
 
     $role = Get-NormalizedRoleName -Role ([string]$CurrentUser.role)
+    $employeeCode = if ($CurrentUser.PSObject.Properties.Name -contains "employeeCode") { [string]$CurrentUser.employeeCode } else { "" }
+    $username = if ($CurrentUser.PSObject.Properties.Name -contains "username") { [string]$CurrentUser.username } else { "" }
+    return ("{0}|{1}|{2}" -f $role, $employeeCode, $username)
+}
+
+function New-ProjectAccessModel {
+    param($Projects)
+
+    $projectList = @($Projects)
+    $projectCodes = @(
+        $projectList |
+            ForEach-Object { [string]$_.projectCode } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Sort-Object -Unique
+    )
+
+    $projectCodeSet = @{}
+    foreach ($projectCode in $projectCodes) {
+        $projectCodeSet[[string]$projectCode] = $true
+    }
+
+    return [PSCustomObject]@{
+        Projects     = $projectList
+        ProjectCodes = $projectCodes
+        ProjectCodeSet = $projectCodeSet
+    }
+}
+
+function Get-ProjectAccessModelForCurrentUser {
+    param($CurrentUser)
+
+    if ($null -eq $CurrentUser) {
+        return (New-ProjectAccessModel -Projects @())
+    }
+
+    $cacheKey = "view|{0}|{1}" -f (Get-ProjectAccessCacheVersionKey), (Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser)
+    if ($script:ProjectAccessModelCache.ContainsKey($cacheKey)) {
+        return $script:ProjectAccessModelCache[$cacheKey]
+    }
+
+    if ($script:ProjectAccessModelCache.Count -gt 64) {
+        $script:ProjectAccessModelCache = @{}
+    }
+
+    $projects = @(Get-Projects)
+    $role = Get-NormalizedRoleName -Role ([string]$CurrentUser.role)
+    if ($role -eq "superAdmin" -or $role -eq "admin") {
+        $model = New-ProjectAccessModel -Projects $projects
+        $script:ProjectAccessModelCache[$cacheKey] = $model
+        return $model
+    }
+
+    $model = New-ProjectAccessModel -Projects @()
+    $script:ProjectAccessModelCache[$cacheKey] = $model
+    return $model
+}
+
+function Get-ProjectModificationAccessModelForCurrentUser {
+    param($CurrentUser)
+
+    if ($null -eq $CurrentUser) {
+        return (New-ProjectAccessModel -Projects @())
+    }
+
+    $cacheKey = "modify|{0}|{1}" -f (Get-ProjectAccessCacheVersionKey), (Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser)
+    if ($script:ProjectAccessModelCache.ContainsKey($cacheKey)) {
+        return $script:ProjectAccessModelCache[$cacheKey]
+    }
+
+    if ($script:ProjectAccessModelCache.Count -gt 64) {
+        $script:ProjectAccessModelCache = @{}
+    }
+
+    $projects = @(Get-Projects)
+    $role = Get-NormalizedRoleName -Role ([string]$CurrentUser.role)
     if ($role -eq "superAdmin") {
-        return @((Get-Projects) | ForEach-Object { [string]$_.projectCode } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+        $model = New-ProjectAccessModel -Projects $projects
+        $script:ProjectAccessModelCache[$cacheKey] = $model
+        return $model
     }
 
     if ($role -ne "admin" -or [string]::IsNullOrWhiteSpace([string]$CurrentUser.employeeCode)) {
-        return @()
+        $model = New-ProjectAccessModel -Projects @()
+        $script:ProjectAccessModelCache[$cacheKey] = $model
+        return $model
     }
 
     $employeeCode = [string]$CurrentUser.employeeCode
-    $projectCodes = @()
-    foreach ($project in @(Get-Projects)) {
+    $modifiableProjects = @()
+    foreach ($project in $projects) {
         $admins = @(Get-ProjectAdminCodes -Project $project)
         $backupAdmins = @(Get-ProjectBackupAdminCodes -Project $project)
         if ($admins -contains $employeeCode -or $backupAdmins -contains $employeeCode) {
-            $projectCodes += [string]$project.projectCode
+            $modifiableProjects += $project
         }
     }
 
-    return @($projectCodes | Sort-Object -Unique)
+    $model = New-ProjectAccessModel -Projects $modifiableProjects
+    $script:ProjectAccessModelCache[$cacheKey] = $model
+    return $model
 }
 
 function Test-CurrentUserSuperAdmin {
@@ -206,6 +403,24 @@ function Test-CurrentUserManager {
     return ($role -eq "admin" -or $role -eq "superAdmin")
 }
 
+function Test-CurrentUserMatchesEmployeeCode {
+    param(
+        $CurrentUser,
+        [string]$EmployeeCode
+    )
+
+    if ($null -eq $CurrentUser -or [string]::IsNullOrWhiteSpace($EmployeeCode)) {
+        return $false
+    }
+
+    $currentEmployeeCode = if ($CurrentUser.PSObject.Properties.Name -contains "employeeCode") { [string]$CurrentUser.employeeCode } else { "" }
+    if ([string]::IsNullOrWhiteSpace($currentEmployeeCode)) {
+        return $false
+    }
+
+    return ($currentEmployeeCode.Trim() -eq $EmployeeCode.Trim())
+}
+
 function Test-CurrentUserCanAccessProjectCode {
     param(
         $CurrentUser,
@@ -220,7 +435,26 @@ function Test-CurrentUserCanAccessProjectCode {
         return $false
     }
 
-    return (@(Get-ProjectCodesForCurrentUser -CurrentUser $CurrentUser) -contains [string]$ProjectCode)
+    $accessModel = Get-ProjectAccessModelForCurrentUser -CurrentUser $CurrentUser
+    return $accessModel.ProjectCodeSet.ContainsKey([string]$ProjectCode)
+}
+
+function Test-CurrentUserCanModifyProjectCode {
+    param(
+        $CurrentUser,
+        [string]$ProjectCode
+    )
+
+    if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) {
+        return $true
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ProjectCode)) {
+        return $false
+    }
+
+    $accessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $CurrentUser
+    return $accessModel.ProjectCodeSet.ContainsKey([string]$ProjectCode)
 }
 
 function Test-CurrentUserCanManageEntry {
@@ -237,23 +471,75 @@ function Test-CurrentUserCanManageEntry {
         return $false
     }
 
+    $entryType = if ($Entry.PSObject.Properties.Name -contains "entryType") { ([string]$Entry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
+    if ($entryType -eq "diverse") {
+        return $false
+    }
+
     $projectCode = if ($Entry.PSObject.Properties.Name -contains "projectCode") { [string]$Entry.projectCode } else { "" }
-    return (Test-CurrentUserCanAccessProjectCode -CurrentUser $CurrentUser -ProjectCode $projectCode)
+    return (Test-CurrentUserCanModifyProjectCode -CurrentUser $CurrentUser -ProjectCode $projectCode)
+}
+
+function Test-CurrentUserCanApproveEmployeeRole {
+    param(
+        $CurrentUser,
+        [string]$EmployeeRole
+    )
+
+    if (-not (Test-CurrentUserManager -CurrentUser $CurrentUser)) {
+        return $false
+    }
+
+    $normalizedEmployeeRole = Get-NormalizedRoleName -Role $EmployeeRole
+    if ($normalizedEmployeeRole -eq "admin" -or $normalizedEmployeeRole -eq "superAdmin") {
+        return (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser)
+    }
+
+    return $true
+}
+
+function Get-EmployeeRoleByCode {
+    param([string]$EmployeeCode)
+
+    if ([string]::IsNullOrWhiteSpace($EmployeeCode)) {
+        return "employee"
+    }
+
+    $user = Get-Users | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode $EmployeeCode } | Select-Object -First 1
+    if ($null -eq $user) {
+        return "employee"
+    }
+
+    return (Get-EffectiveUserRole -UserRecord $user)
+}
+
+function Test-EmployeeCodeHasAdminRole {
+    param([string]$EmployeeCode)
+
+    $role = Get-EmployeeRoleByCode -EmployeeCode $EmployeeCode
+    return ($role -eq "admin" -or $role -eq "superAdmin")
 }
 
 function Get-ProjectsForCurrentUser {
     param($CurrentUser)
 
-    if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) {
-        return @(Get-Projects)
+    $accessModel = Get-ProjectAccessModelForCurrentUser -CurrentUser $CurrentUser
+    $modifyAccessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $CurrentUser
+    $projects = @()
+    foreach ($project in @($accessModel.Projects)) {
+        $projectCode = [string]$project.projectCode
+        $projects += [PSCustomObject]@{
+            projectCode  = $projectCode
+            projectName  = [string]$project.projectName
+            sector       = if ($project.PSObject.Properties.Name -contains "sector") { [string]$project.sector } else { "" }
+            admins       = @(Get-ProjectAdminCodes -Project $project)
+            backupAdmins = @(Get-ProjectBackupAdminCodes -Project $project)
+            archived     = Test-ProjectArchived -Project $project
+            canModify    = [bool]$modifyAccessModel.ProjectCodeSet.ContainsKey($projectCode)
+        }
     }
 
-    $projectCodes = @(Get-ProjectCodesForCurrentUser -CurrentUser $CurrentUser)
-    if ($projectCodes.Count -eq 0) {
-        return @()
-    }
-
-    return @((Get-Projects) | Where-Object { $projectCodes -contains [string]$_.projectCode })
+    return @($projects)
 }
 
 function Get-TokenHash {
@@ -677,7 +963,8 @@ function Ensure-EmployeeUser {
         [Parameter(Mandatory = $true)][string]$DisplayName,
         [string]$InitialPassword,
         [bool]$MustChangePassword = $true,
-        [string]$Role = "employee"
+        [string]$Role = "employee",
+        $TimeEntryTypes = @("overtime")
     )
 
     $effectivePassword = if ([string]::IsNullOrWhiteSpace($InitialPassword)) {
@@ -703,6 +990,7 @@ function Ensure-EmployeeUser {
     $created = $false
     $reactivated = $false
     $effectiveRole = Get-NormalizedRoleName -Role $Role
+    $effectiveTimeEntryTypes = @(ConvertTo-TimeEntryTypeArray -Value $TimeEntryTypes)
 
     $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
     try {
@@ -715,6 +1003,7 @@ function Ensure-EmployeeUser {
                 displayName        = [string]$DisplayName
                 role               = $effectiveRole
                 employeeCode       = $EmployeeCode
+                timeEntryTypes     = $effectiveTimeEntryTypes
                 disabled           = $false
                 mustChangePassword = $MustChangePassword
                 createdAtUtc       = (Get-Date).ToUniversalTime().ToString("o")
@@ -748,6 +1037,12 @@ function Ensure-EmployeeUser {
             $targetUser.displayName = [string]$DisplayName
             $targetUser.employeeCode = $EmployeeCode
             $targetUser.role = $effectiveRole
+            if ($targetUser.PSObject.Properties.Name -contains "timeEntryTypes") {
+                $targetUser.timeEntryTypes = $effectiveTimeEntryTypes
+            }
+            else {
+                $targetUser | Add-Member -NotePropertyName "timeEntryTypes" -NotePropertyValue $effectiveTimeEntryTypes -Force
+            }
             $targetUser.disabled = $false
             $targetUser.passwordSalt = $secret.passwordSalt
             $targetUser.passwordHash = $secret.passwordHash
@@ -822,6 +1117,42 @@ function Set-EmployeeUserRole {
             if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
                 $user.role = $effectiveRole
                 $user.employeeCode = $EmployeeCode
+                $updated = $true
+                break
+            }
+        }
+
+        if ($updated) {
+            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+        }
+    }
+    finally {
+        Release-ResourceLock -LockHandle $lockHandle
+    }
+
+    return $updated
+}
+
+function Set-EmployeeUserTimeEntryTypes {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        $TimeEntryTypes
+    )
+
+    $effectiveTimeEntryTypes = @(ConvertTo-TimeEntryTypeArray -Value $TimeEntryTypes)
+    $updated = $false
+
+    $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
+    try {
+        $users = Read-JsonArrayFile -Path $usersFile
+        foreach ($user in $users) {
+            if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
+                if ($user.PSObject.Properties.Name -contains "timeEntryTypes") {
+                    $user.timeEntryTypes = $effectiveTimeEntryTypes
+                }
+                else {
+                    $user | Add-Member -NotePropertyName "timeEntryTypes" -NotePropertyValue $effectiveTimeEntryTypes -Force
+                }
                 $updated = $true
                 break
             }

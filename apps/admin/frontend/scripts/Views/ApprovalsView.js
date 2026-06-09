@@ -119,8 +119,9 @@ async function loadReviewView() {
 
     const payload = await fetch(apiUrl + "review/bootstrap").then(parseResponse);
     allApprovalEntries = Array.isArray(payload && payload.approvals) ? payload.approvals : [];
+    approvalScopedProjects = Array.isArray(payload && payload.projects) ? payload.projects : [];
     document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(allApprovalEntries);
-    await refreshApprovalProjectFilter();
+    populateApprovalProjectFilter(approvalScopedProjects, allApprovalEntries);
     applyApprovalFilters();
 
     if (typeof renderHistoryTabs === "function") {
@@ -147,7 +148,8 @@ function updateApprovalTabLabels(pendingEntries, rejectedEntries, approvedEntrie
 
 function buildApprovalCard(entry, showActions) {
   const exactTimeLabel = getEntryExactTimeLabel(entry);
-  const canReview = showActions && !isEntryForgottenClockOut(entry);
+  const permissionBadge = getEntryPermissionBadgeMarkup(entry);
+  const canReview = showActions && !isEntryForgottenClockOut(entry) && canApproveEntry(entry);
   return `
     <article class="review-card">
       <div class="review-card-header">
@@ -159,20 +161,23 @@ function buildApprovalCard(entry, showActions) {
         <span class="status-badge ${getStatusTone(entry)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
       </div>
       <div class="review-card-meta">
-        <span class="inline-code-pill">${escapeHtml(entry.projectCode || t("shared.noProject"))}</span>
-        ${entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : ""}
-        <span class="meta-pill">${escapeHtml(formatPaymentOptionValue(entry.paymentOption || "cash"))}</span>
-        ${entry.reasonCode ? `<span class="meta-pill">${escapeHtml(entry.reasonCode)}</span>` : ""}
+        <span class="inline-code-pill">${escapeHtml(isDiverseEntry(entry) ? t("shared.diverse") : (entry.projectCode || t("shared.noProject")))}</span>
+        ${!isDiverseEntry(entry) && entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : ""}
+        ${!isDiverseEntry(entry) ? `<span class="meta-pill">${escapeHtml(formatPaymentOptionValue(entry.paymentOption || "cash"))}</span>` : ""}
+        ${isDiverseEntry(entry) && entry.diverseReason ? `<span class="meta-pill">${escapeHtml(entry.diverseReason)}</span>` : ""}
+        ${!isDiverseEntry(entry) && entry.reasonCode ? `<span class="meta-pill">${escapeHtml(entry.reasonCode)}</span>` : ""}
         <span class="meta-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
         <span class="meta-pill">EMP ${escapeHtml(entry.employeeCode)}</span>
       </div>
+      ${isDiverseEntry(entry) && entry.diverseSummary ? `<div class="review-card-message">${escapeHtml(entry.diverseSummary)}</div>` : ""}
       ${entry.message ? `<div class="review-card-message">${escapeHtml(entry.message)}</div>` : `<div class="panel-note">${escapeHtml(t("shared.noManagerNote"))}</div>`}
       <div class="review-card-actions">
         ${canReview ? `
           <button class="btn btn-success btn-sm approvals-approve-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}</button>
           <button class="btn btn-danger btn-sm approvals-reject-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}</button>
         ` : ""}
-        <button class="btn btn-outline-secondary btn-sm approvals-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}">${escapeHtml(t("action.openEmployee"))}</button>
+        ${!canReview ? permissionBadge : ""}
+        <button class="btn btn-outline-secondary btn-sm approvals-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-project-code="${escapeHtml(entry.projectCode || "")}">${escapeHtml(t("action.openEmployee"))}</button>
       </div>
     </article>
   `;
@@ -204,7 +209,7 @@ function applyApprovalFilters() {
 }
 
 async function approveFilteredEntries() {
-  const filteredPendingEntries = getFilteredApprovalEntries().filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry) && !isEntryForgottenClockOut(entry));
+  const filteredPendingEntries = getFilteredApprovalEntries().filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry) && !isEntryForgottenClockOut(entry) && canApproveEntry(entry));
   if (filteredPendingEntries.length === 0) {
     showToast(t("review.approveFilteredNone"), "info");
     return;
@@ -237,7 +242,11 @@ async function approveFilteredEntries() {
         dashboardState.entriesByEmployee[entry.employeeCode] = undefined;
       });
     }
-    await loadReviewView();
+    if (typeof window.requestAppViewRefresh === "function") {
+      await window.requestAppViewRefresh(["adminView", "dashboardView", "employeesView", "projectsView"], { forceActive: true });
+    } else {
+      await loadReviewView();
+    }
   } catch (error) {
     console.error("Error during batch approve:", error);
     showToast(error.message || t("review.batchApproveError"), "error");
@@ -273,7 +282,12 @@ document.getElementById("approvalsSection").addEventListener("click", event => {
   }
 
   const jumpButton = event.target.closest(".approvals-jump-button");
-  if (jumpButton && typeof focusDashboardEmployee === "function") {
+  if (jumpButton && typeof window.openEmployeeFileFromDashboard === "function") {
+    window.openEmployeeFileFromDashboard(jumpButton.getAttribute("data-employee-code"), jumpButton.getAttribute("data-project-code")).catch(error => {
+      console.error("Unable to open employee file:", error);
+      showToast(t("employees.loadError"), "error");
+    });
+  } else if (jumpButton && typeof focusDashboardEmployee === "function") {
     focusDashboardEmployee(jumpButton.getAttribute("data-employee-code"));
   }
 });

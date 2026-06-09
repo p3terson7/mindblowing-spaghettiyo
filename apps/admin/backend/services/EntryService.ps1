@@ -212,8 +212,11 @@ function Convert-ToNormalizedEntryObject {
         return $null
     }
 
+    $entryType = if ($Entry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.entryType)) { ([string]$Entry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
+
     return [PSCustomObject]@{
         entryId       = Get-EntryIdentifierValue -Entry $Entry
+        entryType     = $entryType
         name          = if ($null -ne $Entry.name) { [string]$Entry.name } else { "" }
         date          = if ($null -ne $Entry.date) { [string]$Entry.date } else { "" }
         punchIn       = if ($null -ne $Entry.punchIn) { [string]$Entry.punchIn } else { "" }
@@ -225,8 +228,10 @@ function Convert-ToNormalizedEntryObject {
         message       = if ($null -ne $Entry.message) { [string]$Entry.message } else { "" }
         projectCode   = if ($null -ne $Entry.projectCode) { [string]$Entry.projectCode } else { "" }
         overtimeCode  = if ($null -ne $Entry.overtimeCode) { [string]$Entry.overtimeCode } else { "" }
-        paymentOption = if ($null -ne $Entry.paymentOption -and -not [string]::IsNullOrWhiteSpace([string]$Entry.paymentOption)) { [string]$Entry.paymentOption } else { "cash" }
+        paymentOption = if ($null -ne $Entry.paymentOption -and -not [string]::IsNullOrWhiteSpace([string]$Entry.paymentOption)) { [string]$Entry.paymentOption } elseif ($entryType -eq "diverse") { "" } else { "cash" }
         reasonCode    = if ($null -ne $Entry.reasonCode) { [string]$Entry.reasonCode } else { "" }
+        diverseReason = if ($Entry.PSObject.Properties.Name -contains "diverseReason") { [string]$Entry.diverseReason } else { "" }
+        diverseSummary = if ($Entry.PSObject.Properties.Name -contains "diverseSummary") { [string]$Entry.diverseSummary } else { "" }
         forgottenClockOut = Test-EntryForgottenClockOut -Entry $Entry
         needsClockOutReview = Test-EntryForgottenClockOut -Entry $Entry
         forgottenClockOutAttemptedDate = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedDate") { [string]$Entry.forgottenClockOutAttemptedDate } else { "" }

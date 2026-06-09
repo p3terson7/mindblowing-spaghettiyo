@@ -4,7 +4,9 @@ const selfViewState = {
   overtimeCodes: [],
   paymentOptions: [],
   reasonCodes: [],
+  timeEntryTypes: ["overtime"],
   lookupsLoaded: false,
+  selectedEntryType: localStorage.getItem("selfSelectedEntryType") || "overtime",
   selectedProjectCode: localStorage.getItem("selfSelectedProjectCode") || "",
   selectedOvertimeCode: localStorage.getItem("selfSelectedOvertimeCode") || "",
   selectedPaymentOption: localStorage.getItem("selfSelectedPaymentOption") || "",
@@ -21,6 +23,7 @@ const selfViewState = {
 };
 
 const SELF_PROJECT_STORAGE_KEY = "selfSelectedProjectCode";
+const SELF_ENTRY_TYPE_STORAGE_KEY = "selfSelectedEntryType";
 const SELF_OVERTIME_CODE_STORAGE_KEY = "selfSelectedOvertimeCode";
 const SELF_PAYMENT_OPTION_STORAGE_KEY = "selfSelectedPaymentOption";
 const SELF_REASON_CODE_STORAGE_KEY = "selfSelectedReasonCode";
@@ -52,6 +55,12 @@ function formatPromptTime(date) {
 }
 
 function persistSelfSelections() {
+  if (selfViewState.selectedEntryType) {
+    localStorage.setItem(SELF_ENTRY_TYPE_STORAGE_KEY, selfViewState.selectedEntryType);
+  } else {
+    localStorage.removeItem(SELF_ENTRY_TYPE_STORAGE_KEY);
+  }
+
   if (selfViewState.selectedProjectCode) {
     localStorage.setItem(SELF_PROJECT_STORAGE_KEY, selfViewState.selectedProjectCode);
   } else {
@@ -77,18 +86,93 @@ function persistSelfSelections() {
   }
 }
 
+function normalizeSelfEntryType(value) {
+  return String(value || "").trim().toLowerCase() === "diverse" ? "diverse" : "overtime";
+}
+
+function getAllowedSelfEntryTypes() {
+  const seen = new Set();
+  const source = Array.isArray(selfViewState.timeEntryTypes) && selfViewState.timeEntryTypes.length > 0
+    ? selfViewState.timeEntryTypes
+    : ["overtime"];
+
+  source.forEach(type => {
+    seen.add(normalizeSelfEntryType(type));
+  });
+
+  return Array.from(seen);
+}
+
 function updateSelfPunchAvailability() {
   const primaryButton = document.getElementById("selfPrimaryPunchButton");
   const punchType = primaryButton.getAttribute("data-punch-type") || "in";
 
   if (punchType === "out") {
+    const activeEntry = getSelfActiveEntry(selfViewState.entries);
+    if (activeEntry && isDiverseEntry(activeEntry)) {
+      const summaryInput = document.getElementById("selfDiverseSummaryInput");
+      primaryButton.disabled = !summaryInput || !String(summaryInput.value || "").trim();
+      return;
+    }
     primaryButton.disabled = false;
+    return;
+  }
+
+  if (selfViewState.selectedEntryType === "diverse") {
+    const reasonInput = document.getElementById("selfDiverseReasonInput");
+    primaryButton.disabled = !selfViewState.lookupsLoaded || !reasonInput || !String(reasonInput.value || "").trim();
     return;
   }
 
   primaryButton.disabled = !selfViewState.lookupsLoaded
     || !selfViewState.selectedProjectCode
     || !selfViewState.selectedPaymentOption;
+}
+
+function isSelfEntryTypeAllowed(entryType) {
+  return getAllowedSelfEntryTypes().includes(normalizeSelfEntryType(entryType));
+}
+
+function syncSelfEntryTypeControls() {
+  const typeSelect = document.getElementById("selfEntryTypeSelect");
+  const typeShell = document.getElementById("selfEntryTypeShell");
+  const overtimeSelectors = document.getElementById("selfOvertimeSelectors");
+  const diverseStartFields = document.getElementById("selfDiverseStartFields");
+  const diverseEndFields = document.getElementById("selfDiverseEndFields");
+  const allowedTypes = getAllowedSelfEntryTypes();
+  const shouldShowTypeSelect = allowedTypes.length > 1;
+
+  if (!isSelfEntryTypeAllowed(selfViewState.selectedEntryType)) {
+    selfViewState.selectedEntryType = allowedTypes[0] || "overtime";
+  } else {
+    selfViewState.selectedEntryType = normalizeSelfEntryType(selfViewState.selectedEntryType);
+  }
+
+  if (typeSelect) {
+    typeSelect.innerHTML = allowedTypes.map(type => {
+      const value = String(type || "").trim().toLowerCase() === "diverse" ? "diverse" : "overtime";
+      const label = value === "diverse" ? t("shared.diverse") : t("shared.overtime");
+      return `<option value="${escapeHtml(value)}"${value === selfViewState.selectedEntryType ? " selected" : ""}>${escapeHtml(label)}</option>`;
+    }).join("");
+    typeSelect.value = selfViewState.selectedEntryType;
+  }
+
+  if (typeShell) {
+    typeShell.classList.toggle("d-none", !shouldShowTypeSelect);
+  } else if (typeSelect) {
+    typeSelect.classList.toggle("d-none", !shouldShowTypeSelect);
+  }
+  if (overtimeSelectors) {
+    overtimeSelectors.classList.toggle("d-none", selfViewState.selectedEntryType === "diverse");
+  }
+  if (diverseStartFields) {
+    diverseStartFields.classList.toggle("d-none", selfViewState.selectedEntryType !== "diverse");
+  }
+  if (diverseEndFields) {
+    diverseEndFields.classList.add("d-none");
+  }
+
+  persistSelfSelections();
 }
 
 function renderSelfPunchSelectors() {
@@ -123,6 +207,7 @@ function renderSelfPunchSelectors() {
   paymentOptionSelect.value = selfViewState.selectedPaymentOption;
   reasonCodeSelect.value = selfViewState.selectedReasonCode;
 
+  syncSelfEntryTypeControls();
   persistSelfSelections();
   updateSelfPunchAvailability();
 }
@@ -133,6 +218,7 @@ async function loadSelfLookups(forceRefresh = false) {
   selfViewState.overtimeCodes = payload.overtimeCodes;
   selfViewState.paymentOptions = payload.paymentOptions;
   selfViewState.reasonCodes = payload.reasonCodes;
+  selfViewState.timeEntryTypes = Array.isArray(payload.timeEntryTypes) && payload.timeEntryTypes.length > 0 ? payload.timeEntryTypes : ["overtime"];
   selfViewState.lookupsLoaded = true;
   renderSelfPunchSelectors();
 }
@@ -142,6 +228,7 @@ function applySelfBootstrap(payload) {
   selfViewState.overtimeCodes = Array.isArray(payload && payload.overtimeCodes) ? payload.overtimeCodes : [];
   selfViewState.paymentOptions = Array.isArray(payload && payload.paymentOptions) ? payload.paymentOptions : [];
   selfViewState.reasonCodes = Array.isArray(payload && payload.reasonCodes) ? payload.reasonCodes : [];
+  selfViewState.timeEntryTypes = Array.isArray(payload && payload.timeEntryTypes) && payload.timeEntryTypes.length > 0 ? payload.timeEntryTypes : ["overtime"];
   selfViewState.lookupsLoaded = true;
   renderSelfPunchSelectors();
 }
@@ -228,6 +315,10 @@ function groupSelfEntriesByDate(entries) {
 
 function getSelfEntryKey(entry) {
   return `${entry.entryId || ""}__${entry.date || ""}__${entry.punchIn || ""}`;
+}
+
+function getSelfActiveEntry(entries) {
+  return sortEntriesByDateTime(entries || [], true).find(entry => isEntryOpen(entry)) || null;
 }
 
 function getSelfCalendarEntrySeconds(entry) {
@@ -340,6 +431,9 @@ function syncSelfStatsControls(entries) {
 function getFilteredSelfStatsEntries(entries) {
   const range = getSelfStatsDateRange();
   return (entries || []).filter(entry => {
+    if (isDiverseEntry(entry)) {
+      return false;
+    }
     if (!isDateWithinRange(entry.date, range.startDate, range.endDate)) {
       return false;
     }
@@ -528,6 +622,9 @@ function renderSelfStats(entries) {
 function updateSelfSummaryMetrics(allEntries) {
   const now = new Date();
   const currentMonthEntries = allEntries.filter(entry => {
+    if (isDiverseEntry(entry)) {
+      return false;
+    }
     const entryDate = new Date(`${entry.date}T00:00:00`);
     return entryDate.getMonth() === now.getMonth() && entryDate.getFullYear() === now.getFullYear();
   });
@@ -547,23 +644,37 @@ function updateSelfStatus(entries) {
   const heroText = document.getElementById("selfHeroText");
   const selectionSummary = document.getElementById("selfSelectionSummary");
   const punchSelectors = document.getElementById("selfPunchSelectors");
+  const diverseEndFields = document.getElementById("selfDiverseEndFields");
   const latestEntry = getLatestEntry(entries);
-  const activeEntry = latestEntry && isEntryOpen(latestEntry) ? latestEntry : null;
+  const activeEntry = getSelfActiveEntry(entries);
 
   if (activeEntry) {
     const startedAt = toEntryDateTime(activeEntry);
     const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
-    primaryButton.textContent = t("self.endOvertime");
+    primaryButton.textContent = isDiverseEntry(activeEntry) ? t("self.endDiverse") : t("self.endOvertime");
     primaryButton.dataset.punchType = "out";
-    punchState.textContent = t("self.startedAt", {
-      date: formatDateLabel(activeEntry.date),
-      time: formatTimeString(getEntryExactPunchIn(activeEntry)),
-    });
-    statusMessage.textContent = t("self.openDuration", { duration: secondsToDurationLabel(elapsedSeconds) });
-    currentStatusValue.textContent = t("status.clockedIn");
-    currentStatusHint.textContent = getEntryContextLabel(activeEntry);
-    selectionSummary.textContent = getEntryContextLabel(activeEntry);
+    if (punchState) {
+      punchState.textContent = t("self.startedAt", {
+        date: formatDateLabel(activeEntry.date),
+        time: formatTimeString(getEntryExactPunchIn(activeEntry)),
+      });
+    }
+    if (statusMessage) {
+      statusMessage.textContent = t("self.openDuration", { duration: secondsToDurationLabel(elapsedSeconds) });
+    }
+    if (currentStatusValue) {
+      currentStatusValue.textContent = t("status.clockedIn");
+    }
+    if (currentStatusHint) {
+      currentStatusHint.textContent = getEntryContextLabel(activeEntry);
+    }
+    if (selectionSummary) {
+      selectionSummary.textContent = getEntryContextLabel(activeEntry);
+    }
     punchSelectors.classList.add("d-none");
+    if (diverseEndFields) {
+      diverseEndFields.classList.toggle("d-none", !isDiverseEntry(activeEntry));
+    }
     if (heroText) {
       heroText.textContent = t("self.hero.live");
     }
@@ -571,21 +682,35 @@ function updateSelfStatus(entries) {
     return;
   }
 
-  primaryButton.textContent = t("self.startOvertime");
+  primaryButton.textContent = selfViewState.selectedEntryType === "diverse" ? t("self.startDiverse") : t("self.startOvertime");
   primaryButton.dataset.punchType = "in";
   punchSelectors.classList.remove("d-none");
-  selectionSummary.textContent = [
-    selfViewState.selectedProjectCode,
-    selfViewState.selectedOvertimeCode,
-    selfViewState.selectedPaymentOption ? formatPaymentOptionValue(selfViewState.selectedPaymentOption) : "",
-    selfViewState.selectedReasonCode,
-  ].filter(Boolean).join(" | ");
+  if (diverseEndFields) {
+    diverseEndFields.classList.add("d-none");
+  }
+  syncSelfEntryTypeControls();
+  if (selectionSummary) {
+    selectionSummary.textContent = [
+      selfViewState.selectedEntryType === "diverse" ? t("shared.diverse") : selfViewState.selectedProjectCode,
+      selfViewState.selectedEntryType === "diverse" ? document.getElementById("selfDiverseReasonInput")?.value : selfViewState.selectedOvertimeCode,
+      selfViewState.selectedEntryType === "diverse" ? "" : (selfViewState.selectedPaymentOption ? formatPaymentOptionValue(selfViewState.selectedPaymentOption) : ""),
+      selfViewState.selectedEntryType === "diverse" ? "" : selfViewState.selectedReasonCode,
+    ].filter(Boolean).join(" | ");
+  }
 
   if (!latestEntry) {
-    punchState.textContent = t("status.noHistory");
-    statusMessage.textContent = t("status.idle");
-    currentStatusValue.textContent = t("status.offClock");
-    currentStatusHint.textContent = t("shared.ready");
+    if (punchState) {
+      punchState.textContent = t("status.noHistory");
+    }
+    if (statusMessage) {
+      statusMessage.textContent = t("status.idle");
+    }
+    if (currentStatusValue) {
+      currentStatusValue.textContent = t("status.offClock");
+    }
+    if (currentStatusHint) {
+      currentStatusHint.textContent = t("shared.ready");
+    }
     if (heroText) {
       heroText.textContent = t("self.hero.idle");
     }
@@ -597,25 +722,33 @@ function updateSelfStatus(entries) {
   const timeRange = latestEntry.punchOut
     ? buildTimeRangeText(formatTimeString(getEntryExactPunchIn(latestEntry)), formatTimeString(getEntryExactPunchOut(latestEntry)))
     : formatTimeString(getEntryExactPunchIn(latestEntry));
-  punchState.textContent = t("self.lastEntry", {
-    date: formatDateLabel(latestEntry.date),
-    timeRange,
-  });
-  currentStatusValue.textContent = latestStatus === "rejected"
-    ? t("status.needsAttention")
-    : latestStatus === "approved"
-      ? t("status.readyForNext")
-      : t("status.awaitingApproval");
-  currentStatusHint.textContent = latestStatus === "rejected"
-    ? t("status.rejected")
-    : latestStatus === "approved"
-      ? t("status.approved")
-      : t("status.pending");
-  statusMessage.textContent = latestStatus === "rejected"
-    ? t("shared.reviewRequired")
-    : latestStatus === "approved"
-      ? t("shared.ready")
-      : t("shared.waiting");
+  if (punchState) {
+    punchState.textContent = t("self.lastEntry", {
+      date: formatDateLabel(latestEntry.date),
+      timeRange,
+    });
+  }
+  if (currentStatusValue) {
+    currentStatusValue.textContent = latestStatus === "rejected"
+      ? t("status.needsAttention")
+      : latestStatus === "approved"
+        ? t("status.readyForNext")
+        : t("status.awaitingApproval");
+  }
+  if (currentStatusHint) {
+    currentStatusHint.textContent = latestStatus === "rejected"
+      ? t("status.rejected")
+      : latestStatus === "approved"
+        ? t("status.approved")
+        : t("status.pending");
+  }
+  if (statusMessage) {
+    statusMessage.textContent = latestStatus === "rejected"
+      ? t("shared.reviewRequired")
+      : latestStatus === "approved"
+        ? t("shared.ready")
+        : t("shared.waiting");
+  }
   if (heroText) {
     heroText.textContent = latestStatus === "rejected"
       ? t("self.hero.review")
@@ -774,20 +907,41 @@ async function refreshSelfView() {
 window.refreshSelfView = refreshSelfView;
 
 async function submitSelfPunch(type) {
-  const actionLabel = type === "in" ? t("self.startOvertime") : t("self.endOvertime");
+  const activeEntry = getSelfActiveEntry(selfViewState.entries);
+  const selectedEntryType = type === "out" && activeEntry ? getEntryType(activeEntry) : selfViewState.selectedEntryType;
+  const actionLabel = type === "in"
+    ? (selectedEntryType === "diverse" ? t("self.startDiverse") : t("self.startOvertime"))
+    : (selectedEntryType === "diverse" ? t("self.endDiverse") : t("self.endOvertime"));
   const now = new Date();
   const promptTime = formatPromptTime(now);
   const projectCode = selfViewState.selectedProjectCode;
   const overtimeCode = selfViewState.selectedOvertimeCode;
   const paymentOption = selfViewState.selectedPaymentOption;
   const reasonCode = selfViewState.selectedReasonCode;
+  const diverseReason = String(document.getElementById("selfDiverseReasonInput")?.value || "").trim();
+  const diverseSummary = String(document.getElementById("selfDiverseSummaryInput")?.value || "").trim();
 
-  if (type === "in" && (!projectCode || !paymentOption)) {
+  if (type === "in" && selectedEntryType === "diverse" && !diverseReason) {
+    showToast(t("self.diverseReasonRequired"), "info");
+    return;
+  }
+
+  if (type === "out" && selectedEntryType === "diverse" && !diverseSummary) {
+    showToast(t("self.diverseSummaryRequired"), "info");
+    return;
+  }
+
+  if (type === "in" && selectedEntryType !== "diverse" && (!projectCode || !paymentOption)) {
     showToast(t("self.selectionRequired"), "info");
     return;
   }
 
-  const confirmationMessage = type === "in"
+  const confirmationMessage = type === "in" && selectedEntryType === "diverse"
+    ? t("self.startDiverseConfirm", {
+      time: escapeHtml(promptTime),
+      reason: escapeHtml(diverseReason),
+    })
+    : type === "in"
     ? t("self.startConfirm", {
       time: escapeHtml(promptTime),
       project: escapeHtml(projectCode),
@@ -795,7 +949,9 @@ async function submitSelfPunch(type) {
       payment: escapeHtml(formatPaymentOptionValue(paymentOption)),
       reason: escapeHtml(reasonCode || t("shared.reasonCode")),
     })
-    : t("self.endConfirm", { time: escapeHtml(promptTime) });
+    : selectedEntryType === "diverse"
+      ? t("self.endDiverseConfirm", { time: escapeHtml(promptTime) })
+      : t("self.endConfirm", { time: escapeHtml(promptTime) });
 
   showSelfConfirmationModal(
     actionLabel,
@@ -805,7 +961,7 @@ async function submitSelfPunch(type) {
         const response = await fetch(apiUrl + "self/punch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type, projectCode, overtimeCode, paymentOption, reasonCode }),
+          body: JSON.stringify({ type, entryType: selectedEntryType, projectCode, overtimeCode, paymentOption, reasonCode, diverseReason, diverseSummary }),
         });
         const result = await parseResponse(response);
         const formattedTime = formatTimeString(result.time);
@@ -813,8 +969,14 @@ async function submitSelfPunch(type) {
           ? t("self.clockOutNeedsReview", { date: formatDateLabel(result.reviewEntryDate) })
           : t("self.punchSuccess", { action: actionLabel, time: formattedTime });
 
-        document.getElementById("selfStatusMessage").textContent = statusMessage;
+        const statusMessageElement = document.getElementById("selfStatusMessage");
+        if (statusMessageElement) {
+          statusMessageElement.textContent = statusMessage;
+        }
         showToast(statusMessage, result && result.requiresClockOutReview ? "warning" : "success");
+        if (selectedEntryType === "diverse" && type === "out") {
+          document.getElementById("selfDiverseSummaryInput").value = "";
+        }
         await refreshSelfView();
       } catch (error) {
         console.error(`Error during ${actionLabel.toLowerCase()}:`, error);
@@ -834,6 +996,19 @@ document.getElementById("selfProjectCodeSelect").addEventListener("change", even
   persistSelfSelections();
   updateSelfStatus(selfViewState.entries);
 });
+
+document.getElementById("selfEntryTypeSelect").addEventListener("change", event => {
+  selfViewState.selectedEntryType = event.target.value || "overtime";
+  syncSelfEntryTypeControls();
+  persistSelfSelections();
+  updateSelfStatus(selfViewState.entries);
+});
+
+document.getElementById("selfDiverseReasonInput").addEventListener("input", () => {
+  updateSelfStatus(selfViewState.entries);
+});
+
+document.getElementById("selfDiverseSummaryInput").addEventListener("input", updateSelfPunchAvailability);
 
 document.getElementById("selfOvertimeCodeSelect").addEventListener("change", event => {
   selfViewState.selectedOvertimeCode = event.target.value;

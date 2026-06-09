@@ -3,6 +3,11 @@
             $employeeCode = $matches[1]
             $dataFile = Join-Path -Path $sharedFolder -ChildPath "${employeeCode}_data.json"
 
+            if (Test-CurrentUserMatchesEmployeeCode -CurrentUser $currentUser -EmployeeCode $employeeCode) {
+                respondWithError $response 403 "Administrators cannot add overtime entries to their own employee profile."
+                continue
+            }
+
             # If the employee data file doesn't exist, initialize it as an empty array.
             if (!(Test-Path -Path $dataFile)) {
                 Write-JsonAtomic -Path $dataFile -Value @()
@@ -43,8 +48,8 @@
                 continue
             }
 
-            if (-not (Test-CurrentUserCanAccessProjectCode -CurrentUser $currentUser -ProjectCode ([string]$payload.projectCode))) {
-                respondWithError $response 403 "You do not have access to project $($payload.projectCode)."
+            if (-not (Test-CurrentUserCanModifyProjectCode -CurrentUser $currentUser -ProjectCode ([string]$payload.projectCode))) {
+                respondWithError $response 403 "You can view this project, but only assigned project admins can modify entries for it."
                 continue
             }
 

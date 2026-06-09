@@ -6,20 +6,47 @@ if (-not $script:BinaryFileCache) {
     $script:BinaryFileCache = @{}
 }
 
+if (-not $script:FileMetadataCache) {
+    $script:FileMetadataCache = @{}
+}
+
+if (-not $script:FileMetadataValidationIntervalMs) {
+    $script:FileMetadataValidationIntervalMs = 750
+}
+
 function Get-FileMetadataSnapshot {
     param([Parameter(Mandatory = $true)][string]$Path)
 
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $cacheEntry = $script:FileMetadataCache[$Path]
+    if ($cacheEntry -and $cacheEntry.ValidatedAtUtc) {
+        $cacheAgeMs = ($nowUtc - $cacheEntry.ValidatedAtUtc).TotalMilliseconds
+        if ($cacheAgeMs -lt $script:FileMetadataValidationIntervalMs) {
+            return $cacheEntry.Metadata
+        }
+    }
+
     if (-not (Test-Path -Path $Path -PathType Leaf)) {
+        $script:FileMetadataCache[$Path] = [PSCustomObject]@{
+            ValidatedAtUtc = $nowUtc
+            Metadata       = $null
+        }
         return $null
     }
 
     $item = Get-Item -Path $Path
-    return [PSCustomObject]@{
+    $metadata = [PSCustomObject]@{
         Path           = $item.FullName
         LastWriteUtc   = $item.LastWriteTimeUtc
         LastWriteTicks = $item.LastWriteTimeUtc.Ticks
         Length         = $item.Length
     }
+    $script:FileMetadataCache[$Path] = [PSCustomObject]@{
+        ValidatedAtUtc = $nowUtc
+        Metadata       = $metadata
+    }
+
+    return $metadata
 }
 
 function Clear-CachedFileContent {
@@ -31,6 +58,10 @@ function Clear-CachedFileContent {
 
     if ($script:BinaryFileCache.ContainsKey($Path)) {
         $script:BinaryFileCache.Remove($Path) | Out-Null
+    }
+
+    if ($script:FileMetadataCache.ContainsKey($Path)) {
+        $script:FileMetadataCache.Remove($Path) | Out-Null
     }
 }
 
