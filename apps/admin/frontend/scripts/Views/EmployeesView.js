@@ -2030,6 +2030,9 @@ function renderEmployeeDetail(employee) {
           <button type="button" class="btn btn-outline-secondary btn-sm people-export-month-button" data-employee-code="${escapeHtml(employee.code)}" data-export-month="${escapeHtml(activeMonthKey)}">
             <i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(t("export.openMonthlyHtml"))}
           </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm people-gc179-fdf-button" data-employee-code="${escapeHtml(employee.code)}" data-export-month="${escapeHtml(activeMonthKey)}">
+            <i class="fa-solid fa-file-export"></i> ${escapeHtml(t("export.downloadGc179Fdf"))}
+          </button>
         </div>
       </div>
       <div class="employee-month-board-shell">
@@ -2062,6 +2065,9 @@ function renderEmployeeDetail(employee) {
         <div class="employee-calendar-actions">
           <button type="button" class="btn btn-outline-secondary btn-sm people-export-month-button" data-employee-code="${escapeHtml(employee.code)}" data-export-month="${escapeHtml(activeMonthKey)}">
             <i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(t("export.openMonthlyHtml"))}
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm people-gc179-fdf-button" data-employee-code="${escapeHtml(employee.code)}" data-export-month="${escapeHtml(activeMonthKey)}">
+            <i class="fa-solid fa-file-export"></i> ${escapeHtml(t("export.downloadGc179Fdf"))}
           </button>
         </div>
       </div>
@@ -2282,6 +2288,15 @@ document.getElementById("employeesDirectoryContainer").addEventListener("click",
 });
 
 document.getElementById("employeeDetailContainer").addEventListener("click", async event => {
+  const gc179Button = event.target.closest(".people-gc179-fdf-button");
+  if (gc179Button) {
+    downloadGc179FdfExport({
+      employeeCode: gc179Button.getAttribute("data-employee-code"),
+      monthKey: gc179Button.getAttribute("data-export-month") || employeesViewState.currentMonthByEmployee[gc179Button.getAttribute("data-employee-code")],
+    });
+    return;
+  }
+
   const exportButton = event.target.closest(".people-export-month-button");
   if (exportButton) {
     const employeeCode = exportButton.getAttribute("data-employee-code");

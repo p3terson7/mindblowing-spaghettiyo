@@ -120,6 +120,9 @@ const APP_TRANSLATIONS = {
     "shared.exactRange": "Exact {start} → {end}",
 
     "export.openMonthlyHtml": "Extract Month",
+    "export.downloadGc179Fdf": "GC179 FDF",
+    "export.gc179DownloadSuccess": "GC179 FDF downloaded. Import it into GC179.pdf in Acrobat.",
+    "export.gc179DownloadError": "Unable to generate GC179 FDF: {message}",
     "export.monthlyTitle": "Monthly Overtime Extract",
     "export.employee": "Employee",
     "export.month": "Month",
@@ -581,6 +584,7 @@ const APP_TRANSLATIONS = {
     "filters.allEmployees": "All employees",
     "dashboard.selectEmployeeBeforeNote": "Select an employee before saving a note.",
     "error.requestFailedStatus": "Request failed with status {status}.",
+    "error.missingRequiredFields": "Missing required information.",
   },
   fr: {
     "app.title": "SAPHIR GÉEM",
@@ -695,6 +699,9 @@ const APP_TRANSLATIONS = {
     "shared.exactRange": "Exact {start} → {end}",
 
     "export.openMonthlyHtml": "Extraire le mois",
+    "export.downloadGc179Fdf": "FDF GC179",
+    "export.gc179DownloadSuccess": "FDF GC179 téléchargé. Importez-le dans GC179.pdf avec Acrobat.",
+    "export.gc179DownloadError": "Impossible de générer le FDF GC179 : {message}",
     "export.monthlyTitle": "Extraction mensuelle des heures supp.",
     "export.employee": "Employé",
     "export.month": "Mois",
@@ -1156,6 +1163,7 @@ const APP_TRANSLATIONS = {
     "filters.allEmployees": "Tous les employés",
     "dashboard.selectEmployeeBeforeNote": "Choisissez un employé avant d'enregistrer une note.",
     "error.requestFailedStatus": "La requête a échoué avec le statut {status}.",
+    "error.missingRequiredFields": "Information requise manquante.",
   },
 };
 

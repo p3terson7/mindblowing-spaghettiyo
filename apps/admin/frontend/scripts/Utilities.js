@@ -928,6 +928,74 @@ function openMonthlyEntriesExportHtml(config) {
   return true;
 }
 
+function getDownloadFilenameFromDisposition(contentDisposition, fallbackName) {
+  const fallback = fallbackName || "download.fdf";
+  if (!contentDisposition) {
+    return fallback;
+  }
+
+  const utf8Match = String(contentDisposition).match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch (error) {
+      return utf8Match[1];
+    }
+  }
+
+  const filenameMatch = String(contentDisposition).match(/filename="?([^";]+)"?/i);
+  return filenameMatch ? filenameMatch[1] : fallback;
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName || "download.fdf";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+async function downloadGc179FdfExport(config) {
+  const monthKey = String(config && config.monthKey || "").trim();
+  const employeeCode = String(config && config.employeeCode || "").trim();
+  const isSelfExport = Boolean(config && config.self);
+  const path = isSelfExport
+    ? `self/gc179-fdf?month=${encodeURIComponent(monthKey)}`
+    : `employee/${encodeURIComponent(employeeCode)}/gc179-fdf?month=${encodeURIComponent(monthKey)}`;
+
+  if (!monthKey || (!isSelfExport && !employeeCode)) {
+    showToast(t("export.gc179DownloadError", { message: t("error.missingRequiredFields") }), "error");
+    return false;
+  }
+
+  try {
+    const response = await fetch(apiUrl + path);
+    if (!response.ok) {
+      const text = await response.text();
+      let message = text || t("error.requestFailedStatus", { status: response.status });
+      try {
+        const payload = JSON.parse(text);
+        message = payload.error || message;
+      } catch (error) {
+        // The server normally sends JSON errors, but keep plain text readable.
+      }
+      throw new Error(message);
+    }
+
+    const blob = await response.blob();
+    const fileName = getDownloadFilenameFromDisposition(response.headers.get("Content-Disposition"), `gc179-${employeeCode || "self"}-${monthKey}.fdf`);
+    downloadBlob(blob, fileName);
+    showToast(t("export.gc179DownloadSuccess"), "success");
+    return true;
+  } catch (error) {
+    showToast(t("export.gc179DownloadError", { message: error.message || error }), "error");
+    return false;
+  }
+}
+
 async function fetchOvertimeEntryLookups(forceRefresh = false) {
   const currentApiUrl = window.apiUrl || "";
   const scopeKey = getLookupCacheScopeKey();

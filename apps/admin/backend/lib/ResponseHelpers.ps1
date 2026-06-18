@@ -16,6 +16,26 @@ function respondWithSuccess($response, $message) {
     $response.Close()
 }
 
+function respondWithDownload {
+    param(
+        [Parameter(Mandatory = $true)]$response,
+        [Parameter(Mandatory = $true)][byte[]]$Bytes,
+        [Parameter(Mandatory = $true)][string]$ContentType,
+        [Parameter(Mandatory = $true)][string]$FileName
+    )
+
+    $safeFileName = ([string]$FileName) -replace "[`r`n`"]", "_"
+    $response.ContentType = $ContentType
+    $response.StatusCode = 200
+    $response.ContentLength64 = $Bytes.Length
+    $response.Headers["Content-Disposition"] = ("attachment; filename=""{0}""" -f $safeFileName)
+    $response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    $response.Headers["Pragma"] = "no-cache"
+    $response.Headers["Expires"] = "0"
+    $response.OutputStream.Write($Bytes, 0, $Bytes.Length)
+    $response.Close()
+}
+
 function Get-ContentTypeForFilePath {
     param([Parameter(Mandatory = $true)][string]$Path)
 

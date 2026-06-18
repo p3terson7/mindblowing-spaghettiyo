@@ -15,6 +15,7 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 . (Join-Path -Path $scriptDir -ChildPath "services/ProjectStatsService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/HistoryService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/SeedService.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "services/Gc179ExportService.ps1")
 
 function Register-RouteScriptBlock {
     param([Parameter(Mandatory = $true)][string]$RelativePath)

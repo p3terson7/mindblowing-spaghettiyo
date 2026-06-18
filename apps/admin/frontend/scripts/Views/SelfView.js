@@ -867,6 +867,9 @@ function renderSelfEntries(entries) {
         <button type="button" class="btn btn-outline-secondary btn-sm self-export-month-button" data-self-export-month="${escapeHtml(activeMonthKey)}">
           <i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(t("export.openMonthlyHtml"))}
         </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm self-gc179-fdf-button" data-self-gc179-month="${escapeHtml(activeMonthKey)}">
+          <i class="fa-solid fa-file-export"></i> ${escapeHtml(t("export.downloadGc179Fdf"))}
+        </button>
       </div>
     </div>
     <div class="employee-month-board-shell">
@@ -1082,6 +1085,15 @@ document.getElementById("selfStatsResetFiltersBtn").addEventListener("click", ()
 });
 
 document.getElementById("selfEntriesContainer").addEventListener("click", event => {
+  const gc179Button = event.target.closest(".self-gc179-fdf-button");
+  if (gc179Button) {
+    downloadGc179FdfExport({
+      self: true,
+      monthKey: gc179Button.getAttribute("data-self-gc179-month") || selfViewState.currentMonthKey,
+    });
+    return;
+  }
+
   const exportButton = event.target.closest(".self-export-month-button");
   if (exportButton) {
     const currentUser = typeof getCurrentUser === "function" ? getCurrentUser() : null;

@@ -1,0 +1,468 @@
+%FDF-1.2
+1 0 obj
+<<
+/FDF <<
+/Fields [
+<<
+/T (Month)
+/V (5)
+>>
+<<
+/T (Year)
+/V (2026)
+>>
+<<
+/T (DayofWeek.0)
+/V (04)
+>>
+<<
+/T (OTCODE.0)
+/V (C)
+>>
+<<
+/T (DayWorked.0)
+/V (Mon)
+>>
+<<
+/T (StartTime.0)
+/V (15:45)
+>>
+<<
+/T (EndTime.0)
+/V (17:30)
+>>
+<<
+/T (OvertimeCode.0)
+/V (262)
+>>
+<<
+/T (Payment)
+/V /1
+>>
+<<
+/T (DayofWeek.1)
+/V (21)
+>>
+<<
+/T (OTCODE.1)
+/V (B)
+>>
+<<
+/T (DayWorked.1)
+/V (Thu)
+>>
+<<
+/T (StartTime.1)
+/V (07:30)
+>>
+<<
+/T (EndTime.1)
+/V (08:30)
+>>
+<<
+/T (OvertimeCode.1)
+/V (261)
+>>
+<<
+/T (Payment1)
+/V /2
+>>
+<<
+/T (DayofWeek.2)
+/V ()
+>>
+<<
+/T (OTCODE.2)
+/V ()
+>>
+<<
+/T (DayWorked.2)
+/V ()
+>>
+<<
+/T (StartTime.2)
+/V ()
+>>
+<<
+/T (EndTime.2)
+/V ()
+>>
+<<
+/T (OvertimeCode.2)
+/V ()
+>>
+<<
+/T (Payment2)
+/V /0
+>>
+<<
+/T (DayofWeek.3)
+/V ()
+>>
+<<
+/T (OTCODE.3)
+/V ()
+>>
+<<
+/T (DayWorked.3)
+/V ()
+>>
+<<
+/T (StartTime.3)
+/V ()
+>>
+<<
+/T (EndTime.3)
+/V ()
+>>
+<<
+/T (OvertimeCode.3)
+/V ()
+>>
+<<
+/T (Payment3)
+/V /0
+>>
+<<
+/T (DayofWeek.4)
+/V ()
+>>
+<<
+/T (OTCODE.4)
+/V ()
+>>
+<<
+/T (DayWorked.4)
+/V ()
+>>
+<<
+/T (StartTime.4)
+/V ()
+>>
+<<
+/T (EndTime.4)
+/V ()
+>>
+<<
+/T (OvertimeCode.4)
+/V ()
+>>
+<<
+/T (Payment4)
+/V /0
+>>
+<<
+/T (DayofWeek.5)
+/V ()
+>>
+<<
+/T (OTCODE.5)
+/V ()
+>>
+<<
+/T (DayWorked.5)
+/V ()
+>>
+<<
+/T (StartTime.5)
+/V ()
+>>
+<<
+/T (EndTime.5)
+/V ()
+>>
+<<
+/T (OvertimeCode.5)
+/V ()
+>>
+<<
+/T (Payment5)
+/V /0
+>>
+<<
+/T (DayofWeek.6)
+/V ()
+>>
+<<
+/T (OTCODE.6)
+/V ()
+>>
+<<
+/T (DayWorked.6)
+/V ()
+>>
+<<
+/T (StartTime.6)
+/V ()
+>>
+<<
+/T (EndTime.6)
+/V ()
+>>
+<<
+/T (OvertimeCode.6)
+/V ()
+>>
+<<
+/T (Payment6)
+/V /0
+>>
+<<
+/T (DayofWeek.7)
+/V ()
+>>
+<<
+/T (OTCODE.7)
+/V ()
+>>
+<<
+/T (DayWorked.7)
+/V ()
+>>
+<<
+/T (StartTime.7)
+/V ()
+>>
+<<
+/T (EndTime.7)
+/V ()
+>>
+<<
+/T (OvertimeCode.7)
+/V ()
+>>
+<<
+/T (Payment7)
+/V /0
+>>
+<<
+/T (DayofWeek.8)
+/V ()
+>>
+<<
+/T (OTCODE.8)
+/V ()
+>>
+<<
+/T (DayWorked.8)
+/V ()
+>>
+<<
+/T (StartTime.8)
+/V ()
+>>
+<<
+/T (EndTime.8)
+/V ()
+>>
+<<
+/T (OvertimeCode.8)
+/V ()
+>>
+<<
+/T (Payment8)
+/V /0
+>>
+<<
+/T (DayofWeek.9)
+/V ()
+>>
+<<
+/T (OTCODE.9)
+/V ()
+>>
+<<
+/T (DayWorked.9)
+/V ()
+>>
+<<
+/T (StartTime.9)
+/V ()
+>>
+<<
+/T (EndTime.9)
+/V ()
+>>
+<<
+/T (OvertimeCode.9)
+/V ()
+>>
+<<
+/T (Payment9)
+/V /0
+>>
+<<
+/T (DayofWeek.10)
+/V ()
+>>
+<<
+/T (OTCODE.10)
+/V ()
+>>
+<<
+/T (DayWorked.10)
+/V ()
+>>
+<<
+/T (StartTime.10)
+/V ()
+>>
+<<
+/T (EndTime.10)
+/V ()
+>>
+<<
+/T (OvertimeCode.10)
+/V ()
+>>
+<<
+/T (Payment10)
+/V /0
+>>
+<<
+/T (DayofWeek.11)
+/V ()
+>>
+<<
+/T (OTCODE.11)
+/V ()
+>>
+<<
+/T (DayWorked.11)
+/V ()
+>>
+<<
+/T (StartTime.11)
+/V ()
+>>
+<<
+/T (EndTime.11)
+/V ()
+>>
+<<
+/T (OvertimeCode.11)
+/V ()
+>>
+<<
+/T (Payment11)
+/V /0
+>>
+<<
+/T (DayofWeek.12)
+/V ()
+>>
+<<
+/T (OTCODE.12)
+/V ()
+>>
+<<
+/T (DayWorked.12)
+/V ()
+>>
+<<
+/T (StartTime.12)
+/V ()
+>>
+<<
+/T (EndTime.12)
+/V ()
+>>
+<<
+/T (OvertimeCode.12)
+/V ()
+>>
+<<
+/T (Payment12)
+/V /0
+>>
+<<
+/T (DayofWeek.13)
+/V ()
+>>
+<<
+/T (OTCODE.13)
+/V ()
+>>
+<<
+/T (DayWorked.13)
+/V ()
+>>
+<<
+/T (StartTime.13)
+/V ()
+>>
+<<
+/T (EndTime.13)
+/V ()
+>>
+<<
+/T (OvertimeCode.13)
+/V ()
+>>
+<<
+/T (Payment13)
+/V /0
+>>
+<<
+/T (DayofWeek.14)
+/V ()
+>>
+<<
+/T (OTCODE.14)
+/V ()
+>>
+<<
+/T (DayWorked.14)
+/V ()
+>>
+<<
+/T (StartTime.14)
+/V ()
+>>
+<<
+/T (EndTime.14)
+/V ()
+>>
+<<
+/T (OvertimeCode.14)
+/V ()
+>>
+<<
+/T (Payment14)
+/V /0
+>>
+<<
+/T (DayofWeek.15)
+/V ()
+>>
+<<
+/T (OTCODE.15)
+/V ()
+>>
+<<
+/T (DayWorked.15)
+/V ()
+>>
+<<
+/T (StartTime.15)
+/V ()
+>>
+<<
+/T (EndTime.15)
+/V ()
+>>
+<<
+/T (OvertimeCode.15)
+/V ()
+>>
+<<
+/T (Payment15)
+/V /0
+>>
+]
+>>
+>>
+endobj
+trailer
+<< /Root 1 0 R >>
+%%EOF
