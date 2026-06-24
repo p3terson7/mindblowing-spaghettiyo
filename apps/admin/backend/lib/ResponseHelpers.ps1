@@ -29,6 +29,7 @@ function respondWithDownload {
     $response.StatusCode = 200
     $response.ContentLength64 = $Bytes.Length
     $response.Headers["Content-Disposition"] = ("attachment; filename=""{0}""" -f $safeFileName)
+    $response.Headers["Access-Control-Expose-Headers"] = "Content-Disposition, Content-Type"
     $response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     $response.Headers["Pragma"] = "no-cache"
     $response.Headers["Expires"] = "0"

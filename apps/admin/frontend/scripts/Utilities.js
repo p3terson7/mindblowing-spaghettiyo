@@ -985,10 +985,13 @@ async function downloadGc179FdfExport(config) {
       throw new Error(message);
     }
 
+    const contentType = response.headers.get("Content-Type") || "";
+    const isZip = contentType.toLowerCase().indexOf("zip") >= 0;
+    const fallbackName = `gc179-${employeeCode || "self"}-${monthKey}${isZip ? ".zip" : ".fdf"}`;
     const blob = await response.blob();
-    const fileName = getDownloadFilenameFromDisposition(response.headers.get("Content-Disposition"), `gc179-${employeeCode || "self"}-${monthKey}.fdf`);
+    const fileName = getDownloadFilenameFromDisposition(response.headers.get("Content-Disposition"), fallbackName);
     downloadBlob(blob, fileName);
-    showToast(t("export.gc179DownloadSuccess"), "success");
+    showToast(t(isZip ? "export.gc179ZipDownloadSuccess" : "export.gc179DownloadSuccess"), "success");
     return true;
   } catch (error) {
     showToast(t("export.gc179DownloadError", { message: error.message || error }), "error");

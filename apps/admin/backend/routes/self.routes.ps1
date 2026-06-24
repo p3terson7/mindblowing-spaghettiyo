@@ -75,9 +75,8 @@
             $query = [System.Web.HttpUtility]::ParseQueryString($request.Url.Query)
             $monthKey = [string]$query["month"]
             try {
-                $export = New-Gc179FdfExport -EmployeeCode ([string]$currentUser.employeeCode) -MonthKey $monthKey
-                $bytes = [System.Text.Encoding]::ASCII.GetBytes([string]$export.Content)
-                respondWithDownload $response $bytes "application/vnd.fdf" ([string]$export.FileName)
+                $export = New-Gc179FdfExportPackage -EmployeeCode ([string]$currentUser.employeeCode) -MonthKey $monthKey
+                respondWithDownload $response ([byte[]]$export.Bytes) ([string]$export.ContentType) ([string]$export.FileName)
             }
             catch {
                 respondWithError $response 400 $_.Exception.Message
