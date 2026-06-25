@@ -17,6 +17,16 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 . (Join-Path -Path $scriptDir -ChildPath "services/SeedService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/Gc179ExportService.ps1")
 
+try {
+    $gc179SequenceInstall = Install-Gc179AcrobatSequenceIfNeeded
+    if ($gc179SequenceInstall.Installed) {
+        Write-Host "GC179 Acrobat action installed at $($gc179SequenceInstall.Path)"
+    }
+}
+catch {
+    Write-Warning "Unable to install the GC179 Acrobat action automatically. $($_.Exception.Message)"
+}
+
 function Register-RouteScriptBlock {
     param([Parameter(Mandatory = $true)][string]$RelativePath)
 
