@@ -445,6 +445,96 @@ function ConvertTo-Gc179AcrobatPath {
     return ($fullPath -replace "\\", "/")
 }
 
+function Write-Gc179Log {
+    param([Parameter(Mandatory = $true)][string]$Message)
+
+    Write-Host ("[GC179] {0}" -f $Message)
+}
+
+function Invoke-Gc179Operation {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][scriptblock]$ScriptBlock
+    )
+
+    try {
+        return (& $ScriptBlock)
+    }
+    catch {
+        throw ("{0} a echoue. {1}" -f $Name, $_.Exception.Message)
+    }
+}
+
+function Invoke-Gc179FdfImport {
+    param(
+        [Parameter(Mandatory = $true)]$JsObject,
+        [Parameter(Mandatory = $true)][string]$FdfPath
+    )
+
+    $fullPath = ConvertTo-Gc179FullPath -Path $FdfPath
+    $acrobatPath = ConvertTo-Gc179AcrobatPath -Path $FdfPath
+    $attempts = @($fullPath, $acrobatPath)
+    $lastError = $null
+
+    foreach ($candidate in $attempts) {
+        try {
+            $JsObject.importAnFDF([string]$candidate)
+            return
+        }
+        catch {
+            $lastError = $_.Exception.Message
+        }
+    }
+
+    throw ("Acrobat n'a pas pu importer le FDF. Chemin Windows: {0}. Chemin Acrobat: {1}. Derniere erreur: {2}" -f $fullPath, $acrobatPath, $lastError)
+}
+
+function Save-Gc179PDDoc {
+    param(
+        [Parameter(Mandatory = $true)]$PDDoc,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $fullPath = ConvertTo-Gc179FullPath -Path $Path
+    $acrobatPath = ConvertTo-Gc179AcrobatPath -Path $Path
+    $attempts = @($fullPath, $acrobatPath)
+    $lastError = $null
+
+    foreach ($candidate in $attempts) {
+        try {
+            $saved = $PDDoc.Save(1, [string]$candidate)
+            if ($saved) {
+                return
+            }
+
+            $lastError = "Acrobat a retourne False."
+        }
+        catch {
+            $lastError = $_.Exception.Message
+        }
+    }
+
+    throw ("Acrobat n'a pas pu sauvegarder le PDF. Chemin Windows: {0}. Chemin Acrobat: {1}. Derniere erreur: {2}" -f $fullPath, $acrobatPath, $lastError)
+}
+
+function Invoke-Gc179WindowsFdfFallback {
+    param(
+        [Parameter(Mandatory = $true)]$FdfFiles
+    )
+
+    Write-Gc179Log "Mode secours: ouverture des FDF dans Acrobat/Windows. Sauvegardez chaque PDF ouvert au besoin."
+    foreach ($fdfFile in @($FdfFiles)) {
+        Write-Gc179Log ("Ouverture FDF: {0}" -f $fdfFile.Name)
+        try {
+            Start-Process -FilePath ([string]$fdfFile.FullName) | Out-Null
+        }
+        catch {
+            Write-Warning ("Impossible d'ouvrir automatiquement {0}. Double-cliquez ce fichier manuellement ou ouvrez-le avec Adobe Acrobat. {1}" -f $fdfFile.Name, $_.Exception.Message)
+        }
+        Start-Sleep -Milliseconds 800
+    }
+}
+
 function Test-Gc179PdfHeader {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -501,7 +591,10 @@ function Invoke-Gc179WindowsAcrobat {
 
     $acroApp = $null
     try {
-        $acroApp = New-Object -ComObject AcroExch.App
+        Write-Gc179Log "Initialisation Acrobat COM."
+        $acroApp = Invoke-Gc179Operation -Name "Creation AcroExch.App" -ScriptBlock {
+            New-Object -ComObject AcroExch.App
+        }
     }
     catch {
         throw "Impossible de demarrer Acrobat via COM. Verifiez qu'Adobe Acrobat complet est installe sur ce poste."
@@ -515,24 +608,39 @@ function Invoke-Gc179WindowsAcrobat {
             $outputPath = Get-Gc179OutputPath -FdfFile $fdfFile -OutputDirectory $OutputDirectory
             $workingPath = Get-Gc179WorkingPath -FdfFile $fdfFile -OutputDirectory $OutputDirectory
             try {
+                Write-Gc179Log ("Traitement: {0}" -f $fdfFile.Name)
                 if (Test-Path -Path $workingPath -PathType Leaf) {
                     Remove-Item -LiteralPath $workingPath -Force
                 }
                 New-Gc179WorkingPdf -TemplatePath $TemplatePath -WorkingPath $workingPath
 
-                $avDoc = New-Object -ComObject AcroExch.AVDoc
-                $opened = $avDoc.Open($workingPath, "")
+                $avDoc = Invoke-Gc179Operation -Name "Creation AcroExch.AVDoc" -ScriptBlock {
+                    New-Object -ComObject AcroExch.AVDoc
+                }
+                $openPath = ConvertTo-Gc179FullPath -Path $workingPath
+                $openTitle = [System.IO.Path]::GetFileName($openPath)
+                Write-Gc179Log ("Ouverture copie PDF: {0}" -f $openPath)
+                $opened = Invoke-Gc179Operation -Name "Ouverture PDF par Acrobat" -ScriptBlock {
+                    $avDoc.Open([string]$openPath, [string]$openTitle)
+                }
                 if (-not $opened) {
                     throw "Acrobat n'a pas pu ouvrir la copie de travail GC179."
                 }
 
-                $pdDoc = $avDoc.GetPDDoc()
-                $jsObject = $pdDoc.GetJSObject()
+                $pdDoc = Invoke-Gc179Operation -Name "Lecture PDDoc" -ScriptBlock {
+                    $avDoc.GetPDDoc()
+                }
+                $jsObject = Invoke-Gc179Operation -Name "Lecture JSObject Acrobat" -ScriptBlock {
+                    $pdDoc.GetJSObject()
+                }
 
-                $jsObject.importAnFDF((ConvertTo-Gc179AcrobatPath -Path ([string]$fdfFile.FullName)))
-                $saved = $pdDoc.Save(1, $workingPath)
-                if (-not $saved) {
-                    throw "Acrobat n'a pas pu sauvegarder la copie de travail GC179."
+                Write-Gc179Log ("Import FDF: {0}" -f $fdfFile.FullName)
+                Invoke-Gc179Operation -Name "Import FDF" -ScriptBlock {
+                    Invoke-Gc179FdfImport -JsObject $jsObject -FdfPath ([string]$fdfFile.FullName)
+                } | Out-Null
+                Write-Gc179Log ("Sauvegarde copie PDF: {0}" -f $workingPath)
+                Invoke-Gc179Operation -Name "Sauvegarde PDF" -ScriptBlock {
+                    Save-Gc179PDDoc -PDDoc $pdDoc -Path $workingPath
                 }
 
                 $avDoc.Close($true) | Out-Null
@@ -635,7 +743,17 @@ if ($fdfFiles.Count -lt 1) {
 Write-Host "Traitement GC179: $($fdfFiles.Count) fichier(s) FDF."
 $osName = Get-Gc179OperatingSystemName
 if ($osName -eq "Windows") {
-    $generated = @(Invoke-Gc179WindowsAcrobat -TemplatePath $templatePath -FdfFiles $fdfFiles -OutputDirectory $outputDirectory)
+    try {
+        $generated = @(Invoke-Gc179WindowsAcrobat -TemplatePath $templatePath -FdfFiles $fdfFiles -OutputDirectory $outputDirectory)
+    }
+    catch {
+        Write-Warning ("Automatisation Acrobat impossible: {0}" -f $_.Exception.Message)
+        Invoke-Gc179WindowsFdfFallback -FdfFiles $fdfFiles
+        Write-Host ""
+        Write-Host "Mode secours lance. Acrobat devrait ouvrir les FDF avec GC179.pdf et les donnees importees."
+        Write-Host "Si Windows demande une application, choisissez Adobe Acrobat."
+        exit 0
+    }
 }
 elseif ($osName -eq "MacOS") {
     $generated = @(Invoke-Gc179MacAcrobat -TemplatePath $templatePath -FdfFiles $fdfFiles -OutputDirectory $outputDirectory)
@@ -688,6 +806,12 @@ Utilisation recommandee sur Windows:
 3. Double-cliquez GENERER-GC179.cmd.
 4. Les PDF remplis seront crees dans le dossier PDF-remplis.
 5. Le fichier GC179.pdf du dossier extrait n'est pas modifie par le script.
+
+Si l'automatisation complete est bloquee par Acrobat:
+- Le script affiche l'etape exacte qui a echoue.
+- Il ouvre ensuite les fichiers FDF directement.
+- Acrobat devrait alors afficher le formulaire GC179 avec les donnees importees.
+- Dans ce cas, sauvegardez les formulaires ouverts manuellement.
 
 Utilisation PowerShell directe:
 1. Extrayez le ZIP.
