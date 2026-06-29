@@ -1005,8 +1005,25 @@ function New-Gc179FdfExportSet {
 }
 
 function Get-Gc179LocalExportRoot {
-    $basePath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "GEEM"
-    return (Join-Path -Path $basePath -ChildPath "GC179")
+    if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+        $basePath = [string]$env:LOCALAPPDATA
+        if ([string]::IsNullOrWhiteSpace($basePath)) {
+            $basePath = Join-Path -Path ([System.Environment]::GetFolderPath("LocalApplicationData")) -ChildPath "GEEM"
+        }
+        else {
+            $basePath = Join-Path -Path $basePath -ChildPath "GEEM"
+        }
+
+        return (Join-Path -Path $basePath -ChildPath "GC179")
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$env:HOME)) {
+        $basePath = Join-Path -Path ([string]$env:HOME) -ChildPath "Library/Application Support/GEEM"
+        return (Join-Path -Path $basePath -ChildPath "GC179")
+    }
+
+    $fallbackBasePath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "GEEM"
+    return (Join-Path -Path $fallbackBasePath -ChildPath "GC179")
 }
 
 function Remove-OldGc179LocalExportFolders {
