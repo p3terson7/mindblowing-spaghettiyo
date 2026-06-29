@@ -390,7 +390,7 @@ function Install-Gc179AcrobatSequenceIfNeeded {
 
 function New-Gc179AdobeAutomationScript {
     return @'
-param()
+param([switch]$UseComAutomation)
 
 $ErrorActionPreference = "Stop"
 
@@ -463,6 +463,52 @@ function Write-Gc179Log {
     Write-Host ("[GC179] {0}" -f $Message)
 }
 
+function ConvertTo-Gc179FdfLiteral {
+    param([AllowNull()][string]$Value)
+
+    $text = if ($null -eq $Value) { "" } else { [string]$Value }
+    $text = $text.Replace("\", "\\")
+    $text = $text.Replace("(", "\(")
+    $text = $text.Replace(")", "\)")
+    $text = $text.Replace("`r`n", "\r")
+    $text = $text.Replace("`r", "\r")
+    $text = $text.Replace("`n", "\r")
+    return $text
+}
+
+function Get-Gc179LaunchFdfPath {
+    param(
+        [Parameter(Mandatory = $true)]$FdfFile,
+        [Parameter(Mandatory = $true)][string]$OutputDirectory
+    )
+
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$FdfFile.Name)
+    return (Join-Path -Path $OutputDirectory -ChildPath ("{0}-ouvrir.fdf" -f $baseName))
+}
+
+function New-Gc179LaunchFdf {
+    param(
+        [Parameter(Mandatory = $true)]$FdfFile,
+        [Parameter(Mandatory = $true)][string]$TemplatePath,
+        [Parameter(Mandatory = $true)][string]$OutputDirectory
+    )
+
+    $launchFdfPath = Get-Gc179LaunchFdfPath -FdfFile $FdfFile -OutputDirectory $OutputDirectory
+    $fdfText = [System.IO.File]::ReadAllText([string]$FdfFile.FullName, [System.Text.Encoding]::ASCII)
+    $templateLiteral = ConvertTo-Gc179FdfLiteral -Value (ConvertTo-Gc179FullPath -Path $TemplatePath)
+    $fieldReference = "/F ($templateLiteral)"
+
+    if ($fdfText -match "/F\s*\([^)]*\)") {
+        $fdfText = [System.Text.RegularExpressions.Regex]::Replace($fdfText, "/F\s*\([^)]*\)", $fieldReference, 1)
+    }
+    else {
+        $fdfText = $fdfText -replace "/FDF\s*<<", ("/FDF <<" + [Environment]::NewLine + $fieldReference)
+    }
+
+    [System.IO.File]::WriteAllText($launchFdfPath, $fdfText, [System.Text.Encoding]::ASCII)
+    return $launchFdfPath
+}
+
 function Invoke-Gc179Operation {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -529,16 +575,19 @@ function Save-Gc179PDDoc {
     throw ("Acrobat n'a pas pu sauvegarder le PDF. Chemin Windows: {0}. Chemin Acrobat: {1}. Derniere erreur: {2}" -f $fullPath, $acrobatPath, $lastError)
 }
 
-function Invoke-Gc179WindowsFdfFallback {
+function Invoke-Gc179WindowsFdfOpen {
     param(
-        [Parameter(Mandatory = $true)]$FdfFiles
+        [Parameter(Mandatory = $true)][string]$TemplatePath,
+        [Parameter(Mandatory = $true)]$FdfFiles,
+        [Parameter(Mandatory = $true)][string]$OutputDirectory
     )
 
-    Write-Gc179Log "Mode secours: ouverture des FDF dans Acrobat/Windows. Sauvegardez chaque PDF ouvert au besoin."
+    Write-Gc179Log "Ouverture des FDF dans Acrobat/Windows. Sauvegardez chaque PDF ouvert au besoin."
     foreach ($fdfFile in @($FdfFiles)) {
         Write-Gc179Log ("Ouverture FDF: {0}" -f $fdfFile.Name)
         try {
-            Start-Process -FilePath ([string]$fdfFile.FullName) | Out-Null
+            $launchFdfPath = New-Gc179LaunchFdf -FdfFile $fdfFile -TemplatePath $TemplatePath -OutputDirectory $OutputDirectory
+            Start-Process -FilePath $launchFdfPath | Out-Null
         }
         catch {
             Write-Warning ("Impossible d'ouvrir automatiquement {0}. Double-cliquez ce fichier manuellement ou ouvrez-le avec Adobe Acrobat. {1}" -f $fdfFile.Name, $_.Exception.Message)
@@ -785,14 +834,23 @@ if ($fdfFiles.Count -lt 1) {
 Write-Host "Traitement GC179: $($fdfFiles.Count) fichier(s) FDF."
 $osName = Get-Gc179OperatingSystemName
 if ($osName -eq "Windows") {
+    if (-not $UseComAutomation) {
+        Invoke-Gc179WindowsFdfOpen -TemplatePath $templatePath -FdfFiles $fdfFiles -OutputDirectory $outputDirectory
+        Write-Host ""
+        Write-Host "Les FDF ont ete ouverts avec Acrobat/Windows."
+        Write-Host "Si Acrobat affiche un message de plug-ins incompatibles, ce message vient de l'installation locale d'Acrobat, pas de GEEM."
+        Write-Host "Sauvegardez les formulaires ouverts dans Acrobat une fois les donnees importees."
+        exit 0
+    }
+
     try {
         $generated = @(Invoke-Gc179WindowsAcrobat -TemplatePath $templatePath -FdfFiles $fdfFiles -OutputDirectory $outputDirectory)
     }
     catch {
         Write-Warning ("Automatisation Acrobat impossible: {0}" -f $_.Exception.Message)
-        Invoke-Gc179WindowsFdfFallback -FdfFiles $fdfFiles
+        Invoke-Gc179WindowsFdfOpen -TemplatePath $templatePath -FdfFiles $fdfFiles -OutputDirectory $outputDirectory
         Write-Host ""
-        Write-Host "Mode secours lance. Acrobat devrait ouvrir les FDF avec GC179.pdf et les donnees importees."
+        Write-Host "Mode ouverture FDF lance. Acrobat devrait ouvrir les FDF avec GC179.pdf et les donnees importees."
         Write-Host "Si Windows demande une application, choisissez Adobe Acrobat."
         exit 0
     }
@@ -838,7 +896,7 @@ Mois    : $MonthKey
 Ce ZIP contient:
 - GC179.pdf : copie vierge du formulaire officiel incluse avec l'application.
 - gc179-*.fdf : donnees exportees par l'application GEEM.
-- GENERER-GC179.cmd : lancement rapide Windows.
+- GENERER-GC179.cmd : lancement rapide Windows. Il ouvre les FDF avec Acrobat.
 - GENERER-GC179.ps1 : script PowerShell qui traite 1 FDF ou plusieurs FDF.
 - GEEM_GC179.sequ : action Acrobat installee automatiquement par GEEM au demarrage de l'application.
 
@@ -846,14 +904,14 @@ Utilisation recommandee sur Windows:
 1. Extrayez tout le contenu du ZIP dans un dossier local.
 2. Fermez les anciens formulaires GC179 ouverts dans Acrobat.
 3. Double-cliquez GENERER-GC179.cmd.
-4. Les PDF remplis seront crees dans le dossier PDF-remplis.
-5. Le fichier GC179.pdf du dossier extrait n'est pas modifie par le script.
+4. Acrobat ouvre les FDF avec les donnees importees dans le formulaire GC179.
+5. Sauvegardez les formulaires ouverts dans Acrobat.
+6. Le fichier GC179.pdf du dossier extrait n'est pas modifie par le script.
 
-Si l'automatisation complete est bloquee par Acrobat:
-- Le script affiche l'etape exacte qui a echoue.
-- Il ouvre ensuite les fichiers FDF directement.
-- Acrobat devrait alors afficher le formulaire GC179 avec les donnees importees.
-- Dans ce cas, sauvegardez les formulaires ouverts manuellement.
+Option avancee, automatisation complete Acrobat:
+1. Cette option depend de l'installation locale d'Acrobat et peut etre bloquee par les plug-ins du poste.
+2. Lancez seulement si vous voulez essayer la generation automatique dans PDF-remplis:
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\GENERER-GC179.ps1 -UseComAutomation
 
 Utilisation PowerShell directe:
 1. Extrayez le ZIP.
@@ -868,12 +926,12 @@ Information Acrobat:
   Windows: AppData\Roaming\Adobe\Acrobat\DC\Sequences
   Mac:     Library/Application Support/Adobe/Acrobat/DC/Sequences
 - Acrobat ne fournit pas de commande fiable pour ouvrir un PDF et lancer automatiquement une action .sequ depuis un navigateur.
-- Pour aller vite, le fichier GENERER-GC179.cmd/ps1 pilote Acrobat directement et fonctionne pour un formulaire simple ou pour $PartCount formulaires.
+- Pour aller vite et eviter les problemes de plug-ins/COM, le fichier GENERER-GC179.cmd ouvre les FDF directement.
 
 Important:
 - Gardez GC179.pdf, les FDF et les scripts dans le meme dossier extrait.
 - Si vous avez deja un ancien ZIP avec un GC179.pdf impossible a ouvrir, retéléchargez l'export depuis GEEM.
-- Si Acrobat ou les politiques du poste bloquent l'automatisation COM, ouvrez GC179.pdf dans Acrobat et importez les FDF manuellement.
+- Si Acrobat affiche un message de plug-ins incompatibles, ce message vient de l'installation locale d'Acrobat. Cliquez OK/continuer si Acrobat permet quand meme d'ouvrir le formulaire.
 - Les entrees rejetees ne sont pas exportees par GEEM.
 "@
 }
