@@ -324,7 +324,7 @@ function New-Gc179AcrobatSequenceContent {
 <Workflow xmlns="http://ns.adobe.com/acrobat/workflow/2012" title="GEEM - GC179" description="Aide-memoire pour traiter les exports GC179 produits par l'application GEEM." majorVersion="1" minorVersion="0">
 	<Group label="Traitement GC179">
 		<Instruction label="Extrayez le ZIP GC179 telecharge depuis GEEM dans un dossier local." pauseBefore="false"/>
-		<Instruction label="Sur Windows, double-cliquez GENERER-GC179.cmd. Le script utilise Acrobat pour ouvrir GC179.pdf, importer tous les FDF du dossier, puis sauvegarder les PDF remplis." pauseBefore="false"/>
+		<Instruction label="Sur Windows, double-cliquez GENERER-GC179.cmd. Le script copie GC179.pdf dans PDF-remplis, importe les FDF dans les copies, puis sauvegarde les PDF remplis." pauseBefore="false"/>
 		<Instruction label="Si le script automatique est bloque par le poste, ouvrez GC179.pdf dans Acrobat et importez les fichiers FDF un par un avec l'outil de formulaire." pauseBefore="false"/>
 	</Group>
 </Workflow>
@@ -416,6 +416,82 @@ function Get-Gc179OutputPath {
     return (Join-Path -Path $OutputDirectory -ChildPath ("{0}-rempli.pdf" -f $baseName))
 }
 
+function Get-Gc179WorkingPath {
+    param(
+        [Parameter(Mandatory = $true)]$FdfFile,
+        [Parameter(Mandatory = $true)][string]$OutputDirectory
+    )
+
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$FdfFile.Name)
+    return (Join-Path -Path $OutputDirectory -ChildPath ("{0}-travail.pdf" -f $baseName))
+}
+
+function ConvertTo-Gc179FullPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    return [System.IO.Path]::GetFullPath($Path)
+}
+
+function ConvertTo-Gc179AcrobatPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = ConvertTo-Gc179FullPath -Path $Path
+    if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT -and $fullPath -match "^([A-Za-z]):\\(.*)$") {
+        $drive = $matches[1].ToUpperInvariant()
+        $rest = $matches[2] -replace "\\", "/"
+        return ("/{0}/{1}" -f $drive, $rest)
+    }
+
+    return ($fullPath -replace "\\", "/")
+}
+
+function Test-Gc179PdfHeader {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -Path $Path -PathType Leaf)) {
+        return $false
+    }
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        if ($stream.Length -lt 5) {
+            return $false
+        }
+
+        $bytes = New-Object byte[] 5
+        [void]$stream.Read($bytes, 0, $bytes.Length)
+        return ([System.Text.Encoding]::ASCII.GetString($bytes) -eq "%PDF-")
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
+function New-Gc179WorkingPdf {
+    param(
+        [Parameter(Mandatory = $true)][string]$TemplatePath,
+        [Parameter(Mandatory = $true)][string]$WorkingPath
+    )
+
+    Copy-Item -LiteralPath $TemplatePath -Destination $WorkingPath -Force
+    if (-not (Test-Gc179PdfHeader -Path $WorkingPath)) {
+        throw "La copie de travail du PDF GC179 n'est pas un PDF valide."
+    }
+}
+
+function Complete-Gc179WorkingPdf {
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkingPath,
+        [Parameter(Mandatory = $true)][string]$OutputPath
+    )
+
+    if (-not (Test-Gc179PdfHeader -Path $WorkingPath)) {
+        throw "Acrobat a produit un fichier invalide. Le modele GC179 original n'a pas ete modifie."
+    }
+
+    Move-Item -LiteralPath $WorkingPath -Destination $OutputPath -Force
+}
+
 function Invoke-Gc179WindowsAcrobat {
     param(
         [Parameter(Mandatory = $true)][string]$TemplatePath,
@@ -435,25 +511,46 @@ function Invoke-Gc179WindowsAcrobat {
     try {
         foreach ($fdfFile in @($FdfFiles)) {
             $avDoc = $null
+            $pdDoc = $null
+            $outputPath = Get-Gc179OutputPath -FdfFile $fdfFile -OutputDirectory $OutputDirectory
+            $workingPath = Get-Gc179WorkingPath -FdfFile $fdfFile -OutputDirectory $OutputDirectory
             try {
+                if (Test-Path -Path $workingPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $workingPath -Force
+                }
+                New-Gc179WorkingPdf -TemplatePath $TemplatePath -WorkingPath $workingPath
+
                 $avDoc = New-Object -ComObject AcroExch.AVDoc
-                $opened = $avDoc.Open($TemplatePath, "")
+                $opened = $avDoc.Open($workingPath, "")
                 if (-not $opened) {
-                    throw "Acrobat n'a pas pu ouvrir GC179.pdf."
+                    throw "Acrobat n'a pas pu ouvrir la copie de travail GC179."
                 }
 
                 $pdDoc = $avDoc.GetPDDoc()
                 $jsObject = $pdDoc.GetJSObject()
-                $outputPath = Get-Gc179OutputPath -FdfFile $fdfFile -OutputDirectory $OutputDirectory
 
-                $jsObject.importAnFDF([string]$fdfFile.FullName)
-                $jsObject.saveAs($outputPath)
+                $jsObject.importAnFDF((ConvertTo-Gc179AcrobatPath -Path ([string]$fdfFile.FullName)))
+                $saved = $pdDoc.Save(1, $workingPath)
+                if (-not $saved) {
+                    throw "Acrobat n'a pas pu sauvegarder la copie de travail GC179."
+                }
+
+                $avDoc.Close($true) | Out-Null
+                try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($avDoc) | Out-Null } catch {}
+                $avDoc = $null
+                Complete-Gc179WorkingPdf -WorkingPath $workingPath -OutputPath $outputPath
                 $generated += $outputPath
             }
             finally {
                 if ($null -ne $avDoc) {
                     try { $avDoc.Close($true) | Out-Null } catch {}
                     try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($avDoc) | Out-Null } catch {}
+                }
+                if ($null -ne $pdDoc) {
+                    try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($pdDoc) | Out-Null } catch {}
+                }
+                if (Test-Path -Path $workingPath -PathType Leaf) {
+                    try { Remove-Item -LiteralPath $workingPath -Force } catch {}
                 }
             }
         }
@@ -479,14 +576,18 @@ function Invoke-Gc179MacAcrobat {
     }
 
     $builder = New-Object System.Text.StringBuilder
-    [void]$builder.AppendLine("var templatePath = $(ConvertTo-Gc179JavaScriptString -Value $TemplatePath);")
     [void]$builder.AppendLine("var jobs = [];")
     foreach ($fdfFile in @($FdfFiles)) {
         $outputPath = Get-Gc179OutputPath -FdfFile $fdfFile -OutputDirectory $OutputDirectory
-        [void]$builder.AppendLine("jobs.push({ fdf: $(ConvertTo-Gc179JavaScriptString -Value ([string]$fdfFile.FullName)), output: $(ConvertTo-Gc179JavaScriptString -Value $outputPath) });")
+        $workingPath = Get-Gc179WorkingPath -FdfFile $fdfFile -OutputDirectory $OutputDirectory
+        if (Test-Path -Path $workingPath -PathType Leaf) {
+            Remove-Item -LiteralPath $workingPath -Force
+        }
+        New-Gc179WorkingPdf -TemplatePath $TemplatePath -WorkingPath $workingPath
+        [void]$builder.AppendLine("jobs.push({ pdf: $(ConvertTo-Gc179JavaScriptString -Value (ConvertTo-Gc179AcrobatPath -Path $workingPath)), fdf: $(ConvertTo-Gc179JavaScriptString -Value (ConvertTo-Gc179AcrobatPath -Path ([string]$fdfFile.FullName))), output: $(ConvertTo-Gc179JavaScriptString -Value (ConvertTo-Gc179AcrobatPath -Path $workingPath)) });")
     }
     [void]$builder.AppendLine("for (var i = 0; i < jobs.length; i++) {")
-    [void]$builder.AppendLine("  var doc = app.openDoc({ cPath: templatePath, bHidden: true });")
+    [void]$builder.AppendLine("  var doc = app.openDoc({ cPath: jobs[i].pdf, bHidden: true });")
     [void]$builder.AppendLine("  doc.importAnFDF(jobs[i].fdf);")
     [void]$builder.AppendLine("  doc.saveAs({ cPath: jobs[i].output });")
     [void]$builder.AppendLine("  doc.closeDoc(true);")
@@ -506,7 +607,10 @@ end tell
 
     $generated = @()
     foreach ($fdfFile in @($FdfFiles)) {
-        $generated += (Get-Gc179OutputPath -FdfFile $fdfFile -OutputDirectory $OutputDirectory)
+        $outputPath = Get-Gc179OutputPath -FdfFile $fdfFile -OutputDirectory $OutputDirectory
+        $workingPath = Get-Gc179WorkingPath -FdfFile $fdfFile -OutputDirectory $OutputDirectory
+        Complete-Gc179WorkingPdf -WorkingPath $workingPath -OutputPath $outputPath
+        $generated += $outputPath
     }
     return $generated
 }
@@ -583,6 +687,7 @@ Utilisation recommandee sur Windows:
 2. Fermez les anciens formulaires GC179 ouverts dans Acrobat.
 3. Double-cliquez GENERER-GC179.cmd.
 4. Les PDF remplis seront crees dans le dossier PDF-remplis.
+5. Le fichier GC179.pdf du dossier extrait n'est pas modifie par le script.
 
 Utilisation PowerShell directe:
 1. Extrayez le ZIP.
@@ -601,6 +706,7 @@ Information Acrobat:
 
 Important:
 - Gardez GC179.pdf, les FDF et les scripts dans le meme dossier extrait.
+- Si vous avez deja un ancien ZIP avec un GC179.pdf impossible a ouvrir, retéléchargez l'export depuis GEEM.
 - Si Acrobat ou les politiques du poste bloquent l'automatisation COM, ouvrez GC179.pdf dans Acrobat et importez les FDF manuellement.
 - Les entrees rejetees ne sont pas exportees par GEEM.
 "@
