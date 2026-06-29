@@ -61,29 +61,6 @@
             continue
         }
 
-        if ($request.Url.AbsolutePath -eq "/self/gc179-fdf" -and $request.HttpMethod -eq "GET") {
-            $currentUser = Get-AuthenticatedUserFromRequest -Request $request
-            if ($null -eq $currentUser) {
-                respondWithError $response 401 "Authentication required."
-                continue
-            }
-            if ([string]::IsNullOrWhiteSpace([string]$currentUser.employeeCode)) {
-                respondWithError $response 403 "Employee access is required."
-                continue
-            }
-
-            $query = [System.Web.HttpUtility]::ParseQueryString($request.Url.Query)
-            $monthKey = [string]$query["month"]
-            try {
-                $export = New-Gc179FdfExportPackage -EmployeeCode ([string]$currentUser.employeeCode) -MonthKey $monthKey
-                respondWithDownload $response ([byte[]]$export.Bytes) ([string]$export.ContentType) ([string]$export.FileName)
-            }
-            catch {
-                respondWithError $response 400 $_.Exception.Message
-            }
-            continue
-        }
-
         if ($request.Url.AbsolutePath -eq "/self/gc179-open" -and $request.HttpMethod -eq "POST") {
             $currentUser = Get-AuthenticatedUserFromRequest -Request $request
             if ($null -eq $currentUser) {

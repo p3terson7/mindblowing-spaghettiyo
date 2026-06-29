@@ -1,25 +1,3 @@
-        # GET /employee/{employeeCode}/gc179-fdf: Return a monthly FDF import file for the GC179 PDF.
-        if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -match "^/employee/(\d+)/gc179-fdf$") {
-            $employeeCode = $matches[1]
-            $employeeUser = Get-Users | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode $employeeCode } | Select-Object -First 1
-
-            if ($null -eq $employeeUser) {
-                respondWithError $response 404 "Employee not found"
-                continue
-            }
-
-            $query = [System.Web.HttpUtility]::ParseQueryString($request.Url.Query)
-            $monthKey = [string]$query["month"]
-            try {
-                $export = New-Gc179FdfExportPackage -EmployeeCode $employeeCode -MonthKey $monthKey
-                respondWithDownload $response ([byte[]]$export.Bytes) ([string]$export.ContentType) ([string]$export.FileName)
-            }
-            catch {
-                respondWithError $response 400 $_.Exception.Message
-            }
-            continue
-        }
-
         # POST /employee/{employeeCode}/gc179-open: Prepare monthly GC179 files locally and launch Acrobat/FDF opening.
         if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -match "^/employee/(\d+)/gc179-open$") {
             $employeeCode = $matches[1]

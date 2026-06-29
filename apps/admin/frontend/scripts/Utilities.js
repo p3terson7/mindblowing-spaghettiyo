@@ -928,36 +928,6 @@ function openMonthlyEntriesExportHtml(config) {
   return true;
 }
 
-function getDownloadFilenameFromDisposition(contentDisposition, fallbackName) {
-  const fallback = fallbackName || "download.fdf";
-  if (!contentDisposition) {
-    return fallback;
-  }
-
-  const utf8Match = String(contentDisposition).match(/filename\*=UTF-8''([^;]+)/i);
-  if (utf8Match) {
-    try {
-      return decodeURIComponent(utf8Match[1]);
-    } catch (error) {
-      return utf8Match[1];
-    }
-  }
-
-  const filenameMatch = String(contentDisposition).match(/filename="?([^";]+)"?/i);
-  return filenameMatch ? filenameMatch[1] : fallback;
-}
-
-function downloadBlob(blob, fileName) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName || "download.fdf";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
-
 async function downloadGc179FdfExport(config) {
   const monthKey = String(config && config.monthKey || "").trim();
   const employeeCode = String(config && config.employeeCode || "").trim();
