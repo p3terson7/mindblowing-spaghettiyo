@@ -963,8 +963,8 @@ async function downloadGc179FdfExport(config) {
   const employeeCode = String(config && config.employeeCode || "").trim();
   const isSelfExport = Boolean(config && config.self);
   const path = isSelfExport
-    ? `self/gc179-fdf?month=${encodeURIComponent(monthKey)}`
-    : `employee/${encodeURIComponent(employeeCode)}/gc179-fdf?month=${encodeURIComponent(monthKey)}`;
+    ? `self/gc179-open?month=${encodeURIComponent(monthKey)}`
+    : `employee/${encodeURIComponent(employeeCode)}/gc179-open?month=${encodeURIComponent(monthKey)}`;
 
   if (!monthKey || (!isSelfExport && !employeeCode)) {
     showToast(t("export.gc179DownloadError", { message: t("error.missingRequiredFields") }), "error");
@@ -972,26 +972,11 @@ async function downloadGc179FdfExport(config) {
   }
 
   try {
-    const response = await fetch(apiUrl + path);
-    if (!response.ok) {
-      const text = await response.text();
-      let message = text || t("error.requestFailedStatus", { status: response.status });
-      try {
-        const payload = JSON.parse(text);
-        message = payload.error || message;
-      } catch (error) {
-        // The server normally sends JSON errors, but keep plain text readable.
-      }
-      throw new Error(message);
-    }
-
-    const contentType = response.headers.get("Content-Type") || "";
-    const isZip = contentType.toLowerCase().indexOf("zip") >= 0;
-    const fallbackName = `gc179-${employeeCode || "self"}-${monthKey}${isZip ? ".zip" : ".fdf"}`;
-    const blob = await response.blob();
-    const fileName = getDownloadFilenameFromDisposition(response.headers.get("Content-Disposition"), fallbackName);
-    downloadBlob(blob, fileName);
-    showToast(t(isZip ? "export.gc179ZipDownloadSuccess" : "export.gc179DownloadSuccess"), "success");
+    const response = await fetch(apiUrl + path, { method: "POST" });
+    const payload = await parseResponse(response);
+    showToast(t("export.gc179LaunchSuccess", {
+      count: payload && payload.partCount ? payload.partCount : 1,
+    }), "success");
     return true;
   } catch (error) {
     showToast(t("export.gc179DownloadError", { message: error.message || error }), "error");

@@ -969,7 +969,7 @@ function New-Gc179ZipArchiveBytes {
     }
 }
 
-function New-Gc179FdfExportPackage {
+function New-Gc179FdfExportSet {
     param(
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
         [Parameter(Mandatory = $true)][string]$MonthKey
@@ -997,12 +997,180 @@ function New-Gc179FdfExportPackage {
         [void]$exports.Add($partExport)
     }
 
+    return [PSCustomObject]@{
+        MonthParts = $monthParts
+        Entries    = @($entries)
+        Exports    = @($exports.ToArray())
+    }
+}
+
+function Get-Gc179LocalExportRoot {
+    $basePath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "GEEM"
+    return (Join-Path -Path $basePath -ChildPath "GC179")
+}
+
+function Remove-OldGc179LocalExportFolders {
+    param(
+        [Parameter(Mandatory = $true)][string]$RootPath,
+        [int]$RetentionDays = 14
+    )
+
+    if (-not (Test-Path -Path $RootPath -PathType Container)) {
+        return
+    }
+
+    $cutoff = (Get-Date).AddDays(-1 * [math]::Max(1, $RetentionDays))
+    Get-ChildItem -Path $RootPath -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt $cutoff } |
+        ForEach-Object {
+            try {
+                Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+            }
+            catch {
+            }
+        }
+}
+
+function New-Gc179LocalExportFolder {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)][string]$MonthKey
+    )
+
+    $safeEmployeeCode = ([string]$EmployeeCode) -replace "[^0-9A-Za-z_-]", "_"
+    $safeMonthKey = ([string]$MonthKey) -replace "[^0-9A-Za-z_-]", "_"
+    $folderName = "gc179-{0}-{1}-{2}" -f $safeEmployeeCode, $safeMonthKey, (Get-Date).ToString("yyyyMMdd-HHmmss")
+    $rootPath = Get-Gc179LocalExportRoot
+    if (-not (Test-Path -Path $rootPath -PathType Container)) {
+        New-Item -ItemType Directory -Path $rootPath -Force | Out-Null
+    }
+    Remove-OldGc179LocalExportFolders -RootPath $rootPath
+
+    $folderPath = Join-Path -Path $rootPath -ChildPath $folderName
+    New-Item -ItemType Directory -Path $folderPath -Force | Out-Null
+    return $folderPath
+}
+
+function Write-Gc179LocalExportWorkspace {
+    param(
+        [Parameter(Mandatory = $true)][string]$FolderPath,
+        [Parameter(Mandatory = $true)]$ExportSet,
+        [Parameter(Mandatory = $true)][string]$EmployeeCode
+    )
+
+    [System.IO.File]::WriteAllBytes((Join-Path -Path $FolderPath -ChildPath "GC179.pdf"), [System.IO.File]::ReadAllBytes((Get-Gc179TemplatePdfPath)))
+    [System.IO.File]::WriteAllBytes((Join-Path -Path $FolderPath -ChildPath "GENERER-GC179.ps1"), (ConvertTo-Gc179Utf8BomBytes -Text (New-Gc179AdobeAutomationScript)))
+    [System.IO.File]::WriteAllBytes((Join-Path -Path $FolderPath -ChildPath "GENERER-GC179.cmd"), [System.Text.Encoding]::ASCII.GetBytes((New-Gc179AdobeAutomationCmd)))
+    [System.IO.File]::WriteAllBytes((Join-Path -Path $FolderPath -ChildPath (Get-Gc179AcrobatSequenceFileName)), [System.Text.Encoding]::UTF8.GetBytes((New-Gc179AcrobatSequenceContent)))
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path -Path $FolderPath -ChildPath "LIRE-MOI-GC179.txt"),
+        [System.Text.Encoding]::UTF8.GetBytes((New-Gc179ExportInstructions -EmployeeCode $EmployeeCode -MonthKey ([string]$ExportSet.MonthParts.MonthKey) -PartCount @($ExportSet.Exports).Count))
+    )
+
+    foreach ($export in @($ExportSet.Exports)) {
+        $fdfPath = Join-Path -Path $FolderPath -ChildPath ([string]$export.FileName)
+        [System.IO.File]::WriteAllText($fdfPath, [string]$export.Content, [System.Text.Encoding]::ASCII)
+    }
+}
+
+function Get-Gc179PowerShellExecutable {
+    if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+        $systemRoot = [string]$env:SystemRoot
+        if ([string]::IsNullOrWhiteSpace($systemRoot)) {
+            $systemRoot = "C:\Windows"
+        }
+
+        $candidate = Join-Path -Path $systemRoot -ChildPath "System32\WindowsPowerShell\v1.0\powershell.exe"
+        if (Test-Path -Path $candidate -PathType Leaf) {
+            return $candidate
+        }
+
+        return "powershell.exe"
+    }
+
+    $pwsh = Get-Command -Name "pwsh" -ErrorAction SilentlyContinue
+    if ($null -ne $pwsh) {
+        return [string]$pwsh.Source
+    }
+
+    $powershell = Get-Command -Name "powershell" -ErrorAction SilentlyContinue
+    if ($null -ne $powershell) {
+        return [string]$powershell.Source
+    }
+
+    return "pwsh"
+}
+
+function Start-Gc179LocalExportWorkspace {
+    param([Parameter(Mandatory = $true)][string]$FolderPath)
+
+    $scriptPath = Join-Path -Path $FolderPath -ChildPath "GENERER-GC179.ps1"
+    $stdoutPath = Join-Path -Path $FolderPath -ChildPath "gc179-launch.log"
+    $stderrPath = Join-Path -Path $FolderPath -ChildPath "gc179-launch-error.log"
+    $powershellPath = Get-Gc179PowerShellExecutable
+    $quotedScriptPath = '"' + ([string]$scriptPath).Replace('"', '\"') + '"'
+    $argumentList = "-NoProfile -ExecutionPolicy Bypass -File $quotedScriptPath"
+
+    $process = $null
+    if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+        try {
+            $process = Start-Process -FilePath $powershellPath -ArgumentList $argumentList -WorkingDirectory $FolderPath -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
+        }
+        catch {
+            $process = Start-Process -FilePath $powershellPath -ArgumentList $argumentList -WorkingDirectory $FolderPath -PassThru
+        }
+    }
+    else {
+        $process = Start-Process -FilePath $powershellPath -ArgumentList $argumentList -WorkingDirectory $FolderPath -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
+    }
+
+    $processId = if ($null -ne $process) { [int]$process.Id } else { 0 }
+    return [PSCustomObject]@{
+        ProcessId = $processId
+        LogPath = $stdoutPath
+        ErrorLogPath = $stderrPath
+    }
+}
+
+function Start-Gc179LocalExport {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)][string]$MonthKey
+    )
+
+    $exportSet = New-Gc179FdfExportSet -EmployeeCode $EmployeeCode -MonthKey $MonthKey
+    $folderPath = New-Gc179LocalExportFolder -EmployeeCode $EmployeeCode -MonthKey ([string]$exportSet.MonthParts.MonthKey)
+    Write-Gc179LocalExportWorkspace -FolderPath $folderPath -ExportSet $exportSet -EmployeeCode $EmployeeCode
+    $launch = Start-Gc179LocalExportWorkspace -FolderPath $folderPath
+
+    return [PSCustomObject]@{
+        launched     = $true
+        folderPath   = $folderPath
+        logPath      = [string]$launch.LogPath
+        errorLogPath = [string]$launch.ErrorLogPath
+        processId    = [int]$launch.ProcessId
+        entryCount   = @($exportSet.Entries).Count
+        partCount    = @($exportSet.Exports).Count
+        message      = "GC179 export prepared and launched locally."
+    }
+}
+
+function New-Gc179FdfExportPackage {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)][string]$MonthKey
+    )
+
+    $exportSet = New-Gc179FdfExportSet -EmployeeCode $EmployeeCode -MonthKey $MonthKey
+    $exports = @($exportSet.Exports)
+    $entries = @($exportSet.Entries)
+
     $safeEmployeeCode = ([string]$EmployeeCode) -replace "[^0-9A-Za-z_-]", "_"
     $templatePdfBytes = [System.IO.File]::ReadAllBytes((Get-Gc179TemplatePdfPath))
     $automationScriptBytes = ConvertTo-Gc179Utf8BomBytes -Text (New-Gc179AdobeAutomationScript)
     $automationCmdBytes = [System.Text.Encoding]::ASCII.GetBytes((New-Gc179AdobeAutomationCmd))
     $sequenceBytes = [System.Text.Encoding]::UTF8.GetBytes((New-Gc179AcrobatSequenceContent))
-    $instructionsBytes = [System.Text.Encoding]::UTF8.GetBytes((New-Gc179ExportInstructions -EmployeeCode $EmployeeCode -MonthKey $monthParts.MonthKey -PartCount $exports.Count))
+    $instructionsBytes = [System.Text.Encoding]::UTF8.GetBytes((New-Gc179ExportInstructions -EmployeeCode $EmployeeCode -MonthKey ([string]$exportSet.MonthParts.MonthKey) -PartCount $exports.Count))
     $additionalEntries = @(
         [PSCustomObject]@{
             FileName = "GC179.pdf"
@@ -1027,9 +1195,9 @@ function New-Gc179FdfExportPackage {
     )
 
     return [PSCustomObject]@{
-        Bytes = (New-Gc179ZipArchiveBytes -Exports @($exports.ToArray()) -AdditionalEntries $additionalEntries)
+        Bytes = (New-Gc179ZipArchiveBytes -Exports $exports -AdditionalEntries $additionalEntries)
         ContentType = "application/zip"
-        FileName = ("gc179-{0}-{1}.zip" -f $safeEmployeeCode, $monthParts.MonthKey)
+        FileName = ("gc179-{0}-{1}.zip" -f $safeEmployeeCode, ([string]$exportSet.MonthParts.MonthKey))
         EntryCount = $entries.Count
         PartCount = $exports.Count
     }

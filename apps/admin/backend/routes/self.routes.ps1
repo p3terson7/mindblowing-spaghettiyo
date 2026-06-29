@@ -84,6 +84,29 @@
             continue
         }
 
+        if ($request.Url.AbsolutePath -eq "/self/gc179-open" -and $request.HttpMethod -eq "POST") {
+            $currentUser = Get-AuthenticatedUserFromRequest -Request $request
+            if ($null -eq $currentUser) {
+                respondWithError $response 401 "Authentication required."
+                continue
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$currentUser.employeeCode)) {
+                respondWithError $response 403 "Employee access is required."
+                continue
+            }
+
+            $query = [System.Web.HttpUtility]::ParseQueryString($request.Url.Query)
+            $monthKey = [string]$query["month"]
+            try {
+                $launch = Start-Gc179LocalExport -EmployeeCode ([string]$currentUser.employeeCode) -MonthKey $monthKey
+                respondWithSuccess $response ($launch | ConvertTo-Json -Depth 6)
+            }
+            catch {
+                respondWithError $response 400 $_.Exception.Message
+            }
+            continue
+        }
+
         if ($request.Url.AbsolutePath -eq "/self/options" -and $request.HttpMethod -eq "GET") {
             $currentUser = Get-AuthenticatedUserFromRequest -Request $request
             if ($null -eq $currentUser) {
