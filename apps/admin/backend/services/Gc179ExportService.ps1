@@ -305,6 +305,18 @@ function Add-Gc179ZipEntryText {
     Add-Gc179ZipEntryBytes -ZipArchive $ZipArchive -EntryName $EntryName -Bytes $bytes
 }
 
+function ConvertTo-Gc179Utf8BomBytes {
+    param([Parameter(Mandatory = $true)][string]$Text)
+
+    $encoding = New-Object System.Text.UTF8Encoding -ArgumentList $true
+    $preamble = $encoding.GetPreamble()
+    $contentBytes = $encoding.GetBytes($Text)
+    $bytes = New-Object byte[] ($preamble.Length + $contentBytes.Length)
+    [System.Array]::Copy($preamble, 0, $bytes, 0, $preamble.Length)
+    [System.Array]::Copy($contentBytes, 0, $bytes, $preamble.Length, $contentBytes.Length)
+    return $bytes
+}
+
 function Get-Gc179TemplatePdfPath {
     $templatePath = Join-Path -Path $repoRoot -ChildPath "docs/GC179.pdf"
     if (-not (Test-Path -Path $templatePath -PathType Leaf)) {
@@ -644,28 +656,58 @@ function Invoke-Gc179WindowsAcrobat {
                 }
 
                 $avDoc.Close($true) | Out-Null
-                try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($avDoc) | Out-Null } catch {}
+                try {
+                    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($avDoc) | Out-Null
+                }
+                catch {
+                }
                 $avDoc = $null
                 Complete-Gc179WorkingPdf -WorkingPath $workingPath -OutputPath $outputPath
                 $generated += $outputPath
             }
             finally {
                 if ($null -ne $avDoc) {
-                    try { $avDoc.Close($true) | Out-Null } catch {}
-                    try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($avDoc) | Out-Null } catch {}
+                    try {
+                        $avDoc.Close($true) | Out-Null
+                    }
+                    catch {
+                    }
+
+                    try {
+                        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($avDoc) | Out-Null
+                    }
+                    catch {
+                    }
                 }
                 if ($null -ne $pdDoc) {
-                    try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($pdDoc) | Out-Null } catch {}
+                    try {
+                        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($pdDoc) | Out-Null
+                    }
+                    catch {
+                    }
                 }
                 if (Test-Path -Path $workingPath -PathType Leaf) {
-                    try { Remove-Item -LiteralPath $workingPath -Force } catch {}
+                    try {
+                        Remove-Item -LiteralPath $workingPath -Force
+                    }
+                    catch {
+                    }
                 }
             }
         }
     }
     finally {
-        try { $acroApp.Exit() | Out-Null } catch {}
-        try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($acroApp) | Out-Null } catch {}
+        try {
+            $acroApp.Exit() | Out-Null
+        }
+        catch {
+        }
+
+        try {
+            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($acroApp) | Out-Null
+        }
+        catch {
+        }
     }
 
     return $generated
@@ -899,7 +941,7 @@ function New-Gc179FdfExportPackage {
 
     $safeEmployeeCode = ([string]$EmployeeCode) -replace "[^0-9A-Za-z_-]", "_"
     $templatePdfBytes = [System.IO.File]::ReadAllBytes((Get-Gc179TemplatePdfPath))
-    $automationScriptBytes = [System.Text.Encoding]::UTF8.GetBytes((New-Gc179AdobeAutomationScript))
+    $automationScriptBytes = ConvertTo-Gc179Utf8BomBytes -Text (New-Gc179AdobeAutomationScript)
     $automationCmdBytes = [System.Text.Encoding]::ASCII.GetBytes((New-Gc179AdobeAutomationCmd))
     $sequenceBytes = [System.Text.Encoding]::UTF8.GetBytes((New-Gc179AcrobatSequenceContent))
     $instructionsBytes = [System.Text.Encoding]::UTF8.GetBytes((New-Gc179ExportInstructions -EmployeeCode $EmployeeCode -MonthKey $monthParts.MonthKey -PartCount $exports.Count))
