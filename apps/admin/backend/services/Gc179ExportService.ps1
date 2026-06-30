@@ -350,7 +350,15 @@ function New-Gc179LaunchFdf {
     $baseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$FdfFile.Name)
     $launchFdfPath = Join-Path -Path $OutputDirectory -ChildPath ("{0}-ouvrir.fdf" -f $baseName)
     $fdfText = [System.IO.File]::ReadAllText([string]$FdfFile.FullName, [System.Text.Encoding]::ASCII)
-    $templateLiteral = ConvertTo-Gc179FdfLiteral -Value (Get-Gc179FullPath -Path $TemplatePath)
+    $templateDirectory = Split-Path -Path $TemplatePath -Parent
+    $partTemplatePath = Join-Path -Path $templateDirectory -ChildPath ("{0}.pdf" -f $baseName)
+    $effectiveTemplatePath = if (Test-Path -Path $partTemplatePath -PathType Leaf) {
+        $partTemplatePath
+    }
+    else {
+        $TemplatePath
+    }
+    $templateLiteral = ConvertTo-Gc179FdfLiteral -Value (Get-Gc179FullPath -Path $effectiveTemplatePath)
     $fieldReference = "/F ($templateLiteral)"
 
     if ($fdfText -match "/F\s*\([^)]*\)") {
@@ -407,7 +415,7 @@ if ($fdfFiles.Count -lt 1) {
 foreach ($fdfFile in $fdfFiles) {
     $launchFdfPath = New-Gc179LaunchFdf -FdfFile $fdfFile -TemplatePath $templatePath -OutputDirectory $outputDirectory
     Start-Gc179File -Path $launchFdfPath
-    Start-Sleep -Milliseconds 700
+    Start-Sleep -Milliseconds 1400
 }
 '@
 }
@@ -482,12 +490,16 @@ function Write-Gc179LocalExportWorkspace {
         [Parameter(Mandatory = $true)]$ExportSet
     )
 
-    [System.IO.File]::WriteAllBytes((Join-Path -Path $FolderPath -ChildPath "GC179.pdf"), [System.IO.File]::ReadAllBytes((Get-Gc179TemplatePdfPath)))
+    $templateBytes = [System.IO.File]::ReadAllBytes((Get-Gc179TemplatePdfPath))
+    [System.IO.File]::WriteAllBytes((Join-Path -Path $FolderPath -ChildPath "GC179.pdf"), $templateBytes)
     [System.IO.File]::WriteAllBytes((Join-Path -Path $FolderPath -ChildPath "GENERER-GC179.ps1"), (ConvertTo-Gc179Utf8BomBytes -Text (New-Gc179OpenFdfScript)))
 
     foreach ($export in @($ExportSet.Exports)) {
         $fdfPath = Join-Path -Path $FolderPath -ChildPath ([string]$export.FileName)
+        $pdfBaseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$export.FileName)
+        $pdfPath = Join-Path -Path $FolderPath -ChildPath ("{0}.pdf" -f $pdfBaseName)
         [System.IO.File]::WriteAllText($fdfPath, [string]$export.Content, [System.Text.Encoding]::ASCII)
+        [System.IO.File]::WriteAllBytes($pdfPath, $templateBytes)
     }
 }
 
