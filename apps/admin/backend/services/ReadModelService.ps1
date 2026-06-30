@@ -28,6 +28,10 @@ function Invoke-ReadModelCache {
     $versionKey = Get-ReadModelVersionKey
     if ($script:ReadModelCacheVersion -ne $versionKey) {
         $script:ReadModelCache = @{}
+        $script:EmployeeEntryFileCache = @{}
+        if (Get-Command -Name Clear-FileMetadataValidationCache -ErrorAction SilentlyContinue) {
+            Clear-FileMetadataValidationCache
+        }
         $script:ReadModelCacheVersion = $versionKey
     }
 

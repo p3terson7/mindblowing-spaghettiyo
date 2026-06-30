@@ -6,11 +6,9 @@
                     continue
                 }
 
-                $userRecord = Get-Users | Where-Object {
-                    $_.username -eq [string]$payload.username -and -not $_.disabled
-                } | Select-Object -First 1
+                $userRecord = Get-UserByUsername -Username ([string]$payload.username)
 
-                if ($null -eq $userRecord -or -not (Test-PasswordCredential -Password ([string]$payload.password) -UserRecord $userRecord)) {
+                if ($null -eq $userRecord -or [bool]$userRecord.disabled -or -not (Test-PasswordCredential -Password ([string]$payload.password) -UserRecord $userRecord)) {
                     respondWithError $response 401 "Invalid credentials."
                     continue
                 }
@@ -83,7 +81,7 @@
                     continue
                 }
 
-                $userRecord = Get-Users | Where-Object { $_.username -eq [string]$currentUser.username } | Select-Object -First 1
+                $userRecord = Get-UserByUsername -Username ([string]$currentUser.username)
                 if ($null -eq $userRecord -or -not (Test-PasswordCredential -Password ([string]$payload.currentPassword) -UserRecord $userRecord)) {
                     respondWithError $response 401 "Current password is invalid."
                     continue

@@ -10,6 +10,23 @@ if (-not $script:ProjectAccessModelCache) {
     $script:ProjectAccessModelCache = @{}
 }
 
+if (-not $script:AuthenticatedUserRequestCache) {
+    $script:AuthenticatedUserRequestCache = @{}
+}
+
+if (-not $script:AuthenticatedUserRequestCacheTtlMs) {
+    $script:AuthenticatedUserRequestCacheTtlMs = 10000
+}
+
+if (-not $script:UserLookupCache) {
+    $script:UserLookupCache = $null
+}
+
+function Clear-AuthRuntimeCaches {
+    $script:AuthenticatedUserRequestCache = @{}
+    $script:UserLookupCache = $null
+}
+
 function New-PasswordCredential {
     param(
         [Parameter(Mandatory = $true)][string]$Password,
@@ -168,7 +185,7 @@ function Get-EmployeeTimeEntryTypesByCode {
         return @("overtime")
     }
 
-    $user = Get-Users | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode $EmployeeCode } | Select-Object -First 1
+    $user = Get-EmployeeUserByCode -EmployeeCode $EmployeeCode
     return @(Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $user)
 }
 
@@ -505,7 +522,7 @@ function Get-EmployeeRoleByCode {
         return "employee"
     }
 
-    $user = Get-Users | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode $EmployeeCode } | Select-Object -First 1
+    $user = Get-EmployeeUserByCode -EmployeeCode $EmployeeCode
     if ($null -eq $user) {
         return "employee"
     }
@@ -564,6 +581,7 @@ function Ensure-AuthStorage {
     try {
         if (!(Test-Path -Path $sessionsFile)) {
             Write-JsonAtomic -Path $sessionsFile -Value @()
+            Clear-AuthRuntimeCaches
         }
     }
     finally {
@@ -608,6 +626,7 @@ function Ensure-AuthStorage {
             }
 
             Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Clear-AuthRuntimeCaches
         }
     }
     finally {
@@ -669,13 +688,80 @@ function Read-AuthArrayFileCached {
 }
 
 function Get-Users {
-    Ensure-AuthStorage
-    return (Read-AuthArrayFileCached -Path $usersFile)
+    return @((Get-UserLookupCache).Users)
 }
 
 function Get-Sessions {
     Ensure-AuthStorage
     return (Read-AuthArrayFileCached -Path $sessionsFile)
+}
+
+function Get-UserLookupCache {
+    Ensure-AuthStorage
+
+    $metadata = Get-FileMetadataSnapshot -Path $usersFile
+    $cacheKey = if ($null -ne $metadata) { "{0}:{1}" -f $metadata.LastWriteTicks, $metadata.Length } else { "missing" }
+    if ($script:UserLookupCache -and $script:UserLookupCache.Key -eq $cacheKey) {
+        return $script:UserLookupCache
+    }
+
+    $users = @(Read-AuthArrayFileCached -Path $usersFile)
+    $byUsername = @{}
+    $byEmployeeCode = @{}
+
+    foreach ($user in $users) {
+        if ($null -eq $user) {
+            continue
+        }
+
+        $username = if ($user.PSObject.Properties.Name -contains "username") { [string]$user.username } else { "" }
+        if (-not [string]::IsNullOrWhiteSpace($username) -and -not $byUsername.ContainsKey($username)) {
+            $byUsername[$username] = $user
+        }
+
+        $employeeCode = Get-UserEmployeeCodeValue -UserRecord $user
+        if (-not [string]::IsNullOrWhiteSpace($employeeCode) -and -not $byEmployeeCode.ContainsKey($employeeCode)) {
+            $byEmployeeCode[$employeeCode] = $user
+        }
+    }
+
+    $script:UserLookupCache = [PSCustomObject]@{
+        Key            = $cacheKey
+        Users          = $users
+        ByUsername     = $byUsername
+        ByEmployeeCode = $byEmployeeCode
+    }
+    return $script:UserLookupCache
+}
+
+function Get-UserByUsername {
+    param([string]$Username)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Username)) {
+        return $null
+    }
+
+    $lookup = Get-UserLookupCache
+    if ($lookup.ByUsername.ContainsKey([string]$Username)) {
+        return $lookup.ByUsername[[string]$Username]
+    }
+
+    return $null
+}
+
+function Get-EmployeeUserByCode {
+    param([string]$EmployeeCode)
+
+    if ([string]::IsNullOrWhiteSpace([string]$EmployeeCode)) {
+        return $null
+    }
+
+    $lookup = Get-UserLookupCache
+    if ($lookup.ByEmployeeCode.ContainsKey([string]$EmployeeCode)) {
+        return $lookup.ByEmployeeCode[[string]$EmployeeCode]
+    }
+
+    return $null
 }
 
 function Get-AuthorizationTokenFromRequest {
@@ -741,21 +827,62 @@ function Get-AuthenticatedUserFromRequest {
 
     $tokenHash = Get-TokenHash -Token $token
     $nowUtc = (Get-Date).ToUniversalTime()
-    $session = Get-Sessions | Where-Object {
-        $_.tokenHash -eq $tokenHash -and
-        [DateTime]::Parse($_.expiresAtUtc).ToUniversalTime() -gt $nowUtc
-    } | Select-Object -First 1
+    $cachedAuth = $script:AuthenticatedUserRequestCache[$tokenHash]
+    if ($cachedAuth -and $cachedAuth.CachedAtUtc -and $cachedAuth.ExpiresAtUtc) {
+        $cacheAgeMs = ($nowUtc - $cachedAuth.CachedAtUtc).TotalMilliseconds
+        if ($cacheAgeMs -lt $script:AuthenticatedUserRequestCacheTtlMs -and $cachedAuth.ExpiresAtUtc -gt $nowUtc) {
+            return $cachedAuth.User
+        }
+    }
+
+    $session = $null
+    foreach ($candidateSession in @(Get-Sessions)) {
+        if ([string]$candidateSession.tokenHash -ne $tokenHash) {
+            continue
+        }
+
+        try {
+            $sessionExpiresUtc = [DateTime]::Parse([string]$candidateSession.expiresAtUtc).ToUniversalTime()
+        }
+        catch {
+            continue
+        }
+
+        if ($sessionExpiresUtc -le $nowUtc) {
+            continue
+        }
+
+        $session = $candidateSession
+        break
+    }
 
     if ($null -eq $session) {
+        if ($script:AuthenticatedUserRequestCache.ContainsKey($tokenHash)) {
+            $script:AuthenticatedUserRequestCache.Remove($tokenHash) | Out-Null
+        }
         return $null
     }
 
-    $user = Get-Users | Where-Object { $_.username -eq $session.username -and -not $_.disabled } | Select-Object -First 1
+    $user = Get-UserByUsername -Username ([string]$session.username)
     if ($null -eq $user) {
         return $null
     }
+    if ([bool]$user.disabled) {
+        return $null
+    }
 
-    return (New-AuthenticatedUserProjection -UserRecord $user -Token $token)
+    $projection = New-AuthenticatedUserProjection -UserRecord $user -Token $token
+    $script:AuthenticatedUserRequestCache[$tokenHash] = [PSCustomObject]@{
+        CachedAtUtc  = $nowUtc
+        ExpiresAtUtc = [DateTime]::Parse([string]$session.expiresAtUtc).ToUniversalTime()
+        User         = $projection
+    }
+
+    if ($script:AuthenticatedUserRequestCache.Count -gt 128) {
+        $script:AuthenticatedUserRequestCache = @{}
+    }
+
+    return $projection
 }
 
 function Test-CurrentUserRole {
@@ -796,6 +923,7 @@ function New-SessionForUser {
             expiresAtUtc = $expiresUtc.ToString("o")
         }
         Write-JsonAtomic -Path $sessionsFile -Value $sessions -Depth 8
+        Clear-AuthRuntimeCaches
     }
     finally {
         Release-ResourceLock -LockHandle $lockHandle
@@ -817,6 +945,7 @@ function Revoke-SessionToken {
         $sessions = Read-JsonArrayFile -Path $sessionsFile
         $sessions = $sessions | Where-Object { $_.tokenHash -ne $tokenHash }
         Write-JsonAtomic -Path $sessionsFile -Value $sessions -Depth 8
+        Clear-AuthRuntimeCaches
     }
     finally {
         Release-ResourceLock -LockHandle $lockHandle
@@ -849,6 +978,7 @@ function Revoke-SessionsForUsername {
             return $false
         })
         Write-JsonAtomic -Path $sessionsFile -Value $sessions -Depth 8
+        Clear-AuthRuntimeCaches
     }
     finally {
         Release-ResourceLock -LockHandle $lockHandle
@@ -881,6 +1011,7 @@ function Set-UserPassword {
         }
         if ($updated) {
             Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Clear-AuthRuntimeCaches
         }
     }
     finally {
@@ -944,6 +1075,7 @@ function Set-EmployeeUserPassword {
 
         if ($updated) {
             Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Clear-AuthRuntimeCaches
         }
     }
     finally {
@@ -1055,6 +1187,7 @@ function Ensure-EmployeeUser {
 
         if ($updated) {
             Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Clear-AuthRuntimeCaches
         }
     }
     finally {
@@ -1092,6 +1225,7 @@ function Set-EmployeeUserDisplayName {
 
         if ($updated) {
             Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Clear-AuthRuntimeCaches
         }
     }
     finally {
@@ -1124,6 +1258,7 @@ function Set-EmployeeUserRole {
 
         if ($updated) {
             Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Clear-AuthRuntimeCaches
         }
     }
     finally {
@@ -1160,6 +1295,7 @@ function Set-EmployeeUserTimeEntryTypes {
 
         if ($updated) {
             Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Clear-AuthRuntimeCaches
         }
     }
     finally {
@@ -1189,6 +1325,7 @@ function Disable-EmployeeUser {
 
         if ($updated) {
             Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Clear-AuthRuntimeCaches
         }
     }
     finally {
@@ -1218,6 +1355,7 @@ function Restore-EmployeeUser {
 
         if ($updated) {
             Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Clear-AuthRuntimeCaches
         }
     }
     finally {

@@ -11,7 +11,12 @@ if (-not $script:FileMetadataCache) {
 }
 
 if (-not $script:FileMetadataValidationIntervalMs) {
-    $script:FileMetadataValidationIntervalMs = 750
+    $configuredMetadataCacheMs = 0
+    if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_FILE_METADATA_CACHE_MS)) {
+        [int]::TryParse([string]$env:OVERTIME_FILE_METADATA_CACHE_MS, [ref]$configuredMetadataCacheMs) | Out-Null
+    }
+
+    $script:FileMetadataValidationIntervalMs = if ($configuredMetadataCacheMs -gt 0) { $configuredMetadataCacheMs } else { 5000 }
 }
 
 function Get-FileMetadataSnapshot {
@@ -63,6 +68,19 @@ function Clear-CachedFileContent {
     if ($script:FileMetadataCache.ContainsKey($Path)) {
         $script:FileMetadataCache.Remove($Path) | Out-Null
     }
+}
+
+function Clear-FileMetadataValidationCache {
+    param([string]$Path)
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$Path)) {
+        if ($script:FileMetadataCache.ContainsKey($Path)) {
+            $script:FileMetadataCache.Remove($Path) | Out-Null
+        }
+        return
+    }
+
+    $script:FileMetadataCache = @{}
 }
 
 function Read-TextFileCached {

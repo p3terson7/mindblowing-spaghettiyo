@@ -330,7 +330,7 @@ function Update-EmployeeEntryDisplayName {
     return $updatedCount
 }
 
-function Get-EmployeeDirectoryList {
+function Get-EmployeeDirectoryListUncached {
     param(
         [bool]$IncludeDisabled = $false,
         $CurrentUser
@@ -409,6 +409,32 @@ function Get-EmployeeDirectoryList {
     }
 
     return @($directoryList.ToArray())
+}
+
+function Get-EmployeeDirectoryList {
+    param(
+        [bool]$IncludeDisabled = $false,
+        $CurrentUser
+    )
+
+    $userScopeKey = if ($null -ne $CurrentUser -and (Get-Command -Name Get-ProjectAccessCacheUserKey -ErrorAction SilentlyContinue)) {
+        Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
+    }
+    elseif ($null -ne $CurrentUser -and $CurrentUser.PSObject.Properties.Name -contains "username") {
+        [string]$CurrentUser.username
+    }
+    else {
+        "anonymous"
+    }
+
+    $cacheKey = "employee-directory-list|{0}|{1}" -f [bool]$IncludeDisabled, $userScopeKey
+    if (Get-Command -Name Invoke-ReadModelCache -ErrorAction SilentlyContinue) {
+        return (Invoke-ReadModelCache -Key $cacheKey -Factory {
+            Get-EmployeeDirectoryListUncached -IncludeDisabled:$IncludeDisabled -CurrentUser $CurrentUser
+        })
+    }
+
+    return (Get-EmployeeDirectoryListUncached -IncludeDisabled:$IncludeDisabled -CurrentUser $CurrentUser)
 }
 
 function Add-EmployeeDirectoryRecord {

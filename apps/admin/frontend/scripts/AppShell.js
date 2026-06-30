@@ -713,7 +713,9 @@ async function bootstrapApplication() {
   }
 
   await refreshViewById(preferredView, { force: true });
-  await pollSyncState();
+  pollSyncState().catch(error => {
+    console.error("Unable to start sync polling:", error);
+  });
   appShellState.initialized = true;
 }
 

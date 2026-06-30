@@ -65,8 +65,43 @@ body {
   min-height: 100%;
 }
 
+html,
+body,
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 html::-webkit-scrollbar,
-body::-webkit-scrollbar {
+body::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.app-navigation,
+.nav-tabs,
+.ide-tabs,
+.employee-calendar-nav,
+.employee-month-board,
+.employee-card-title,
+.employee-card-meta,
+.project-assignment-people {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.app-navigation::-webkit-scrollbar,
+.nav-tabs::-webkit-scrollbar,
+.ide-tabs::-webkit-scrollbar,
+.employee-calendar-nav::-webkit-scrollbar,
+.employee-month-board::-webkit-scrollbar,
+.employee-card-title::-webkit-scrollbar,
+.employee-card-meta::-webkit-scrollbar,
+.project-assignment-people::-webkit-scrollbar {
+  width: 0;
+  height: 0;
   display: none;
 }
 
@@ -2297,7 +2332,7 @@ code,
   color: var(--text-primary);
   font-size: 0.88rem;
   line-height: 1.18;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -2488,7 +2523,9 @@ code,
 .employee-card-title::-webkit-scrollbar,
 .employee-card-meta::-webkit-scrollbar,
 .project-assignment-people::-webkit-scrollbar {
-  height: 4px;
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .employee-detail-shell {
@@ -3134,7 +3171,7 @@ code,
   gap: 9px 14px;
   overflow: auto;
   padding-right: 2px;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 .project-assignment-person {
