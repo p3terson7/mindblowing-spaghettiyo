@@ -171,7 +171,19 @@ function ConvertTo-Gc179DurationText {
             $hours = 0
             $minutes = 0
             if ([int]::TryParse([string]$parts[0], [ref]$hours) -and [int]::TryParse([string]$parts[1], [ref]$minutes)) {
-                return ("{0:D2}:{1:D2}" -f $hours, $minutes)
+                $totalMinutes = (($hours * 60) + $minutes)
+                if ($parts.Count -ge 3) {
+                    $seconds = 0
+                    if ([int]::TryParse([string]$parts[2], [ref]$seconds) -and $seconds -ge 30) {
+                        $totalMinutes++
+                    }
+                }
+
+                if ($totalMinutes -le 0) {
+                    return ""
+                }
+
+                return (($totalMinutes / 60.0).ToString("0.00", [System.Globalization.CultureInfo]::InvariantCulture))
             }
         }
     }
@@ -194,7 +206,7 @@ function ConvertTo-Gc179DurationText {
             return ""
         }
 
-        return ("{0:D2}:{1:D2}" -f ([int][math]::Floor($totalMinutes / 60)), ($totalMinutes % 60))
+        return (($totalMinutes / 60.0).ToString("0.00", [System.Globalization.CultureInfo]::InvariantCulture))
     }
     catch {
         return ""
