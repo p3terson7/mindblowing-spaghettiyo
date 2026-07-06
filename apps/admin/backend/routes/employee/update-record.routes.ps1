@@ -12,6 +12,7 @@
                 $displayName = if ($null -ne $payload) { [string]$payload.name } else { "" }
                 $role = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "role")) { Get-NormalizedRoleName -Role ([string]$payload.role) } else { "" }
                 $timeEntryTypes = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "timeEntryTypes")) { @(ConvertTo-TimeEntryTypeArray -Value $payload.timeEntryTypes) } else { $null }
+                $gc179Profile = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "gc179Profile")) { $payload.gc179Profile } else { $null }
 
                 if ([string]::IsNullOrWhiteSpace($displayName)) {
                     respondWithError $response 400 "Employee name is required."
@@ -24,7 +25,7 @@
                     continue
                 }
 
-                $updateResult = Update-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -Role $role -TimeEntryTypes $timeEntryTypes
+                $updateResult = Update-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -Role $role -TimeEntryTypes $timeEntryTypes -Gc179Profile $gc179Profile
                 if (-not $updateResult.updated) {
                     respondWithError $response 500 "Unable to update employee."
                     continue

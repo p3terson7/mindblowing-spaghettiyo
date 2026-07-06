@@ -57,7 +57,19 @@
     "passwordSalt": "uM+KQm/MCehyvwlCILfh8w==",
     "passwordHash": "hA4bGuHDAlT2pr14FrIYtLY02thSMIBkLSZd6IN6uow=",
     "passwordIterations": 120000,
-    "passwordAlgorithm": "PBKDF2-HMACSHA1"
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "surname": "GAGNON",
+      "givenName": "MARC-ANDRE",
+      "initials": "M.G",
+      "pri": "123123123",
+      "position": "AS03",
+      "level": "2",
+      "compressedWorkWeek": true
+    }
   },
   {
     "username": "000100003",
@@ -99,7 +111,51 @@
     "passwordAlgorithm": "PBKDF2-HMACSHA1",
     "timeEntryTypes": [
       "diverse"
-    ]
+    ],
+    "gc179Profile": {
+      "surname": "SARATEANU",
+      "givenName": "PETER-NICHOLAS",
+      "initials": "P.S",
+      "pri": "058123123",
+      "level": "3",
+      "regularSchedule": {
+        "monday": {
+          "enabled": false,
+          "startTime": "",
+          "endTime": ""
+        },
+        "tuesday": {
+          "enabled": false,
+          "startTime": "",
+          "endTime": ""
+        },
+        "wednesday": {
+          "enabled": false,
+          "startTime": "",
+          "endTime": ""
+        },
+        "thursday": {
+          "enabled": false,
+          "startTime": "",
+          "endTime": ""
+        },
+        "friday": {
+          "enabled": false,
+          "startTime": "",
+          "endTime": ""
+        },
+        "saturday": {
+          "enabled": false,
+          "startTime": "",
+          "endTime": ""
+        },
+        "sunday": {
+          "enabled": false,
+          "startTime": "",
+          "endTime": ""
+        }
+      }
+    }
   },
   {
     "username": "000200001",
@@ -440,6 +496,56 @@
     "createdAtUtc": "2026-06-04T19:49:00.730375Z",
     "passwordSalt": "5fhhMPG3EISaiojmFod/Jw==",
     "passwordHash": "yGYept+h05/ntWMUojEdGjtv3iAn7Vv3fvlIbk7U1+U=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1"
+  },
+  {
+    "username": "000999150",
+    "displayName": "GC179 Standard Week Tester",
+    "role": "employee",
+    "employeeCode": "000999150",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "surname": "STANDARD",
+      "givenName": "GC179",
+      "initials": "G.S",
+      "pri": "111 222 333",
+      "position": "AS03",
+      "level": "1",
+      "compressedWorkWeek": false
+    },
+    "disabled": false,
+    "mustChangePassword": false,
+    "createdAtUtc": "2026-07-06T18:17:53.3568340Z",
+    "passwordSalt": "El8+XFRATsw98dHuSgEiuQ==",
+    "passwordHash": "wd69U974OA9QIfgMLoEP3I6Ne0cEsXUUrTvE/eig6i4=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1"
+  },
+  {
+    "username": "000999175",
+    "displayName": "GC179 Compressed Week Tester",
+    "role": "employee",
+    "employeeCode": "000999175",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "surname": "COMPRESSED",
+      "givenName": "GC179",
+      "initials": "G.C",
+      "pri": "444 555 666",
+      "position": "AS04",
+      "level": "2",
+      "compressedWorkWeek": true
+    },
+    "disabled": false,
+    "mustChangePassword": false,
+    "createdAtUtc": "2026-07-06T18:17:53.5142490Z",
+    "passwordSalt": "y2kbUTw8P9WKqqZWi8KzFQ==",
+    "passwordHash": "TfTDS0UUgICNbNSBcplsMDHsUMd8BlA6QfDlEzT7mMM=",
     "passwordIterations": 120000,
     "passwordAlgorithm": "PBKDF2-HMACSHA1"
   }

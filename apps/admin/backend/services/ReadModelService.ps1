@@ -769,6 +769,7 @@ function Get-SelfBootstrapModel {
     $dataFile = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $EmployeeCode)
     $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
     $timeEntryTypes = @(Get-EmployeeTimeEntryTypesByCode -EmployeeCode $EmployeeCode)
+    $user = Get-EmployeeUserByCode -EmployeeCode $EmployeeCode
 
     return [PSCustomObject]@{
         entries        = $entries
@@ -777,5 +778,6 @@ function Get-SelfBootstrapModel {
         paymentOptions = @(Get-PaymentOptions)
         reasonCodes    = @(Get-ReasonCodes)
         timeEntryTypes = $timeEntryTypes
+        gc179Profile   = Get-Gc179ProfileFromUserRecord -UserRecord $user
     }
 }

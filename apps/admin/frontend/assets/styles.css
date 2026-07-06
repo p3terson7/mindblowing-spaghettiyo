@@ -321,6 +321,62 @@ code,
   gap: 6px;
 }
 
+.settings-choice-row,
+.settings-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-theme-option {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 112px;
+  justify-content: center;
+}
+
+.settings-theme-option.active {
+  background: #eaf1ff;
+  border-color: rgba(53, 116, 240, 0.42);
+  color: #1f4fb6;
+}
+
+.settings-password-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-password-grid .field-block {
+  display: grid;
+  grid-template-rows: 2.75rem auto;
+  margin-bottom: 0;
+}
+
+.settings-password-grid .form-label {
+  display: flex;
+  align-items: flex-end;
+  min-height: 2.75rem;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.gc179-workweek-options {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(31, 35, 41, 0.08);
+}
+
+.gc179-workweek-option {
+  margin: 0;
+}
+
 .language-select {
   min-width: 96px;
   max-width: 108px;
@@ -1319,10 +1375,15 @@ code,
 
 :root[data-theme="dark"] .chip-button.active,
 :root[data-theme="dark"] .employee-month-chip.is-active,
+:root[data-theme="dark"] .settings-theme-option.active,
 :root[data-theme="dark"] .accordion-button:not(.collapsed) {
   background: #344563;
   border-color: rgba(79, 131, 241, 0.42);
   color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .gc179-workweek-options {
+  border-top-color: rgba(255, 255, 255, 0.08);
 }
 
 :root[data-theme="dark"] .calendar-day.has-entries,
@@ -3499,6 +3560,82 @@ code,
   color: var(--text-primary);
 }
 
+.employee-editor-subsection {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid rgba(31, 35, 41, 0.1);
+  border-radius: 4px;
+  background: var(--panel-subtle);
+}
+
+.employee-editor-subsection-title {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.employee-gc179-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 0.7fr) minmax(0, 0.75fr) minmax(0, 0.75fr) minmax(0, 0.6fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.employee-gc179-grid .field-block {
+  display: grid;
+  grid-template-rows: 1.65rem auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.employee-gc179-grid .form-label {
+  display: flex;
+  align-items: flex-end;
+  min-height: 1.65rem;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-gc179-grid .form-control,
+.employee-gc179-grid .form-select {
+  min-width: 0;
+}
+
+.gc179-static-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+
+.gc179-static-fields span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid rgba(31, 35, 41, 0.1);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
+.gc179-static-fields strong {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .assignment-checklist {
   display: flex;
   flex-direction: column;
@@ -3769,6 +3906,29 @@ code,
   }
 
   .employee-insight-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-gc179-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-password-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-password-grid .field-block,
+  .employee-gc179-grid .field-block {
+    grid-template-rows: auto auto;
+  }
+
+  .settings-password-grid .form-label,
+  .employee-gc179-grid .form-label {
+    min-height: 0;
+    white-space: normal;
+  }
+
+  .gc179-workweek-options {
     grid-template-columns: 1fr;
   }
 

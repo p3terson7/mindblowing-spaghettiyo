@@ -41,6 +41,7 @@ function updateThemeToggle(theme) {
   const toggleButton = document.getElementById("appThemeToggleButton");
   const toggleText = document.getElementById("appThemeToggleText");
   if (!toggleButton || !toggleText) {
+    updateSettingsThemeOptions(theme);
     return;
   }
 
@@ -52,6 +53,15 @@ function updateThemeToggle(theme) {
   toggleText.textContent = t(nextTheme === "dark" ? "theme.dark" : "theme.light");
   toggleButton.setAttribute("aria-label", t("theme.label"));
   toggleButton.setAttribute("title", t("theme.label"));
+  updateSettingsThemeOptions(theme);
+}
+
+function updateSettingsThemeOptions(theme) {
+  document.querySelectorAll("[data-settings-theme]").forEach(button => {
+    const isActive = button.getAttribute("data-settings-theme") === theme;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
 }
 
 function applyAppTheme(theme) {
@@ -390,13 +400,13 @@ function setSyncStatus(message) {
 
 function updateSessionSummary() {
   const summary = document.getElementById("appSessionSummary");
-  const changePasswordButton = document.getElementById("appChangePasswordButton");
+  const settingsButton = document.getElementById("appSettingsButton");
   const logoutButton = document.getElementById("appLogoutButton");
   const user = getCurrentUser();
 
   if (!user) {
     summary.textContent = t("session.notSignedIn");
-    changePasswordButton.classList.add("d-none");
+    settingsButton.classList.add("d-none");
     logoutButton.classList.add("d-none");
     return;
   }
@@ -408,7 +418,7 @@ function updateSessionSummary() {
     : t(`session.role.${role}`);
 
   summary.textContent = `${identity} | ${suffix}`;
-  changePasswordButton.classList.remove("d-none");
+  settingsButton.classList.remove("d-none");
   logoutButton.classList.remove("d-none");
 }
 
@@ -469,9 +479,164 @@ function resetModalPasswordForm() {
 }
 
 function openModalPasswordForm() {
+  openSelfSettingsForm();
+  window.setTimeout(() => {
+    const currentPasswordInput = document.getElementById("selfCurrentPasswordInput");
+    if (currentPasswordInput) {
+      currentPasswordInput.focus();
+    }
+  }, 150);
+}
+
+function toSelfGc179UpperText(value) {
+  const text = String(value || "").trim();
+  return text ? text.toUpperCase() : "";
+}
+
+function inferSelfGc179NameParts(displayName) {
+  const tokens = String(displayName || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) {
+    return {
+      surname: "",
+      givenName: "",
+      initials: "",
+    };
+  }
+
+  const surname = tokens.length === 1 ? tokens[0] : tokens[tokens.length - 1];
+  const givenName = tokens.length === 1 ? "" : tokens.slice(0, -1).join(" ");
+  const initialParts = [];
+  if (givenName) {
+    initialParts.push(givenName.charAt(0).toUpperCase());
+  }
+  if (surname) {
+    initialParts.push(surname.charAt(0).toUpperCase());
+  }
+
+  return {
+    surname: toSelfGc179UpperText(surname),
+    givenName: toSelfGc179UpperText(givenName),
+    initials: initialParts.join("."),
+  };
+}
+
+function normalizeSelfGc179Profile(profile, displayName) {
+  const fallback = inferSelfGc179NameParts(displayName);
+  const source = profile && typeof profile === "object" ? profile : {};
+  return {
+    surname: toSelfGc179UpperText(source.surname || source.Surname || source.lastName || fallback.surname),
+    givenName: toSelfGc179UpperText(source.givenName || source.given || source.Given || fallback.givenName),
+    initials: toSelfGc179UpperText(source.initials || source.Initials || fallback.initials),
+    pri: formatGc179Pri(source.pri || source.PRI || ""),
+    position: normalizeGc179Position(source.position || source.poste || source.classification || source.Position || ""),
+    level: normalizeGc179Echelon(source.level || source.Level || source.echelon || source.Echelon || ""),
+    compressedWorkWeek: normalizeBooleanValue(getFirstDefinedPropertyValue(source, ["compressedWorkWeek", "isCompressedWorkWeek", "compressed"]), false),
+  };
+}
+
+function setSelfGc179ProfileMessage(message, type) {
+  const messageBox = document.getElementById("selfGc179ProfileMessage");
+  if (!message) {
+    messageBox.className = "alert d-none";
+    messageBox.textContent = "";
+    return;
+  }
+
+  messageBox.className = `alert alert-${type || "danger"}`;
+  messageBox.textContent = message;
+}
+
+function setSelfGc179ProfileForm(profile, displayName) {
+  const normalized = normalizeSelfGc179Profile(profile, displayName);
+  document.getElementById("selfGc179SurnameInput").value = normalized.surname;
+  document.getElementById("selfGc179GivenInput").value = normalized.givenName;
+  document.getElementById("selfGc179InitialsInput").value = normalized.initials;
+  document.getElementById("selfGc179PriInput").value = normalized.pri;
+  document.getElementById("selfGc179PositionSelect").value = normalized.position;
+  document.getElementById("selfGc179LevelInput").value = normalized.level;
+  document.getElementById("selfGc179CompressedWorkWeekInput").checked = Boolean(normalized.compressedWorkWeek);
+}
+
+function getSelfGc179ProfileForm(displayName) {
+  return normalizeSelfGc179Profile({
+    surname: document.getElementById("selfGc179SurnameInput").value,
+    givenName: document.getElementById("selfGc179GivenInput").value,
+    initials: document.getElementById("selfGc179InitialsInput").value,
+    pri: document.getElementById("selfGc179PriInput").value,
+    position: document.getElementById("selfGc179PositionSelect").value,
+    level: document.getElementById("selfGc179LevelInput").value,
+    compressedWorkWeek: document.getElementById("selfGc179CompressedWorkWeekInput").checked,
+  }, displayName);
+}
+
+function updateStoredUserGc179Profile(profile) {
+  const session = getStoredSession();
+  if (!session || !session.user) {
+    return;
+  }
+
+  session.user.gc179Profile = profile;
+  setStoredSession(session);
+}
+
+async function openSelfSettingsForm() {
+  const user = getCurrentUser();
+  if (!user) {
+    return;
+  }
+
+  setSelfGc179ProfileMessage("");
   resetModalPasswordForm();
-  const modal = new bootstrap.Modal(document.getElementById("selfPasswordModal"));
+  updateSettingsThemeOptions(getStoredTheme());
+  setSelfGc179ProfileForm(user.gc179Profile, user.displayName || user.username || "");
+  const modal = new bootstrap.Modal(document.getElementById("selfSettingsModal"));
   modal.show();
+
+  try {
+    const response = await fetch(apiUrl + "self/profile");
+    const profile = await parseResponse(response);
+    if (profile && profile.gc179Profile) {
+      updateStoredUserGc179Profile(profile.gc179Profile);
+      setSelfGc179ProfileForm(profile.gc179Profile, profile.displayName || user.displayName || user.username || "");
+    }
+  } catch (error) {
+    setSelfGc179ProfileMessage(error.message || t("self.gc179ProfileError"), "warning");
+  }
+}
+
+async function submitSelfGc179Profile() {
+  const user = getCurrentUser();
+  if (!user || !user.employeeCode) {
+    return;
+  }
+
+  setSelfGc179ProfileMessage("");
+  const gc179Profile = getSelfGc179ProfileForm(user.displayName || user.username || "");
+
+  try {
+    const response = await fetch(apiUrl + "self/gc179-profile", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        gc179Profile,
+      }),
+    });
+    const result = await parseResponse(response);
+    const savedProfile = result && result.gc179Profile ? result.gc179Profile : gc179Profile;
+    updateStoredUserGc179Profile(savedProfile);
+    updateSessionSummary();
+    setSelfGc179ProfileForm(savedProfile, user.displayName || user.username || "");
+    bootstrap.Modal.getInstance(document.getElementById("selfSettingsModal")).hide();
+    showToast(t("self.gc179ProfileSaved"), "success");
+    markViewsStale(["selfView", "employeesView"]);
+  } catch (error) {
+    setSelfGc179ProfileMessage(error.message || t("self.gc179ProfileError"), "danger");
+  }
 }
 
 function setRoleScopeVisibility(role, isVisible) {
@@ -939,7 +1104,6 @@ async function submitModalPasswordChange() {
     }
 
     updateSessionSummary();
-    bootstrap.Modal.getInstance(document.getElementById("selfPasswordModal")).hide();
     resetModalPasswordForm();
     showToast(t("auth.passwordUpdated"), "success");
   } catch (error) {
@@ -1024,11 +1188,20 @@ document.addEventListener("DOMContentLoaded", () => {
     event.preventDefault();
     submitModalPasswordChange();
   });
+  document.getElementById("selfGc179ProfileForm").addEventListener("submit", event => {
+    event.preventDefault();
+    submitSelfGc179Profile();
+  });
   document.getElementById("changePasswordButton").addEventListener("click", submitPasswordChange);
-  document.getElementById("appChangePasswordButton").addEventListener("click", openModalPasswordForm);
+  document.getElementById("appSettingsButton").addEventListener("click", openSelfSettingsForm);
   document.getElementById("selfPasswordSaveButton").addEventListener("click", submitModalPasswordChange);
+  document.getElementById("selfGc179ProfileSaveButton").addEventListener("click", submitSelfGc179Profile);
+  bindGc179PriFormatter(document.getElementById("selfGc179PriInput"));
+  bindGc179PriFormatter(document.getElementById("employeeEditorGc179PriInput"));
   document.getElementById("appLogoutButton").addEventListener("click", submitLogout);
-  document.getElementById("appThemeToggleButton").addEventListener("click", toggleAppTheme);
+  document.querySelectorAll("[data-settings-theme]").forEach(button => {
+    button.addEventListener("click", () => applyAppTheme(button.getAttribute("data-settings-theme")));
+  });
   const authAdvancedToggle = document.getElementById("authAdvancedToggle");
   if (authAdvancedToggle) {
     authAdvancedToggle.addEventListener("click", () => toggleAuthAdvancedPanel());

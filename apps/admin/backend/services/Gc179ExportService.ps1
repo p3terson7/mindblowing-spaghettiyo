@@ -19,6 +19,44 @@ function ConvertTo-Gc179MonthParts {
     }
 }
 
+function Get-Gc179HeaderValues {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)]$MonthParts
+    )
+
+    $user = Get-EmployeeUserByCode -EmployeeCode $EmployeeCode
+    $displayName = if ($null -ne $user -and $user.PSObject.Properties.Name -contains "displayName") {
+        [string]$user.displayName
+    }
+    else {
+        [string](Get-EmployeeName $EmployeeCode)
+    }
+
+    $profile = if ($null -ne $user) {
+        Get-Gc179ProfileFromUserRecord -UserRecord $user
+    }
+    else {
+        ConvertTo-Gc179ProfileObject -Value $null -DisplayName $displayName
+    }
+
+    return [PSCustomObject]@{
+        Month     = [string]$MonthParts.Month
+        Year      = [string]$MonthParts.Year
+        Department = "GRC-RCMP"
+        Branch    = "CDIV-PTSO-GEEM"
+        Paylist   = "0337"
+        Group     = "STS"
+        SubGroup  = "SUF-00"
+        Surname   = [string]$profile.surname
+        Given     = [string]$profile.givenName
+        Initials  = [string]$profile.initials
+        PRI       = ConvertTo-Gc179PriText -Value ([string]$profile.pri)
+        Level     = [string]$profile.level
+        WorkWeek  = if ($profile.compressedWorkWeek) { "2" } else { "1" }
+    }
+}
+
 function ConvertTo-Gc179FdfLiteral {
     param([AllowNull()][string]$Value)
 
@@ -52,9 +90,14 @@ function Add-Gc179FdfNameField {
         [Parameter(Mandatory = $true)][string]$ValueName
     )
 
+    $safeValueName = ([string]$ValueName).Trim()
+    if ($safeValueName -notmatch "^[0-9A-Za-z_.-]+$") {
+        $safeValueName = "Off"
+    }
+
     [void]$Builder.AppendLine("<<")
     [void]$Builder.AppendLine("/T ($Name)")
-    [void]$Builder.AppendLine("/V /$ValueName")
+    [void]$Builder.AppendLine("/V /$safeValueName")
     [void]$Builder.AppendLine(">>")
 }
 
@@ -113,6 +156,132 @@ function ConvertTo-Gc179WeekdayText {
         "Sunday" { return "Sun" }
         default { return "" }
     }
+}
+
+function ConvertTo-Gc179DurationText {
+    param($Entry)
+
+    if ($null -eq $Entry) {
+        return ""
+    }
+
+    if ($Entry.PSObject.Properties.Name -contains "overtime" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.overtime)) {
+        $parts = @(([string]$Entry.overtime).Split(":"))
+        if ($parts.Count -ge 2) {
+            $hours = 0
+            $minutes = 0
+            if ([int]::TryParse([string]$parts[0], [ref]$hours) -and [int]::TryParse([string]$parts[1], [ref]$minutes)) {
+                return ("{0:D2}:{1:D2}" -f $hours, $minutes)
+            }
+        }
+    }
+
+    try {
+        $punchIn = Convert-ToNormalizedTimeText -TimeText ([string]$Entry.punchIn)
+        $punchOut = Convert-ToNormalizedTimeText -TimeText ([string]$Entry.punchOut)
+        if ([string]::IsNullOrWhiteSpace($punchIn) -or [string]::IsNullOrWhiteSpace($punchOut)) {
+            return ""
+        }
+
+        $start = [DateTime]::ParseExact(("{0} {1}" -f [string]$Entry.date, $punchIn), "yyyy-MM-dd HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture)
+        $end = [DateTime]::ParseExact(("{0} {1}" -f [string]$Entry.date, $punchOut), "yyyy-MM-dd HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture)
+        if ($end -le $start) {
+            $end = $end.AddDays(1)
+        }
+
+        $totalMinutes = [int][math]::Round(($end - $start).TotalMinutes)
+        if ($totalMinutes -le 0) {
+            return ""
+        }
+
+        return ("{0:D2}:{1:D2}" -f ([int][math]::Floor($totalMinutes / 60)), ($totalMinutes % 60))
+    }
+    catch {
+        return ""
+    }
+}
+
+function Get-Gc179RegularWorkdayFieldName {
+    param(
+        [Parameter(Mandatory = $true)]$EntryDate,
+        [Parameter(Mandatory = $true)][bool]$CompressedWorkWeek,
+        [Parameter(Mandatory = $true)]$WorkedDateSet
+    )
+
+    if ($CompressedWorkWeek) {
+        return "RegTime3Quarter"
+    }
+
+    if ($EntryDate.DayOfWeek -eq [System.DayOfWeek]::Sunday) {
+        $previousDateKey = $EntryDate.AddDays(-1).ToString("yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture)
+        if ($WorkedDateSet -and $WorkedDateSet.ContainsKey($previousDateKey)) {
+            return "RegTimeDouble"
+        }
+    }
+
+    return "RegTimeHalf"
+}
+
+function Add-Gc179RegularWorkdayFields {
+    param(
+        [Parameter(Mandatory = $true)]$Builder,
+        [Parameter(Mandatory = $true)][int]$RowIndex,
+        [AllowNull()][string]$TargetFieldName,
+        [AllowNull()][string]$DurationText
+    )
+
+    $fieldNames = @("RegTime", "RegTimeHalf", "RegTime3Quarter", "RegTimeDouble")
+    foreach ($fieldName in $fieldNames) {
+        $value = if ($fieldName -eq $TargetFieldName) { [string]$DurationText } else { "" }
+        Add-Gc179FdfTextField -Builder $Builder -Name ("{0}.{1}" -f $fieldName, $RowIndex) -Value $value
+    }
+}
+
+function Test-Gc179WorkedDateEntry {
+    param($Entry)
+
+    if ($null -eq $Entry) {
+        return $false
+    }
+
+    $entryDate = [string]$Entry.date
+    if ([string]::IsNullOrWhiteSpace($entryDate) -or $entryDate -notmatch "^\d{4}-\d{2}-\d{2}$") {
+        return $false
+    }
+
+    $status = ([string]$Entry.status).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($status)) {
+        $status = "pending"
+    }
+    if ($status -eq "rejected") {
+        return $false
+    }
+
+    $entryType = "overtime"
+    if ($Entry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.entryType)) {
+        $entryType = ([string]$Entry.entryType).Trim().ToLowerInvariant()
+    }
+    if ($entryType -eq "diverse") {
+        return $false
+    }
+
+    return (-not [string]::IsNullOrWhiteSpace([string]$Entry.punchIn) -and -not [string]::IsNullOrWhiteSpace([string]$Entry.punchOut))
+}
+
+function Get-Gc179WorkedDateSet {
+    param([Parameter(Mandatory = $true)][string]$EmployeeCode)
+
+    $dataFile = Ensure-EmployeeDataFile -EmployeeCode $EmployeeCode
+    $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
+    $workedDateSet = @{}
+
+    foreach ($entry in $entries) {
+        if (Test-Gc179WorkedDateEntry -Entry $entry) {
+            $workedDateSet[[string]$entry.date] = $true
+        }
+    }
+
+    return $workedDateSet
 }
 
 function Test-Gc179ExportableEntry {
@@ -189,6 +358,7 @@ function New-Gc179FdfExportPart {
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
         [Parameter(Mandatory = $true)]$MonthParts,
         [Parameter(Mandatory = $true)]$Entries,
+        [Parameter(Mandatory = $true)]$WorkedDateSet,
         [int]$PartNumber = 1,
         [int]$PartCount = 1
     )
@@ -202,8 +372,21 @@ function New-Gc179FdfExportPart {
     [void]$builder.AppendLine("/F ($(ConvertTo-Gc179FdfLiteral -Value "GC179.pdf"))")
     [void]$builder.AppendLine("/Fields [")
 
-    Add-Gc179FdfTextField -Builder $builder -Name "Month" -Value ([string]$MonthParts.Month)
-    Add-Gc179FdfTextField -Builder $builder -Name "Year" -Value ([string]$MonthParts.Year)
+    $headerValues = Get-Gc179HeaderValues -EmployeeCode $EmployeeCode -MonthParts $MonthParts
+    Add-Gc179FdfTextField -Builder $builder -Name "Month" -Value ([string]$headerValues.Month)
+    Add-Gc179FdfTextField -Builder $builder -Name "Year" -Value ([string]$headerValues.Year)
+    Add-Gc179FdfTextField -Builder $builder -Name "Department" -Value ([string]$headerValues.Department)
+    Add-Gc179FdfTextField -Builder $builder -Name "Branch" -Value ([string]$headerValues.Branch)
+    Add-Gc179FdfTextField -Builder $builder -Name "Paylist" -Value ([string]$headerValues.Paylist)
+    Add-Gc179FdfTextField -Builder $builder -Name "Group" -Value ([string]$headerValues.Group)
+    Add-Gc179FdfTextField -Builder $builder -Name "SubGroup" -Value ([string]$headerValues.SubGroup)
+    Add-Gc179FdfTextField -Builder $builder -Name "Surname" -Value ([string]$headerValues.Surname)
+    Add-Gc179FdfTextField -Builder $builder -Name "Given" -Value ([string]$headerValues.Given)
+    Add-Gc179FdfTextField -Builder $builder -Name "Initials" -Value ([string]$headerValues.Initials)
+    Add-Gc179FdfTextField -Builder $builder -Name "PRI" -Value ([string]$headerValues.PRI)
+    Add-Gc179FdfTextField -Builder $builder -Name "Level" -Value ([string]$headerValues.Level)
+    Add-Gc179FdfNameField -Builder $builder -Name "WorkWeek" -ValueName ([string]$headerValues.WorkWeek)
+    $compressedWorkWeek = ([string]$headerValues.WorkWeek -eq "2")
 
     for ($index = 0; $index -lt 16; $index++) {
         if ($index -lt $entries.Count) {
@@ -216,12 +399,15 @@ function New-Gc179FdfExportPart {
             }
 
             if ($null -ne $entryDate) {
+                $durationText = ConvertTo-Gc179DurationText -Entry $entry
+                $regularWorkdayFieldName = Get-Gc179RegularWorkdayFieldName -EntryDate $entryDate -CompressedWorkWeek $compressedWorkWeek -WorkedDateSet $WorkedDateSet
                 Add-Gc179FdfTextField -Builder $builder -Name ("DayofWeek.{0}" -f $index) -Value (ConvertTo-Gc179DayText -Date $entryDate)
                 Add-Gc179FdfTextField -Builder $builder -Name ("OTCODE.{0}" -f $index) -Value ([string]$entry.reasonCode)
                 Add-Gc179FdfTextField -Builder $builder -Name ("DayWorked.{0}" -f $index) -Value (ConvertTo-Gc179WeekdayText -Date $entryDate)
                 Add-Gc179FdfTextField -Builder $builder -Name ("StartTime.{0}" -f $index) -Value (ConvertTo-Gc179TimeText -TimeText ([string]$entry.punchIn))
                 Add-Gc179FdfTextField -Builder $builder -Name ("EndTime.{0}" -f $index) -Value (ConvertTo-Gc179TimeText -TimeText ([string]$entry.punchOut))
                 Add-Gc179FdfTextField -Builder $builder -Name ("OvertimeCode.{0}" -f $index) -Value ([string]$entry.overtimeCode)
+                Add-Gc179RegularWorkdayFields -Builder $builder -RowIndex $index -TargetFieldName $regularWorkdayFieldName -DurationText $durationText
                 Add-Gc179FdfNameField -Builder $builder -Name (Get-Gc179PaymentFieldName -RowIndex $index) -ValueName (Get-Gc179PaymentValueName -PaymentOption ([string]$entry.paymentOption))
                 continue
             }
@@ -233,7 +419,8 @@ function New-Gc179FdfExportPart {
         Add-Gc179FdfTextField -Builder $builder -Name ("StartTime.{0}" -f $index) -Value ""
         Add-Gc179FdfTextField -Builder $builder -Name ("EndTime.{0}" -f $index) -Value ""
         Add-Gc179FdfTextField -Builder $builder -Name ("OvertimeCode.{0}" -f $index) -Value ""
-        Add-Gc179FdfNameField -Builder $builder -Name (Get-Gc179PaymentFieldName -RowIndex $index) -ValueName "0"
+        Add-Gc179RegularWorkdayFields -Builder $builder -RowIndex $index -TargetFieldName "" -DurationText ""
+        Add-Gc179FdfNameField -Builder $builder -Name (Get-Gc179PaymentFieldName -RowIndex $index) -ValueName "Off"
     }
 
     [void]$builder.AppendLine("]")
@@ -269,6 +456,7 @@ function New-Gc179FdfExportSet {
 
     $monthParts = ConvertTo-Gc179MonthParts -MonthKey $MonthKey
     $entries = @(Get-Gc179ExportEntries -EmployeeCode $EmployeeCode -MonthKey $monthParts.MonthKey)
+    $workedDateSet = Get-Gc179WorkedDateSet -EmployeeCode $EmployeeCode
     $partCount = [int][math]::Ceiling($entries.Count / 16.0)
     if ($partCount -lt 1) {
         $partCount = 1
@@ -285,7 +473,7 @@ function New-Gc179FdfExportSet {
             }
         }
 
-        $partExport = New-Gc179FdfExportPart -EmployeeCode $EmployeeCode -MonthParts $monthParts -Entries @($chunk.ToArray()) -PartNumber ($partIndex + 1) -PartCount $partCount
+        $partExport = New-Gc179FdfExportPart -EmployeeCode $EmployeeCode -MonthParts $monthParts -Entries @($chunk.ToArray()) -WorkedDateSet $workedDateSet -PartNumber ($partIndex + 1) -PartCount $partCount
         [void]$exports.Add($partExport)
     }
 

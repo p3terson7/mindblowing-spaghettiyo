@@ -12,8 +12,44 @@
                 employeeCode       = [string]$currentUser.employeeCode
                 mustChangePassword = [bool]$currentUser.mustChangePassword
                 timeEntryTypes     = @(Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $currentUser)
+                gc179Profile       = Get-Gc179ProfileFromUserRecord -UserRecord $currentUser
             }
             respondWithSuccess $response ($profilePayload | ConvertTo-Json -Depth 6)
+            continue
+        }
+
+        if ($request.Url.AbsolutePath -eq "/self/gc179-profile" -and $request.HttpMethod -eq "PUT") {
+            $currentUser = Get-AuthenticatedUserFromRequest -Request $request
+            if ($null -eq $currentUser) {
+                respondWithError $response 401 "Authentication required."
+                continue
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$currentUser.employeeCode)) {
+                respondWithError $response 403 "Employee access is required."
+                continue
+            }
+
+            try {
+                $payload = Read-JsonRequestBody -Request $request
+                $profilePayload = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "gc179Profile")) { $payload.gc179Profile } else { $payload }
+
+                if (-not (Set-EmployeeUserGc179Profile -EmployeeCode ([string]$currentUser.employeeCode) -Gc179Profile $profilePayload)) {
+                    respondWithError $response 500 "Unable to update GC179 profile."
+                    continue
+                }
+
+                $updatedUser = Get-EmployeeUserByCode -EmployeeCode ([string]$currentUser.employeeCode)
+                $updatedProfile = Get-Gc179ProfileFromUserRecord -UserRecord $updatedUser
+                Publish-DataChange -Category "auth" -Resource ([string]$currentUser.employeeCode)
+
+                respondWithSuccess $response (([PSCustomObject]@{
+                    message      = "GC179 profile updated successfully."
+                    gc179Profile = $updatedProfile
+                }) | ConvertTo-Json -Depth 6)
+            }
+            catch {
+                respondWithError $response 500 "Unable to update GC179 profile: $($_.Exception.Message)"
+            }
             continue
         }
 

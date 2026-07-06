@@ -115,6 +115,266 @@ function Get-UserEmployeeCodeValue {
     return ""
 }
 
+function Get-ObjectStringProperty {
+    param(
+        $Value,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    $propertyValue = Get-ObjectPropertyValue -Value $Value -Name $Name
+    if ($null -ne $propertyValue) {
+        return [string]$propertyValue
+    }
+
+    return ""
+}
+
+function Get-ObjectPropertyValue {
+    param(
+        $Value,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    if ($Value -is [hashtable] -and $Value.ContainsKey($Name)) {
+        return $Value[$Name]
+    }
+
+    if ($Value.PSObject.Properties.Name -contains $Name) {
+        return $Value.PSObject.Properties[$Name].Value
+    }
+
+    return $null
+}
+
+function ConvertTo-Gc179UpperText {
+    param([AllowNull()][string]$Value)
+
+    $text = ([string]$Value).Trim()
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return ""
+    }
+
+    return $text.ToUpperInvariant()
+}
+
+function Get-Gc179NamePartsFromDisplayName {
+    param([AllowNull()][string]$DisplayName)
+
+    $name = ([string]$DisplayName).Trim()
+    if ([string]::IsNullOrWhiteSpace($name)) {
+        return [PSCustomObject]@{
+            surname   = ""
+            givenName = ""
+            initials  = ""
+        }
+    }
+
+    $tokens = @($name -split "\s+" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $surname = ""
+    $givenName = ""
+    if ($tokens.Count -eq 1) {
+        $surname = [string]$tokens[0]
+    }
+    else {
+        $surname = [string]$tokens[$tokens.Count - 1]
+        $givenName = [string]::Join(" ", @($tokens[0..($tokens.Count - 2)]))
+    }
+
+    $initialParts = New-Object System.Collections.ArrayList
+    if (-not [string]::IsNullOrWhiteSpace($givenName)) {
+        [void]$initialParts.Add(([string]$givenName).Substring(0, 1).ToUpperInvariant())
+    }
+    if (-not [string]::IsNullOrWhiteSpace($surname)) {
+        [void]$initialParts.Add(([string]$surname).Substring(0, 1).ToUpperInvariant())
+    }
+
+    return [PSCustomObject]@{
+        surname   = ConvertTo-Gc179UpperText -Value $surname
+        givenName = ConvertTo-Gc179UpperText -Value $givenName
+        initials  = [string]::Join(".", @($initialParts.ToArray()))
+    }
+}
+
+function ConvertTo-Gc179BooleanValue {
+    param(
+        $Value,
+        [bool]$DefaultValue = $false
+    )
+
+    if ($null -eq $Value) {
+        return $DefaultValue
+    }
+
+    if ($Value -is [bool]) {
+        return [bool]$Value
+    }
+
+    $text = ([string]$Value).Trim().ToLowerInvariant()
+    if ($text -eq "true" -or $text -eq "1" -or $text -eq "yes" -or $text -eq "y" -or $text -eq "on") {
+        return $true
+    }
+
+    if ($text -eq "false" -or $text -eq "0" -or $text -eq "no" -or $text -eq "n" -or $text -eq "off") {
+        return $false
+    }
+
+    return $DefaultValue
+}
+
+function ConvertTo-Gc179PriText {
+    param([AllowNull()][string]$Value)
+
+    $digits = ([string]$Value) -replace "\D", ""
+    if ([string]::IsNullOrWhiteSpace($digits)) {
+        return ""
+    }
+
+    if ($digits.Length -gt 9) {
+        $digits = $digits.Substring(0, 9)
+    }
+
+    $groups = New-Object System.Collections.ArrayList
+    for ($index = 0; $index -lt $digits.Length; $index += 3) {
+        $length = [math]::Min(3, $digits.Length - $index)
+        [void]$groups.Add($digits.Substring($index, $length))
+    }
+
+    return [string]::Join(" ", @($groups.ToArray()))
+}
+
+function ConvertTo-Gc179PositionText {
+    param([AllowNull()][string]$Value)
+
+    $normalized = (([string]$Value).Trim().ToUpperInvariant() -replace "[\s_-]", "")
+    if ($normalized -eq "CR04" -or $normalized -eq "CR4") {
+        return "CR4"
+    }
+    if ($normalized -eq "AS03" -or $normalized -eq "AS3") {
+        return "AS03"
+    }
+    if ($normalized -eq "AS04" -or $normalized -eq "AS4") {
+        return "AS04"
+    }
+
+    return ""
+}
+
+function ConvertTo-Gc179EchelonText {
+    param([AllowNull()][string]$Value)
+
+    $normalized = ([string]$Value).Trim()
+    if ($normalized -eq "1" -or $normalized -eq "2" -or $normalized -eq "3" -or $normalized -eq "4") {
+        return $normalized
+    }
+
+    return ""
+}
+
+function ConvertTo-Gc179ProfileObject {
+    param(
+        $Value,
+        [AllowNull()][string]$DisplayName
+    )
+
+    $fallback = Get-Gc179NamePartsFromDisplayName -DisplayName $DisplayName
+
+    $surname = Get-ObjectStringProperty -Value $Value -Name "surname"
+    if ([string]::IsNullOrWhiteSpace($surname)) {
+        $surname = Get-ObjectStringProperty -Value $Value -Name "Surname"
+    }
+    if ([string]::IsNullOrWhiteSpace($surname)) {
+        $surname = Get-ObjectStringProperty -Value $Value -Name "lastName"
+    }
+    if ([string]::IsNullOrWhiteSpace($surname)) {
+        $surname = [string]$fallback.surname
+    }
+
+    $givenName = Get-ObjectStringProperty -Value $Value -Name "givenName"
+    if ([string]::IsNullOrWhiteSpace($givenName)) {
+        $givenName = Get-ObjectStringProperty -Value $Value -Name "given"
+    }
+    if ([string]::IsNullOrWhiteSpace($givenName)) {
+        $givenName = Get-ObjectStringProperty -Value $Value -Name "Given"
+    }
+    if ([string]::IsNullOrWhiteSpace($givenName)) {
+        $givenName = [string]$fallback.givenName
+    }
+
+    $initials = Get-ObjectStringProperty -Value $Value -Name "initials"
+    if ([string]::IsNullOrWhiteSpace($initials)) {
+        $initials = Get-ObjectStringProperty -Value $Value -Name "Initials"
+    }
+    if ([string]::IsNullOrWhiteSpace($initials)) {
+        $initials = [string]$fallback.initials
+    }
+
+    $pri = Get-ObjectStringProperty -Value $Value -Name "pri"
+    if ([string]::IsNullOrWhiteSpace($pri)) {
+        $pri = Get-ObjectStringProperty -Value $Value -Name "PRI"
+    }
+
+    $level = Get-ObjectStringProperty -Value $Value -Name "level"
+    if ([string]::IsNullOrWhiteSpace($level)) {
+        $level = Get-ObjectStringProperty -Value $Value -Name "Level"
+    }
+    if ([string]::IsNullOrWhiteSpace($level)) {
+        $level = Get-ObjectStringProperty -Value $Value -Name "echelon"
+    }
+    if ([string]::IsNullOrWhiteSpace($level)) {
+        $level = Get-ObjectStringProperty -Value $Value -Name "Echelon"
+    }
+
+    $position = Get-ObjectStringProperty -Value $Value -Name "position"
+    if ([string]::IsNullOrWhiteSpace($position)) {
+        $position = Get-ObjectStringProperty -Value $Value -Name "Position"
+    }
+    if ([string]::IsNullOrWhiteSpace($position)) {
+        $position = Get-ObjectStringProperty -Value $Value -Name "poste"
+    }
+    if ([string]::IsNullOrWhiteSpace($position)) {
+        $position = Get-ObjectStringProperty -Value $Value -Name "classification"
+    }
+
+    $compressedWorkWeekValue = Get-ObjectPropertyValue -Value $Value -Name "compressedWorkWeek"
+    if ($null -eq $compressedWorkWeekValue) {
+        $compressedWorkWeekValue = Get-ObjectPropertyValue -Value $Value -Name "isCompressedWorkWeek"
+    }
+    if ($null -eq $compressedWorkWeekValue) {
+        $compressedWorkWeekValue = Get-ObjectPropertyValue -Value $Value -Name "compressed"
+    }
+    $compressedWorkWeek = ConvertTo-Gc179BooleanValue -Value $compressedWorkWeekValue -DefaultValue $false
+
+    return [PSCustomObject]@{
+        surname            = ConvertTo-Gc179UpperText -Value $surname
+        givenName          = ConvertTo-Gc179UpperText -Value $givenName
+        initials           = ConvertTo-Gc179UpperText -Value $initials
+        pri                = ConvertTo-Gc179PriText -Value $pri
+        position           = ConvertTo-Gc179PositionText -Value $position
+        level              = ConvertTo-Gc179EchelonText -Value $level
+        compressedWorkWeek = [bool]$compressedWorkWeek
+    }
+}
+
+function Get-Gc179ProfileFromUserRecord {
+    param($UserRecord)
+
+    if ($null -eq $UserRecord) {
+        return (ConvertTo-Gc179ProfileObject -Value $null -DisplayName "")
+    }
+
+    $profile = $null
+    if ($UserRecord.PSObject.Properties.Name -contains "gc179Profile") {
+        $profile = $UserRecord.gc179Profile
+    }
+
+    $displayName = if ($UserRecord.PSObject.Properties.Name -contains "displayName") { [string]$UserRecord.displayName } else { "" }
+    return (ConvertTo-Gc179ProfileObject -Value $profile -DisplayName $displayName)
+}
+
 function ConvertTo-TimeEntryTypeArray {
     param($Value)
 
@@ -262,6 +522,7 @@ function New-AuthenticatedUserProjection {
         employeeCode       = $employeeCode
         mustChangePassword = [bool]$UserRecord.mustChangePassword
         timeEntryTypes     = @(Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $UserRecord)
+        gc179Profile       = Get-Gc179ProfileFromUserRecord -UserRecord $UserRecord
         token              = $Token
     }
 }
@@ -1038,11 +1299,13 @@ function Set-EmployeeUserPassword {
         $targetUser = $users | Where-Object { $_.username -eq $EmployeeCode } | Select-Object -First 1
 
         if ($null -eq $targetUser) {
+            $displayName = [string](Get-EmployeeName $EmployeeCode)
             $users += [PSCustomObject]@{
                 username           = $EmployeeCode
-                displayName        = [string](Get-EmployeeName $EmployeeCode)
+                displayName        = $displayName
                 role               = "employee"
                 employeeCode       = $EmployeeCode
+                gc179Profile       = ConvertTo-Gc179ProfileObject -Value $null -DisplayName $displayName
                 disabled           = $false
                 mustChangePassword = $MustChangePassword
                 createdAtUtc       = (Get-Date).ToUniversalTime().ToString("o")
@@ -1096,7 +1359,8 @@ function Ensure-EmployeeUser {
         [string]$InitialPassword,
         [bool]$MustChangePassword = $true,
         [string]$Role = "employee",
-        $TimeEntryTypes = @("overtime")
+        $TimeEntryTypes = @("overtime"),
+        $Gc179Profile = $null
     )
 
     $effectivePassword = if ([string]::IsNullOrWhiteSpace($InitialPassword)) {
@@ -1123,6 +1387,7 @@ function Ensure-EmployeeUser {
     $reactivated = $false
     $effectiveRole = Get-NormalizedRoleName -Role $Role
     $effectiveTimeEntryTypes = @(ConvertTo-TimeEntryTypeArray -Value $TimeEntryTypes)
+    $effectiveGc179Profile = ConvertTo-Gc179ProfileObject -Value $Gc179Profile -DisplayName $DisplayName
 
     $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
     try {
@@ -1136,6 +1401,7 @@ function Ensure-EmployeeUser {
                 role               = $effectiveRole
                 employeeCode       = $EmployeeCode
                 timeEntryTypes     = $effectiveTimeEntryTypes
+                gc179Profile       = $effectiveGc179Profile
                 disabled           = $false
                 mustChangePassword = $MustChangePassword
                 createdAtUtc       = (Get-Date).ToUniversalTime().ToString("o")
@@ -1176,6 +1442,12 @@ function Ensure-EmployeeUser {
                 $targetUser | Add-Member -NotePropertyName "timeEntryTypes" -NotePropertyValue $effectiveTimeEntryTypes -Force
             }
             $targetUser.disabled = $false
+            if ($targetUser.PSObject.Properties.Name -contains "gc179Profile") {
+                $targetUser.gc179Profile = $effectiveGc179Profile
+            }
+            else {
+                $targetUser | Add-Member -NotePropertyName "gc179Profile" -NotePropertyValue $effectiveGc179Profile -Force
+            }
             $targetUser.passwordSalt = $secret.passwordSalt
             $targetUser.passwordHash = $secret.passwordHash
             $targetUser.passwordIterations = $secret.passwordIterations
@@ -1287,6 +1559,44 @@ function Set-EmployeeUserTimeEntryTypes {
                 }
                 else {
                     $user | Add-Member -NotePropertyName "timeEntryTypes" -NotePropertyValue $effectiveTimeEntryTypes -Force
+                }
+                $updated = $true
+                break
+            }
+        }
+
+        if ($updated) {
+            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Clear-AuthRuntimeCaches
+        }
+    }
+    finally {
+        Release-ResourceLock -LockHandle $lockHandle
+    }
+
+    return $updated
+}
+
+function Set-EmployeeUserGc179Profile {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        $Gc179Profile
+    )
+
+    $updated = $false
+
+    $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
+    try {
+        $users = Read-JsonArrayFile -Path $usersFile
+        foreach ($user in $users) {
+            if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
+                $displayName = if ($user.PSObject.Properties.Name -contains "displayName") { [string]$user.displayName } else { [string](Get-EmployeeName $EmployeeCode) }
+                $effectiveGc179Profile = ConvertTo-Gc179ProfileObject -Value $Gc179Profile -DisplayName $displayName
+                if ($user.PSObject.Properties.Name -contains "gc179Profile") {
+                    $user.gc179Profile = $effectiveGc179Profile
+                }
+                else {
+                    $user | Add-Member -NotePropertyName "gc179Profile" -NotePropertyValue $effectiveGc179Profile -Force
                 }
                 $updated = $true
                 break

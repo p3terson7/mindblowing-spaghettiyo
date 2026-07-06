@@ -77,6 +77,89 @@ function employeeEditorTimeEntryTypesChanged(employee) {
   return original.join("|") !== selected.join("|");
 }
 
+function toGc179UpperText(value) {
+  const text = String(value || "").trim();
+  return text ? text.toUpperCase() : "";
+}
+
+function inferEmployeeGc179NameParts(employeeName) {
+  const tokens = String(employeeName || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) {
+    return {
+      surname: "",
+      givenName: "",
+      initials: "",
+    };
+  }
+
+  const surname = tokens.length === 1 ? tokens[0] : tokens[tokens.length - 1];
+  const givenName = tokens.length === 1 ? "" : tokens.slice(0, -1).join(" ");
+  const initialParts = [];
+  if (givenName) {
+    initialParts.push(givenName.charAt(0).toUpperCase());
+  }
+  if (surname) {
+    initialParts.push(surname.charAt(0).toUpperCase());
+  }
+
+  return {
+    surname: toGc179UpperText(surname),
+    givenName: toGc179UpperText(givenName),
+    initials: initialParts.join("."),
+  };
+}
+
+function normalizeEmployeeGc179Profile(profile, employeeName) {
+  const fallback = inferEmployeeGc179NameParts(employeeName);
+  const source = profile && typeof profile === "object" ? profile : {};
+  return {
+    surname: toGc179UpperText(source.surname || source.Surname || source.lastName || fallback.surname),
+    givenName: toGc179UpperText(source.givenName || source.given || source.Given || fallback.givenName),
+    initials: toGc179UpperText(source.initials || source.Initials || fallback.initials),
+    pri: formatGc179Pri(source.pri || source.PRI || ""),
+    position: normalizeGc179Position(source.position || source.poste || source.classification || source.Position || ""),
+    level: normalizeGc179Echelon(source.level || source.Level || source.echelon || source.Echelon || ""),
+    compressedWorkWeek: normalizeBooleanValue(getFirstDefinedPropertyValue(source, ["compressedWorkWeek", "isCompressedWorkWeek", "compressed"]), false),
+  };
+}
+
+function getEmployeeGc179Profile(employee) {
+  return normalizeEmployeeGc179Profile(employee && employee.gc179Profile, employee && employee.name);
+}
+
+function setEmployeeEditorGc179Profile(profile, employeeName) {
+  const normalized = normalizeEmployeeGc179Profile(profile, employeeName);
+  document.getElementById("employeeEditorGc179SurnameInput").value = normalized.surname;
+  document.getElementById("employeeEditorGc179GivenInput").value = normalized.givenName;
+  document.getElementById("employeeEditorGc179InitialsInput").value = normalized.initials;
+  document.getElementById("employeeEditorGc179PriInput").value = normalized.pri;
+  document.getElementById("employeeEditorGc179PositionSelect").value = normalized.position;
+  document.getElementById("employeeEditorGc179LevelInput").value = normalized.level;
+  document.getElementById("employeeEditorGc179CompressedWorkWeekInput").checked = Boolean(normalized.compressedWorkWeek);
+}
+
+function getEmployeeEditorGc179Profile(employeeName) {
+  const profile = {
+    surname: document.getElementById("employeeEditorGc179SurnameInput").value,
+    givenName: document.getElementById("employeeEditorGc179GivenInput").value,
+    initials: document.getElementById("employeeEditorGc179InitialsInput").value,
+    pri: document.getElementById("employeeEditorGc179PriInput").value,
+    position: document.getElementById("employeeEditorGc179PositionSelect").value,
+    level: document.getElementById("employeeEditorGc179LevelInput").value,
+    compressedWorkWeek: document.getElementById("employeeEditorGc179CompressedWorkWeekInput").checked,
+  };
+  return normalizeEmployeeGc179Profile(profile, employeeName);
+}
+
+function employeeEditorGc179ProfileChanged(employee, employeeName) {
+  const original = getEmployeeGc179Profile(employee);
+  const selected = getEmployeeEditorGc179Profile(employeeName);
+  return ["surname", "givenName", "initials", "pri", "position", "level", "compressedWorkWeek"].some(key => original[key] !== selected[key]);
+}
+
 function getEmployeeRoleLabel(employee) {
   return t(`employees.role.${getEmployeeRole(employee)}`);
 }
@@ -316,6 +399,7 @@ function resetEmployeeEditorForm() {
   document.getElementById("employeeEditorNameInput").value = "";
   document.getElementById("employeeEditorRoleSelect").value = "employee";
   setEmployeeEditorTimeEntryTypes(["overtime"]);
+  setEmployeeEditorGc179Profile(null, "");
   employeesViewState.editorProjectAssignments.selectedProjectCodes = new Set();
   employeesViewState.editorProjectAssignments.originalProjectCodes = new Set();
   employeesViewState.editorProjectAssignments.search = "";
@@ -344,6 +428,7 @@ async function openEmployeeEditorModal(mode, employee) {
     document.getElementById("employeeEditorNameInput").value = employee.name || "";
     document.getElementById("employeeEditorRoleSelect").value = getEmployeeRole(employee);
     setEmployeeEditorTimeEntryTypes(getEmployeeTimeEntryTypes(employee));
+    setEmployeeEditorGc179Profile(employee.gc179Profile, employee.name || "");
     document.getElementById("employeeEditorPasswordHint").textContent = t("employees.passwordHintEdit");
 
     if (employee.archived) {
@@ -375,6 +460,8 @@ async function submitEmployeeEditor() {
   const originalRole = originalEmployee ? getEmployeeRole(originalEmployee) : "employee";
   const timeEntryTypes = getEmployeeEditorSelectedTimeEntryTypes();
   const timeEntryTypesChanged = employeeEditorTimeEntryTypesChanged(originalEmployee);
+  const gc179Profile = getEmployeeEditorGc179Profile(employeeName);
+  const gc179ProfileChanged = employeeEditorGc179ProfileChanged(originalEmployee, employeeName);
   const projectAssignmentsChanged = employeeEditorProjectAssignmentsChanged(role);
   const newPassword = document.getElementById("employeeEditorPasswordInput").value;
   const confirmPassword = document.getElementById("employeeEditorPasswordConfirmInput").value;
@@ -403,6 +490,7 @@ async function submitEmployeeEditor() {
           name: employeeName,
           role,
           timeEntryTypes,
+          gc179Profile,
           initialPassword: newPassword,
           mustChangePassword,
         }),
@@ -431,13 +519,13 @@ async function submitEmployeeEditor() {
     return;
   }
 
-  if (employeeName === originalName && role === originalRole && !timeEntryTypesChanged && !hasPasswordChange && !projectAssignmentsChanged) {
+  if (employeeName === originalName && role === originalRole && !timeEntryTypesChanged && !gc179ProfileChanged && !hasPasswordChange && !projectAssignmentsChanged) {
     setEmployeeEditorMessage(t("dashboard.noChanges"), "info");
     return;
   }
 
   try {
-    if (employeeName !== originalName || role !== originalRole || timeEntryTypesChanged) {
+    if (employeeName !== originalName || role !== originalRole || timeEntryTypesChanged || gc179ProfileChanged) {
       const response = await fetch(apiUrl + "employees/" + encodeURIComponent(employeeCode), {
         method: "PUT",
         headers: {
@@ -447,6 +535,7 @@ async function submitEmployeeEditor() {
           name: employeeName,
           role,
           timeEntryTypes,
+          gc179Profile,
         }),
       });
 

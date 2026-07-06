@@ -74,6 +74,81 @@ function normalizeTime(timeString) {
   return timeString ? String(timeString).slice(0, 5) : "";
 }
 
+function normalizeBooleanValue(value, fallback) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  const text = String(value == null ? "" : value).trim().toLowerCase();
+  if (["true", "1", "yes", "y", "on"].includes(text)) {
+    return true;
+  }
+  if (["false", "0", "no", "n", "off"].includes(text)) {
+    return false;
+  }
+
+  return Boolean(fallback);
+}
+
+function getFirstDefinedPropertyValue(source, names) {
+  const objectSource = source && typeof source === "object" ? source : {};
+  const fieldNames = Array.isArray(names) ? names : [];
+  for (let index = 0; index < fieldNames.length; index += 1) {
+    const name = fieldNames[index];
+    if (Object.prototype.hasOwnProperty.call(objectSource, name)) {
+      return objectSource[name];
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeGc179Position(value) {
+  const normalized = String(value || "").trim().toUpperCase().replace(/[\s_-]/g, "");
+  if (normalized === "CR04" || normalized === "CR4") {
+    return "CR4";
+  }
+  if (normalized === "AS03" || normalized === "AS3") {
+    return "AS03";
+  }
+  if (normalized === "AS04" || normalized === "AS4") {
+    return "AS04";
+  }
+
+  return "";
+}
+
+function normalizeGc179Echelon(value) {
+  const normalized = String(value || "").trim();
+  return ["1", "2", "3", "4"].includes(normalized) ? normalized : "";
+}
+
+function formatGc179Pri(value) {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 9);
+  const groups = [];
+  for (let index = 0; index < digits.length; index += 3) {
+    groups.push(digits.slice(index, index + 3));
+  }
+
+  return groups.join(" ");
+}
+
+function bindGc179PriFormatter(input) {
+  if (!input) {
+    return;
+  }
+
+  const formatInput = () => {
+    const formatted = formatGc179Pri(input.value);
+    if (input.value !== formatted) {
+      input.value = formatted;
+    }
+  };
+
+  input.addEventListener("input", formatInput);
+  input.addEventListener("blur", formatInput);
+}
+
 function parseLocalDate(dateString) {
   const parts = String(dateString || "").split("-").map(Number);
   if (parts.length < 3 || parts.some(Number.isNaN)) {

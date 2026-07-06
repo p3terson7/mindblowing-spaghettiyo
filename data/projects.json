@@ -123,5 +123,15 @@
       "000100002"
     ],
     "archived": false
+  },
+  {
+    "projectCode": "GC179-RULES",
+    "projectName": "GC179 Calculation Rules Test",
+    "sector": "Testing",
+    "admins": [
+      "000100000"
+    ],
+    "backupAdmins": [],
+    "archived": false
   }
 ]

@@ -24,6 +24,7 @@
                         employeeCode       = [string]$userProjection.employeeCode
                         mustChangePassword = [bool]$userProjection.mustChangePassword
                         timeEntryTypes     = @($userProjection.timeEntryTypes)
+                        gc179Profile       = $userProjection.gc179Profile
                     }
                 }
                 $response.Headers["Set-Cookie"] = Get-SessionCookieHeader -Token $sessionToken
@@ -49,6 +50,7 @@
                 employeeCode       = [string]$currentUser.employeeCode
                 mustChangePassword = [bool]$currentUser.mustChangePassword
                 timeEntryTypes     = @($currentUser.timeEntryTypes)
+                gc179Profile       = $currentUser.gc179Profile
             }
             respondWithSuccess $response ($result | ConvertTo-Json -Depth 6)
             continue

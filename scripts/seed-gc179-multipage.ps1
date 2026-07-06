@@ -152,6 +152,15 @@ function New-SeedUserRecord {
         role               = "employee"
         employeeCode       = $Code
         timeEntryTypes     = @("overtime")
+        gc179Profile       = [PSCustomObject]@{
+            surname         = "TESTER"
+            givenName       = "GC179 MULTIPAGE"
+            initials        = "G.T"
+            pri             = ""
+            position        = "AS03"
+            level           = "1"
+            compressedWorkWeek = $false
+        }
         disabled           = $false
         mustChangePassword = $false
         createdAtUtc       = (Get-Date).ToUniversalTime().ToString("o")

@@ -11,6 +11,7 @@
                 $displayName = if ($null -ne $payload) { [string]$payload.name } else { "" }
                 $role = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "role")) { Get-NormalizedRoleName -Role ([string]$payload.role) } else { "employee" }
                 $timeEntryTypes = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "timeEntryTypes")) { @(ConvertTo-TimeEntryTypeArray -Value $payload.timeEntryTypes) } else { @("overtime") }
+                $gc179Profile = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "gc179Profile")) { $payload.gc179Profile } else { $null }
                 $initialPassword = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "initialPassword")) { [string]$payload.initialPassword } else { "" }
                 $mustChangePassword = $true
                 if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "mustChangePassword")) {
@@ -33,7 +34,7 @@
                     continue
                 }
 
-                $createResult = Add-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -InitialPassword $initialPassword -MustChangePassword $mustChangePassword -Role $role -TimeEntryTypes $timeEntryTypes
+                $createResult = Add-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -InitialPassword $initialPassword -MustChangePassword $mustChangePassword -Role $role -TimeEntryTypes $timeEntryTypes -Gc179Profile $gc179Profile
                 if (-not $createResult.updated) {
                     $errorMessage = if ($createResult.error) { [string]$createResult.error } else { "Unable to create employee." }
                     respondWithError $response 400 $errorMessage

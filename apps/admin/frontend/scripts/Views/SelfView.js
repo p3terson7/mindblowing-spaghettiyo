@@ -229,6 +229,9 @@ function applySelfBootstrap(payload) {
   selfViewState.paymentOptions = Array.isArray(payload && payload.paymentOptions) ? payload.paymentOptions : [];
   selfViewState.reasonCodes = Array.isArray(payload && payload.reasonCodes) ? payload.reasonCodes : [];
   selfViewState.timeEntryTypes = Array.isArray(payload && payload.timeEntryTypes) && payload.timeEntryTypes.length > 0 ? payload.timeEntryTypes : ["overtime"];
+  if (payload && payload.gc179Profile && typeof updateStoredUserGc179Profile === "function") {
+    updateStoredUserGc179Profile(payload.gc179Profile);
+  }
   selfViewState.lookupsLoaded = true;
   renderSelfPunchSelectors();
 }

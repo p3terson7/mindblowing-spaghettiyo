@@ -403,6 +403,7 @@ function Get-EmployeeDirectoryListUncached {
             responsibleProjects  = @($responsibilities.all)
             responsibleProjectCodes = $responsibleProjectCodes
             timeEntryTypes       = @(Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $user)
+            gc179Profile         = Get-Gc179ProfileFromUserRecord -UserRecord $user
             archived             = $isArchived
             role                 = Get-EffectiveUserRole -UserRecord $user
         })
@@ -444,10 +445,11 @@ function Add-EmployeeDirectoryRecord {
         [string]$InitialPassword,
         [bool]$MustChangePassword = $true,
         [string]$Role = "employee",
-        $TimeEntryTypes = @("overtime")
+        $TimeEntryTypes = @("overtime"),
+        $Gc179Profile = $null
     )
 
-    $userResult = Ensure-EmployeeUser -EmployeeCode $EmployeeCode -DisplayName $DisplayName -InitialPassword $InitialPassword -MustChangePassword $MustChangePassword -Role $Role -TimeEntryTypes $TimeEntryTypes
+    $userResult = Ensure-EmployeeUser -EmployeeCode $EmployeeCode -DisplayName $DisplayName -InitialPassword $InitialPassword -MustChangePassword $MustChangePassword -Role $Role -TimeEntryTypes $TimeEntryTypes -Gc179Profile $Gc179Profile
     if (-not $userResult.updated) {
         return $userResult
     }
@@ -472,7 +474,8 @@ function Update-EmployeeDirectoryRecord {
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
         [Parameter(Mandatory = $true)][string]$DisplayName,
         [string]$Role,
-        $TimeEntryTypes = $null
+        $TimeEntryTypes = $null,
+        $Gc179Profile = $null
     )
 
     $mappingLock = Acquire-ResourceLock -ResourcePath $mappingFile
@@ -491,6 +494,9 @@ function Update-EmployeeDirectoryRecord {
     }
     if ($null -ne $TimeEntryTypes) {
         $userUpdated = (Set-EmployeeUserTimeEntryTypes -EmployeeCode $EmployeeCode -TimeEntryTypes $TimeEntryTypes) -or $userUpdated
+    }
+    if ($null -ne $Gc179Profile) {
+        $userUpdated = (Set-EmployeeUserGc179Profile -EmployeeCode $EmployeeCode -Gc179Profile $Gc179Profile) -or $userUpdated
     }
     Update-EmployeeEntryDisplayName -EmployeeCode $EmployeeCode -DisplayName $DisplayName | Out-Null
 
