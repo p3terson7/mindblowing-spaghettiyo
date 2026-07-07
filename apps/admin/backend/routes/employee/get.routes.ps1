@@ -34,7 +34,9 @@
             $employeeRole = Get-EffectiveUserRole -UserRecord $employeeUser
             $dataFile = Ensure-EmployeeDataFile -EmployeeCode $employeeCode
             $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
-            if (-not (Test-CurrentUserSuperAdmin -CurrentUser $currentUser)) {
+            $isSuperAdmin = Test-CurrentUserSuperAdmin -CurrentUser $currentUser
+            $modifyAccessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $currentUser
+            if (-not $isSuperAdmin) {
                 $visibleProjectCodeSet = (Get-ProjectAccessModelForCurrentUser -CurrentUser $currentUser).ProjectCodeSet
                 $entries = @($entries | Where-Object {
                     $_ -and
@@ -43,8 +45,9 @@
                 })
             }
             $projectedEntries = @()
+            $canApproveEmployeeRole = Test-CurrentUserCanApproveEmployeeRole -CurrentUser $currentUser -EmployeeRole $employeeRole
             foreach ($entry in $entries) {
-                $projectedEntries += (New-EmployeeEntryProjectionForCurrentUser -EmployeeCode $employeeCode -EmployeeName $employeeName -Entry $entry -CurrentUser $currentUser -EmployeeRole $employeeRole)
+                $projectedEntries += (New-EmployeeEntryProjectionForAccessModel -EmployeeCode $employeeCode -EmployeeName $employeeName -Entry $entry -ModifyProjectCodeSet $modifyAccessModel.ProjectCodeSet -EmployeeRole $employeeRole -IsSuperAdmin:$isSuperAdmin -CanApproveEmployeeRole:$canApproveEmployeeRole)
             }
             $entriesJson = if ($projectedEntries.Count -gt 0) {
                 $projectedEntries | ConvertTo-Json -Depth 6

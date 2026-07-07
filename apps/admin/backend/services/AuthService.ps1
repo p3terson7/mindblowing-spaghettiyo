@@ -15,7 +15,12 @@ if (-not $script:AuthenticatedUserRequestCache) {
 }
 
 if (-not $script:AuthenticatedUserRequestCacheTtlMs) {
-    $script:AuthenticatedUserRequestCacheTtlMs = 10000
+    $configuredAuthCacheMs = 0
+    if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_AUTH_CACHE_MS)) {
+        [int]::TryParse([string]$env:OVERTIME_AUTH_CACHE_MS, [ref]$configuredAuthCacheMs) | Out-Null
+    }
+
+    $script:AuthenticatedUserRequestCacheTtlMs = if ($configuredAuthCacheMs -gt 0) { $configuredAuthCacheMs } else { 300000 }
 }
 
 if (-not $script:UserLookupCache) {

@@ -13,7 +13,7 @@
   </script>
   <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260603-empty-timeline" />
   <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260603-empty-timeline" />
-  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260706-poste-echelon">
+  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260706-health-packaging">
 </head>
 <body>
   <div class="app-root">
@@ -55,6 +55,7 @@
           <div class="status-card">
             <span class="status-label" data-i18n="status.sync">Sync</span>
             <span class="status-value" id="appSyncStatus" data-i18n="status.waitingForSignIn">Waiting for sign-in</span>
+            <span class="status-subvalue" id="appLastSyncStatus" data-i18n="status.lastSyncNever">Last sync: never</span>
           </div>
         </div>
       </div>
@@ -893,6 +894,15 @@
             </div>
           </div>
           <div class="employee-editor-subsection">
+            <div class="employee-editor-subsection-title" data-i18n="settings.systemHealth">System Health</div>
+            <div id="settingsHealthPanel" class="settings-health-panel">
+              <span class="panel-note" data-i18n="settings.healthIdle">Open this panel to verify the local app and shared data folder.</span>
+            </div>
+            <div class="settings-inline-actions">
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="settingsHealthRefreshButton" data-i18n="settings.healthRefresh">Refresh health</button>
+            </div>
+          </div>
+          <div class="employee-editor-subsection">
             <div class="employee-editor-subsection-title" data-i18n="settings.security">Password Change</div>
             <div id="selfPasswordMessage" class="alert d-none" role="alert"></div>
             <form id="selfPasswordForm">
@@ -1155,15 +1165,15 @@
       : "http://localhost:8081/";
   </script>
   <script src="assets/vendor/chart.umd.min.js?v=20260603-empty-timeline"></script>
-  <script src="scripts/I18n.js?v=20260706-poste-echelon"></script>
+  <script src="scripts/I18n.js?v=20260706-health-packaging"></script>
   <script src="scripts/Utilities.js?v=20260706-pri-format"></script>
-  <script src="scripts/AppShell.js?v=20260706-pri-format"></script>
+  <script src="scripts/AppShell.js?v=20260706-health-packaging"></script>
   <script src="scripts/Views/ViewSwitching.js?v=20260603-empty-timeline"></script>
   <script src="scripts/Views/SelfView.js?v=20260624-gc179-multipart"></script>
-  <script src="scripts/Views/EmployeesView.js?v=20260706-pri-format"></script>
+  <script src="scripts/Views/EmployeesView.js?v=20260706-performance-pass"></script>
   <script src="scripts/Views/DashboardView.js?v=20260608-diverse-time"></script>
   <script src="scripts/Views/ApprovalsView.js?v=20260608-diverse-time"></script>
   <script src="scripts/Views/HistoryView.js?v=20260603-empty-timeline"></script>
-  <script src="scripts/Views/ProjectsView.js?v=20260603-empty-timeline"></script>
+  <script src="scripts/Views/ProjectsView.js?v=20260706-performance-pass"></script>
 </body>
 </html>

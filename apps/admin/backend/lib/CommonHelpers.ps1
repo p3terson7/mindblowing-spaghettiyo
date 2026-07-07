@@ -6,6 +6,10 @@ if (-not $script:ProjectsCache) {
     $script:ProjectsCache = $null
 }
 
+if (-not $script:JsonOptionArrayCache) {
+    $script:JsonOptionArrayCache = @{}
+}
+
 # Helper function to emulate the null-coalescing operator
 function Get-EmployeeNameMap {
     if (!(Test-Path -Path $mappingFile)) {
@@ -237,23 +241,7 @@ function Get-ActiveProjects {
 }
 
 function Get-OvertimeCodes {
-    if (!(Test-Path -Path $overtimeCodesFile)) {
-        Write-JsonAtomic -Path $overtimeCodesFile -Value @() -Depth 3
-    }
-
-    try {
-        $overtimeCodes = Read-TextFileCached -Path $overtimeCodesFile | ConvertFrom-Json
-        if ($null -eq $overtimeCodes) {
-            return @()
-        }
-        if (-not ($overtimeCodes -is [System.Collections.IEnumerable]) -or ($overtimeCodes -is [string])) {
-            return @($overtimeCodes)
-        }
-        return $overtimeCodes
-    }
-    catch {
-        return @()
-    }
+    return (Read-JsonOptionArray -Path $overtimeCodesFile)
 }
 
 function Read-JsonOptionArray {
@@ -263,13 +251,38 @@ function Read-JsonOptionArray {
         Write-JsonAtomic -Path $Path -Value @() -Depth 3
     }
 
+    $metadata = Get-FileMetadataSnapshot -Path $Path
+    if ($null -eq $metadata) {
+        return @()
+    }
+
+    $cacheKey = [string]$metadata.Path
+    $cacheEntry = $script:JsonOptionArrayCache[$cacheKey]
+    if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
+        return @($cacheEntry.Items)
+    }
+
     try {
-        $items = Read-TextFileCached -Path $Path | ConvertFrom-Json
+        $items = Read-TextFileCached -Path $metadata.Path | ConvertFrom-Json
         if ($null -eq $items) {
+            $script:JsonOptionArrayCache[$cacheKey] = [PSCustomObject]@{
+                LastWriteTicks = $metadata.LastWriteTicks
+                Length         = $metadata.Length
+                Items          = @()
+            }
             return @()
         }
         if (-not ($items -is [System.Collections.IEnumerable]) -or ($items -is [string])) {
-            return @($items)
+            $items = @($items)
+        }
+        else {
+            $items = @($items)
+        }
+
+        $script:JsonOptionArrayCache[$cacheKey] = [PSCustomObject]@{
+            LastWriteTicks = $metadata.LastWriteTicks
+            Length         = $metadata.Length
+            Items          = $items
         }
         return $items
     }

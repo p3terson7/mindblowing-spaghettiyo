@@ -19,7 +19,12 @@ if (-not $script:SyncStateLastValidatedUtc) {
 }
 
 if (-not $script:SyncStateValidationIntervalMs) {
-    $script:SyncStateValidationIntervalMs = 4000
+    $configuredSyncStateCacheMs = 0
+    if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_SYNC_STATE_CACHE_MS)) {
+        [int]::TryParse([string]$env:OVERTIME_SYNC_STATE_CACHE_MS, [ref]$configuredSyncStateCacheMs) | Out-Null
+    }
+
+    $script:SyncStateValidationIntervalMs = if ($configuredSyncStateCacheMs -gt 0) { $configuredSyncStateCacheMs } else { 10000 }
 }
 
 if (-not $script:SyncStateWatcherInitialized) {

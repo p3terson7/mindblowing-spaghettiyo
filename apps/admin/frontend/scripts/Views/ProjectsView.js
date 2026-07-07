@@ -549,6 +549,8 @@ function renderProjectDoughnutInsight(canvasId, items, valueType = "count") {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
+      resizeDelay: 150,
       cutout: "62%",
       plugins: {
         legend: {
@@ -1247,6 +1249,8 @@ function renderProjectMultiLineChart(trendData) {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
+        resizeDelay: 150,
         plugins: {
           legend: {
             position: "top",

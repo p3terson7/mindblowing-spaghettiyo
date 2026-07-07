@@ -158,6 +158,41 @@ function Add-EntryPermissionProjection {
     return $Entry
 }
 
+function Add-EntryPermissionProjectionFromAccessModel {
+    param(
+        [Parameter(Mandatory = $true)]$Entry,
+        [Parameter(Mandatory = $true)]$ModifyProjectCodeSet,
+        [bool]$IsSuperAdmin = $false,
+        [bool]$CanApproveEmployeeRole = $true
+    )
+
+    $entryType = if ($Entry.PSObject.Properties.Name -contains "entryType") { ([string]$Entry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
+    $projectCode = if ($Entry.PSObject.Properties.Name -contains "projectCode") { [string]$Entry.projectCode } else { "" }
+    $canModify = $false
+
+    if ($IsSuperAdmin) {
+        $canModify = $true
+    }
+    elseif ($entryType -ne "diverse" -and -not [string]::IsNullOrWhiteSpace($projectCode)) {
+        $canModify = $ModifyProjectCodeSet.ContainsKey($projectCode)
+    }
+
+    $canApprove = ($canModify -and $CanApproveEmployeeRole)
+    $permissionReason = "editable"
+
+    if (-not $canModify) {
+        $permissionReason = "readOnlyProject"
+    }
+    elseif (-not $CanApproveEmployeeRole) {
+        $permissionReason = "superAdminApproval"
+    }
+
+    $Entry | Add-Member -NotePropertyName canModify -NotePropertyValue ([bool]$canModify) -Force
+    $Entry | Add-Member -NotePropertyName canApprove -NotePropertyValue ([bool]$canApprove) -Force
+    $Entry | Add-Member -NotePropertyName permissionReason -NotePropertyValue $permissionReason -Force
+    return $Entry
+}
+
 function New-EmployeeEntryProjectionForCurrentUser {
     param(
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
@@ -169,6 +204,21 @@ function New-EmployeeEntryProjectionForCurrentUser {
 
     $projection = New-EmployeeEntryProjection -EmployeeCode $EmployeeCode -EmployeeName $EmployeeName -Entry $Entry -EmployeeRole $EmployeeRole
     return (Add-EntryPermissionProjection -Entry $projection -CurrentUser $CurrentUser -EmployeeRole $EmployeeRole)
+}
+
+function New-EmployeeEntryProjectionForAccessModel {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)][string]$EmployeeName,
+        [Parameter(Mandatory = $true)]$Entry,
+        [Parameter(Mandatory = $true)]$ModifyProjectCodeSet,
+        [string]$EmployeeRole = "employee",
+        [bool]$IsSuperAdmin = $false,
+        [bool]$CanApproveEmployeeRole = $true
+    )
+
+    $projection = New-EmployeeEntryProjection -EmployeeCode $EmployeeCode -EmployeeName $EmployeeName -Entry $Entry -EmployeeRole $EmployeeRole
+    return (Add-EntryPermissionProjectionFromAccessModel -Entry $projection -ModifyProjectCodeSet $ModifyProjectCodeSet -IsSuperAdmin:$IsSuperAdmin -CanApproveEmployeeRole:$CanApproveEmployeeRole)
 }
 
 function Get-CachedEmployeeEntriesForFile {
@@ -249,7 +299,6 @@ function Get-EmployeeDataSnapshot {
 function Get-ScopedEmployeeDataSnapshot {
     param($CurrentUser)
 
-    $snapshot = Get-EmployeeDataSnapshot
     if (-not (Test-CurrentUserManager -CurrentUser $CurrentUser)) {
         return [PSCustomObject]@{
             employees         = @()
@@ -259,8 +308,10 @@ function Get-ScopedEmployeeDataSnapshot {
     }
 
     $accessModel = Get-ProjectAccessModelForCurrentUser -CurrentUser $CurrentUser
+    $modifyAccessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $CurrentUser
     $visibleProjectCodeSet = $accessModel.ProjectCodeSet
-    if (-not (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) -and $accessModel.ProjectCodes.Count -eq 0) {
+    $isSuperAdmin = Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser
+    if (-not $isSuperAdmin -and $accessModel.ProjectCodes.Count -eq 0) {
         return [PSCustomObject]@{
             employees         = @()
             entriesByEmployee = @{}
@@ -268,55 +319,64 @@ function Get-ScopedEmployeeDataSnapshot {
         }
     }
 
-    $employeesList = New-Object System.Collections.ArrayList
-    $entriesByEmployee = @{}
-    $flattenedEntriesList = New-Object System.Collections.ArrayList
+    $scopeKey = if ($isSuperAdmin) { "global" } else { (@($accessModel.ProjectCodes) -join ",") }
+    $modifyScopeKey = if ($isSuperAdmin) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
+    $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
+    $cacheKey = "scoped-employee-data-snapshot|{0}|{1}|{2}" -f $scopeKey, $modifyScopeKey, $userScopeKey
 
-    foreach ($employee in @($snapshot.employees)) {
-        $employeeCode = [string]$employee.code
-        $employeeRole = if ($employee.PSObject.Properties.Name -contains "role") { [string]$employee.role } else { "employee" }
-        $entries = if ($snapshot.entriesByEmployee.ContainsKey($employeeCode)) { @($snapshot.entriesByEmployee[$employeeCode]) } else { @() }
-        $visibleEntries = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) {
-            @($entries)
+    return (Invoke-ReadModelCache -Key $cacheKey -Factory {
+        $snapshot = Get-EmployeeDataSnapshot
+        $employeesList = New-Object System.Collections.ArrayList
+        $entriesByEmployee = @{}
+        $flattenedEntriesList = New-Object System.Collections.ArrayList
+
+        foreach ($employee in @($snapshot.employees)) {
+            $employeeCode = [string]$employee.code
+            $employeeRole = if ($employee.PSObject.Properties.Name -contains "role") { [string]$employee.role } else { "employee" }
+            $entries = if ($snapshot.entriesByEmployee.ContainsKey($employeeCode)) { @($snapshot.entriesByEmployee[$employeeCode]) } else { @() }
+            $visibleEntries = if ($isSuperAdmin) {
+                @($entries)
+            }
+            else {
+                @($entries | Where-Object { $visibleProjectCodeSet.ContainsKey([string]$_.projectCode) })
+            }
+            if ($visibleEntries.Count -eq 0) {
+                continue
+            }
+
+            $projectCodes = @(
+                $visibleEntries |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.projectCode) } |
+                    ForEach-Object { [string]$_.projectCode } |
+                    Sort-Object -Unique
+            )
+
+            [void]$employeesList.Add([PSCustomObject]@{
+                code         = $employeeCode
+                name         = [string]$employee.name
+                entryCount   = $visibleEntries.Count
+                projectCodes = $projectCodes
+                role         = $employeeRole
+                timeEntryTypes = if ($employee.PSObject.Properties.Name -contains "timeEntryTypes") { @($employee.timeEntryTypes) } else { @("overtime") }
+            })
+
+            $canApproveEmployeeRole = Test-CurrentUserCanApproveEmployeeRole -CurrentUser $CurrentUser -EmployeeRole $employeeRole
+            $projectedEntriesList = New-Object System.Collections.ArrayList
+            foreach ($entry in $visibleEntries) {
+                $projectedEntry = New-EmployeeEntryProjectionForAccessModel -EmployeeCode $employeeCode -EmployeeName ([string]$employee.name) -Entry $entry -ModifyProjectCodeSet $modifyAccessModel.ProjectCodeSet -EmployeeRole $employeeRole -IsSuperAdmin:$isSuperAdmin -CanApproveEmployeeRole:$canApproveEmployeeRole
+                [void]$projectedEntriesList.Add($projectedEntry)
+                [void]$flattenedEntriesList.Add($projectedEntry)
+            }
+
+            $entriesByEmployee[$employeeCode] = @($projectedEntriesList.ToArray())
         }
-        else {
-            @($entries | Where-Object { $visibleProjectCodeSet.ContainsKey([string]$_.projectCode) })
+
+        return [PSCustomObject]@{
+            employees         = @($employeesList.ToArray())
+            entriesByEmployee = $entriesByEmployee
+            flattenedEntries  = @($flattenedEntriesList.ToArray())
         }
-        if ($visibleEntries.Count -eq 0) {
-            continue
-        }
-
-        $projectCodes = @(
-            $visibleEntries |
-                Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.projectCode) } |
-                ForEach-Object { [string]$_.projectCode } |
-                Sort-Object -Unique
-        )
-
-        [void]$employeesList.Add([PSCustomObject]@{
-            code         = $employeeCode
-            name         = [string]$employee.name
-            entryCount   = $visibleEntries.Count
-            projectCodes = $projectCodes
-            role         = $employeeRole
-            timeEntryTypes = if ($employee.PSObject.Properties.Name -contains "timeEntryTypes") { @($employee.timeEntryTypes) } else { @("overtime") }
-        })
-
-        $projectedEntriesList = New-Object System.Collections.ArrayList
-        foreach ($entry in $visibleEntries) {
-            $projectedEntry = New-EmployeeEntryProjectionForCurrentUser -EmployeeCode $employeeCode -EmployeeName ([string]$employee.name) -Entry $entry -CurrentUser $CurrentUser -EmployeeRole $employeeRole
-            [void]$projectedEntriesList.Add($projectedEntry)
-            [void]$flattenedEntriesList.Add($projectedEntry)
-        }
-
-        $entriesByEmployee[$employeeCode] = @($projectedEntriesList.ToArray())
-    }
-
-    return [PSCustomObject]@{
-        employees         = @($employeesList.ToArray())
-        entriesByEmployee = $entriesByEmployee
-        flattenedEntries  = @($flattenedEntriesList.ToArray())
-    }
+    })
 }
 
 function Get-FilteredEmployeeEntriesSnapshot {
@@ -570,6 +630,7 @@ function Get-ProjectSummaryList {
 
         $stats = Get-ProjectStatisticsOverview -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser
         $orderedCodes = New-Object System.Collections.ArrayList
+        $employeeNameMap = Get-EmployeeNameMap
 
         foreach ($project in ($projects | Sort-Object projectCode)) {
             if (-not $orderedCodes.Contains([string]$project.projectCode)) {
@@ -601,8 +662,8 @@ function Get-ProjectSummaryList {
                 sector          = if ($project) { [string]$project.sector } else { "" }
                 admins          = $adminCodes
                 backupAdmins    = $backupAdminCodes
-                adminDisplay    = @(New-ProjectAdminDisplayList -Codes $adminCodes)
-                backupAdminDisplay = @(New-ProjectAdminDisplayList -Codes $backupAdminCodes)
+                adminDisplay    = @(New-ProjectAdminDisplayList -Codes $adminCodes -EmployeeNameMap $employeeNameMap)
+                backupAdminDisplay = @(New-ProjectAdminDisplayList -Codes $backupAdminCodes -EmployeeNameMap $employeeNameMap)
                 archived        = if ($project) { Test-ProjectArchived -Project $project } else { $false }
                 totalOvertime   = Convert-SecondsToTimeText -Seconds $totalSeconds
                 entryCount      = $entryCount
@@ -617,9 +678,12 @@ function Get-ProjectSummaryList {
 }
 
 function New-ProjectAdminDisplayList {
-    param($Codes)
+    param(
+        $Codes,
+        $EmployeeNameMap = $null
+    )
 
-    $employeeNameMap = Get-EmployeeNameMap
+    $employeeNameMap = if ($null -ne $EmployeeNameMap) { $EmployeeNameMap } else { Get-EmployeeNameMap }
     $displayList = New-Object System.Collections.ArrayList
     foreach ($code in @(ConvertTo-CodeArray -Value $Codes)) {
         $displayName = if ($employeeNameMap -and ($employeeNameMap.PSObject.Properties.Name -contains [string]$code)) { [string]$employeeNameMap.$code } else { [string]$code }

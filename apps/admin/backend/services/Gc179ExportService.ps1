@@ -70,6 +70,66 @@ function ConvertTo-Gc179FdfLiteral {
     return $text
 }
 
+function ConvertTo-Gc179FileNameToken {
+    param(
+        [AllowNull()][string]$Value,
+        [bool]$FirstTokenOnly = $false,
+        [string]$Fallback = "UNKNOWN"
+    )
+
+    $text = if ($null -eq $Value) { "" } else { ([string]$Value).Trim() }
+    if ($FirstTokenOnly -and -not [string]::IsNullOrWhiteSpace($text)) {
+        $parts = @($text -split "[\s_-]+" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($parts.Count -gt 0) {
+            $text = [string]$parts[0]
+        }
+    }
+
+    try {
+        $normalized = $text.Normalize([System.Text.NormalizationForm]::FormD)
+        $builder = New-Object System.Text.StringBuilder
+        foreach ($character in $normalized.ToCharArray()) {
+            $category = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($character)
+            if ($category -ne [System.Globalization.UnicodeCategory]::NonSpacingMark) {
+                [void]$builder.Append($character)
+            }
+        }
+        $text = $builder.ToString()
+    }
+    catch {
+        # Keep the original value if Unicode normalization is unavailable.
+    }
+
+    $safe = [System.Text.RegularExpressions.Regex]::Replace($text.ToUpperInvariant(), "[^0-9A-Z]+", "_").Trim("_")
+    if ([string]::IsNullOrWhiteSpace($safe)) {
+        return $Fallback
+    }
+
+    return $safe
+}
+
+function Get-Gc179ExportBaseFileName {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)]$HeaderValues,
+        [Parameter(Mandatory = $true)]$MonthParts,
+        [int]$PartNumber = 1,
+        [int]$PartCount = 1
+    )
+
+    $hrmis = ConvertTo-Gc179FileNameToken -Value $EmployeeCode -Fallback "HRMIS"
+    $surname = ConvertTo-Gc179FileNameToken -Value ([string]$HeaderValues.Surname) -Fallback "LASTNAME"
+    $givenName = ConvertTo-Gc179FileNameToken -Value ([string]$HeaderValues.Given) -FirstTokenOnly $true -Fallback "FIRSTNAME"
+    $monthKey = ([string]$MonthParts.MonthKey) -replace "-", "_"
+    $baseName = "{0}_{1}_{2}_GC179_{3}" -f $hrmis, $surname, $givenName, $monthKey
+
+    if ($PartCount -gt 1) {
+        return ("{0}_{1}sur{2}" -f $baseName, $PartNumber, $PartCount)
+    }
+
+    return $baseName
+}
+
 function Add-Gc179FdfTextField {
     param(
         [Parameter(Mandatory = $true)]$Builder,
@@ -443,17 +503,13 @@ function New-Gc179FdfExportPart {
     [void]$builder.AppendLine("<< /Root 1 0 R >>")
     [void]$builder.AppendLine("%%EOF")
 
-    $safeEmployeeCode = ([string]$EmployeeCode) -replace "[^0-9A-Za-z_-]", "_"
-    $fileName = if ($PartCount -gt 1) {
-        "gc179-{0}-{1}-part-{2:D2}-of-{3:D2}.fdf" -f $safeEmployeeCode, $MonthParts.MonthKey, $PartNumber, $PartCount
-    }
-    else {
-        "gc179-{0}-{1}.fdf" -f $safeEmployeeCode, $MonthParts.MonthKey
-    }
+    $baseFileName = Get-Gc179ExportBaseFileName -EmployeeCode $EmployeeCode -HeaderValues $headerValues -MonthParts $MonthParts -PartNumber $PartNumber -PartCount $PartCount
+    $fileName = "{0}.fdf" -f $baseFileName
 
     return [PSCustomObject]@{
         Content    = $builder.ToString()
         FileName   = $fileName
+        BaseName   = $baseFileName
         RowCount   = $entries.Count
         PartNumber = $PartNumber
         PartCount  = $PartCount
@@ -603,7 +659,7 @@ if (-not (Test-Path -Path $outputDirectory -PathType Container)) {
 }
 
 $fdfFiles = @(
-    Get-ChildItem -Path $root -Filter "gc179-*.fdf" -ErrorAction SilentlyContinue |
+    Get-ChildItem -Path $root -Filter "*.fdf" -ErrorAction SilentlyContinue |
         Where-Object { -not $_.PSIsContainer -and $_.Name -notlike "*-ouvrir.fdf" } |
         Sort-Object Name
 )

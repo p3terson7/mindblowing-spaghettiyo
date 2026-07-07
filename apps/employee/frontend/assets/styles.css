@@ -1,5 +1,6 @@
 html,
 body,
+*,
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -7,10 +8,11 @@ body,
 
 html::-webkit-scrollbar,
 body::-webkit-scrollbar,
+*::-webkit-scrollbar,
 .no-scrollbar::-webkit-scrollbar {
   width: 0;
   height: 0;
-  display: none;
+  display: none !important;
 }
 
 body { background-color: #f5f5f5; color: #333; margin: 0; padding: 0; }

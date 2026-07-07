@@ -1288,6 +1288,8 @@ function renderEmployeeOvertimeShareChart(employees) {
       indexAxis: "y",
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
+      resizeDelay: 150,
       plugins: {
         legend: {
           display: false,

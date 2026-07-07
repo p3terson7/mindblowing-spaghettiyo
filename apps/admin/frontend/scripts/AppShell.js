@@ -1,6 +1,8 @@
 const APP_API_URL_KEY = "overtimeAppApiUrl";
 const APP_SESSION_KEY = "overtimeAppSession";
 const APP_THEME_KEY = "overtimeAppTheme";
+const APP_SYNC_POLL_VISIBLE_MS = 10000;
+const APP_SYNC_POLL_HIDDEN_MS = 30000;
 const LEGACY_API_URL_KEYS = ["adminApiUrl", "employeeApiUrl"];
 const LEGACY_SESSION_KEYS = ["adminSession", "employeeSession"];
 const ROLE_VIEW_MAP = {
@@ -86,6 +88,7 @@ const appShellState = {
   syncTimerId: null,
   lastSyncVersion: null,
   syncRequestInFlight: false,
+  getRequestInflight: {},
   viewState: {},
   storedSession: null,
   storedSessionLoaded: false,
@@ -398,6 +401,118 @@ function setSyncStatus(message) {
   }
 }
 
+function formatAppDateTime(value) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const locale = typeof getI18nLocale === "function" ? getI18nLocale() : undefined;
+  return date.toLocaleString(locale, {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function setLastSyncStatus(syncState) {
+  const syncElement = document.getElementById("appLastSyncStatus");
+  if (!syncElement) {
+    return;
+  }
+
+  const timestamp = syncState && syncState.updatedAtUtc ? syncState.updatedAtUtc : "";
+  const formattedTimestamp = formatAppDateTime(timestamp);
+  syncElement.textContent = formattedTimestamp
+    ? t("status.lastSyncAt", { time: formattedTimestamp })
+    : t("status.lastSyncNever");
+}
+
+function renderSettingsHealthLoading() {
+  const panel = document.getElementById("settingsHealthPanel");
+  if (panel) {
+    panel.innerHTML = `<span class="panel-note">${escapeHtml(t("settings.healthLoading"))}</span>`;
+  }
+}
+
+function renderSettingsHealthError(message) {
+  const panel = document.getElementById("settingsHealthPanel");
+  if (panel) {
+    panel.innerHTML = `<span class="panel-note">${escapeHtml(message || t("settings.healthUnavailable"))}</span>`;
+  }
+}
+
+function renderSettingsHealth(payload) {
+  const panel = document.getElementById("settingsHealthPanel");
+  if (!panel) {
+    return;
+  }
+
+  const status = String(payload && payload.status || "warning").toLowerCase();
+  const statusLabel = status === "ok" ? t("settings.healthOk") : t("settings.healthWarning");
+  const syncVersion = payload && payload.sync && payload.sync.version != null ? String(payload.sync.version) : "-";
+  const rows = [
+    [t("settings.healthDataFolder"), payload && payload.dataFolder ? payload.dataFolder : "-"],
+    [t("settings.healthWritable"), payload && payload.dataFolderWritable ? t("settings.healthOk") : t("settings.healthWarning")],
+    [t("settings.healthPowerShell"), payload && payload.powershell ? payload.powershell : "-"],
+    [t("settings.healthUsers"), payload && payload.usersCount != null ? String(payload.usersCount) : "-"],
+    [t("settings.healthProjects"), payload && payload.projectsCount != null ? String(payload.projectsCount) : "-"],
+    [t("settings.healthSync"), syncVersion],
+    [t("settings.healthGc179"), payload && payload.gc179Template && payload.gc179Template.exists ? t("settings.healthOk") : t("settings.healthWarning")],
+  ];
+
+  const checks = Array.isArray(payload && payload.checks) ? payload.checks : [];
+  panel.innerHTML = `
+    <div class="settings-health-summary">
+      <span class="status-badge ${status === "ok" ? "approved" : "pending"}">${escapeHtml(statusLabel)}</span>
+      <span class="panel-note">${escapeHtml(formatAppDateTime(payload && payload.serverTimeUtc))}</span>
+    </div>
+    <div class="settings-health-grid">
+      ${rows.map(([label, value]) => `
+        <div class="settings-health-item" title="${escapeHtml(value)}">
+          <span class="settings-health-label">${escapeHtml(label)}</span>
+          <span class="settings-health-value">${escapeHtml(value)}</span>
+        </div>
+      `).join("")}
+    </div>
+    ${checks.length > 0 ? `
+      <div class="settings-health-checks">
+        ${checks.map(check => {
+          const isOk = Boolean(check && check.ok);
+          const label = check && check.label ? check.label : "";
+          const detail = check && check.detail ? check.detail : "";
+          return `
+            <div class="settings-health-check ${isOk ? "is-ok" : "is-warning"}" title="${escapeHtml(detail)}">
+              <i class="fa-solid ${isOk ? "fa-check" : "fa-triangle-exclamation"}"></i>
+              <span>${escapeHtml(label)}${detail ? ` | ${escapeHtml(detail)}` : ""}</span>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    ` : ""}
+  `;
+}
+
+async function loadSettingsHealth() {
+  if (!getSessionToken()) {
+    return;
+  }
+
+  renderSettingsHealthLoading();
+  try {
+    const response = await fetch(apiUrl + "health");
+    const payload = await parseResponse(response);
+    renderSettingsHealth(payload);
+  } catch (error) {
+    renderSettingsHealthError(error.message || t("settings.healthUnavailable"));
+  }
+}
+
 function updateSessionSummary() {
   const summary = document.getElementById("appSessionSummary");
   const settingsButton = document.getElementById("appSettingsButton");
@@ -594,6 +709,7 @@ async function openSelfSettingsForm() {
   setSelfGc179ProfileForm(user.gc179Profile, user.displayName || user.username || "");
   const modal = new bootstrap.Modal(document.getElementById("selfSettingsModal"));
   modal.show();
+  loadSettingsHealth();
 
   try {
     const response = await fetch(apiUrl + "self/profile");
@@ -717,7 +833,7 @@ function stopSyncPolling() {
 }
 
 function getSyncPollDelay() {
-  return document.hidden ? 15000 : 4000;
+  return document.hidden ? APP_SYNC_POLL_HIDDEN_MS : APP_SYNC_POLL_VISIBLE_MS;
 }
 
 function scheduleNextSyncPoll(delayMs) {
@@ -826,6 +942,7 @@ async function pollSyncState() {
   try {
     const response = await fetch(apiUrl + "sync/status");
     const syncState = await parseResponse(response);
+    setLastSyncStatus(syncState);
     const nextVersion = syncState && typeof syncState.version === "number" ? syncState.version : 0;
 
     if (appShellState.lastSyncVersion === null) {
@@ -898,8 +1015,17 @@ function installFetchWrapper() {
     }
 
     requestOptions.headers = headers;
+    const method = String(requestOptions.method || (resource && resource.method) || "GET").toUpperCase();
+    const shouldCoalesceGet = method === "GET" && isApiRequestUrl(targetUrl);
+    const requestCacheKey = shouldCoalesceGet
+      ? `${requestToken || token || ""}|${new URL(targetUrl, window.location.href).href}`
+      : "";
 
-    return appShellState.nativeFetch(resource, requestOptions).then(response => {
+    if (requestCacheKey && appShellState.getRequestInflight[requestCacheKey]) {
+      return appShellState.getRequestInflight[requestCacheKey].then(response => response.clone());
+    }
+
+    const requestPromise = appShellState.nativeFetch(resource, requestOptions).then(response => {
       const isAuthRequest = isApiRequestUrl(targetUrl, "auth/");
       if (response.status === 401 && !isAuthRequest) {
         const currentToken = getSessionToken();
@@ -909,6 +1035,16 @@ function installFetchWrapper() {
       }
       return response;
     });
+
+    if (requestCacheKey) {
+      appShellState.getRequestInflight[requestCacheKey] = requestPromise
+        .then(response => response.clone())
+        .finally(() => {
+          delete appShellState.getRequestInflight[requestCacheKey];
+        });
+    }
+
+    return requestPromise;
   };
 }
 
@@ -1194,6 +1330,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.getElementById("changePasswordButton").addEventListener("click", submitPasswordChange);
   document.getElementById("appSettingsButton").addEventListener("click", openSelfSettingsForm);
+  document.getElementById("settingsHealthRefreshButton").addEventListener("click", loadSettingsHealth);
   document.getElementById("selfPasswordSaveButton").addEventListener("click", submitModalPasswordChange);
   document.getElementById("selfGc179ProfileSaveButton").addEventListener("click", submitSelfGc179Profile);
   bindGc179PriFormatter(document.getElementById("selfGc179PriInput"));
@@ -1210,6 +1347,7 @@ document.addEventListener("DOMContentLoaded", () => {
   clearRoleUi();
   updateSessionSummary();
   setSyncStatus(t("status.waitingForSignIn"));
+  setLastSyncStatus(null);
   installFetchWrapper();
   restoreSession();
 });

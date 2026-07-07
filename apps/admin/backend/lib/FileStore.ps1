@@ -16,7 +16,7 @@ if (-not $script:FileMetadataValidationIntervalMs) {
         [int]::TryParse([string]$env:OVERTIME_FILE_METADATA_CACHE_MS, [ref]$configuredMetadataCacheMs) | Out-Null
     }
 
-    $script:FileMetadataValidationIntervalMs = if ($configuredMetadataCacheMs -gt 0) { $configuredMetadataCacheMs } else { 5000 }
+    $script:FileMetadataValidationIntervalMs = if ($configuredMetadataCacheMs -gt 0) { $configuredMetadataCacheMs } else { 30000 }
 }
 
 function Get-FileMetadataSnapshot {
