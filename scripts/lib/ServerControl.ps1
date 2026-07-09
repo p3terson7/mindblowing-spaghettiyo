@@ -238,6 +238,19 @@ function Wait-ForPortState {
     return (Get-ListeningProcessId -Port $Port)
 }
 
+function Get-StartupTimeoutSeconds {
+    $timeoutSeconds = 45
+    if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_STARTUP_TIMEOUT_SECONDS)) {
+        [int]::TryParse([string]$env:OVERTIME_STARTUP_TIMEOUT_SECONDS, [ref]$timeoutSeconds) | Out-Null
+    }
+
+    if ($timeoutSeconds -lt 10) {
+        return 10
+    }
+
+    return $timeoutSeconds
+}
+
 function Wait-ForProcessesToExit {
     param(
         [Parameter(Mandatory = $true)][int[]]$ProcessIds,
@@ -355,7 +368,8 @@ function Start-ManagedService {
         $requestedProcessId = [int]$process.Id
     }
 
-    $listenerPid = Wait-ForPortState -Port $Port -ShouldBeListening $true -TimeoutSeconds 10
+    $startupTimeoutSeconds = Get-StartupTimeoutSeconds
+    $listenerPid = Wait-ForPortState -Port $Port -ShouldBeListening $true -TimeoutSeconds $startupTimeoutSeconds
     if (-not $listenerPid) {
         if ($requestedProcessId) {
             try {
@@ -367,6 +381,8 @@ function Start-ManagedService {
         $stderrTail = Get-LogTail -Path $StdErrLog
         $stdoutTail = Get-LogTail -Path $StdOutLog
         $details = @()
+        $details += "Startup timeout: $startupTimeoutSeconds second(s)."
+        $details += "Logs: $StdOutLog and $StdErrLog"
         if ($stderrTail) { $details += "stderr:`n$stderrTail" }
         if ($stdoutTail) { $details += "stdout:`n$stdoutTail" }
         $detailText = if ($details.Count -gt 0) { " `n`n" + ($details -join "`n`n") } else { "" }

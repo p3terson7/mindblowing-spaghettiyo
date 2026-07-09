@@ -3,7 +3,21 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 $scriptsRoot = Split-Path -Path $scriptDir -Parent
 $repoRoot = (Resolve-Path (Join-Path $scriptsRoot "..")).Path
-$runtimeRoot = Join-Path -Path $repoRoot -ChildPath "runtime"
+
+if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_RUNTIME_ROOT)) {
+    $runtimeRoot = $env:OVERTIME_RUNTIME_ROOT
+}
+elseif ($PSVersionTable.PSEdition -eq "Desktop" -or [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+    $localAppData = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::LocalApplicationData)
+    if ([string]::IsNullOrWhiteSpace($localAppData)) {
+        $localAppData = $env:TEMP
+    }
+    $runtimeRoot = Join-Path -Path $localAppData -ChildPath "OvertimeManager/runtime"
+}
+else {
+    $runtimeRoot = Join-Path -Path $repoRoot -ChildPath "runtime"
+}
+
 $pidRoot = Join-Path -Path $runtimeRoot -ChildPath "pids"
 $logRoot = Join-Path -Path $runtimeRoot -ChildPath "logs"
 
