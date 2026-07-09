@@ -6,6 +6,13 @@ function ConvertTo-EmployeeNameDictionary {
         return $dictionary
     }
 
+    if ($NameMap -is [hashtable]) {
+        foreach ($key in $NameMap.Keys) {
+            $dictionary[[string]$key] = [string]$NameMap[$key]
+        }
+        return $dictionary
+    }
+
     foreach ($property in $NameMap.PSObject.Properties) {
         $dictionary[[string]$property.Name] = [string]$property.Value
     }

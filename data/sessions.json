@@ -3,24 +3,16 @@
     "username": "admin",
     "role": "superAdmin",
     "employeeCode": "",
-    "tokenHash": "0dcd39584859de0c781a3f27758974e809a5179397c206962704272509768ff2",
-    "issuedAtUtc": "2026-07-06T16:09:52.834613Z",
-    "expiresAtUtc": "2026-07-07T04:09:52.834613Z"
+    "tokenHash": "6d01627048c7fea950a63d6fc30d1863523b1fb4a09e9ba7fcfd58cf28c8a8c7",
+    "issuedAtUtc": "2026-07-09T17:13:48.513623Z",
+    "expiresAtUtc": "2026-07-10T05:13:48.513623Z"
   },
   {
-    "username": "000100005",
-    "role": "admin",
-    "employeeCode": "000100005",
-    "tokenHash": "47f9f1cba041e4a4cc9b5013a7a7c4aab7e058d1732e7a6e10e95c88fa01cf4f",
-    "issuedAtUtc": "2026-07-06T16:23:25.793371Z",
-    "expiresAtUtc": "2026-07-07T04:23:25.793371Z"
-  },
-  {
-    "username": "admin",
+    "username": "000379070",
     "role": "superAdmin",
-    "employeeCode": "",
-    "tokenHash": "b5e974996193c6c0862ac34eccb001a346c2f945a2dcae8c76bce4a678809f2f",
-    "issuedAtUtc": "2026-07-06T17:46:43.1689030Z",
-    "expiresAtUtc": "2026-07-07T05:46:43.1689030Z"
+    "employeeCode": "000379070",
+    "tokenHash": "3714980986fc41310c9f4bbf07e1f44ce7c4d10cd01b6280cdcff0bbc997a94e",
+    "issuedAtUtc": "2026-07-09T17:32:21.629474Z",
+    "expiresAtUtc": "2026-07-10T05:32:21.629474Z"
   }
 ]

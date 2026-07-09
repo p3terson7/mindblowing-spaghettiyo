@@ -12,6 +12,11 @@ const employeesViewState = {
   projectSearchTextByCode: {},
   employeeFilterTimerId: null,
   employeeAnalyticsSignature: "",
+  gc179Import: {
+    fdfContent: "",
+    fileName: "",
+    preview: null,
+  },
   editorProjectAssignments: {
     projects: [],
     selectedProjectCodes: new Set(),
@@ -22,6 +27,7 @@ const employeesViewState = {
 let pendingEmployeeAnalyticsFrameId = null;
 const employeeAnalyticsChartInstances = {};
 const employeeAnalyticsPalette = ["#3574f0", "#46a35b", "#d18900", "#d14343", "#7d5cf5", "#0096b2", "#c95c9b", "#6f7b2f", "#8a6f4d", "#b65f20"];
+const gc179ImportEnabled = false;
 
 function canManageEmployeeProfiles() {
   return typeof isSuperAdminUser === "function" && isSuperAdminUser();
@@ -681,6 +687,292 @@ async function seedDemoEntries() {
       if (typeof applyTranslations === "function") {
         applyTranslations(seedButton);
       }
+    }
+  }
+}
+
+function canImportGc179Entries() {
+  return gc179ImportEnabled && typeof getCurrentUserRole === "function" && ["admin", "superAdmin"].includes(getCurrentUserRole());
+}
+
+function getGc179ImportEmployees() {
+  return (Array.isArray(employeesViewState.allEmployees) ? employeesViewState.allEmployees : [])
+    .filter(employee => employee && employee.code && !isArchivedEmployee(employee))
+    .slice()
+    .sort(compareEmployeesByRoleThenName);
+}
+
+function getGc179ImportProjects() {
+  const projects = employeesViewState.entryLookups && Array.isArray(employeesViewState.entryLookups.projects)
+    ? employeesViewState.entryLookups.projects
+    : [];
+  return projects
+    .filter(project => project && project.projectCode && project.canModify !== false && !project.archived)
+    .slice()
+    .sort((left, right) => String(left.projectCode || "").localeCompare(String(right.projectCode || ""), undefined, { sensitivity: "base" }));
+}
+
+function setGc179ImportMessage(message, tone = "info") {
+  const box = document.getElementById("gc179ImportMessage");
+  if (!box) {
+    return;
+  }
+  box.className = `alert alert-${tone}`;
+  box.textContent = message || "";
+  box.classList.toggle("d-none", !message);
+}
+
+function resetGc179ImportPreview() {
+  employeesViewState.gc179Import.preview = null;
+  const commitButton = document.getElementById("gc179ImportCommitButton");
+  if (commitButton) {
+    commitButton.disabled = true;
+  }
+  const container = document.getElementById("gc179ImportPreviewContainer");
+  if (container) {
+    container.innerHTML = `<span class="panel-note">${escapeHtml(t("employees.gc179PreviewEmpty"))}</span>`;
+  }
+}
+
+function populateGc179ImportModal(selectedEmployeeCode = "") {
+  const employeeSelect = document.getElementById("gc179ImportEmployeeSelect");
+  const projectSelect = document.getElementById("gc179ImportProjectSelect");
+  if (!employeeSelect || !projectSelect) {
+    return;
+  }
+
+  const employees = getGc179ImportEmployees();
+  const projects = getGc179ImportProjects();
+  employeeSelect.innerHTML = `
+    <option value="">${escapeHtml(t("employees.gc179TargetEmployee"))}</option>
+    ${employees.map(employee => `<option value="${escapeHtml(employee.code)}">${escapeHtml(employee.name)} (${escapeHtml(employee.code)})</option>`).join("")}
+  `;
+  projectSelect.innerHTML = `
+    <option value="">${escapeHtml(t("shared.selectProject"))}</option>
+    ${projects.map(project => {
+      const code = String(project.projectCode || "");
+      const name = String(project.projectName || "");
+      const label = name ? `${code} | ${name}` : code;
+      return `<option value="${escapeHtml(code)}">${escapeHtml(label)}</option>`;
+    }).join("")}
+  `;
+
+  if (selectedEmployeeCode && employees.some(employee => employee.code === selectedEmployeeCode)) {
+    employeeSelect.value = selectedEmployeeCode;
+  } else if (employeesViewState.selectedEmployeeCode && employees.some(employee => employee.code === employeesViewState.selectedEmployeeCode)) {
+    employeeSelect.value = employeesViewState.selectedEmployeeCode;
+  }
+
+  if (employeesViewState.selectedProjectCode && projects.some(project => String(project.projectCode || "") === employeesViewState.selectedProjectCode)) {
+    projectSelect.value = employeesViewState.selectedProjectCode;
+  }
+
+  if (projects.length === 0) {
+    setGc179ImportMessage(t("employees.gc179NoModifiableProjects"), "warning");
+  }
+}
+
+function openGc179ImportModal(selectedEmployeeCode = "") {
+  if (!canImportGc179Entries()) {
+    return;
+  }
+
+  const form = document.getElementById("gc179ImportForm");
+  if (form) {
+    form.reset();
+  }
+  employeesViewState.gc179Import = {
+    fdfContent: "",
+    fileName: "",
+    preview: null,
+  };
+  setGc179ImportMessage("");
+  populateGc179ImportModal(selectedEmployeeCode);
+  resetGc179ImportPreview();
+  const modal = new bootstrap.Modal(document.getElementById("gc179ImportModal"));
+  modal.show();
+}
+
+function readGc179ImportFile() {
+  const input = document.getElementById("gc179ImportFileInput");
+  const file = input && input.files && input.files[0] ? input.files[0] : null;
+  if (!file) {
+    return Promise.reject(new Error(t("employees.gc179FdfRequired")));
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve({
+        fileName: file.name || "",
+        content: String(reader.result || ""),
+      });
+    };
+    reader.onerror = () => reject(new Error(t("employees.gc179FdfRequired")));
+    reader.readAsText(file);
+  });
+}
+
+async function buildGc179ImportPayload({ requireFile = true } = {}) {
+  const employeeCode = document.getElementById("gc179ImportEmployeeSelect").value;
+  const projectCode = document.getElementById("gc179ImportProjectSelect").value;
+  const status = document.getElementById("gc179ImportStatusSelect").value || "approved";
+  const managerMessage = document.getElementById("gc179ImportManagerMessage").value || "";
+
+  if (!employeeCode) {
+    throw new Error(t("employees.gc179EmployeeRequired"));
+  }
+  if (!projectCode) {
+    throw new Error(t("employees.gc179ProjectRequired"));
+  }
+
+  if (requireFile || !employeesViewState.gc179Import.fdfContent) {
+    const fileData = await readGc179ImportFile();
+    employeesViewState.gc179Import.fdfContent = fileData.content;
+    employeesViewState.gc179Import.fileName = fileData.fileName;
+  }
+
+  return {
+    employeeCode,
+    projectCode,
+    status,
+    managerMessage,
+    fileName: employeesViewState.gc179Import.fileName,
+    fdfContent: employeesViewState.gc179Import.fdfContent,
+    skipDuplicates: true,
+  };
+}
+
+function renderGc179ImportPreview(preview) {
+  const container = document.getElementById("gc179ImportPreviewContainer");
+  const commitButton = document.getElementById("gc179ImportCommitButton");
+  if (!container) {
+    return;
+  }
+
+  const entries = Array.isArray(preview && preview.entries) ? preview.entries : [];
+  const warnings = Array.isArray(preview && preview.warnings) ? preview.warnings : [];
+  if (commitButton) {
+    commitButton.disabled = entries.length === 0;
+  }
+
+  const rows = entries.map(entry => `
+    <tr>
+      <td>${escapeHtml(formatDateLabel(entry.date))}</td>
+      <td class="mono">${escapeHtml(formatTimeString(entry.punchIn))} ${timeRangeArrowText()} ${escapeHtml(formatTimeString(entry.punchOut))}</td>
+      <td><span class="inline-code-pill">${escapeHtml(entry.reasonCode || "-")}</span></td>
+      <td><span class="inline-code-pill">${escapeHtml(entry.overtimeCode || "-")}</span></td>
+      <td>${escapeHtml(entry.paymentOption || "-")}</td>
+      <td class="mono">${escapeHtml(entry.gc179Rate || "-")}</td>
+      <td class="mono">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(entry.overtime)))}</td>
+    </tr>
+  `).join("");
+
+  container.innerHTML = `
+    <div class="gc179-import-preview-summary">
+      <span>${escapeHtml(t("employees.gc179PreviewSummary", { count: entries.length, month: preview.monthKey || "-" }))}</span>
+      <span class="inline-code-pill">${escapeHtml(preview.projectCode || "")}</span>
+    </div>
+    ${warnings.length > 0 ? `
+      <div class="gc179-import-warnings">
+        <strong>${escapeHtml(t("employees.gc179PreviewWarning"))}</strong>
+        <ul>${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+      </div>
+    ` : ""}
+    <div class="gc179-import-table-shell">
+      <table class="gc179-import-table">
+        <thead>
+          <tr>
+            <th>${escapeHtml(t("export.day"))}</th>
+            <th>${escapeHtml(t("dashboard.tableWindow"))}</th>
+            <th>${escapeHtml(t("export.reason"))}</th>
+            <th>${escapeHtml(t("export.overtimeCode"))}</th>
+            <th>${escapeHtml(t("export.payment"))}</th>
+            <th>${escapeHtml(t("employees.gc179Rate"))}</th>
+            <th>${escapeHtml(t("export.totalTime"))}</th>
+          </tr>
+        </thead>
+        <tbody>${rows || `<tr><td colspan="7">${escapeHtml(t("employees.noEntriesForMonth"))}</td></tr>`}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function previewGc179Import() {
+  const button = document.getElementById("gc179ImportPreviewButton");
+  const originalText = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = t("shared.loading");
+  }
+  try {
+    const payload = await buildGc179ImportPayload({ requireFile: true });
+    const response = await fetch(apiUrl + "employee/gc179-import/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const preview = await parseResponse(response);
+    employeesViewState.gc179Import.preview = preview;
+    renderGc179ImportPreview(preview);
+    setGc179ImportMessage("");
+  } catch (error) {
+    console.error("Unable to preview GC179 import:", error);
+    resetGc179ImportPreview();
+    setGc179ImportMessage(error.message || t("employees.gc179ImportError"), "danger");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText || t("employees.gc179Preview");
+    }
+  }
+}
+
+async function commitGc179Import() {
+  const button = document.getElementById("gc179ImportCommitButton");
+  const originalText = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = t("shared.loading");
+  }
+  try {
+    const payload = await buildGc179ImportPayload({ requireFile: false });
+    const response = await fetch(apiUrl + "employee/gc179-import/commit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await parseResponse(response);
+    const employeeCode = result.employeeCode || payload.employeeCode;
+    employeesViewState.entriesByEmployee[employeeCode] = undefined;
+    if (result.monthKey) {
+      employeesViewState.currentMonthByEmployee[employeeCode] = result.monthKey;
+    }
+    employeesViewState.selectedEmployeeCode = employeeCode;
+    markEntryRelatedViewsStaleFromPeople();
+    showToast(t("employees.gc179ImportSuccess", {
+      count: Number(result.importedCount || 0),
+      duplicates: Number(result.skippedDuplicateCount || 0),
+    }), "success");
+    const modal = bootstrap.Modal.getInstance(document.getElementById("gc179ImportModal"));
+    if (modal) {
+      modal.hide();
+    }
+    document.getElementById("employeesSearchInput").value = "";
+    document.getElementById("employeesScopeSelect").value = "active";
+    document.getElementById("employeesProjectSelect").value = "";
+    employeesViewState.selectedProjectCode = "";
+    employeesViewState.autoOpenProjectCode = "";
+    await loadEmployeesView();
+    employeesViewState.selectedEmployeeCode = employeeCode;
+    applyEmployeeSearchFilter();
+    await loadEmployeeDetail(employeeCode);
+  } catch (error) {
+    console.error("Unable to commit GC179 import:", error);
+    setGc179ImportMessage(error.message || t("employees.gc179ImportError"), "danger");
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText || t("employees.gc179ImportConfirm");
     }
   }
 }
@@ -1917,11 +2209,15 @@ function renderEmployeesDirectory(employees) {
   const canManageProfiles = canManageEmployeeProfiles();
   const addButton = document.getElementById("addEmployeeButton");
   const seedButton = document.getElementById("seedDemoEntriesButton");
+  const importButton = document.getElementById("gc179ImportButton");
   if (addButton) {
     addButton.classList.toggle("d-none", !canManageProfiles);
   }
   if (seedButton) {
     seedButton.classList.toggle("d-none", !canSeedDemoEntries());
+  }
+  if (importButton) {
+    importButton.classList.toggle("d-none", !canImportGc179Entries());
   }
   document.getElementById("employeesDirectoryCount").textContent = tn("shared.employee", employees.length);
 
@@ -2580,6 +2876,10 @@ document.getElementById("addEmployeeButton").addEventListener("click", () => {
     showToast(t("employees.loadError"), "error");
   });
 });
+document.getElementById("gc179ImportButton").addEventListener("click", () => openGc179ImportModal(employeesViewState.selectedEmployeeCode));
+document.getElementById("gc179ImportPreviewButton").addEventListener("click", previewGc179Import);
+document.getElementById("gc179ImportCommitButton").addEventListener("click", commitGc179Import);
+document.getElementById("gc179ImportForm").addEventListener("change", resetGc179ImportPreview);
 document.getElementById("seedDemoEntriesButton").addEventListener("click", seedDemoEntries);
 document.getElementById("employeeEditorRemoveButton").addEventListener("click", async () => {
   const employee = getEmployeeByCode(document.getElementById("employeeEditorCodeInput").value.trim());

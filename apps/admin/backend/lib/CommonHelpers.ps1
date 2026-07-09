@@ -25,11 +25,12 @@ function Get-EmployeeNameMap {
     try {
         $map = Read-TextFileCached -Path $mappingFile | ConvertFrom-Json
         if ($null -eq $map) {
+            $emptyMap = [PSCustomObject]@{}
             $script:EmployeeNameMapCache = [PSCustomObject]@{
                 Key = $cacheKey
-                Value = @{}
+                Value = $emptyMap
             }
-            return @{}
+            return $emptyMap
         }
         $script:EmployeeNameMapCache = [PSCustomObject]@{
             Key = $cacheKey
@@ -38,11 +39,12 @@ function Get-EmployeeNameMap {
         return $map
     }
     catch {
+        $emptyMap = [PSCustomObject]@{}
         $script:EmployeeNameMapCache = [PSCustomObject]@{
             Key = $cacheKey
-            Value = @{}
+            Value = $emptyMap
         }
-        return @{}
+        return $emptyMap
     }
 }
 

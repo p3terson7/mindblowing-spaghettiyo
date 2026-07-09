@@ -838,6 +838,45 @@ function Get-TokenHash {
     return (($hashBytes | ForEach-Object { $_.ToString("x2") }) -join "")
 }
 
+function Test-AuthJsonArrayNeedsInitialization {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [bool]$InitializeEmptyArray = $false
+    )
+
+    if (!(Test-Path -Path $Path)) {
+        return $true
+    }
+
+    try {
+        $raw = Read-TextFileCached -Path $Path
+    }
+    catch {
+        return $false
+    }
+
+    if ([string]::IsNullOrWhiteSpace($raw) -or $raw.Trim() -eq "null") {
+        return $true
+    }
+
+    try {
+        $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        return $false
+    }
+
+    if ($null -eq $parsed) {
+        return $true
+    }
+
+    if ($InitializeEmptyArray) {
+        return (@($parsed).Count -eq 0)
+    }
+
+    return $false
+}
+
 function Ensure-AuthStorage {
     if ($script:AuthStorageEnsured) {
         return
@@ -845,7 +884,7 @@ function Ensure-AuthStorage {
 
     $sessionsLock = Acquire-ResourceLock -ResourcePath $sessionsFile
     try {
-        if (!(Test-Path -Path $sessionsFile)) {
+        if (Test-AuthJsonArrayNeedsInitialization -Path $sessionsFile) {
             Write-JsonAtomic -Path $sessionsFile -Value @()
             Clear-AuthRuntimeCaches
         }
@@ -856,7 +895,7 @@ function Ensure-AuthStorage {
 
     $usersLock = Acquire-ResourceLock -ResourcePath $usersFile
     try {
-        if (!(Test-Path -Path $usersFile)) {
+        if (Test-AuthJsonArrayNeedsInitialization -Path $usersFile -InitializeEmptyArray $true) {
             $users = @()
             $adminSecret = New-PasswordCredential -Password $bootstrapAdminPassword
             $users += [PSCustomObject]@{

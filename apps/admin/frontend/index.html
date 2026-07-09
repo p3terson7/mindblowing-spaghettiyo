@@ -13,7 +13,7 @@
   </script>
   <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260603-empty-timeline" />
   <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260603-empty-timeline" />
-  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260706-health-packaging">
+  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260708-gc179-import">
 </head>
 <body>
   <div class="app-root">
@@ -344,6 +344,10 @@
                 <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="seedDemoEntriesButton">
                   <i class="fa-solid fa-wand-magic-sparkles"></i>
                   <span data-i18n="employees.seedDemoEntries">Seed Demo Entries</span>
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="gc179ImportButton">
+                  <i class="fa-solid fa-file-import"></i>
+                  <span data-i18n="employees.gc179Import">Import GC179</span>
                 </button>
                 <button type="button" class="btn btn-primary btn-sm" id="addEmployeeButton">
                   <i class="fa-solid fa-user-plus"></i>
@@ -833,6 +837,63 @@
     </div>
   </div>
 
+  <div class="modal fade" id="gc179ImportModal" tabindex="-1" aria-labelledby="gc179ImportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-dialog-wide">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title" id="gc179ImportModalLabel" data-i18n="employees.gc179ImportTitle">Import GC179</h3>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="gc179ImportMessage" class="alert d-none" role="alert"></div>
+          <p class="panel-note" data-i18n="employees.gc179ImportHint">Export the opened GC179 as FDF from Acrobat, then import that FDF here.</p>
+          <form id="gc179ImportForm">
+            <div class="gc179-import-grid">
+              <div class="field-block">
+                <label for="gc179ImportFileInput" class="form-label" data-i18n="employees.gc179FdfFile">FDF file</label>
+                <input type="file" class="form-control" id="gc179ImportFileInput" accept=".fdf,application/vnd.fdf">
+              </div>
+              <div class="field-block">
+                <label for="gc179ImportEmployeeSelect" class="form-label" data-i18n="employees.gc179TargetEmployee">Target employee</label>
+                <select id="gc179ImportEmployeeSelect" class="form-select">
+                  <option value="" data-i18n="filters.allEmployees">All employees</option>
+                </select>
+              </div>
+              <div class="field-block">
+                <label for="gc179ImportProjectSelect" class="form-label" data-i18n="employees.gc179TargetProject">SAPHIR project</label>
+                <select id="gc179ImportProjectSelect" class="form-select">
+                  <option value="" data-i18n="shared.selectProject">Select project</option>
+                </select>
+              </div>
+              <div class="field-block">
+                <label for="gc179ImportStatusSelect" class="form-label" data-i18n="employees.gc179DefaultStatus">Imported status</label>
+                <select id="gc179ImportStatusSelect" class="form-select">
+                  <option value="approved" data-i18n="status.approved">Approved</option>
+                  <option value="pending" data-i18n="status.pending">Pending</option>
+                </select>
+              </div>
+              <div class="field-block field-block-wide">
+                <label for="gc179ImportManagerMessage" class="form-label" data-i18n="employees.gc179ManagerMessage">Manager note for imported entries</label>
+                <textarea id="gc179ImportManagerMessage" class="form-control" rows="2"></textarea>
+              </div>
+            </div>
+          </form>
+          <div class="gc179-import-preview-shell">
+            <div class="panel-kicker" data-i18n="employees.gc179Preview">Preview</div>
+            <div id="gc179ImportPreviewContainer" class="gc179-import-preview">
+              <span class="panel-note" data-i18n="employees.gc179PreviewEmpty">Choose an FDF and click Preview.</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary me-auto" id="gc179ImportPreviewButton" data-i18n="employees.gc179Preview">Preview</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
+          <button type="button" class="btn btn-primary" id="gc179ImportCommitButton" disabled data-i18n="employees.gc179ImportConfirm">Import entries</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="dashboardNoteModal" tabindex="-1" aria-labelledby="dashboardNoteModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-note-editor">
       <div class="modal-content note-editor-modal-content">
@@ -1165,12 +1226,12 @@
       : "http://localhost:8081/";
   </script>
   <script src="assets/vendor/chart.umd.min.js?v=20260603-empty-timeline"></script>
-  <script src="scripts/I18n.js?v=20260706-health-packaging"></script>
+  <script src="scripts/I18n.js?v=20260708-gc179-import"></script>
   <script src="scripts/Utilities.js?v=20260706-pri-format"></script>
   <script src="scripts/AppShell.js?v=20260706-health-packaging"></script>
   <script src="scripts/Views/ViewSwitching.js?v=20260603-empty-timeline"></script>
   <script src="scripts/Views/SelfView.js?v=20260624-gc179-multipart"></script>
-  <script src="scripts/Views/EmployeesView.js?v=20260706-performance-pass"></script>
+  <script src="scripts/Views/EmployeesView.js?v=20260708-gc179-import"></script>
   <script src="scripts/Views/DashboardView.js?v=20260608-diverse-time"></script>
   <script src="scripts/Views/ApprovalsView.js?v=20260608-diverse-time"></script>
   <script src="scripts/Views/HistoryView.js?v=20260603-empty-timeline"></script>
