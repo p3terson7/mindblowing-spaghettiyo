@@ -121,6 +121,84 @@ function Enter-PackagePublishLock {
     } while ($true)
 }
 
+function Resolve-PackageNetworkPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $resolvedItem = Get-Item -LiteralPath $Path -ErrorAction Stop
+    $resolvedPath = [string]$resolvedItem.FullName
+    if ($resolvedPath.StartsWith("\\")) {
+        return [PSCustomObject]@{
+            Path          = $resolvedPath
+            IsNetwork     = $true
+            IsMappedDrive = $false
+            ResolvedToUnc = $true
+        }
+    }
+
+    $windowsHost = $PSVersionTable.PSEdition -eq "Desktop" -or [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+    if ($windowsHost -and $resolvedPath -match "^([A-Za-z]):[\\/](.*)$") {
+        $driveLetter = ([string]$matches[1]).ToUpperInvariant()
+        $relativePath = ([string]$matches[2]).TrimStart([char[]]@([char]92, [char]47))
+        $drive = Get-PSDrive -Name $driveLetter -PSProvider FileSystem -ErrorAction SilentlyContinue
+        $networkRoot = if ($null -ne $drive -and $drive.PSObject.Properties.Name -contains "DisplayRoot") {
+            [string]$drive.DisplayRoot
+        }
+        else {
+            ""
+        }
+        if ([string]::IsNullOrWhiteSpace($networkRoot) -and $null -ne $drive) {
+            $networkRoot = [string]$drive.Root
+        }
+        if ([string]::IsNullOrWhiteSpace($networkRoot) -or -not $networkRoot.StartsWith("\\")) {
+            try {
+                $logicalDisk = Get-CimInstance -ClassName Win32_LogicalDisk -Filter ("DeviceID='{0}:'" -f $driveLetter) -ErrorAction Stop
+                $networkRoot = [string]$logicalDisk.ProviderName
+            }
+            catch {
+                $networkRoot = ""
+            }
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($networkRoot) -and $networkRoot.StartsWith("\\")) {
+            $networkRoot = $networkRoot.TrimEnd([char[]]@([char]92, [char]47))
+            $networkPath = if ([string]::IsNullOrWhiteSpace($relativePath)) {
+                $networkRoot
+            }
+            else {
+                $networkRoot + "\" + ($relativePath -replace "/", "\")
+            }
+            return [PSCustomObject]@{
+                Path          = $networkPath
+                IsNetwork     = $true
+                IsMappedDrive = $true
+                ResolvedToUnc = $true
+            }
+        }
+
+        try {
+            $driveInfo = New-Object -TypeName System.IO.DriveInfo -ArgumentList (("{0}:\" -f $driveLetter))
+            if ($driveInfo.DriveType -eq [System.IO.DriveType]::Network) {
+                return [PSCustomObject]@{
+                    Path          = $resolvedPath
+                    IsNetwork     = $true
+                    IsMappedDrive = $true
+                    ResolvedToUnc = $false
+                }
+            }
+        }
+        catch {
+            # The normal local-path validation below will report the failure.
+        }
+    }
+
+    return [PSCustomObject]@{
+        Path          = $resolvedPath
+        IsNetwork     = $false
+        IsMappedDrive = $false
+        ResolvedToUnc = $false
+    }
+}
+
 function Resolve-PackageDataFolderPath {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -128,25 +206,20 @@ function Resolve-PackageDataFolderPath {
     )
 
     if ([string]::IsNullOrWhiteSpace($Path)) {
-        throw "DataFolderPath is required. Use the shared data folder's UNC path, for example \\server\department\GEEM-Data."
+        throw "DataFolderPath is required. Use a shared UNC path or a mapped network drive such as R:\GEEM-Data."
     }
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
         throw "The configured GEEM data folder does not exist or is unavailable: $Path"
     }
 
-    $resolvedItem = Get-Item -LiteralPath $Path -ErrorAction Stop
-    $resolvedPath = [string]$resolvedItem.FullName
-    $windowsHost = $PSVersionTable.PSEdition -eq "Desktop" -or [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
-
-    if ($windowsHost -and $resolvedPath -match "^([A-Za-z]):[\\/](.*)$") {
-        $drive = Get-PSDrive -Name $matches[1] -ErrorAction SilentlyContinue
-        if ($null -ne $drive -and ([string]$drive.Root).StartsWith("\\")) {
-            $resolvedPath = Join-Path -Path ([string]$drive.Root) -ChildPath ([string]$matches[2])
-        }
+    $pathInfo = Resolve-PackageNetworkPath -Path $Path
+    $resolvedPath = [string]$pathInfo.Path
+    if ([bool]$pathInfo.IsMappedDrive -and -not [bool]$pathInfo.ResolvedToUnc) {
+        Write-Warning ("Windows identifies '{0}' as a network drive, but its UNC provider path could not be read. GEEM will store '{1}' in the release. Every employee must therefore have the same drive letter mapped before launching GEEM." -f $Path, $resolvedPath)
     }
 
-    if (-not $resolvedPath.StartsWith("\\") -and -not $AllowLocal) {
-        throw "Production releases require a UNC data path such as \\server\department\GEEM-Data. Mapped or local drives are not reliable for every employee."
+    if (-not [bool]$pathInfo.IsNetwork -and -not $AllowLocal) {
+        throw "Production releases require a shared UNC path or a mapped network drive such as R:\GEEM-Data. Windows reports this path as a local drive."
     }
 
     return $resolvedPath
@@ -219,6 +292,10 @@ if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
 }
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 Ensure-PackageDirectory -Path $OutputRoot
+$outputPathInfo = Resolve-PackageNetworkPath -Path $OutputRoot
+if ([bool]$outputPathInfo.IsNetwork -and [bool]$outputPathInfo.ResolvedToUnc) {
+    $OutputRoot = [string]$outputPathInfo.Path
+}
 
 if ([string]::IsNullOrWhiteSpace($ReleaseId)) {
     $ReleaseId = Get-Date -Format "yyyyMMdd-HHmmss-fff"

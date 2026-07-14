@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 $repoRoot = (Resolve-Path (Join-Path -Path $scriptDir -ChildPath "..")).Path
 $publisherPath = Join-Path -Path $repoRoot -ChildPath "scripts/package-app.ps1"
+$publisherSource = [System.IO.File]::ReadAllText($publisherPath)
 
 function Assert-True {
     param(
@@ -63,6 +64,10 @@ $outputRoot = Join-Path -Path $testRoot -ChildPath "output"
 $expandedRelease = Join-Path -Path $testRoot -ChildPath "expanded"
 
 try {
+    Assert-True -Condition ($publisherSource.IndexOf('[string]$drive.DisplayRoot', [System.StringComparison]::Ordinal) -ge 0) -Message "publisher must inspect the UNC DisplayRoot of mapped PowerShell drives"
+    Assert-True -Condition ($publisherSource.IndexOf('Win32_LogicalDisk', [System.StringComparison]::Ordinal) -ge 0) -Message "publisher must fall back to the Windows mapped-drive provider"
+    Assert-True -Condition ($publisherSource.IndexOf('[System.IO.DriveType]::Network', [System.StringComparison]::Ordinal) -ge 0) -Message "publisher must accept a drive letter that Windows confirms is a network drive"
+
     New-Item -ItemType Directory -Path $dataFolder -Force | Out-Null
     $result = & $publisherPath -OutputRoot $outputRoot -DataFolderPath $dataFolder -ReleaseId "package-test-a" -NoZip -AllowLocalDataPath
     $distributionRoot = Join-Path -Path $outputRoot -ChildPath "GEEM-Distribution"
