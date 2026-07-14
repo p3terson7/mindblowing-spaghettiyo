@@ -9,7 +9,7 @@ Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 
 repoRoot = fso.GetParentFolderName(WScript.ScriptFullName)
-scriptPath = Chr(34) & repoRoot & "\scripts\launch-app.ps1" & Chr(34)
+scriptPath = Chr(34) & repoRoot & "\scripts\launch-cached-app.ps1" & Chr(34)
 
 detectionCode = shell.Run("cmd /c where pwsh >nul 2>nul", 0, True)
 If detectionCode = 0 Then
@@ -18,4 +18,4 @@ Else
     powerShellCommand = "powershell"
 End If
 
-shell.Run powerShellCommand & " -NoProfile -ExecutionPolicy Bypass -File " & scriptPath, 0, False
+shell.Run powerShellCommand & " -NoProfile -ExecutionPolicy Bypass -File " & scriptPath & " -Force", 0, True

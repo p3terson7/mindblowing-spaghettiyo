@@ -30,6 +30,7 @@ if (-not $script:UserLookupCache) {
 function Clear-AuthRuntimeCaches {
     $script:AuthenticatedUserRequestCache = @{}
     $script:UserLookupCache = $null
+    $script:AuthArrayFileCache = @{}
 }
 
 function New-PasswordCredential {
@@ -1519,21 +1520,74 @@ function Ensure-EmployeeUser {
     }
 }
 
-function Set-EmployeeUserDisplayName {
+# Apply all supplied profile fields in one users.json transaction.
+function Set-EmployeeUserProfile {
     param(
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
-        [Parameter(Mandatory = $true)][string]$DisplayName
+        [string]$DisplayName,
+        [string]$Role,
+        $TimeEntryTypes,
+        $Gc179Profile
     )
 
+    $updateDisplayName = $PSBoundParameters.ContainsKey("DisplayName")
+    $updateRole = $PSBoundParameters.ContainsKey("Role")
+    $updateTimeEntryTypes = $PSBoundParameters.ContainsKey("TimeEntryTypes")
+    $updateGc179Profile = $PSBoundParameters.ContainsKey("Gc179Profile")
+    if (-not ($updateDisplayName -or $updateRole -or $updateTimeEntryTypes -or $updateGc179Profile)) {
+        return $false
+    }
+
+    $effectiveRole = if ($updateRole) { Get-NormalizedRoleName -Role $Role } else { $null }
+    $effectiveTimeEntryTypes = $null
+    if ($updateTimeEntryTypes) {
+        $effectiveTimeEntryTypes = @(ConvertTo-TimeEntryTypeArray -Value $TimeEntryTypes)
+    }
     $updated = $false
 
     $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
     try {
+        # The resource lock coordinates writers, but another process may have
+        # committed while this process still had an older metadata snapshot.
+        Clear-CachedFileContent -Path $usersFile
         $users = Read-JsonArrayFile -Path $usersFile
         foreach ($user in $users) {
             if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
-                $user.displayName = [string]$DisplayName
-                $user.employeeCode = $EmployeeCode
+                if ($updateDisplayName) {
+                    $user.displayName = [string]$DisplayName
+                    $user.employeeCode = $EmployeeCode
+                }
+                if ($updateRole) {
+                    $user.role = $effectiveRole
+                    $user.employeeCode = $EmployeeCode
+                }
+                if ($updateTimeEntryTypes) {
+                    if ($user.PSObject.Properties.Name -contains "timeEntryTypes") {
+                        $user.timeEntryTypes = $effectiveTimeEntryTypes
+                    }
+                    else {
+                        $user | Add-Member -NotePropertyName "timeEntryTypes" -NotePropertyValue $effectiveTimeEntryTypes -Force
+                    }
+                }
+                if ($updateGc179Profile) {
+                    $profileDisplayName = if ($updateDisplayName) {
+                        [string]$DisplayName
+                    }
+                    elseif ($user.PSObject.Properties.Name -contains "displayName") {
+                        [string]$user.displayName
+                    }
+                    else {
+                        [string](Get-EmployeeName $EmployeeCode)
+                    }
+                    $effectiveGc179Profile = ConvertTo-Gc179ProfileObject -Value $Gc179Profile -DisplayName $profileDisplayName
+                    if ($user.PSObject.Properties.Name -contains "gc179Profile") {
+                        $user.gc179Profile = $effectiveGc179Profile
+                    }
+                    else {
+                        $user | Add-Member -NotePropertyName "gc179Profile" -NotePropertyValue $effectiveGc179Profile -Force
+                    }
+                }
+
                 $updated = $true
                 break
             }
@@ -1549,6 +1603,15 @@ function Set-EmployeeUserDisplayName {
     }
 
     return $updated
+}
+
+function Set-EmployeeUserDisplayName {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)][string]$DisplayName
+    )
+
+    return (Set-EmployeeUserProfile -EmployeeCode $EmployeeCode -DisplayName $DisplayName)
 }
 
 function Set-EmployeeUserRole {
@@ -1557,31 +1620,7 @@ function Set-EmployeeUserRole {
         [Parameter(Mandatory = $true)][string]$Role
     )
 
-    $effectiveRole = Get-NormalizedRoleName -Role $Role
-    $updated = $false
-
-    $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
-    try {
-        $users = Read-JsonArrayFile -Path $usersFile
-        foreach ($user in $users) {
-            if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
-                $user.role = $effectiveRole
-                $user.employeeCode = $EmployeeCode
-                $updated = $true
-                break
-            }
-        }
-
-        if ($updated) {
-            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
-            Clear-AuthRuntimeCaches
-        }
-    }
-    finally {
-        Release-ResourceLock -LockHandle $lockHandle
-    }
-
-    return $updated
+    return (Set-EmployeeUserProfile -EmployeeCode $EmployeeCode -Role $Role)
 }
 
 function Set-EmployeeUserTimeEntryTypes {
@@ -1590,35 +1629,7 @@ function Set-EmployeeUserTimeEntryTypes {
         $TimeEntryTypes
     )
 
-    $effectiveTimeEntryTypes = @(ConvertTo-TimeEntryTypeArray -Value $TimeEntryTypes)
-    $updated = $false
-
-    $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
-    try {
-        $users = Read-JsonArrayFile -Path $usersFile
-        foreach ($user in $users) {
-            if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
-                if ($user.PSObject.Properties.Name -contains "timeEntryTypes") {
-                    $user.timeEntryTypes = $effectiveTimeEntryTypes
-                }
-                else {
-                    $user | Add-Member -NotePropertyName "timeEntryTypes" -NotePropertyValue $effectiveTimeEntryTypes -Force
-                }
-                $updated = $true
-                break
-            }
-        }
-
-        if ($updated) {
-            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
-            Clear-AuthRuntimeCaches
-        }
-    }
-    finally {
-        Release-ResourceLock -LockHandle $lockHandle
-    }
-
-    return $updated
+    return (Set-EmployeeUserProfile -EmployeeCode $EmployeeCode -TimeEntryTypes $TimeEntryTypes)
 }
 
 function Set-EmployeeUserGc179Profile {
@@ -1627,36 +1638,7 @@ function Set-EmployeeUserGc179Profile {
         $Gc179Profile
     )
 
-    $updated = $false
-
-    $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
-    try {
-        $users = Read-JsonArrayFile -Path $usersFile
-        foreach ($user in $users) {
-            if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
-                $displayName = if ($user.PSObject.Properties.Name -contains "displayName") { [string]$user.displayName } else { [string](Get-EmployeeName $EmployeeCode) }
-                $effectiveGc179Profile = ConvertTo-Gc179ProfileObject -Value $Gc179Profile -DisplayName $displayName
-                if ($user.PSObject.Properties.Name -contains "gc179Profile") {
-                    $user.gc179Profile = $effectiveGc179Profile
-                }
-                else {
-                    $user | Add-Member -NotePropertyName "gc179Profile" -NotePropertyValue $effectiveGc179Profile -Force
-                }
-                $updated = $true
-                break
-            }
-        }
-
-        if ($updated) {
-            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
-            Clear-AuthRuntimeCaches
-        }
-    }
-    finally {
-        Release-ResourceLock -LockHandle $lockHandle
-    }
-
-    return $updated
+    return (Set-EmployeeUserProfile -EmployeeCode $EmployeeCode -Gc179Profile $Gc179Profile)
 }
 
 function Disable-EmployeeUser {

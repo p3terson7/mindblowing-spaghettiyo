@@ -23,9 +23,12 @@
                 continue
             }
 
+            $entryMutationCommitted = $false
+            $entryMutationError = $null
             $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
             try {
-                $existingData = Read-JsonArrayFile -Path $dataFile
+                try {
+                    $existingData = Read-JsonArrayFile -Path $dataFile
                 $entryIndex = Find-EntryIndex -Entries $existingData -EntryId $entryId -Date $delDate -PunchIn $delPunchIn
                 if ($entryIndex -lt 0) {
                     respondWithError $response 404 "Entry not found"
@@ -44,14 +47,34 @@
                         $filteredData += $existingData[$i]
                     }
                 }
-                Write-JsonAtomic -Path $dataFile -Value $filteredData -Depth 8
+                    Write-JsonAtomic -Path $dataFile -Value $filteredData -Depth 8
+                    $entryMutationCommitted = $true
 
-                $formattedDate = (Get-Date ([string]$entryToDelete.date)).ToString("MMMM dd, yyyy")
-                $employeeName = Get-EmployeeName $employeeCode
-                $historySpan = Get-EntryHistorySpanText -StartTime ([string]$entryToDelete.punchIn) -EndTime ([string]$entryToDelete.punchOut)
-                $historyEntry = "Deleted an entry on $formattedDate $historySpan. Reason: $($delMessage.Trim())"
-                logHistory "Delete" $historyEntry $employeeName
-                Publish-DataChange -Category "employee" -Resource $employeeCode
+                    $formattedDate = (Get-Date ([string]$entryToDelete.date)).ToString("MMMM dd, yyyy")
+                    $employeeName = Get-EmployeeName $employeeCode
+                    $historySpan = Get-EntryHistorySpanText -StartTime ([string]$entryToDelete.punchIn) -EndTime ([string]$entryToDelete.punchOut)
+                    $historyEntry = "Deleted an entry on $formattedDate $historySpan. Reason: $($delMessage.Trim())"
+                    logHistory "Delete" $historyEntry $employeeName
+                }
+                catch {
+                    $entryMutationError = $_
+                    throw
+                }
+                finally {
+                    if ($entryMutationCommitted) {
+                        try {
+                            Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
+                        }
+                        catch {
+                            if ($null -eq $entryMutationError) {
+                                throw
+                            }
+
+                            Write-Warning "Unable to publish employee cache invalidation after a failed delete operation: $($_.Exception.Message)"
+                        }
+                    }
+                }
+
                 respondWithSuccess $response '{ "message": "Entry deleted successfully." }'
             }
             finally {

@@ -17,7 +17,7 @@
                 $dataFolderError = $_.Exception.Message
             }
 
-            $syncState = Get-SyncState
+            $syncState = Get-PublicSyncState
             $gc179TemplatePath = Join-Path -Path $repoRoot -ChildPath "docs/GC179.pdf"
             $checks = @(
                 [PSCustomObject]@{
@@ -75,7 +75,7 @@
                 continue
             }
 
-            $state = Get-SyncState
+            $state = Get-PublicSyncState
             respondWithSuccess $response ($state | ConvertTo-Json -Depth 6)
             continue
         }

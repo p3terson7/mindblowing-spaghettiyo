@@ -7,6 +7,8 @@
 
             $employeeCode = $matches[1]
 
+            $directoryMutationMayHaveCommitted = $false
+            $directoryMutationError = $null
             try {
                 $payload = Read-JsonRequestBody -Request $request
                 $displayName = if ($null -ne $payload) { [string]$payload.name } else { "" }
@@ -19,21 +21,43 @@
                     continue
                 }
 
-                $existingEmployee = Get-EmployeeDirectoryList | Where-Object { $_.code -eq $employeeCode } | Select-Object -First 1
+                $existingEmployee = Get-EmployeeDirectoryRecordMetadata -EmployeeCode $employeeCode
                 if ($null -eq $existingEmployee) {
                     respondWithError $response 404 "Employee not found."
                     continue
                 }
 
-                $updateResult = Update-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -Role $role -TimeEntryTypes $timeEntryTypes -Gc179Profile $gc179Profile
-                if (-not $updateResult.updated) {
-                    respondWithError $response 500 "Unable to update employee."
-                    continue
-                }
+                try {
+                    # This call writes the name mapping before the auth profile, so even a false result can follow a commit.
+                    $directoryMutationMayHaveCommitted = $true
+                    $updateResult = Update-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -Role $role -TimeEntryTypes $timeEntryTypes -Gc179Profile $gc179Profile
+                    if (-not $updateResult.updated) {
+                        $directoryMutationError = [InvalidOperationException]::new("Unable to update employee.")
+                        respondWithError $response 500 "Unable to update employee."
+                        continue
+                    }
 
-                $historyMessage = "Updated the employee profile for <strong>$displayName</strong>."
-                logHistory "Update" $historyMessage $displayName
-                Publish-DataChange -Category "employee-directory" -Resource $employeeCode
+                    $historyMessage = "Updated the employee profile for <strong>$displayName</strong>."
+                    logHistory "Update" $historyMessage $displayName
+                }
+                catch {
+                    $directoryMutationError = $_
+                    throw
+                }
+                finally {
+                    if ($directoryMutationMayHaveCommitted) {
+                        try {
+                            Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
+                        }
+                        catch {
+                            if ($null -eq $directoryMutationError) {
+                                throw
+                            }
+
+                            Write-Warning "Unable to publish employee-directory cache invalidation after a failed update operation: $($_.Exception.Message)"
+                        }
+                    }
+                }
 
                 respondWithSuccess $response (([PSCustomObject]@{
                     message      = "Employee updated successfully."

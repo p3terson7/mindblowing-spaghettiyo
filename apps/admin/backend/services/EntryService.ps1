@@ -172,6 +172,43 @@ function Test-EntryForgottenClockOut {
     return ($forgottenFlag -or $reviewFlag)
 }
 
+function Get-LatestActiveEntry {
+    param([Parameter(Mandatory = $true)]$Entries)
+
+    $latestEntry = $null
+    $latestEntryDateTime = [DateTime]::MinValue
+    foreach ($entry in @($Entries)) {
+        if ($null -eq $entry -or
+            -not $entry.punchIn -or
+            $entry.punchOut -or
+            (Test-EntryForgottenClockOut -Entry $entry)) {
+            continue
+        }
+
+        $entryDateTime = [DateTime]::MinValue
+        try {
+            $entryDateTime = [DateTime]::ParseExact(
+                ("{0} {1}" -f [string]$entry.date, [string]$entry.punchIn),
+                "yyyy-MM-dd HH:mm:ss",
+                $null
+            )
+        }
+        catch {
+            # Invalid legacy timestamps rank before valid entries.
+        }
+
+        # Employee files are append ordered. When duplicate active records have
+        # the same timestamp, deterministically prefer the later file record;
+        # Sort-Object's tie ordering varies with the surrounding input shape.
+        if ($null -eq $latestEntry -or $entryDateTime -ge $latestEntryDateTime) {
+            $latestEntry = $entry
+            $latestEntryDateTime = $entryDateTime
+        }
+    }
+
+    return $latestEntry
+}
+
 function Set-EntryForgottenClockOutReview {
     param(
         [Parameter(Mandatory = $true)]$Entry,
@@ -264,6 +301,76 @@ function Find-EntryIndex {
     }
 
     return -1
+}
+
+function Get-EntryLegacyLookupKey {
+    param(
+        [string]$Date,
+        [string]$PunchIn
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Date) -or [string]::IsNullOrWhiteSpace($PunchIn)) {
+        return ""
+    }
+
+    return ("{0}{1}{2}" -f $Date, [char]31, $PunchIn)
+}
+
+function New-EntryIndexLookup {
+    param([Parameter(Mandatory = $true)]$Entries)
+
+    $byId = @{}
+    $byDateAndPunch = @{}
+
+    for ($i = 0; $i -lt $Entries.Count; $i++) {
+        $entry = $Entries[$i]
+        $entryId = Get-EntryIdentifierValue -Entry $entry
+        if (-not [string]::IsNullOrWhiteSpace($entryId) -and -not $byId.ContainsKey($entryId)) {
+            $byId[$entryId] = $i
+        }
+
+        $entryDate = [string]$entry.date
+        if ([string]::IsNullOrWhiteSpace($entryDate)) {
+            continue
+        }
+
+        $punchTimes = @([string]$entry.punchIn, [string](Get-EntryExactPunchInText -Entry $entry))
+        foreach ($punchTime in $punchTimes) {
+            $legacyKey = Get-EntryLegacyLookupKey -Date $entryDate -PunchIn $punchTime
+            if (-not [string]::IsNullOrWhiteSpace($legacyKey) -and -not $byDateAndPunch.ContainsKey($legacyKey)) {
+                $byDateAndPunch[$legacyKey] = $i
+            }
+        }
+    }
+
+    return [PSCustomObject]@{
+        ById           = $byId
+        ByDateAndPunch = $byDateAndPunch
+    }
+}
+
+function Find-EntryIndexFromLookup {
+    param(
+        [Parameter(Mandatory = $true)]$Lookup,
+        [string]$EntryId,
+        [string]$Date,
+        [string]$PunchIn
+    )
+
+    $matchedIndex = -1
+    if (-not [string]::IsNullOrWhiteSpace($EntryId) -and $Lookup.ById.ContainsKey($EntryId)) {
+        $matchedIndex = [int]$Lookup.ById[$EntryId]
+    }
+
+    $legacyKey = Get-EntryLegacyLookupKey -Date $Date -PunchIn $PunchIn
+    if (-not [string]::IsNullOrWhiteSpace($legacyKey) -and $Lookup.ByDateAndPunch.ContainsKey($legacyKey)) {
+        $legacyIndex = [int]$Lookup.ByDateAndPunch[$legacyKey]
+        if ($matchedIndex -lt 0 -or $legacyIndex -lt $matchedIndex) {
+            $matchedIndex = $legacyIndex
+        }
+    }
+
+    return $matchedIndex
 }
 
 function Update-EntryComputedOvertime {

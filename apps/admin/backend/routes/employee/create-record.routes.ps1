@@ -5,6 +5,8 @@
                 continue
             }
 
+            $directoryMutationMayHaveCommitted = $false
+            $directoryMutationError = $null
             try {
                 $payload = Read-JsonRequestBody -Request $request
                 $employeeCode = if ($null -ne $payload) { [string]$payload.code } else { "" }
@@ -28,22 +30,49 @@
                     continue
                 }
 
-                $existingEmployee = Get-EmployeeDirectoryList | Where-Object { $_.code -eq $employeeCode } | Select-Object -First 1
+                $existingEmployee = Get-EmployeeDirectoryRecordMetadata -EmployeeCode $employeeCode
                 if ($null -ne $existingEmployee) {
                     respondWithError $response 400 "An active employee already exists for this code."
                     continue
                 }
 
-                $createResult = Add-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -InitialPassword $initialPassword -MustChangePassword $mustChangePassword -Role $role -TimeEntryTypes $timeEntryTypes -Gc179Profile $gc179Profile
-                if (-not $createResult.updated) {
-                    $errorMessage = if ($createResult.error) { [string]$createResult.error } else { "Unable to create employee." }
-                    respondWithError $response 400 $errorMessage
-                    continue
-                }
+                try {
+                    try {
+                        $createResult = Add-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -InitialPassword $initialPassword -MustChangePassword $mustChangePassword -Role $role -TimeEntryTypes $timeEntryTypes -Gc179Profile $gc179Profile
+                    }
+                    catch {
+                        # The directory service spans auth, mapping, and entry files, so an exception can follow a partial commit.
+                        $directoryMutationMayHaveCommitted = $true
+                        throw
+                    }
+                    if (-not $createResult.updated) {
+                        $errorMessage = if ($createResult.error) { [string]$createResult.error } else { "Unable to create employee." }
+                        respondWithError $response 400 $errorMessage
+                        continue
+                    }
 
-                $historyMessage = "Created an employee profile for <strong>$displayName</strong> with code <strong>$employeeCode</strong>."
-                logHistory "Add" $historyMessage $displayName
-                Publish-DataChange -Category "employee-directory" -Resource $employeeCode
+                    $directoryMutationMayHaveCommitted = $true
+                    $historyMessage = "Created an employee profile for <strong>$displayName</strong> with code <strong>$employeeCode</strong>."
+                    logHistory "Add" $historyMessage $displayName
+                }
+                catch {
+                    $directoryMutationError = $_
+                    throw
+                }
+                finally {
+                    if ($directoryMutationMayHaveCommitted) {
+                        try {
+                            Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
+                        }
+                        catch {
+                            if ($null -eq $directoryMutationError) {
+                                throw
+                            }
+
+                            Write-Warning "Unable to publish employee-directory cache invalidation after a failed create operation: $($_.Exception.Message)"
+                        }
+                    }
+                }
 
                 respondWithSuccess $response (([PSCustomObject]@{
                     message            = "Employee created successfully."

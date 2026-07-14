@@ -10,9 +10,8 @@ if ($request.Url.AbsolutePath -match "^/projects") {
         continue
     }
 
-    Invoke-CachedRouteScript -RelativePath "routes/projects/get.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/projects/bootstrap.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/projects/add.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/projects/update.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/projects/delete.routes.ps1"
+    $projectRouteScript = Resolve-ProjectRouteScript -Method ([string]$request.HttpMethod) -Path ([string]$request.Url.AbsolutePath)
+    if (-not [string]::IsNullOrWhiteSpace($projectRouteScript)) {
+        Invoke-CachedRouteScript -RelativePath $projectRouteScript
+    }
 }

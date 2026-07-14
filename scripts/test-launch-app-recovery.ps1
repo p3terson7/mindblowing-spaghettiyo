@@ -1,0 +1,98 @@
+$ErrorActionPreference = "Stop"
+
+$scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
+$repoRoot = (Resolve-Path (Join-Path -Path $scriptDir -ChildPath "..")).Path
+$testRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("geem-launch-recovery {0}" -f [Guid]::NewGuid().ToString("N"))
+$fixtureScripts = Join-Path -Path $testRoot -ChildPath "scripts"
+$fixtureLib = Join-Path -Path $fixtureScripts -ChildPath "lib"
+$fixtureServerScript = Join-Path -Path $testRoot -ChildPath "apps/admin/backend/admin-server.ps1"
+$forceMarker = Join-Path -Path $testRoot -ChildPath "force-marker.txt"
+$previousServerScript = [string]$env:GEEM_TEST_SERVER_SCRIPT
+$previousForceMarker = [string]$env:GEEM_TEST_FORCE_MARKER
+$previousStatusMode = [string]$env:GEEM_TEST_STATUS_MODE
+
+try {
+    New-Item -ItemType Directory -Path $fixtureLib -Force | Out-Null
+    New-Item -ItemType Directory -Path (Split-Path -Path $fixtureServerScript -Parent) -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path -Path $repoRoot -ChildPath "scripts/launch-app.ps1") -Destination (Join-Path -Path $fixtureScripts -ChildPath "launch-app.ps1") -Force
+    Set-Content -LiteralPath $fixtureServerScript -Value "# fixture" -Encoding UTF8
+
+    Set-Content -LiteralPath (Join-Path -Path $fixtureLib -ChildPath "ServerControl.ps1") -Value @'
+function Test-IsWindowsHost { return $false }
+
+function Get-ServiceStatus {
+    param($Name, $DisplayName, $Port, $PidFile)
+    $isUntracked = $env:GEEM_TEST_STATUS_MODE -eq "untracked"
+    return [PSCustomObject]@{
+        IsRunning       = $true
+        PortOwnerId     = 999
+        TrackedProcessId = if ($isUntracked) { $null } else { 123 }
+        Metadata        = if ($isUntracked) { $null } else { [PSCustomObject]@{ scriptPath = $env:GEEM_TEST_SERVER_SCRIPT } }
+    }
+}
+
+function Start-ManagedService {
+    param($Name, $DisplayName, $ServerScript, $Port, $PidFile, $StdOutLog, $StdErrLog, $WorkingDirectory, [switch]$Force)
+    Set-Content -LiteralPath $env:GEEM_TEST_FORCE_MARKER -Value ([string][bool]$Force) -Encoding ASCII
+}
+
+function Stop-ManagedService { param($Name, $DisplayName, $Port, $PidFile, $ServerScript, [switch]$Quiet) }
+
+function Open-UriInDefaultBrowser { param($Uri) }
+'@ -Encoding UTF8
+
+    Set-Content -LiteralPath (Join-Path -Path $fixtureLib -ChildPath "RuntimeLayout.ps1") -Value @'
+function Get-ManagedServiceConfig {
+    param($Name)
+    return [PSCustomObject]@{
+        Name             = "app"
+        DisplayName      = "GEEM fixture"
+        Port             = 1
+        PidFile          = "fixture.pid"
+        StdOutLog        = "fixture.stdout"
+        StdErrLog        = "fixture.stderr"
+        WorkingDirectory = $env:TEMP
+        ServerScript     = $env:GEEM_TEST_SERVER_SCRIPT
+        FrontendUrl      = "http://127.0.0.1:1/"
+    }
+}
+'@ -Encoding UTF8
+
+    $env:GEEM_TEST_SERVER_SCRIPT = $fixtureServerScript
+    $env:GEEM_TEST_FORCE_MARKER = $forceMarker
+    try {
+        & (Join-Path -Path $fixtureScripts -ChildPath "launch-app.ps1")
+    }
+    catch {
+        # The fake URL deliberately stays unavailable after the mocked restart.
+    }
+
+    if (-not (Test-Path -LiteralPath $forceMarker -PathType Leaf)) {
+        throw "Assertion failed: an unhealthy tracked service must reach the restart call."
+    }
+    if ((Get-Content -LiteralPath $forceMarker -Raw).Trim() -ne "True") {
+        throw "Assertion failed: an unhealthy tracked service must be force-restarted."
+    }
+
+    Remove-Item -LiteralPath $forceMarker -Force
+    $env:GEEM_TEST_STATUS_MODE = "untracked"
+    try {
+        & (Join-Path -Path $fixtureScripts -ChildPath "launch-app.ps1") -Force
+    }
+    catch {
+        # The fake URL deliberately stays unavailable after the mocked restart.
+    }
+    if (-not (Test-Path -LiteralPath $forceMarker -PathType Leaf) -or (Get-Content -LiteralPath $forceMarker -Raw).Trim() -ne "True") {
+        throw "Assertion failed: -Force must reach safe restart recovery for an untracked listener."
+    }
+
+    Write-Host "Launch recovery test passed."
+}
+finally {
+    $env:GEEM_TEST_SERVER_SCRIPT = $previousServerScript
+    $env:GEEM_TEST_FORCE_MARKER = $previousForceMarker
+    $env:GEEM_TEST_STATUS_MODE = $previousStatusMode
+    if (Test-Path -LiteralPath $testRoot) {
+        Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}

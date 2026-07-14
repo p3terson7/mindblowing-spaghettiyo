@@ -849,11 +849,21 @@ window.handleSyncStateChange = function (syncState) {
     if (typeof clearProjectDetailCache === "function") {
       clearProjectDetailCache();
     }
+    if (typeof window.invalidateEmployeesViewEntryCache === "function") {
+      window.invalidateEmployeesViewEntryCache("*");
+    }
     return;
   }
 
   if (category === "employee" && resource) {
-    dashboardState.entriesByEmployee[resource] = undefined;
+    if (resource === "*") {
+      dashboardState.entriesByEmployee = {};
+    } else {
+      dashboardState.entriesByEmployee[resource] = undefined;
+    }
+    if (typeof window.invalidateEmployeesViewEntryCache === "function") {
+      window.invalidateEmployeesViewEntryCache(resource);
+    }
     dashboardState.historyLoaded = false;
     dashboardState.bootstrap = null;
     return;
@@ -876,6 +886,9 @@ window.handleSyncStateChange = function (syncState) {
     dashboardState.entriesByEmployee = {};
     dashboardState.historyLoaded = false;
     dashboardState.bootstrap = null;
+    if (typeof window.invalidateEmployeesViewEntryCache === "function") {
+      window.invalidateEmployeesViewEntryCache("*");
+    }
     return;
   }
 

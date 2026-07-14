@@ -1,4 +1,9 @@
 if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/seed/demo-entries") {
+    if (-not [bool]$demoSeedEnabled) {
+        respondWithError $response 403 "Demo-data generation is disabled in this deployment."
+        continue
+    }
+
     $currentUser = Get-AuthenticatedUserFromRequest -Request $request
     if ($null -eq $currentUser) {
         respondWithError $response 401 "Authentication required."
@@ -10,6 +15,8 @@ if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/seed/dem
         continue
     }
 
+    $seedOperationStarted = $false
+    $seedOperationCompleted = $false
     try {
         $payload = Read-JsonRequestBody -Request $request
         $minimumEntries = 4
@@ -39,11 +46,25 @@ if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/seed/dem
             }
         }
 
+        $seedOperationStarted = $true
         $result = New-DemoOvertimeEntries -CurrentUser $currentUser -MinimumEntriesPerEmployee $minimumEntries -MaximumEntriesPerEmployee $maximumEntries -MonthsBack $monthsBack
+        $seedOperationCompleted = $true
         respondWithSuccess $response ($result | ConvertTo-Json -Depth 8)
     }
     catch {
-        respondWithError $response 500 "Unable to seed demo entries: $($_.Exception.Message)"
+        $seedOperationError = $_
+        if ($seedOperationStarted -and -not $seedOperationCompleted) {
+            # The seed service can fail after one or more employee files were written. A wildcard publication is safe
+            # when the route cannot distinguish that partial-commit case from an earlier service validation failure.
+            try {
+                Publish-DataChange -Category "seed" -Resource "*" | Out-Null
+            }
+            catch {
+                Write-Warning "Unable to publish seed cache invalidation after a failed seed operation: $($_.Exception.Message)"
+            }
+        }
+
+        respondWithError $response 500 "Unable to seed demo entries: $($seedOperationError.Exception.Message)"
     }
     continue
 }

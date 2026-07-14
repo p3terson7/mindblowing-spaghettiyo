@@ -13,6 +13,16 @@ function ConvertTo-ShellSingleQuotedLiteral {
     return $singleQuote + ($Value -replace [regex]::Escape($singleQuote), $escapedSingleQuote) + $singleQuote
 }
 
+function ConvertTo-WindowsPowerShellFileArguments {
+    param([Parameter(Mandatory = $true)][string]$ScriptPath)
+
+    if ($ScriptPath.Contains('"')) {
+        throw "A PowerShell script path cannot contain a double quote."
+    }
+
+    return ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $ScriptPath)
+}
+
 function Get-PowerShellExecutable {
     $candidates = @("pwsh", "powershell", "powershell.exe")
     foreach ($candidate in $candidates) {
@@ -123,6 +133,168 @@ function Get-ManagedProcess {
     return (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue | Select-Object -First 1)
 }
 
+function Test-IsManagedPowerShellProcess {
+    param($Process)
+
+    if ($null -eq $Process) {
+        return $false
+    }
+
+    $processName = ([string]$Process.ProcessName).ToLowerInvariant()
+    return ($processName -eq "powershell" -or $processName -eq "pwsh")
+}
+
+function Get-ProcessCommandLine {
+    param([Parameter(Mandatory = $true)][int]$ProcessId)
+
+    if ($ProcessId -le 0) {
+        return ""
+    }
+
+    if (Test-IsWindowsHost) {
+        $filter = "ProcessId = $ProcessId"
+        $getCimInstance = Get-Command -Name "Get-CimInstance" -ErrorAction SilentlyContinue
+        if ($null -ne $getCimInstance) {
+            try {
+                $processRecord = Get-CimInstance -ClassName "Win32_Process" -Filter $filter -ErrorAction Stop | Select-Object -First 1
+                if ($null -ne $processRecord) {
+                    return [string]$processRecord.CommandLine
+                }
+            }
+            catch { }
+        }
+
+        $getWmiObject = Get-Command -Name "Get-WmiObject" -ErrorAction SilentlyContinue
+        if ($null -ne $getWmiObject) {
+            try {
+                $processRecord = Get-WmiObject -Class "Win32_Process" -Filter $filter -ErrorAction Stop | Select-Object -First 1
+                if ($null -ne $processRecord) {
+                    return [string]$processRecord.CommandLine
+                }
+            }
+            catch { }
+        }
+
+        return ""
+    }
+
+    $psCommand = Get-Command -Name "ps" -ErrorAction SilentlyContinue
+    if ($null -eq $psCommand) {
+        return ""
+    }
+
+    try {
+        $commandLine = @(& $psCommand.Source -ww -p $ProcessId -o "command=" 2>$null)
+        return (($commandLine | ForEach-Object { [string]$_ }) -join " ").Trim()
+    }
+    catch {
+        return ""
+    }
+}
+
+function Get-RunningPowerShellProcesses {
+    $processes = @()
+    foreach ($processName in @("pwsh", "powershell")) {
+        try {
+            $processes += @(Get-Process -Name $processName -ErrorAction SilentlyContinue)
+        }
+        catch { }
+    }
+
+    return @($processes)
+}
+
+function Test-ProcessRunsPowerShellFile {
+    param(
+        $Process,
+        [Parameter(Mandatory = $true)][string]$ScriptPath,
+        [string]$CommandLine
+    )
+
+    if (-not (Test-IsManagedPowerShellProcess -Process $Process)) {
+        return $false
+    }
+
+    try {
+        $expectedScriptPath = [System.IO.Path]::GetFullPath($ScriptPath)
+    }
+    catch {
+        return $false
+    }
+
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) {
+        $CommandLine = Get-ProcessCommandLine -ProcessId ([int]$Process.Id)
+    }
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) {
+        return $false
+    }
+
+    $escapedScriptPath = [regex]::Escape($expectedScriptPath)
+    $regexOptions = [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+    if (Test-IsWindowsHost) {
+        $regexOptions = $regexOptions -bor [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    }
+
+    # Match only the value of PowerShell's -File parameter. Merely mentioning the
+    # path elsewhere in a command line must never authorize terminating a process.
+    $fileArgumentPattern = '(^|\s)-[Ff][Ii][Ll][Ee](\s+|:)("' + $escapedScriptPath + '"|''' + $escapedScriptPath + '''|' + $escapedScriptPath + ')($|\s)'
+    return [regex]::IsMatch($CommandLine, $fileArgumentPattern, $regexOptions)
+}
+
+function Find-ServiceProcessesByScriptPath {
+    param([Parameter(Mandatory = $true)][string]$ScriptPath)
+
+    $matches = @()
+    foreach ($candidate in @(Get-RunningPowerShellProcesses)) {
+        if (Test-ProcessRunsPowerShellFile -Process $candidate -ScriptPath $ScriptPath) {
+            $matches += $candidate
+        }
+    }
+
+    return @($matches)
+}
+
+function Test-ServiceProcessMatchesMetadata {
+    param(
+        $Process,
+        $Metadata
+    )
+
+    if (-not (Test-IsManagedPowerShellProcess -Process $Process) -or $null -eq $Metadata) {
+        return $false
+    }
+
+    $recordedStartValue = if ($Metadata.processStartedAtUtc) { $Metadata.processStartedAtUtc } else { $Metadata.startedAtUtc }
+    if ($null -ne $recordedStartValue -and -not [string]::IsNullOrWhiteSpace([string]$recordedStartValue)) {
+        try {
+            # PowerShell 7's ConvertFrom-Json turns ISO timestamps into DateTime
+            # values. Casting that DateTime back to text drops its UTC kind and
+            # can apply the local offset twice, making valid PID metadata look
+            # stale. Preserve DateTime values directly; parse only legacy text.
+            $recordedStart = if ($recordedStartValue -is [DateTime]) {
+                ([DateTime]$recordedStartValue).ToUniversalTime()
+            }
+            else {
+                [DateTime]::Parse(
+                    [string]$recordedStartValue,
+                    [System.Globalization.CultureInfo]::InvariantCulture,
+                    [System.Globalization.DateTimeStyles]::RoundtripKind
+                ).ToUniversalTime()
+            }
+            $actualStart = $Process.StartTime.ToUniversalTime()
+            $allowedDifferenceSeconds = if ($Metadata.processStartedAtUtc) { 5 } else { 120 }
+            if ([math]::Abs(($actualStart - $recordedStart).TotalSeconds) -gt $allowedDifferenceSeconds) {
+                return $false
+            }
+        }
+        catch {
+            return $false
+        }
+    }
+
+    return -not [string]::IsNullOrWhiteSpace([string]$Metadata.scriptPath)
+}
+
 function Read-ServiceMetadata {
     param([Parameter(Mandatory = $true)][string]$PidFile)
 
@@ -131,7 +303,7 @@ function Read-ServiceMetadata {
     }
 
     try {
-        return (Get-Content -Path $PidFile -Raw | ConvertFrom-Json)
+        return (Get-Content -LiteralPath $PidFile -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop)
     }
     catch {
         return $null
@@ -149,7 +321,18 @@ function Write-ServiceMetadata {
         Ensure-Directory -Path $parent
     }
 
-    $Metadata | ConvertTo-Json -Depth 4 | Set-Content -Path $PidFile -Encoding UTF8
+    $temporaryPath = "$PidFile.tmp.$([Guid]::NewGuid().ToString('N'))"
+    $json = ConvertTo-Json -InputObject $Metadata -Depth 4
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    try {
+        [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8NoBom)
+        Move-Item -LiteralPath $temporaryPath -Destination $PidFile -Force -ErrorAction Stop
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Remove-ServiceMetadata {
@@ -175,6 +358,9 @@ function Get-ServiceStatus {
     }
 
     $trackedProcess = Get-ManagedProcess -ProcessId $trackedPid
+    if ($null -ne $trackedProcess -and -not (Test-ServiceProcessMatchesMetadata -Process $trackedProcess -Metadata $metadata)) {
+        $trackedProcess = $null
+    }
     if ($null -eq $trackedProcess -and $trackedPid) {
         Remove-ServiceMetadata -PidFile $PidFile
         $metadata = $null
@@ -314,7 +500,7 @@ function Start-ManagedService {
     }
 
     if ($Force) {
-        Stop-ManagedService -Name $Name -DisplayName $DisplayName -Port $Port -PidFile $PidFile -Quiet
+        Stop-ManagedService -Name $Name -DisplayName $DisplayName -Port $Port -PidFile $PidFile -ServerScript $ServerScript -Quiet
     }
     elseif ($status.TrackedProcessId -and -not $status.IsRunning) {
         Remove-ServiceMetadata -PidFile $PidFile
@@ -334,7 +520,7 @@ function Start-ManagedService {
 
     $powerShellExecutable = Get-PowerShellExecutable
     if (Test-IsWindowsHost) {
-        $arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ServerScript)
+        $arguments = ConvertTo-WindowsPowerShellFileArguments -ScriptPath $ServerScript
         $startProcessParams = @{
             FilePath               = $powerShellExecutable
             ArgumentList           = $arguments
@@ -390,6 +576,13 @@ function Start-ManagedService {
     }
 
     $managedProcessId = if (Test-IsWindowsHost) { [int]$requestedProcessId } else { [int]$listenerPid }
+    $managedProcess = Get-ManagedProcess -ProcessId $managedProcessId
+    $processStartedAtUtc = if ($null -ne $managedProcess) {
+        try { $managedProcess.StartTime.ToUniversalTime().ToString("o") } catch { "" }
+    }
+    else {
+        ""
+    }
     $metadata = @{
         name              = $Name
         displayName       = $DisplayName
@@ -400,6 +593,7 @@ function Start-ManagedService {
         stdoutLog         = $StdOutLog
         stderrLog         = $StdErrLog
         startedAtUtc      = (Get-Date).ToUniversalTime().ToString("o")
+        processStartedAtUtc = $processStartedAtUtc
     }
     Write-ServiceMetadata -PidFile $PidFile -Metadata $metadata
 
@@ -417,6 +611,7 @@ function Stop-ManagedService {
         [Parameter(Mandatory = $true)][string]$DisplayName,
         [Parameter(Mandatory = $true)][int]$Port,
         [Parameter(Mandatory = $true)][string]$PidFile,
+        [string]$ServerScript,
         [switch]$Quiet
     )
 
@@ -427,15 +622,26 @@ function Stop-ManagedService {
     }
     if ($status.Metadata -and $status.Metadata.requestedProcessId) {
         $requestedProcessId = [int]$status.Metadata.requestedProcessId
-        if ($processIds -notcontains $requestedProcessId) {
+        $requestedProcess = Get-ManagedProcess -ProcessId $requestedProcessId
+        if ($processIds -notcontains $requestedProcessId -and (Test-IsManagedPowerShellProcess -Process $requestedProcess)) {
             $processIds += $requestedProcessId
         }
     }
-    if ($status.PortOwnerId -and ($processIds -notcontains [int]$status.PortOwnerId)) {
-        $processIds += [int]$status.PortOwnerId
+
+    if (-not [string]::IsNullOrWhiteSpace($ServerScript)) {
+        foreach ($matchingProcess in @(Find-ServiceProcessesByScriptPath -ScriptPath $ServerScript)) {
+            $matchingProcessId = [int]$matchingProcess.Id
+            if ($matchingProcessId -gt 0 -and $processIds -notcontains $matchingProcessId) {
+                $processIds += $matchingProcessId
+            }
+        }
     }
 
     if ($processIds.Count -eq 0) {
+        if ($status.IsRunning) {
+            throw "$DisplayName was not stopped because port $Port belongs to an untracked process (PID $($status.PortOwnerId))."
+        }
+
         Remove-ServiceMetadata -PidFile $PidFile
         if (-not $Quiet) {
             Write-Host "$DisplayName is not running."
@@ -445,7 +651,7 @@ function Stop-ManagedService {
 
     foreach ($processId in $processIds) {
         try {
-            Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+            Stop-Process -Id $processId -Force -ErrorAction Stop
         }
         catch { }
     }

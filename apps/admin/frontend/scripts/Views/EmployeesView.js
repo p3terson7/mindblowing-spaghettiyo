@@ -16,6 +16,10 @@ const employeesViewState = {
     fdfContent: "",
     fileName: "",
     preview: null,
+    selectedSourceRows: new Set(),
+    identityConfirmed: false,
+    warningsConfirmed: false,
+    lastImportResult: null,
   },
   editorProjectAssignments: {
     projects: [],
@@ -27,14 +31,20 @@ const employeesViewState = {
 let pendingEmployeeAnalyticsFrameId = null;
 const employeeAnalyticsChartInstances = {};
 const employeeAnalyticsPalette = ["#3574f0", "#46a35b", "#d18900", "#d14343", "#7d5cf5", "#0096b2", "#c95c9b", "#6f7b2f", "#8a6f4d", "#b65f20"];
-const gc179ImportEnabled = false;
+window.invalidateEmployeesViewEntryCache = function (resource) {
+  const employeeCode = String(resource || "").trim();
+  if (!employeeCode || employeeCode === "*") {
+    employeesViewState.entriesByEmployee = {};
+    employeesViewState.currentMonthByEmployee = {};
+  } else {
+    employeesViewState.entriesByEmployee[employeeCode] = undefined;
+    employeesViewState.currentMonthByEmployee[employeeCode] = undefined;
+  }
+  employeesViewState.employeeAnalyticsSignature = "";
+};
 
 function canManageEmployeeProfiles() {
   return typeof isSuperAdminUser === "function" && isSuperAdminUser();
-}
-
-function canSeedDemoEntries() {
-  return canManageEmployeeProfiles();
 }
 
 function getCurrentUserEmployeeCode() {
@@ -632,72 +642,20 @@ async function restoreEmployee(employee) {
   }
 }
 
-async function seedDemoEntries() {
-  if (!canSeedDemoEntries()) {
-    showToast(t("employees.seedDemoEntriesForbidden"), "error");
-    return;
-  }
-
-  const confirmed = window.confirm(t("employees.seedDemoEntriesConfirm"));
-  if (!confirmed) {
-    return;
-  }
-
-  const seedButton = document.getElementById("seedDemoEntriesButton");
-  const originalMarkup = seedButton ? seedButton.innerHTML : "";
-  if (seedButton) {
-    seedButton.disabled = true;
-    seedButton.innerHTML = `<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>${escapeHtml(t("employees.seedDemoEntriesRunning"))}</span>`;
-  }
-
-  try {
-    const response = await fetch(apiUrl + "seed/demo-entries", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        minimumEntriesPerEmployee: 4,
-        maximumEntriesPerEmployee: 8,
-        monthsBack: 6,
-      }),
-    });
-    const result = await parseResponse(response);
-
-    if (typeof clearLookupCaches === "function") {
-      clearLookupCaches();
-    }
-    if (typeof markAllowedViewsStale === "function" && typeof getCurrentUser === "function") {
-      markAllowedViewsStale(getCurrentUser());
-    }
-
-    showToast(t("employees.seedDemoEntriesSuccess", {
-      entries: Number(result && result.entryCount || 0),
-      employees: Number(result && result.employeeCount || 0),
-      projects: Number(result && result.projectCount || 0),
-    }), "success");
-    await loadEmployeesView();
-  } catch (error) {
-    console.error("Unable to seed demo entries:", error);
-    showToast(error.message || t("employees.seedDemoEntriesError"), "error");
-  } finally {
-    if (seedButton) {
-      seedButton.disabled = false;
-      seedButton.innerHTML = originalMarkup;
-      if (typeof applyTranslations === "function") {
-        applyTranslations(seedButton);
-      }
-    }
-  }
-}
-
 function canImportGc179Entries() {
-  return gc179ImportEnabled && typeof getCurrentUserRole === "function" && ["admin", "superAdmin"].includes(getCurrentUserRole());
+  const user = typeof getCurrentUser === "function" ? getCurrentUser() : null;
+  const runtimeFlags = window.saphirFeatureFlags && typeof window.saphirFeatureFlags === "object"
+    ? window.saphirFeatureFlags
+    : null;
+  const featureEnabled = user && typeof user.gc179ImportEnabled === "boolean"
+    ? user.gc179ImportEnabled
+    : Boolean(runtimeFlags && runtimeFlags.gc179Import === true);
+  return featureEnabled && typeof getCurrentUserRole === "function" && ["admin", "superAdmin"].includes(getCurrentUserRole());
 }
 
 function getGc179ImportEmployees() {
   return (Array.isArray(employeesViewState.allEmployees) ? employeesViewState.allEmployees : [])
-    .filter(employee => employee && employee.code && !isArchivedEmployee(employee))
+    .filter(employee => employee && employee.code && !isArchivedEmployee(employee) && !isCurrentUserEmployeeCode(employee.code))
     .slice()
     .sort(compareEmployeesByRoleThenName);
 }
@@ -722,11 +680,193 @@ function setGc179ImportMessage(message, tone = "info") {
   box.classList.toggle("d-none", !message);
 }
 
+function normalizeGc179ImportMessages(values) {
+  return (Array.isArray(values) ? values : values == null ? [] : [values])
+    .map(value => {
+      if (value && typeof value === "object" && value.message) {
+        return String(value.message).trim();
+      }
+      return String(value || "").trim();
+    })
+    .filter(Boolean);
+}
+
+function normalizeGc179IdentityToken(value) {
+  const text = String(value || "").trim();
+  const digits = text.replace(/\D/g, "");
+  return digits.length >= 6 ? digits : text.toUpperCase().replace(/\s+/g, " ");
+}
+
+function getGc179EmployeeFromSelect() {
+  const select = document.getElementById("gc179ImportEmployeeSelect");
+  const employeeCode = select ? String(select.value || "").trim() : "";
+  return getGc179ImportEmployees().find(employee => String(employee.code || "").trim() === employeeCode) || null;
+}
+
+function getGc179EmployeeCodeFromFileName(fileName) {
+  const match = String(fileName || "").match(/(?:^|[^0-9])([0-9]{6,12})(?=[^0-9]|$)/);
+  return match ? match[1] : "";
+}
+
+function getGc179ImportIdentity(preview) {
+  const source = preview && preview.identity && typeof preview.identity === "object" ? preview.identity : {};
+  const header = preview && preview.header && typeof preview.header === "object" ? preview.header : {};
+  const targetEmployee = getGc179EmployeeFromSelect();
+  const targetProfile = targetEmployee && targetEmployee.gc179Profile && typeof targetEmployee.gc179Profile === "object"
+    ? targetEmployee.gc179Profile
+    : {};
+  const sourceEmployeeCode = String(source.sourceEmployeeCode || getGc179EmployeeCodeFromFileName(preview && preview.sourceFile)).trim();
+  const sourcePri = String(source.sourcePri || header.pri || "").trim();
+  const sourceName = String(source.sourceName || [header.givenName, header.surname].filter(Boolean).join(" ")).trim();
+  const targetEmployeeCode = String(source.targetEmployeeCode || targetEmployee && targetEmployee.code || preview && preview.employeeCode || "").trim();
+  const targetName = String(source.targetEmployeeName || targetEmployee && targetEmployee.name || "").trim();
+  const targetPri = String(source.targetPri || targetProfile.pri || "").trim();
+  let status = String(source.status || "").trim().toLowerCase();
+
+  if (!["matched", "unverified", "mismatch"].includes(status)) {
+    const sourceTokens = [sourceEmployeeCode, sourcePri].map(normalizeGc179IdentityToken).filter(Boolean);
+    const targetTokens = [targetEmployeeCode, targetPri].map(normalizeGc179IdentityToken).filter(Boolean);
+    if (sourceTokens.length === 0 || targetTokens.length === 0) {
+      status = "unverified";
+    } else {
+      status = sourceTokens.every(token => targetTokens.includes(token)) ? "matched" : "mismatch";
+    }
+  }
+
+  const requiresConfirmation = typeof source.requiresConfirmation === "boolean"
+    ? source.requiresConfirmation
+    : status === "unverified";
+
+  return {
+    status,
+    sourceEmployeeCode,
+    sourcePri,
+    sourceName,
+    targetEmployeeCode,
+    targetPri,
+    targetName,
+    requiresConfirmation,
+    confirmed: Boolean(source.confirmed || employeesViewState.gc179Import.identityConfirmed),
+  };
+}
+
+function getGc179EntrySourceRow(entry, index) {
+  const value = Number(entry && entry.sourceRow);
+  return Number.isInteger(value) && value >= 0 ? value : index;
+}
+
+function isGc179DuplicateEntry(entry) {
+  return Boolean(entry && (entry.isDuplicate === true || ["exact", "conflict"].includes(String(entry.duplicateStatus || "").toLowerCase())));
+}
+
+function isGc179EntryImportable(entry) {
+  return Boolean(entry)
+    && entry.canImport !== false
+    && !isGc179DuplicateEntry(entry)
+    && normalizeGc179ImportMessages(entry.validationErrors).length === 0;
+}
+
+function getGc179PreviewCounts(preview) {
+  const entries = Array.isArray(preview && preview.entries) ? preview.entries : [];
+  const counts = preview && preview.counts && typeof preview.counts === "object" ? preview.counts : {};
+  const warnings = normalizeGc179ImportMessages(preview && preview.warnings);
+  const validationErrors = normalizeGc179ImportMessages(preview && preview.validationErrors);
+  const duplicateEntries = entries.filter(isGc179DuplicateEntry).length;
+  const validEntries = entries.filter(isGc179EntryImportable).length;
+  const readCount = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const skipped = readCount(counts.skipped, warnings.length);
+  return {
+    parsed: readCount(counts.parsed, entries.length + skipped),
+    valid: readCount(counts.valid, validEntries),
+    skipped,
+    duplicates: readCount(counts.duplicates, duplicateEntries),
+    errors: readCount(counts.errors, validationErrors.length),
+  };
+}
+
+function getGc179BlockingValidationErrors(preview) {
+  const selectedRows = employeesViewState.gc179Import.selectedSourceRows || new Set();
+  const entries = Array.isArray(preview && preview.entries) ? preview.entries : [];
+  return Array.from(new Set([
+    ...normalizeGc179ImportMessages(preview && preview.validationErrors),
+    ...entries.flatMap((entry, index) => selectedRows.has(getGc179EntrySourceRow(entry, index))
+      ? normalizeGc179ImportMessages(entry && entry.validationErrors)
+      : []),
+  ]));
+}
+
+function getGc179SelectedSourceRows() {
+  return Array.from(employeesViewState.gc179Import.selectedSourceRows || [])
+    .map(Number)
+    .filter(value => Number.isInteger(value) && value >= 0)
+    .sort((left, right) => left - right);
+}
+
+function setGc179ImportFormDisabled(disabled) {
+  const form = document.getElementById("gc179ImportForm");
+  if (form) {
+    form.querySelectorAll("input, select, textarea").forEach(control => {
+      control.disabled = Boolean(disabled);
+    });
+  }
+  const previewButton = document.getElementById("gc179ImportPreviewButton");
+  if (previewButton) {
+    previewButton.disabled = Boolean(disabled);
+  }
+}
+
+function setGc179ButtonLabel(button, translationKey) {
+  if (!button) {
+    return;
+  }
+  button.textContent = t(translationKey);
+}
+
+function syncGc179ImportFilePicker(file = null) {
+  const picker = document.getElementById("gc179ImportFilePicker");
+  const fileName = document.getElementById("gc179ImportFileName");
+  if (!picker || !fileName) {
+    return;
+  }
+
+  const selectedName = String(file && file.name || "").trim();
+  const hasFile = selectedName.length > 0;
+  picker.classList.toggle("has-file", hasFile);
+
+  if (hasFile) {
+    fileName.removeAttribute("data-i18n");
+    fileName.textContent = selectedName;
+    fileName.title = selectedName;
+    return;
+  }
+
+  fileName.setAttribute("data-i18n", "employees.gc179NoFileSelected");
+  fileName.textContent = t("employees.gc179NoFileSelected");
+  fileName.removeAttribute("title");
+}
+
 function resetGc179ImportPreview() {
   employeesViewState.gc179Import.preview = null;
+  employeesViewState.gc179Import.selectedSourceRows = new Set();
+  employeesViewState.gc179Import.identityConfirmed = false;
+  employeesViewState.gc179Import.warningsConfirmed = false;
+  employeesViewState.gc179Import.lastImportResult = null;
+  setGc179ImportFormDisabled(false);
   const commitButton = document.getElementById("gc179ImportCommitButton");
   if (commitButton) {
     commitButton.disabled = true;
+    setGc179ButtonLabel(commitButton, "employees.gc179ImportConfirm");
+  }
+  const previewButton = document.getElementById("gc179ImportPreviewButton");
+  if (previewButton) {
+    previewButton.disabled = false;
+    setGc179ButtonLabel(previewButton, "employees.gc179Preview");
+  }
+  const undoButton = document.getElementById("gc179ImportUndoButton");
+  if (undoButton) {
+    undoButton.disabled = false;
+    undoButton.classList.add("d-none");
+    setGc179ButtonLabel(undoButton, "employees.gc179Undo");
   }
   const container = document.getElementById("gc179ImportPreviewContainer");
   if (container) {
@@ -781,10 +921,15 @@ function openGc179ImportModal(selectedEmployeeCode = "") {
   if (form) {
     form.reset();
   }
+  syncGc179ImportFilePicker();
   employeesViewState.gc179Import = {
     fdfContent: "",
     fileName: "",
     preview: null,
+    selectedSourceRows: new Set(),
+    identityConfirmed: false,
+    warningsConfirmed: false,
+    lastImportResult: null,
   };
   setGc179ImportMessage("");
   populateGc179ImportModal(selectedEmployeeCode);
@@ -798,6 +943,12 @@ function readGc179ImportFile() {
   const file = input && input.files && input.files[0] ? input.files[0] : null;
   if (!file) {
     return Promise.reject(new Error(t("employees.gc179FdfRequired")));
+  }
+  if (!/\.fdf$/i.test(String(file.name || ""))) {
+    return Promise.reject(new Error(t("employees.gc179FdfInvalid")));
+  }
+  if (Number(file.size || 0) > 1024 * 1024) {
+    return Promise.reject(new Error(t("employees.gc179FdfTooLarge")));
   }
 
   return new Promise((resolve, reject) => {
@@ -813,10 +964,10 @@ function readGc179ImportFile() {
   });
 }
 
-async function buildGc179ImportPayload({ requireFile = true } = {}) {
+async function buildGc179ImportPayload({ requireFile = true, includeSelection = false } = {}) {
   const employeeCode = document.getElementById("gc179ImportEmployeeSelect").value;
   const projectCode = document.getElementById("gc179ImportProjectSelect").value;
-  const status = document.getElementById("gc179ImportStatusSelect").value || "approved";
+  const status = document.getElementById("gc179ImportStatusSelect").value || "pending";
   const managerMessage = document.getElementById("gc179ImportManagerMessage").value || "";
 
   if (!employeeCode) {
@@ -832,7 +983,7 @@ async function buildGc179ImportPayload({ requireFile = true } = {}) {
     employeesViewState.gc179Import.fileName = fileData.fileName;
   }
 
-  return {
+  const payload = {
     employeeCode,
     projectCode,
     status,
@@ -840,49 +991,227 @@ async function buildGc179ImportPayload({ requireFile = true } = {}) {
     fileName: employeesViewState.gc179Import.fileName,
     fdfContent: employeesViewState.gc179Import.fdfContent,
     skipDuplicates: true,
+    confirmIdentity: Boolean(employeesViewState.gc179Import.identityConfirmed),
   };
+  if (includeSelection) {
+    payload.selectedSourceRows = getGc179SelectedSourceRows();
+  }
+  return payload;
 }
 
-function renderGc179ImportPreview(preview) {
-  const container = document.getElementById("gc179ImportPreviewContainer");
+function formatGc179RateLabel(entry) {
+  const components = Array.isArray(entry && entry.gc179RateComponents) ? entry.gc179RateComponents : [];
+  if (components.length > 0) {
+    return components.map(component => {
+      const rate = String(component && component.rate || "").trim();
+      const hours = String(component && component.hours || "").trim();
+      const rateLabel = /^\d+(?:\.\d+)?$/.test(rate) ? `${rate}×` : rate;
+      return [rateLabel, hours ? `${hours} h` : ""].filter(Boolean).join(" ");
+    }).filter(Boolean).join(" + ");
+  }
+  const rate = String(entry && entry.gc179Rate || "").trim();
+  return rate === "mixed" ? t("employees.gc179MixedRate") : rate || "-";
+}
+
+function getGc179ImportReadiness() {
+  const preview = employeesViewState.gc179Import.preview;
+  if (!preview || employeesViewState.gc179Import.lastImportResult) {
+    return { ready: false, reason: "preview" };
+  }
+
+  const identity = getGc179ImportIdentity(preview);
+  const validationErrors = getGc179BlockingValidationErrors(preview);
+  const counts = getGc179PreviewCounts(preview);
+  const selectedCount = getGc179SelectedSourceRows().length;
+  if (identity.status === "mismatch") {
+    return { ready: false, reason: "identity" };
+  }
+  if (identity.requiresConfirmation && !employeesViewState.gc179Import.identityConfirmed && !identity.confirmed) {
+    return { ready: false, reason: "confirmation" };
+  }
+  if (validationErrors.length > 0) {
+    return { ready: false, reason: "validation" };
+  }
+  if (counts.skipped > 0 && !employeesViewState.gc179Import.warningsConfirmed) {
+    return { ready: false, reason: "warnings" };
+  }
+  if (selectedCount === 0) {
+    return { ready: false, reason: "selection" };
+  }
+
+  return { ready: true, reason: "" };
+}
+
+function getGc179ReadinessFeedback(readiness = getGc179ImportReadiness()) {
+  const feedbackByReason = {
+    identity: { key: "employees.gc179IdentityMismatch", tone: "danger" },
+    confirmation: { key: "employees.gc179IdentityConfirmationRequired", tone: "warning" },
+    validation: { key: "employees.gc179ValidationBlocked", tone: "danger" },
+    warnings: { key: "employees.gc179SkippedConfirmationRequired", tone: "warning" },
+    selection: { key: "employees.gc179NothingSelected", tone: "warning" },
+  };
+  return feedbackByReason[readiness && readiness.reason] || null;
+}
+
+function updateGc179ImportGuidanceMessage() {
+  const readiness = getGc179ImportReadiness();
+  if (readiness.ready) {
+    setGc179ImportMessage("");
+    return;
+  }
+  const feedback = getGc179ReadinessFeedback(readiness);
+  if (feedback) {
+    setGc179ImportMessage(t(feedback.key), feedback.tone);
+  }
+}
+
+function updateGc179ImportCommitAvailability() {
+  const selectedRows = getGc179SelectedSourceRows();
+  const selectedCount = document.getElementById("gc179ImportSelectedCount");
+  if (selectedCount) {
+    selectedCount.textContent = t("employees.gc179SelectedCount", { count: selectedRows.length });
+  }
+
+  const preview = employeesViewState.gc179Import.preview;
+  const entries = Array.isArray(preview && preview.entries) ? preview.entries : [];
+  const selectableRows = entries
+    .map((entry, index) => ({ entry, sourceRow: getGc179EntrySourceRow(entry, index) }))
+    .filter(item => isGc179EntryImportable(item.entry))
+    .map(item => item.sourceRow);
+  const selectAll = document.getElementById("gc179ImportSelectAll");
+  if (selectAll) {
+    const selectedSelectableCount = selectableRows.filter(sourceRow => employeesViewState.gc179Import.selectedSourceRows.has(sourceRow)).length;
+    selectAll.checked = selectableRows.length > 0 && selectedSelectableCount === selectableRows.length;
+    selectAll.indeterminate = selectedSelectableCount > 0 && selectedSelectableCount < selectableRows.length;
+  }
+
   const commitButton = document.getElementById("gc179ImportCommitButton");
+  if (commitButton) {
+    commitButton.disabled = !getGc179ImportReadiness().ready;
+  }
+}
+
+function renderGc179ImportPreview(preview, { initializeSelection = true } = {}) {
+  const container = document.getElementById("gc179ImportPreviewContainer");
   if (!container) {
     return;
   }
 
   const entries = Array.isArray(preview && preview.entries) ? preview.entries : [];
-  const warnings = Array.isArray(preview && preview.warnings) ? preview.warnings : [];
-  if (commitButton) {
-    commitButton.disabled = entries.length === 0;
+  const warnings = normalizeGc179ImportMessages(preview && preview.warnings);
+  const validationErrors = normalizeGc179ImportMessages(preview && preview.validationErrors);
+  const counts = getGc179PreviewCounts(preview);
+  const identity = getGc179ImportIdentity(preview);
+  if (initializeSelection) {
+    employeesViewState.gc179Import.selectedSourceRows = new Set(
+      entries
+        .map((entry, index) => ({ entry, sourceRow: getGc179EntrySourceRow(entry, index) }))
+        .filter(item => isGc179EntryImportable(item.entry))
+        .map(item => item.sourceRow)
+    );
+    employeesViewState.gc179Import.identityConfirmed = Boolean(preview && preview.identity && preview.identity.confirmed);
+    employeesViewState.gc179Import.warningsConfirmed = false;
   }
 
-  const rows = entries.map(entry => `
+  const sourceParts = [
+    identity.sourceEmployeeCode ? `${t("employees.gc179EmployeeCode")}: ${identity.sourceEmployeeCode}` : "",
+    identity.sourcePri ? `${t("employees.gc179Pri")}: ${identity.sourcePri}` : "",
+    preview && preview.sourceFile ? `${t("employees.gc179SourceFile")}: ${preview.sourceFile}` : "",
+  ].filter(Boolean);
+  const targetParts = [
+    identity.targetEmployeeCode ? `${t("employees.gc179EmployeeCode")}: ${identity.targetEmployeeCode}` : "",
+    identity.targetPri ? `${t("employees.gc179Pri")}: ${identity.targetPri}` : "",
+  ].filter(Boolean);
+  const identityMessage = t(`employees.gc179Identity${identity.status.charAt(0).toUpperCase()}${identity.status.slice(1)}`);
+
+  const rows = entries.map((entry, index) => {
+    const sourceRow = getGc179EntrySourceRow(entry, index);
+    const entryErrors = normalizeGc179ImportMessages(entry && entry.validationErrors);
+    const duplicate = isGc179DuplicateEntry(entry);
+    const importable = isGc179EntryImportable(entry);
+    const selected = employeesViewState.gc179Import.selectedSourceRows.has(sourceRow);
+    const rowStatusKey = duplicate
+      ? "employees.gc179RowDuplicate"
+      : entryErrors.length > 0 || entry.canImport === false
+        ? "employees.gc179RowInvalid"
+        : "employees.gc179RowReady";
+    const rateLabel = formatGc179RateLabel(entry);
+    return `
     <tr>
+      <td>
+        <input type="checkbox" class="form-check-input gc179-import-row-select" data-gc179-source-row="${sourceRow}" aria-label="${escapeHtml(t("employees.gc179SelectRow", { row: sourceRow + 1 }))}" ${selected ? "checked" : ""} ${importable ? "" : "disabled"}>
+      </td>
+      <td class="mono">${sourceRow + 1}</td>
       <td>${escapeHtml(formatDateLabel(entry.date))}</td>
       <td class="mono">${escapeHtml(formatTimeString(entry.punchIn))} ${timeRangeArrowText()} ${escapeHtml(formatTimeString(entry.punchOut))}</td>
       <td><span class="inline-code-pill">${escapeHtml(entry.reasonCode || "-")}</span></td>
       <td><span class="inline-code-pill">${escapeHtml(entry.overtimeCode || "-")}</span></td>
       <td>${escapeHtml(entry.paymentOption || "-")}</td>
-      <td class="mono">${escapeHtml(entry.gc179Rate || "-")}</td>
+      <td class="mono">${escapeHtml(rateLabel)}</td>
       <td class="mono">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(entry.overtime)))}</td>
+      <td>
+        <span class="gc179-import-row-status ${duplicate ? "duplicate" : importable ? "ready" : "invalid"}">${escapeHtml(t(rowStatusKey))}</span>
+        ${entryErrors.length > 0 ? `<div class="gc179-import-row-errors">${entryErrors.map(error => escapeHtml(error)).join("; ")}</div>` : ""}
+      </td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 
   container.innerHTML = `
     <div class="gc179-import-preview-summary">
       <span>${escapeHtml(t("employees.gc179PreviewSummary", { count: entries.length, month: preview.monthKey || "-" }))}</span>
       <span class="inline-code-pill">${escapeHtml(preview.projectCode || "")}</span>
     </div>
+    <div class="gc179-import-counts" aria-label="${escapeHtml(t("employees.gc179PreviewCounts"))}">
+      <span>${escapeHtml(t("employees.gc179ParsedCount", { count: counts.parsed }))}</span>
+      <span>${escapeHtml(t("employees.gc179ValidCount", { count: counts.valid }))}</span>
+      <span>${escapeHtml(t("employees.gc179SkippedCount", { count: counts.skipped }))}</span>
+      <span>${escapeHtml(t("employees.gc179DuplicateCount", { count: counts.duplicates }))}</span>
+      <strong id="gc179ImportSelectedCount">${escapeHtml(t("employees.gc179SelectedCount", { count: getGc179SelectedSourceRows().length }))}</strong>
+    </div>
+    <div class="gc179-import-identity ${escapeHtml(identity.status)}">
+      <div>
+        <strong>${escapeHtml(t("employees.gc179SourceIdentity"))}</strong>
+        <span>${escapeHtml(identity.sourceName || t("employees.gc179IdentityUnavailable"))}</span>
+        ${sourceParts.length > 0 ? `<small>${escapeHtml(sourceParts.join(" · "))}</small>` : ""}
+      </div>
+      <div>
+        <strong>${escapeHtml(t("employees.gc179TargetIdentity"))}</strong>
+        <span>${escapeHtml(identity.targetName || t("employees.gc179IdentityUnavailable"))}</span>
+        ${targetParts.length > 0 ? `<small>${escapeHtml(targetParts.join(" · "))}</small>` : ""}
+      </div>
+      <p class="gc179-import-identity-status">${escapeHtml(identityMessage)}</p>
+      ${identity.requiresConfirmation && identity.status !== "mismatch" ? `
+        <label class="gc179-import-confirmation">
+          <input type="checkbox" class="form-check-input" id="gc179ImportIdentityConfirmation" ${employeesViewState.gc179Import.identityConfirmed ? "checked" : ""}>
+          <span>${escapeHtml(t("employees.gc179IdentityConfirm", { employee: identity.targetName || identity.targetEmployeeCode }))}</span>
+        </label>
+      ` : ""}
+    </div>
+    ${validationErrors.length > 0 ? `
+      <div class="gc179-import-errors">
+        <strong>${escapeHtml(t("employees.gc179ValidationErrors"))}</strong>
+        <ul>${validationErrors.map(error => `<li>${escapeHtml(error)}</li>`).join("")}</ul>
+      </div>
+    ` : ""}
     ${warnings.length > 0 ? `
       <div class="gc179-import-warnings">
         <strong>${escapeHtml(t("employees.gc179PreviewWarning"))}</strong>
         <ul>${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+        ${counts.skipped > 0 ? `
+          <label class="gc179-import-confirmation">
+            <input type="checkbox" class="form-check-input" id="gc179ImportWarningsConfirmation" ${employeesViewState.gc179Import.warningsConfirmed ? "checked" : ""}>
+            <span>${escapeHtml(t("employees.gc179SkippedConfirm", { count: counts.skipped }))}</span>
+          </label>
+        ` : ""}
       </div>
     ` : ""}
     <div class="gc179-import-table-shell">
       <table class="gc179-import-table">
         <thead>
           <tr>
+            <th><input type="checkbox" class="form-check-input" id="gc179ImportSelectAll" aria-label="${escapeHtml(t("employees.gc179SelectAll"))}"></th>
+            <th>${escapeHtml(t("employees.gc179SourceRow"))}</th>
             <th>${escapeHtml(t("export.day"))}</th>
             <th>${escapeHtml(t("dashboard.tableWindow"))}</th>
             <th>${escapeHtml(t("export.reason"))}</th>
@@ -890,20 +1219,21 @@ function renderGc179ImportPreview(preview) {
             <th>${escapeHtml(t("export.payment"))}</th>
             <th>${escapeHtml(t("employees.gc179Rate"))}</th>
             <th>${escapeHtml(t("export.totalTime"))}</th>
+            <th>${escapeHtml(t("employees.scope"))}</th>
           </tr>
         </thead>
-        <tbody>${rows || `<tr><td colspan="7">${escapeHtml(t("employees.noEntriesForMonth"))}</td></tr>`}</tbody>
+        <tbody>${rows || `<tr><td colspan="10">${escapeHtml(t("employees.noEntriesForMonth"))}</td></tr>`}</tbody>
       </table>
     </div>
   `;
+  updateGc179ImportCommitAvailability();
 }
 
 async function previewGc179Import() {
   const button = document.getElementById("gc179ImportPreviewButton");
-  const originalText = button ? button.textContent : "";
   if (button) {
     button.disabled = true;
-    button.textContent = t("shared.loading");
+    setGc179ButtonLabel(button, "shared.loading");
   }
   try {
     const payload = await buildGc179ImportPayload({ requireFile: true });
@@ -914,8 +1244,9 @@ async function previewGc179Import() {
     });
     const preview = await parseResponse(response);
     employeesViewState.gc179Import.preview = preview;
+    employeesViewState.gc179Import.lastImportResult = null;
     renderGc179ImportPreview(preview);
-    setGc179ImportMessage("");
+    updateGc179ImportGuidanceMessage();
   } catch (error) {
     console.error("Unable to preview GC179 import:", error);
     resetGc179ImportPreview();
@@ -923,56 +1254,237 @@ async function previewGc179Import() {
   } finally {
     if (button) {
       button.disabled = false;
-      button.textContent = originalText || t("employees.gc179Preview");
+      setGc179ButtonLabel(button, "employees.gc179Preview");
     }
   }
 }
 
+async function refreshGc179ImportTarget(employeeCode, monthKey) {
+  employeesViewState.entriesByEmployee[employeeCode] = undefined;
+  if (monthKey) {
+    employeesViewState.currentMonthByEmployee[employeeCode] = monthKey;
+  }
+  employeesViewState.selectedEmployeeCode = employeeCode;
+  markEntryRelatedViewsStaleFromPeople();
+  document.getElementById("employeesSearchInput").value = "";
+  document.getElementById("employeesScopeSelect").value = "active";
+  document.getElementById("employeesProjectSelect").value = "";
+  employeesViewState.selectedProjectCode = "";
+  employeesViewState.autoOpenProjectCode = "";
+
+  try {
+    await loadEmployeesView({ rethrowOnError: true });
+    employeesViewState.selectedEmployeeCode = employeeCode;
+    applyEmployeeSearchFilter();
+  } catch (error) {
+    console.error("GC179 data was saved but the People view could not be refreshed:", error);
+    setGc179ImportMessage(t("employees.gc179RefreshWarning"), "warning");
+    showToast(t("employees.gc179RefreshWarning"), "warning");
+  }
+}
+
+function renderGc179ImportCompleted(result, payload) {
+  const importedCount = Number(result && result.importedCount || 0);
+  const duplicateCount = Number(result && result.skippedDuplicateCount || 0);
+  const operationWarnings = normalizeGc179ImportMessages(result && result.warnings);
+  const container = document.getElementById("gc179ImportPreviewContainer");
+  if (container) {
+    container.innerHTML = `
+      <div class="gc179-import-result success">
+        <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+        <div>
+          <strong>${escapeHtml(t("employees.gc179ImportComplete"))}</strong>
+          <p>${escapeHtml(t("employees.gc179ImportSuccess", { count: importedCount, duplicates: duplicateCount }))}</p>
+          <small>${escapeHtml(t("employees.gc179ImportedTarget", {
+            employee: result && result.employeeCode || payload.employeeCode,
+            month: result && result.monthKey || "-",
+          }))}</small>
+          ${operationWarnings.length > 0 ? `<ul class="gc179-import-result-warnings">${operationWarnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}
+        </div>
+      </div>
+    `;
+  }
+  const undoButton = document.getElementById("gc179ImportUndoButton");
+  if (undoButton) {
+    undoButton.classList.toggle("d-none", !String(result && result.batchId || "").trim());
+    undoButton.disabled = false;
+    setGc179ButtonLabel(undoButton, "employees.gc179Undo");
+  }
+  setGc179ImportFormDisabled(true);
+  const commitButton = document.getElementById("gc179ImportCommitButton");
+  if (commitButton) {
+    commitButton.disabled = true;
+    setGc179ButtonLabel(commitButton, "employees.gc179ImportConfirm");
+  }
+  if (operationWarnings.length > 0) {
+    setGc179ImportMessage(t("employees.gc179SavedWithWarnings"), "warning");
+  }
+}
+
 async function commitGc179Import() {
+  const readiness = getGc179ImportReadiness();
+  if (!readiness.ready) {
+    const feedback = getGc179ReadinessFeedback(readiness);
+    setGc179ImportMessage(t(feedback ? feedback.key : "employees.gc179NothingSelected"), feedback ? feedback.tone : "warning");
+    return;
+  }
+
+  const targetEmployee = getGc179EmployeeFromSelect();
+  const selectedRows = getGc179SelectedSourceRows();
+  const projectCode = document.getElementById("gc179ImportProjectSelect").value;
+  const status = document.getElementById("gc179ImportStatusSelect").value || "pending";
+  if (!window.confirm(t("employees.gc179CommitPrompt", {
+    count: selectedRows.length,
+    employee: targetEmployee && targetEmployee.name ? `${targetEmployee.name} (${targetEmployee.code})` : document.getElementById("gc179ImportEmployeeSelect").value,
+    project: projectCode,
+    status: t(`status.${status}`),
+  }))) {
+    return;
+  }
+
   const button = document.getElementById("gc179ImportCommitButton");
-  const originalText = button ? button.textContent : "";
   if (button) {
     button.disabled = true;
-    button.textContent = t("shared.loading");
+    setGc179ButtonLabel(button, "shared.loading");
   }
+  let payload;
+  let result;
   try {
-    const payload = await buildGc179ImportPayload({ requireFile: false });
+    payload = await buildGc179ImportPayload({ requireFile: false, includeSelection: true });
     const response = await fetch(apiUrl + "employee/gc179-import/commit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const result = await parseResponse(response);
-    const employeeCode = result.employeeCode || payload.employeeCode;
-    employeesViewState.entriesByEmployee[employeeCode] = undefined;
-    if (result.monthKey) {
-      employeesViewState.currentMonthByEmployee[employeeCode] = result.monthKey;
-    }
-    employeesViewState.selectedEmployeeCode = employeeCode;
-    markEntryRelatedViewsStaleFromPeople();
-    showToast(t("employees.gc179ImportSuccess", {
-      count: Number(result.importedCount || 0),
-      duplicates: Number(result.skippedDuplicateCount || 0),
-    }), "success");
-    const modal = bootstrap.Modal.getInstance(document.getElementById("gc179ImportModal"));
-    if (modal) {
-      modal.hide();
-    }
-    document.getElementById("employeesSearchInput").value = "";
-    document.getElementById("employeesScopeSelect").value = "active";
-    document.getElementById("employeesProjectSelect").value = "";
-    employeesViewState.selectedProjectCode = "";
-    employeesViewState.autoOpenProjectCode = "";
-    await loadEmployeesView();
-    employeesViewState.selectedEmployeeCode = employeeCode;
-    applyEmployeeSearchFilter();
-    await loadEmployeeDetail(employeeCode);
+    result = await parseResponse(response);
   } catch (error) {
     console.error("Unable to commit GC179 import:", error);
     setGc179ImportMessage(error.message || t("employees.gc179ImportError"), "danger");
+    updateGc179ImportCommitAvailability();
+    return;
+  } finally {
+    setGc179ButtonLabel(button, "employees.gc179ImportConfirm");
+  }
+
+  const employeeCode = String(result && result.employeeCode || payload.employeeCode);
+  employeesViewState.gc179Import.lastImportResult = {
+    ...result,
+    employeeCode,
+  };
+  setGc179ImportMessage("");
+  renderGc179ImportCompleted(result, payload);
+  showToast(t("employees.gc179ImportSuccess", {
+    count: Number(result && result.importedCount || 0),
+    duplicates: Number(result && result.skippedDuplicateCount || 0),
+  }), "success");
+  await refreshGc179ImportTarget(employeeCode, result && result.monthKey);
+}
+
+async function undoGc179Import() {
+  const lastResult = employeesViewState.gc179Import.lastImportResult;
+  const batchId = String(lastResult && lastResult.batchId || "").trim();
+  const employeeCode = String(lastResult && lastResult.employeeCode || "").trim();
+  if (!batchId || !employeeCode) {
+    return;
+  }
+  if (!window.confirm(t("employees.gc179UndoConfirm"))) {
+    return;
+  }
+
+  const button = document.getElementById("gc179ImportUndoButton");
+  if (button) {
+    button.disabled = true;
+    setGc179ButtonLabel(button, "shared.loading");
+  }
+  try {
+    const response = await fetch(apiUrl + "employee/gc179-import/undo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employeeCode, batchId }),
+    });
+    const result = await parseResponse(response);
+    const undoneCount = Number(result && result.undoneCount || 0);
+    const operationWarnings = normalizeGc179ImportMessages(result && result.warnings);
+    employeesViewState.gc179Import.lastImportResult = null;
+    if (button) {
+      button.classList.add("d-none");
+    }
+    const container = document.getElementById("gc179ImportPreviewContainer");
+    if (container) {
+      container.innerHTML = `
+        <div class="gc179-import-result success">
+          <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+          <div>
+            <strong>${escapeHtml(t("employees.gc179UndoComplete"))}</strong>
+            <p>${escapeHtml(t("employees.gc179UndoSuccess", { count: undoneCount }))}</p>
+            ${operationWarnings.length > 0 ? `<ul class="gc179-import-result-warnings">${operationWarnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}
+          </div>
+        </div>
+      `;
+    }
+    setGc179ImportMessage(operationWarnings.length > 0 ? t("employees.gc179SavedWithWarnings") : "", operationWarnings.length > 0 ? "warning" : "info");
+    showToast(t("employees.gc179UndoSuccess", { count: undoneCount }), "success");
+    await refreshGc179ImportTarget(employeeCode, result && result.monthKey || lastResult.monthKey);
+  } catch (error) {
+    console.error("Unable to undo GC179 import:", error);
+    setGc179ImportMessage(error.message || t("employees.gc179UndoError"), "danger");
     if (button) {
       button.disabled = false;
-      button.textContent = originalText || t("employees.gc179ImportConfirm");
+    }
+  } finally {
+    setGc179ButtonLabel(button, "employees.gc179Undo");
+  }
+}
+
+function handleGc179ImportPreviewChange(event) {
+  const target = event.target;
+  if (!target) {
+    return;
+  }
+  if (target.id === "gc179ImportIdentityConfirmation") {
+    employeesViewState.gc179Import.identityConfirmed = Boolean(target.checked);
+    updateGc179ImportCommitAvailability();
+    updateGc179ImportGuidanceMessage();
+    return;
+  }
+  if (target.id === "gc179ImportWarningsConfirmation") {
+    employeesViewState.gc179Import.warningsConfirmed = Boolean(target.checked);
+    updateGc179ImportCommitAvailability();
+    updateGc179ImportGuidanceMessage();
+    return;
+  }
+
+  const preview = employeesViewState.gc179Import.preview;
+  const entries = Array.isArray(preview && preview.entries) ? preview.entries : [];
+  if (target.id === "gc179ImportSelectAll") {
+    entries.forEach((entry, index) => {
+      const sourceRow = getGc179EntrySourceRow(entry, index);
+      if (isGc179EntryImportable(entry)) {
+        if (target.checked) {
+          employeesViewState.gc179Import.selectedSourceRows.add(sourceRow);
+        } else {
+          employeesViewState.gc179Import.selectedSourceRows.delete(sourceRow);
+        }
+      }
+    });
+    document.querySelectorAll(".gc179-import-row-select:not(:disabled)").forEach(checkbox => {
+      checkbox.checked = Boolean(target.checked);
+    });
+    updateGc179ImportCommitAvailability();
+    updateGc179ImportGuidanceMessage();
+    return;
+  }
+
+  if (target.classList.contains("gc179-import-row-select")) {
+    const sourceRow = Number(target.getAttribute("data-gc179-source-row"));
+    if (Number.isInteger(sourceRow) && sourceRow >= 0) {
+      if (target.checked) {
+        employeesViewState.gc179Import.selectedSourceRows.add(sourceRow);
+      } else {
+        employeesViewState.gc179Import.selectedSourceRows.delete(sourceRow);
+      }
+      updateGc179ImportCommitAvailability();
+      updateGc179ImportGuidanceMessage();
     }
   }
 }
@@ -1770,6 +2282,31 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
   return rowsMarkup;
 }
 
+function getEmployeeStatsProjectEntries(employeeCode, projectCode) {
+  const normalizedProjectCode = String(projectCode || "").trim() || "__NO_PROJECT__";
+  return getVisibleEmployeeEntries(employeeCode).filter(entry => {
+    const entryProjectCode = String(entry && entry.projectCode || "").trim() || "__NO_PROJECT__";
+    return entryProjectCode === normalizedProjectCode;
+  });
+}
+
+function hydrateEmployeeProjectEntryDisclosure(detailsElement) {
+  if (!detailsElement || !detailsElement.open) {
+    return false;
+  }
+
+  const list = detailsElement.querySelector("[data-employee-project-entry-list]");
+  if (!list || list.getAttribute("data-entries-loaded") === "true") {
+    return false;
+  }
+
+  const employeeCode = String(detailsElement.getAttribute("data-employee-code") || "").trim();
+  const projectCode = String(detailsElement.getAttribute("data-project-code") || "").trim();
+  list.innerHTML = renderPeopleProjectEntryRows(getEmployeeStatsProjectEntries(employeeCode, projectCode), employeeCode);
+  list.setAttribute("data-entries-loaded", "true");
+  return true;
+}
+
 async function fetchEmployeeDetailEntries(employeeCode) {
   const response = await fetch(apiUrl + "employee/" + encodeURIComponent(employeeCode));
   if (response.status === 404) {
@@ -2086,7 +2623,7 @@ function buildEmployeeDetailedStatsMarkup(entries, employeeCode) {
                 <span>${escapeHtml(latestLabel)}</span>
                 <span>${escapeHtml(t("self.statsSupervisorNotes"))}: ${escapeHtml(String(project.notes))}</span>
               </div>
-              <details class="project-card-entry-toggle" ${shouldOpenEntries ? "open" : ""}>
+              <details class="project-card-entry-toggle" data-employee-code="${escapeHtml(employeeCode)}" data-project-code="${escapeHtml(project.projectCode)}" ${shouldOpenEntries ? "open" : ""}>
                 <summary class="project-card-entry-summary">
                   <span class="project-card-entry-summary-left">
                     <span class="project-card-entry-arrow"><i class="fa-solid fa-chevron-right"></i></span>
@@ -2094,8 +2631,8 @@ function buildEmployeeDetailedStatsMarkup(entries, employeeCode) {
                   </span>
                   <span class="panel-note">${escapeHtml(t("employees.projectEntriesSummary", { count: project.count, duration: secondsToDurationLabel(project.seconds) }))}</span>
                 </summary>
-                <div class="people-project-entry-list people-project-entry-list-compact">
-                  ${renderPeopleProjectEntryRows(project.entries, employeeCode)}
+                <div class="people-project-entry-list people-project-entry-list-compact" data-employee-project-entry-list data-entries-loaded="${shouldOpenEntries ? "true" : "false"}">
+                  ${shouldOpenEntries ? renderPeopleProjectEntryRows(project.entries, employeeCode) : ""}
                 </div>
               </details>
             </article>
@@ -2208,13 +2745,9 @@ function renderEmployeesDirectory(employees) {
   const detailContainer = document.getElementById("employeeDetailContainer");
   const canManageProfiles = canManageEmployeeProfiles();
   const addButton = document.getElementById("addEmployeeButton");
-  const seedButton = document.getElementById("seedDemoEntriesButton");
   const importButton = document.getElementById("gc179ImportButton");
   if (addButton) {
     addButton.classList.toggle("d-none", !canManageProfiles);
-  }
-  if (seedButton) {
-    seedButton.classList.toggle("d-none", !canSeedDemoEntries());
   }
   if (importButton) {
     importButton.classList.toggle("d-none", !canImportGc179Entries());
@@ -2579,7 +3112,7 @@ function applyEmployeeScopeFilterFromState() {
   applyEmployeeSearchFilter();
 }
 
-function loadEmployeesView() {
+function loadEmployeesView({ rethrowOnError = false } = {}) {
   setLoadingState("employeesDirectoryContainer", "grid", 4);
   setEmployeeAnalyticsLoadingState();
   employeesViewState.employeeAnalyticsSignature = "";
@@ -2600,9 +3133,15 @@ function loadEmployeesView() {
       employeesViewState.allEmployees = Array.isArray(employees) ? employees : [];
       employeesViewState.employees = filterEmployeesByScope(employeesViewState.allEmployees, scope);
       applyEmployeeSearchFilter();
+      if (employeesViewState.selectedEmployeeCode && getEmployeeByCode(employeesViewState.selectedEmployeeCode)) {
+        return loadEmployeeDetail(employeesViewState.selectedEmployeeCode);
+      }
     })
     .catch(error => {
       console.error("Error loading employees view:", error);
+      if (rethrowOnError) {
+        throw error;
+      }
       showToast(t("employees.loadError"), "error");
     });
 }
@@ -2673,6 +3212,15 @@ document.getElementById("employeesDirectoryContainer").addEventListener("click",
   applyEmployeeSearchFilter();
   loadEmployeeDetail(employeeCode);
 });
+
+document.getElementById("employeeDetailContainer").addEventListener("toggle", event => {
+  const disclosure = event.target && typeof event.target.closest === "function"
+    ? event.target.closest(".project-card-entry-toggle")
+    : null;
+  if (disclosure) {
+    hydrateEmployeeProjectEntryDisclosure(disclosure);
+  }
+}, true);
 
 document.getElementById("employeeDetailContainer").addEventListener("click", async event => {
   const gc179Button = event.target.closest(".people-gc179-fdf-button");
@@ -2879,8 +3427,16 @@ document.getElementById("addEmployeeButton").addEventListener("click", () => {
 document.getElementById("gc179ImportButton").addEventListener("click", () => openGc179ImportModal(employeesViewState.selectedEmployeeCode));
 document.getElementById("gc179ImportPreviewButton").addEventListener("click", previewGc179Import);
 document.getElementById("gc179ImportCommitButton").addEventListener("click", commitGc179Import);
-document.getElementById("gc179ImportForm").addEventListener("change", resetGc179ImportPreview);
-document.getElementById("seedDemoEntriesButton").addEventListener("click", seedDemoEntries);
+document.getElementById("gc179ImportUndoButton").addEventListener("click", undoGc179Import);
+document.getElementById("gc179ImportPreviewContainer").addEventListener("change", handleGc179ImportPreviewChange);
+document.getElementById("gc179ImportFileInput").addEventListener("change", event => {
+  const file = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+  syncGc179ImportFilePicker(file);
+});
+document.getElementById("gc179ImportForm").addEventListener("change", () => {
+  setGc179ImportMessage("");
+  resetGc179ImportPreview();
+});
 document.getElementById("employeeEditorRemoveButton").addEventListener("click", async () => {
   const employee = getEmployeeByCode(document.getElementById("employeeEditorCodeInput").value.trim());
   const modal = bootstrap.Modal.getInstance(document.getElementById("employeeEditorModal"));

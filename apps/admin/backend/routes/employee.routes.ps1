@@ -9,18 +9,8 @@ if ($request.Url.AbsolutePath -match "^/employees?") {
         continue
     }
 
-    Invoke-CachedRouteScript -RelativePath "routes/employee/list.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/create-record.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/update-record.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/delete-record.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/restore-record.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/password.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/get.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/add.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/gc179-import.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/update.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/batch-approval.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/approval.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/message.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/employee/delete.routes.ps1"
+    $employeeRouteScript = Resolve-EmployeeRouteScript -Method ([string]$request.HttpMethod) -Path ([string]$request.Url.AbsolutePath)
+    if (-not [string]::IsNullOrWhiteSpace($employeeRouteScript)) {
+        Invoke-CachedRouteScript -RelativePath $employeeRouteScript
+    }
 }

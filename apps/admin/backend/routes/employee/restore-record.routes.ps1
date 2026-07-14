@@ -7,8 +7,10 @@
 
             $employeeCode = $matches[1]
 
+            $directoryMutationMayHaveCommitted = $false
+            $directoryMutationError = $null
             try {
-                $existingEmployee = Get-EmployeeDirectoryList -IncludeDisabled:$true | Where-Object { $_.code -eq $employeeCode } | Select-Object -First 1
+                $existingEmployee = Get-EmployeeDirectoryRecordMetadata -EmployeeCode $employeeCode -IncludeDisabled:$true
                 if ($null -eq $existingEmployee) {
                     respondWithError $response 404 "Employee not found."
                     continue
@@ -19,15 +21,42 @@
                     continue
                 }
 
-                $restoreResult = Restore-EmployeeDirectoryRecord -EmployeeCode $employeeCode
-                if (-not $restoreResult.updated) {
-                    respondWithError $response 500 "Unable to reinstate employee."
-                    continue
-                }
+                try {
+                    try {
+                        $restoreResult = Restore-EmployeeDirectoryRecord -EmployeeCode $employeeCode
+                    }
+                    catch {
+                        # Entry-file initialization can fail after the auth record has already been restored.
+                        $directoryMutationMayHaveCommitted = $true
+                        throw
+                    }
+                    if (-not $restoreResult.updated) {
+                        respondWithError $response 500 "Unable to reinstate employee."
+                        continue
+                    }
 
-                $historyMessage = "Reinstated employee access for <strong>$($existingEmployee.name)</strong>."
-                logHistory "Update" $historyMessage $existingEmployee.name
-                Publish-DataChange -Category "employee-directory" -Resource $employeeCode
+                    $directoryMutationMayHaveCommitted = $true
+                    $historyMessage = "Reinstated employee access for <strong>$($existingEmployee.name)</strong>."
+                    logHistory "Update" $historyMessage $existingEmployee.name
+                }
+                catch {
+                    $directoryMutationError = $_
+                    throw
+                }
+                finally {
+                    if ($directoryMutationMayHaveCommitted) {
+                        try {
+                            Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
+                        }
+                        catch {
+                            if ($null -eq $directoryMutationError) {
+                                throw
+                            }
+
+                            Write-Warning "Unable to publish employee-directory cache invalidation after a failed restore operation: $($_.Exception.Message)"
+                        }
+                    }
+                }
 
                 respondWithSuccess $response (([PSCustomObject]@{
                     message      = "Employee reinstated successfully."

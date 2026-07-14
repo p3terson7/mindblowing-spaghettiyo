@@ -10,13 +10,221 @@ if (-not $script:EmployeeEntryFileCache) {
     $script:EmployeeEntryFileCache = @{}
 }
 
-function Get-ReadModelVersionKey {
-    $state = Get-SyncState
-    if ($state -and $null -ne $state.version) {
-        return [string]([int]$state.version)
+if (-not $script:ReadModelSyncState) {
+    $script:ReadModelSyncState = $null
+}
+
+if ($null -eq $script:ReadModelFactoryDepth) {
+    $script:ReadModelFactoryDepth = 0
+}
+
+function Get-ReadModelSyncStateKey {
+    param($State)
+
+    if ($null -eq $State) {
+        return "0"
     }
 
-    return "0"
+    if ($State.PSObject.Properties.Name -contains "changeId" -and -not [string]::IsNullOrWhiteSpace([string]$State.changeId)) {
+        return [string]$State.changeId
+    }
+
+    return ("{0}|{1}|{2}|{3}" -f [string]$State.version, [string]$State.updatedAtUtc, [string]$State.category, [string]$State.resource)
+}
+
+function Test-ReadModelGuidValue {
+    param($Value)
+
+    $parsedGuid = [Guid]::Empty
+    return (-not [string]::IsNullOrWhiteSpace([string]$Value) -and
+        [Guid]::TryParse([string]$Value, [ref]$parsedGuid) -and
+        $parsedGuid -ne [Guid]::Empty)
+}
+
+function Test-ReadModelEmployeeCode {
+    param($Value)
+
+    return (-not [string]::IsNullOrWhiteSpace([string]$Value) -and
+        ([string]$Value).Trim() -match "^\d+$")
+}
+
+function Test-ReadModelSyncStateRevisionSchema {
+    param($State)
+
+    if ($null -eq $State) {
+        return $false
+    }
+
+    $propertyNames = @($State.PSObject.Properties.Name)
+    if (-not ($propertyNames -contains "changeId") -or
+        -not ($propertyNames -contains "employeeDataEpoch") -or
+        -not ($propertyNames -contains "employeeDataRevisions") -or
+        -not (Test-ReadModelGuidValue -Value $State.changeId) -or
+        -not (Test-ReadModelGuidValue -Value $State.employeeDataEpoch)) {
+        return $false
+    }
+
+    $revisions = $State.employeeDataRevisions
+    if ($null -eq $revisions -or
+        -not (($revisions -is [System.Collections.IDictionary]) -or
+        ($revisions.PSObject.TypeNames -contains "System.Management.Automation.PSCustomObject"))) {
+        return $false
+    }
+
+    $revisionMap = ConvertTo-ReadModelEmployeeRevisionMap -Value $revisions
+    foreach ($employeeCode in @($revisionMap.Keys)) {
+        if (-not (Test-ReadModelEmployeeCode -Value $employeeCode) -or
+            -not (Test-ReadModelGuidValue -Value $revisionMap[$employeeCode])) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+function ConvertTo-ReadModelEmployeeRevisionMap {
+    param($Value)
+
+    $result = @{}
+    if ($Value -is [System.Collections.IDictionary]) {
+        foreach ($key in @($Value.Keys)) {
+            $result[[string]$key] = [string]$Value[$key]
+        }
+        return $result
+    }
+
+    if ($null -ne $Value -and ($Value.PSObject.TypeNames -contains "System.Management.Automation.PSCustomObject")) {
+        foreach ($property in @($Value.PSObject.Properties)) {
+            $result[[string]$property.Name] = [string]$property.Value
+        }
+    }
+
+    return $result
+}
+
+function Test-ReadModelCurrentStateSupportsTargeting {
+    param($State)
+
+    if (-not (Test-ReadModelSyncStateRevisionSchema -State $State)) {
+        return $false
+    }
+
+    $category = ([string]$State.category).Trim().ToLowerInvariant()
+    if (@("history", "project", "auth") -contains $category) {
+        return $true
+    }
+
+    if (@("employee", "employee-directory") -notcontains $category) {
+        return $false
+    }
+
+    $resource = ([string]$State.resource).Trim()
+    $changeId = [string]$State.changeId
+    $revisionMap = ConvertTo-ReadModelEmployeeRevisionMap -Value $State.employeeDataRevisions
+    if ($resource -eq "*") {
+        foreach ($revision in @($revisionMap.Values)) {
+            if ([string]$revision -eq $changeId) {
+                return $true
+            }
+        }
+        return $false
+    }
+
+    return ((Test-ReadModelEmployeeCode -Value $resource) -and
+        $revisionMap.ContainsKey($resource) -and
+        [string]$revisionMap[$resource] -eq $changeId)
+}
+
+function Clear-EmployeeEntryCacheForCode {
+    param([Parameter(Mandatory = $true)][string]$EmployeeCode)
+
+    $normalizedCode = $EmployeeCode.Trim()
+    if ([string]::IsNullOrWhiteSpace($normalizedCode) -or
+        $normalizedCode -eq "*" -or
+        -not (Test-ReadModelEmployeeCode -Value $normalizedCode) -or
+        [System.IO.Path]::GetFileName($normalizedCode) -ne $normalizedCode) {
+        return $false
+    }
+
+    $dataFile = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $normalizedCode)
+    Clear-CachedFileContent -Path $dataFile
+    if ($script:EmployeeEntryFileCache.ContainsKey($dataFile)) {
+        $script:EmployeeEntryFileCache.Remove($dataFile) | Out-Null
+    }
+    return $true
+}
+
+function Clear-AllEmployeeEntryCaches {
+    $employeeDataPaths = @{}
+    foreach ($path in @($script:EmployeeEntryFileCache.Keys)) {
+        $employeeDataPaths[[string]$path] = $true
+    }
+
+    foreach ($cacheName in @("TextFileCache", "BinaryFileCache", "FileMetadataCache")) {
+        $cacheVariable = Get-Variable -Name $cacheName -Scope Script -ErrorAction SilentlyContinue
+        if ($null -eq $cacheVariable -or $null -eq $cacheVariable.Value) {
+            continue
+        }
+
+        foreach ($path in @($cacheVariable.Value.Keys)) {
+            if ([System.IO.Path]::GetFileName([string]$path) -like "*_data.json") {
+                $employeeDataPaths[[string]$path] = $true
+            }
+        }
+    }
+
+    foreach ($path in @($employeeDataPaths.Keys)) {
+        Clear-CachedFileContent -Path ([string]$path)
+    }
+    $script:EmployeeEntryFileCache = @{}
+}
+
+function Sync-ReadModelCaches {
+    $state = Get-SyncState
+    $stateKey = Get-ReadModelSyncStateKey -State $state
+    if ($script:ReadModelCacheVersion -eq $stateKey) {
+        return
+    }
+
+    $previousState = $script:ReadModelSyncState
+    $script:ReadModelCache = @{}
+
+    $canTargetEmployeeCaches = (Test-ReadModelSyncStateRevisionSchema -State $previousState) -and
+        (Test-ReadModelSyncStateRevisionSchema -State $state) -and
+        (Test-ReadModelCurrentStateSupportsTargeting -State $state) -and
+        ([string]$previousState.employeeDataEpoch -eq [string]$state.employeeDataEpoch)
+
+    if (-not $canTargetEmployeeCaches) {
+        Clear-AllEmployeeEntryCaches
+    }
+    else {
+        $previousRevisions = ConvertTo-ReadModelEmployeeRevisionMap -Value $previousState.employeeDataRevisions
+        $currentRevisions = ConvertTo-ReadModelEmployeeRevisionMap -Value $state.employeeDataRevisions
+        $revisionCodes = @{}
+        foreach ($employeeCode in @($previousRevisions.Keys)) {
+            $revisionCodes[[string]$employeeCode] = $true
+        }
+        foreach ($employeeCode in @($currentRevisions.Keys)) {
+            $revisionCodes[[string]$employeeCode] = $true
+        }
+
+        foreach ($employeeCode in @($revisionCodes.Keys)) {
+            $previousRevision = if ($previousRevisions.ContainsKey($employeeCode)) { [string]$previousRevisions[$employeeCode] } else { "" }
+            $currentRevision = if ($currentRevisions.ContainsKey($employeeCode)) { [string]$currentRevisions[$employeeCode] } else { "" }
+            if ($previousRevision -ne $currentRevision) {
+                if (-not (Clear-EmployeeEntryCacheForCode -EmployeeCode ([string]$employeeCode))) {
+                    Clear-AllEmployeeEntryCaches
+                    break
+                }
+            }
+        }
+    }
+
+    if (Get-Command -Name Clear-FileMetadataValidationCache -ErrorAction SilentlyContinue) {
+        Clear-FileMetadataValidationCache
+    }
+    $script:ReadModelSyncState = $state
+    $script:ReadModelCacheVersion = $stateKey
 }
 
 function Invoke-ReadModelCache {
@@ -25,21 +233,21 @@ function Invoke-ReadModelCache {
         [Parameter(Mandatory = $true)][scriptblock]$Factory
     )
 
-    $versionKey = Get-ReadModelVersionKey
-    if ($script:ReadModelCacheVersion -ne $versionKey) {
-        $script:ReadModelCache = @{}
-        $script:EmployeeEntryFileCache = @{}
-        if (Get-Command -Name Clear-FileMetadataValidationCache -ErrorAction SilentlyContinue) {
-            Clear-FileMetadataValidationCache
-        }
-        $script:ReadModelCacheVersion = $versionKey
+    if ($script:ReadModelFactoryDepth -le 0) {
+        Sync-ReadModelCaches
     }
 
     if ($script:ReadModelCache.ContainsKey($Key)) {
         return $script:ReadModelCache[$Key]
     }
 
-    $value = & $Factory
+    $script:ReadModelFactoryDepth++
+    try {
+        $value = & $Factory
+    }
+    finally {
+        $script:ReadModelFactoryDepth--
+    }
     $script:ReadModelCache[$Key] = $value
     return $value
 }
@@ -224,6 +432,12 @@ function New-EmployeeEntryProjectionForAccessModel {
 function Get-CachedEmployeeEntriesForFile {
     param([Parameter(Mandatory = $true)][string]$DataFile)
 
+    # Invoke-ReadModelCache reconciles once before entering a model factory.
+    # Avoid repeating the same sync-state lookup for every employee in a
+    # multi-file snapshot while retaining safe direct-call behavior.
+    if ($script:ReadModelFactoryDepth -le 0) {
+        Sync-ReadModelCaches
+    }
     $metadata = Get-FileMetadataSnapshot -Path $DataFile
     if ($null -eq $metadata) {
         if ($script:EmployeeEntryFileCache.ContainsKey($DataFile)) {
@@ -442,17 +656,23 @@ function Get-HistoryEntriesSnapshot {
     })
 }
 
+function Get-SortedHistoryEntriesSnapshot {
+    return (Invoke-ReadModelCache -Key "history-entries-sorted" -Factory {
+        return @(Get-HistoryEntriesSnapshot | Sort-Object {
+            try {
+                [DateTime]::Parse(($_.timestamp -replace " ", "T"))
+            }
+            catch {
+                [DateTime]::MinValue
+            }
+        } -Descending)
+    })
+}
+
 function Get-RecentHistoryEntriesSnapshot {
     param([int]$Limit = 7)
 
-    $entries = @(Get-HistoryEntriesSnapshot | Sort-Object {
-        try {
-            [DateTime]::Parse(($_.timestamp -replace " ", "T"))
-        }
-        catch {
-            [DateTime]::MinValue
-        }
-    } -Descending)
+    $entries = @(Get-SortedHistoryEntriesSnapshot)
 
     if ($Limit -le 0) {
         return $entries

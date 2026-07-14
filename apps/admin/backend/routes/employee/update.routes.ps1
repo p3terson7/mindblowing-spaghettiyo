@@ -86,9 +86,12 @@
                 }
             }
 
+            $entryMutationCommitted = $false
+            $entryMutationError = $null
             $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
             try {
-                $existingData = Read-JsonArrayFile -Path $dataFile
+                try {
+                    $existingData = Read-JsonArrayFile -Path $dataFile
                 $foundIndex = Find-EntryIndex -Entries $existingData -EntryId $entryId -Date $date -PunchIn $originalPunchIn
                 if ($foundIndex -eq -1) {
                     respondWithError $response 404 "Entry not found"
@@ -268,19 +271,38 @@
                 $existingEntry.message = $managerMessage.Trim()
                 Update-EntryComputedOvertime -Entry $existingEntry
 
-                Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 8
+                    Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 8
+                    $entryMutationCommitted = $true
 
-                $employeeName = Get-EmployeeName $employeeCode
-                $formattedDate = (Get-Date $date).ToString("MMMM dd, yyyy")
-                $historySpan = Get-EntryHistorySpanText -StartTime ([string]$existingEntry.punchIn) -EndTime ([string]$existingEntry.punchOut)
-                if ($messages.Count -eq 0) {
-                    $finalMessage = "Updated an entry on $formattedDate $historySpan."
+                    $employeeName = Get-EmployeeName $employeeCode
+                    $formattedDate = (Get-Date $date).ToString("MMMM dd, yyyy")
+                    $historySpan = Get-EntryHistorySpanText -StartTime ([string]$existingEntry.punchIn) -EndTime ([string]$existingEntry.punchOut)
+                    if ($messages.Count -eq 0) {
+                        $finalMessage = "Updated an entry on $formattedDate $historySpan."
+                    }
+                    else {
+                        $finalMessage = "Updated an entry on $formattedDate $historySpan. " + ($messages -join " ")
+                    }
+                    logHistory "Update" $finalMessage $employeeName
                 }
-                else {
-                    $finalMessage = "Updated an entry on $formattedDate $historySpan. " + ($messages -join " ")
+                catch {
+                    $entryMutationError = $_
+                    throw
                 }
-                logHistory "Update" $finalMessage $employeeName
-                Publish-DataChange -Category "employee" -Resource $employeeCode
+                finally {
+                    if ($entryMutationCommitted) {
+                        try {
+                            Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
+                        }
+                        catch {
+                            if ($null -eq $entryMutationError) {
+                                throw
+                            }
+
+                            Write-Warning "Unable to publish employee cache invalidation after a failed update operation: $($_.Exception.Message)"
+                        }
+                    }
+                }
 
                 respondWithSuccess $response (([PSCustomObject]@{
                     message = ($messages -join "<br>")

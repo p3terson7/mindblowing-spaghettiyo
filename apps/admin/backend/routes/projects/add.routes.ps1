@@ -28,33 +28,56 @@
                 continue
             }
 
-            $lockHandle = Acquire-ResourceLock -ResourcePath $projectsFile
+            $projectMutationCommitted = $false
+            $projectMutationError = $null
             try {
-                $projects = Get-Projects
+                $lockHandle = Acquire-ResourceLock -ResourcePath $projectsFile
+                try {
+                    $projects = Get-Projects
 
-                # Check for duplicate projectCode.
-                if ($projects | Where-Object { $_.projectCode -eq $payload.projectCode }) {
-                    respondWithError $response 400 "Project with code $($payload.projectCode) already exists."
-                    continue
+                    # Check for duplicate projectCode.
+                    if ($projects | Where-Object { $_.projectCode -eq $payload.projectCode }) {
+                        respondWithError $response 400 "Project with code $($payload.projectCode) already exists."
+                        continue
+                    }
+
+                    # Append the new project.
+                    $projects += [PSCustomObject]@{
+                        projectCode  = [string]$payload.projectCode
+                        projectName  = [string]$payload.projectName
+                        sector       = $sector
+                        admins       = $admins
+                        backupAdmins = $backupAdmins
+                        archived     = $false
+                    }
+                    Write-JsonAtomic -Path $projectsFile -Value $projects -Depth 6
+                    $projectMutationCommitted = $true
+                }
+                finally {
+                    Release-ResourceLock -LockHandle $lockHandle
                 }
 
-                # Append the new project.
-                $projects += [PSCustomObject]@{
-                    projectCode  = [string]$payload.projectCode
-                    projectName  = [string]$payload.projectName
-                    sector       = $sector
-                    admins       = $admins
-                    backupAdmins = $backupAdmins
-                    archived     = $false
-                }
-                Write-JsonAtomic -Path $projectsFile -Value $projects -Depth 6
+                logHistory "Add" "Created a project named <strong>$([string]$payload.projectName)</strong> with code <strong>$([string]$payload.projectCode)</strong>." ([string]$currentUser.displayName)
+            }
+            catch {
+                $projectMutationError = $_
+                throw
             }
             finally {
-                Release-ResourceLock -LockHandle $lockHandle
+                if ($projectMutationCommitted) {
+                    try {
+                        Publish-DataChange -Category "project" -Resource ([string]$payload.projectCode) | Out-Null
+                    }
+                    catch {
+                        if ($null -eq $projectMutationError) {
+                            throw
+                        }
+
+                        Write-Warning "Unable to publish project cache invalidation after a failed add operation: $($_.Exception.Message)"
+                    }
+                }
             }
 
-            logHistory "Add" "Created a project named <strong>$([string]$payload.projectName)</strong> with code <strong>$([string]$payload.projectCode)</strong>." ([string]$currentUser.displayName)
-            Publish-DataChange -Category "project" -Resource ([string]$payload.projectCode)
             respondWithSuccess $response '{ "message": "Project added successfully." }'
             continue
         }

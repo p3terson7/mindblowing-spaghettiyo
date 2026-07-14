@@ -4,12 +4,12 @@ set -e
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 if command -v pwsh >/dev/null 2>&1; then
-  pwsh -NoProfile -File "$REPO_ROOT/scripts/launch-app.ps1"
+  pwsh -NoProfile -File "$REPO_ROOT/scripts/launch-cached-app.ps1" -Force
   exit $?
 fi
 
 if command -v powershell >/dev/null 2>&1; then
-  powershell -NoProfile -File "$REPO_ROOT/scripts/launch-app.ps1"
+  powershell -NoProfile -File "$REPO_ROOT/scripts/launch-cached-app.ps1" -Force
   exit $?
 fi
 

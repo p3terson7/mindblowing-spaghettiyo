@@ -31,9 +31,12 @@
                 continue
             }
 
+            $entryMutationCommitted = $false
+            $entryMutationError = $null
             $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
             try {
-                $existingData = Read-JsonArrayFile -Path $dataFile
+                try {
+                    $existingData = Read-JsonArrayFile -Path $dataFile
                 $entryIndex = Find-EntryIndex -Entries $existingData -EntryId $entryId -Date $date -PunchIn $punchIn
                 if ($entryIndex -lt 0) {
                     respondWithError $response 404 "Error: Overtime entry not found"
@@ -62,15 +65,34 @@
                     $entry.message = $managerMessage.Trim()
                 }
 
-                Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 8
+                    Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 8
+                    $entryMutationCommitted = $true
 
-                $formattedDate = (Get-Date ([string]$entry.date)).ToString("MMMM dd, yyyy")
-                $employeeName = Get-EmployeeName $employeeCode
-                $action = if ($normalizedStatus -eq "approved") { "Approved" } else { "Rejected" }
-                $historySpan = Get-EntryHistorySpanText -StartTime ([string]$entry.punchIn) -EndTime ([string]$entry.punchOut)
-                $historyEntry = "$action an entry on $formattedDate $historySpan."
-                logHistory $action $historyEntry $employeeName
-                Publish-DataChange -Category "employee" -Resource $employeeCode
+                    $formattedDate = (Get-Date ([string]$entry.date)).ToString("MMMM dd, yyyy")
+                    $employeeName = Get-EmployeeName $employeeCode
+                    $action = if ($normalizedStatus -eq "approved") { "Approved" } else { "Rejected" }
+                    $historySpan = Get-EntryHistorySpanText -StartTime ([string]$entry.punchIn) -EndTime ([string]$entry.punchOut)
+                    $historyEntry = "$action an entry on $formattedDate $historySpan."
+                    logHistory $action $historyEntry $employeeName
+                }
+                catch {
+                    $entryMutationError = $_
+                    throw
+                }
+                finally {
+                    if ($entryMutationCommitted) {
+                        try {
+                            Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
+                        }
+                        catch {
+                            if ($null -eq $entryMutationError) {
+                                throw
+                            }
+
+                            Write-Warning "Unable to publish employee cache invalidation after a failed approval operation: $($_.Exception.Message)"
+                        }
+                    }
+                }
 
                 respondWithSuccess $response (([PSCustomObject]@{
                     message = "Entry updated successfully."

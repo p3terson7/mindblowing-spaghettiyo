@@ -11,3 +11,4 @@ legacy/git-metadata/
 
 # Managed runtime files
 runtime/
+dist/

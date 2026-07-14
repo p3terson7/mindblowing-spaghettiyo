@@ -15,8 +15,10 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 . (Join-Path -Path $scriptDir -ChildPath "services/ProjectStatsService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/HistoryService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/SeedService.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "services/ProjectMutationService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/Gc179ExportService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/Gc179ImportService.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "services/RouteDispatchService.ps1")
 
 function Register-RouteScriptBlock {
     param([Parameter(Mandatory = $true)][string]$RelativePath)
@@ -98,18 +100,12 @@ while ($true) {
             continue
         }
 
-        # Route handlers are compiled once at startup so every request avoids
-        # re-reading dozens of .ps1 route files from slow disks or network paths.
-        . $script:RouteScriptBlocks["routes/frontend.routes.ps1"]
-        . $script:RouteScriptBlocks["routes/auth.routes.ps1"]
-        . $script:RouteScriptBlocks["routes/sync.routes.ps1"]
-        . $script:RouteScriptBlocks["routes/seed.routes.ps1"]
-        . $script:RouteScriptBlocks["routes/self.routes.ps1"]
-        . $script:RouteScriptBlocks["routes/history.routes.ps1"]
-        . $script:RouteScriptBlocks["routes/dashboard.routes.ps1"]
-        . $script:RouteScriptBlocks["routes/employee.routes.ps1"]
-        . $script:RouteScriptBlocks["routes/project.routes.ps1"]
-        . $script:RouteScriptBlocks["routes/project-stats.routes.ps1"]
+        # Route handlers are compiled once at startup; resolve the one matching
+        # handler instead of evaluating every top-level script on each request.
+        $routeScriptPath = Resolve-AdminTopLevelRouteScript -Method ([string]$request.HttpMethod) -Path ([string]$request.Url.AbsolutePath)
+        if (-not [string]::IsNullOrWhiteSpace($routeScriptPath)) {
+            . $script:RouteScriptBlocks[$routeScriptPath]
+        }
 
         respondWithError $response 400 "Invalid request"
     }

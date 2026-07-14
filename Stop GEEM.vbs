@@ -4,6 +4,7 @@ Dim repoRoot
 Dim powerShellCommand
 Dim scriptPath
 Dim detectionCode
+Dim exitCode
 
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
@@ -18,4 +19,7 @@ Else
     powerShellCommand = "powershell"
 End If
 
-shell.Run powerShellCommand & " -NoProfile -ExecutionPolicy Bypass -File " & scriptPath, 0, False
+exitCode = shell.Run(powerShellCommand & " -NoProfile -ExecutionPolicy Bypass -File " & scriptPath, 0, True)
+If exitCode <> 0 Then
+    shell.Popup "GEEM could not be stopped automatically. Run Stop GEEM.bat to see the error details.", 0, "GEEM stop failed", 48
+End If

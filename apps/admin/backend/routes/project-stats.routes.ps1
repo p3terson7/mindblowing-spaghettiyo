@@ -9,7 +9,8 @@ if ($request.Url.AbsolutePath -match "^/stats/") {
         continue
     }
 
-    Invoke-CachedRouteScript -RelativePath "routes/stats/summary.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/stats/trends.routes.ps1"
-    Invoke-CachedRouteScript -RelativePath "routes/stats/detail.routes.ps1"
+    $statsRouteScript = Resolve-ProjectStatsRouteScript -Method ([string]$request.HttpMethod) -Path ([string]$request.Url.AbsolutePath)
+    if (-not [string]::IsNullOrWhiteSpace($statsRouteScript)) {
+        Invoke-CachedRouteScript -RelativePath $statsRouteScript
+    }
 }

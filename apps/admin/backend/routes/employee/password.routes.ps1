@@ -7,6 +7,8 @@
 
             $employeeCode = $matches[1]
 
+            $authMutationMayHaveCommitted = $false
+            $authMutationError = $null
             try {
                 $payload = Read-JsonRequestBody -Request $request
                 $newPassword = if ($null -ne $payload) { [string]$payload.newPassword } else { "" }
@@ -26,28 +28,55 @@
                     continue
                 }
 
-                $passwordUpdateResult = Set-EmployeeUserPassword -EmployeeCode $employeeCode -NewPassword $newPassword -MustChangePassword $mustChangePassword
-                if (-not $passwordUpdateResult.updated) {
-                    $errorMessage = if ($passwordUpdateResult.error) { [string]$passwordUpdateResult.error } else { "Unable to update employee password." }
-                    respondWithError $response 500 $errorMessage
-                    continue
-                }
+                try {
+                    try {
+                        $passwordUpdateResult = Set-EmployeeUserPassword -EmployeeCode $employeeCode -NewPassword $newPassword -MustChangePassword $mustChangePassword
+                    }
+                    catch {
+                        # Cache clearing can fail after the users file has already been committed.
+                        $authMutationMayHaveCommitted = $true
+                        throw
+                    }
+                    if (-not $passwordUpdateResult.updated) {
+                        $errorMessage = if ($passwordUpdateResult.error) { [string]$passwordUpdateResult.error } else { "Unable to update employee password." }
+                        respondWithError $response 500 $errorMessage
+                        continue
+                    }
 
-                Revoke-SessionsForUsername -Username $employeeCode
+                    $authMutationMayHaveCommitted = $true
+                    Revoke-SessionsForUsername -Username $employeeCode
 
-                $employeeName = [string](Get-EmployeeName $employeeCode)
-                $historyMessage = if ($passwordUpdateResult.created) {
-                    "Created a sign-in account and set a password for <strong>$employeeName</strong>."
-                }
-                elseif ($mustChangePassword) {
-                    "Reset the password for <strong>$employeeName</strong> and required a password change at next sign-in."
-                }
-                else {
-                    "Reset the password for <strong>$employeeName</strong>."
-                }
+                    $employeeName = [string](Get-EmployeeName $employeeCode)
+                    $historyMessage = if ($passwordUpdateResult.created) {
+                        "Created a sign-in account and set a password for <strong>$employeeName</strong>."
+                    }
+                    elseif ($mustChangePassword) {
+                        "Reset the password for <strong>$employeeName</strong> and required a password change at next sign-in."
+                    }
+                    else {
+                        "Reset the password for <strong>$employeeName</strong>."
+                    }
 
-                logHistory "Update" $historyMessage $employeeName
-                Publish-DataChange -Category "auth" -Resource $employeeCode
+                    logHistory "Update" $historyMessage $employeeName
+                }
+                catch {
+                    $authMutationError = $_
+                    throw
+                }
+                finally {
+                    if ($authMutationMayHaveCommitted) {
+                        try {
+                            Publish-DataChange -Category "auth" -Resource $employeeCode | Out-Null
+                        }
+                        catch {
+                            if ($null -eq $authMutationError) {
+                                throw
+                            }
+
+                            Write-Warning "Unable to publish auth cache invalidation after a failed password operation: $($_.Exception.Message)"
+                        }
+                    }
+                }
 
                 $message = if ($mustChangePassword) {
                     "Password updated successfully. The employee will need to change it on the next sign-in."

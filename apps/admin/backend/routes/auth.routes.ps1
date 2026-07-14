@@ -25,6 +25,8 @@
                         mustChangePassword = [bool]$userProjection.mustChangePassword
                         timeEntryTypes     = @($userProjection.timeEntryTypes)
                         gc179Profile       = $userProjection.gc179Profile
+                        demoSeedEnabled    = [bool]$demoSeedEnabled
+                        gc179ImportEnabled = [bool]$gc179ImportEnabled
                     }
                 }
                 $response.Headers["Set-Cookie"] = Get-SessionCookieHeader -Token $sessionToken
@@ -51,6 +53,8 @@
                 mustChangePassword = [bool]$currentUser.mustChangePassword
                 timeEntryTypes     = @($currentUser.timeEntryTypes)
                 gc179Profile       = $currentUser.gc179Profile
+                demoSeedEnabled    = [bool]$demoSeedEnabled
+                gc179ImportEnabled = [bool]$gc179ImportEnabled
             }
             respondWithSuccess $response ($result | ConvertTo-Json -Depth 6)
             continue

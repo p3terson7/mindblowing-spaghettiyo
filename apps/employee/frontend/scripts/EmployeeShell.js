@@ -3,7 +3,22 @@ const employeeShellState = {
   initialized: false,
   syncTimerId: null,
   lastSyncVersion: null,
+  lastSyncChangeKey: null,
 };
+
+function getEmployeeSyncStateChangeKey(syncState) {
+  const changeId = String(syncState && syncState.changeId || "").trim();
+  if (changeId) {
+    return `id:${changeId}`;
+  }
+
+  return [
+    String(syncState && syncState.version != null ? syncState.version : 0),
+    String(syncState && syncState.updatedAtUtc || ""),
+    String(syncState && syncState.category || ""),
+    String(syncState && syncState.resource || ""),
+  ].join("|");
+}
 
 function normalizeEmployeeApiUrl(value, fallbackValue) {
   const rawValue = (value || fallbackValue || "").trim();
@@ -192,6 +207,7 @@ function installEmployeeFetchWrapper() {
 function handleEmployeeSessionExpired() {
   stopEmployeeSyncPolling();
   employeeShellState.lastSyncVersion = null;
+  employeeShellState.lastSyncChangeKey = null;
   clearStoredEmployeeSession();
   updateEmployeeSessionSummary();
   showEmployeeAuthOverlay(false);
@@ -214,15 +230,18 @@ async function pollEmployeeSyncState() {
     const response = await fetch(apiUrl + "sync/status");
     const syncState = await parseResponse(response);
     const nextVersion = syncState && typeof syncState.version === "number" ? syncState.version : 0;
+    const nextChangeKey = getEmployeeSyncStateChangeKey(syncState);
 
-    if (employeeShellState.lastSyncVersion === null) {
+    if (employeeShellState.lastSyncChangeKey === null) {
       employeeShellState.lastSyncVersion = nextVersion;
+      employeeShellState.lastSyncChangeKey = nextChangeKey;
       return;
     }
 
-    if (nextVersion !== employeeShellState.lastSyncVersion) {
-      employeeShellState.lastSyncVersion = nextVersion;
+    if (nextChangeKey !== employeeShellState.lastSyncChangeKey) {
       await refreshEmployeeView();
+      employeeShellState.lastSyncVersion = nextVersion;
+      employeeShellState.lastSyncChangeKey = nextChangeKey;
     }
   } catch (error) {
     console.error("Unable to refresh employee sync state:", error);
@@ -386,6 +405,7 @@ async function submitEmployeeLogout() {
   }
 
   employeeShellState.lastSyncVersion = null;
+  employeeShellState.lastSyncChangeKey = null;
   clearStoredEmployeeSession();
   updateEmployeeSessionSummary();
   showEmployeeAuthOverlay(false);

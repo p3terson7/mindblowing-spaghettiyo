@@ -47,7 +47,7 @@
                 Release-ResourceLock -LockHandle $lockHandle
             }
 
-            Publish-DataChange -Category "employee" -Resource $employeeCode
+            Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
             respondWithSuccess $response '{ "message": "Message updated successfully." }'
             continue
         }

@@ -22,6 +22,9 @@ if ($listenerPrefix[-1] -ne "/") {
     $listenerPrefix += "/"
 }
 
+$demoSeedEnabled = $config.ContainsKey("EnableDemoSeed") -and [bool]$config.EnableDemoSeed
+$gc179ImportEnabled = $config.ContainsKey("EnableGc179Import") -and [bool]$config.EnableGc179Import
+
 $configuredDataFolder = if ($config.ContainsKey("DataFolderPath") -and -not [string]::IsNullOrWhiteSpace([string]$config.DataFolderPath)) {
     [string]$config.DataFolderPath
 }

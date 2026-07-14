@@ -9,4 +9,4 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 . (Join-Path -Path $scriptDir -ChildPath "lib/RuntimeLayout.ps1")
 
 $service = Get-ManagedServiceConfig -Name "app"
-[void](Stop-ManagedService -Name $service.Name -DisplayName $service.DisplayName -Port $service.Port -PidFile $service.PidFile)
+[void](Stop-ManagedService -Name $service.Name -DisplayName $service.DisplayName -Port $service.Port -PidFile $service.PidFile -ServerScript $service.ServerScript)

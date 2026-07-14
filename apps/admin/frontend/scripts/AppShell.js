@@ -10,6 +10,21 @@ const ROLE_VIEW_MAP = {
   admin: ["dashboardView", "employeesView", "adminView", "projectsView"],
   employee: ["selfView"],
 };
+const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
+const MANAGER_SCRIPT_SOURCE = {
+  chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
+  employees: "scripts/Views/EmployeesView.js?v=20260713-project-admin",
+  dashboard: "scripts/Views/DashboardView.js?v=20260713-performance",
+  approvals: "scripts/Views/ApprovalsView.js?v=20260713-performance",
+  history: "scripts/Views/HistoryView.js?v=20260713-performance",
+  projects: "scripts/Views/ProjectsView.js?v=20260713-project-admin",
+};
+const MANAGER_VIEW_SCRIPT_SOURCES = {
+  dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
+  employeesView: [MANAGER_SCRIPT_SOURCE.dashboard, MANAGER_SCRIPT_SOURCE.chart, MANAGER_SCRIPT_SOURCE.employees],
+  adminView: [MANAGER_SCRIPT_SOURCE.dashboard, MANAGER_SCRIPT_SOURCE.approvals, MANAGER_SCRIPT_SOURCE.history],
+  projectsView: [MANAGER_SCRIPT_SOURCE.dashboard, MANAGER_SCRIPT_SOURCE.chart, MANAGER_SCRIPT_SOURCE.projects],
+};
 
 function normalizeClientRole(role) {
   const normalized = String(role || "").trim().toLowerCase().replace(/[\s_-]/g, "");
@@ -33,6 +48,20 @@ function isManagerUser(user = getCurrentUser()) {
 
 function userHasEmployeeWorkspace(user = getCurrentUser()) {
   return Boolean(user && user.employeeCode);
+}
+
+function getSyncStateChangeKey(syncState) {
+  const changeId = String(syncState && syncState.changeId || "").trim();
+  if (changeId) {
+    return `id:${changeId}`;
+  }
+
+  return [
+    String(syncState && syncState.version != null ? syncState.version : 0),
+    String(syncState && syncState.updatedAtUtc || ""),
+    String(syncState && syncState.category || ""),
+    String(syncState && syncState.resource || ""),
+  ].join("|");
 }
 
 function getStoredTheme() {
@@ -87,12 +116,105 @@ const appShellState = {
   initialized: false,
   syncTimerId: null,
   lastSyncVersion: null,
+  lastSyncChangeKey: null,
   syncRequestInFlight: false,
   getRequestInflight: {},
+  scriptLoadPromises: {},
+  managerAssetPromisesByView: {},
   viewState: {},
   storedSession: null,
   storedSessionLoaded: false,
 };
+
+function loadScriptOnce(source) {
+  const absoluteSource = new URL(source, document.baseURI).href;
+  if (appShellState.scriptLoadPromises[absoluteSource]) {
+    return appShellState.scriptLoadPromises[absoluteSource];
+  }
+
+  const existingScript = Array.from(document.scripts || []).find(script => script.src === absoluteSource);
+  if (existingScript) {
+    const isManagedScript = Boolean(existingScript.getAttribute("data-app-manager-script"));
+    const isLoaded = existingScript.getAttribute("data-app-manager-script-loaded") === "true"
+      || existingScript.readyState === "loaded"
+      || existingScript.readyState === "complete";
+    const existingPromise = !isManagedScript || isLoaded
+      ? Promise.resolve(existingScript)
+      : new Promise((resolve, reject) => {
+        const handleLoad = () => {
+          existingScript.setAttribute("data-app-manager-script-loaded", "true");
+          resolve(existingScript);
+        };
+        const handleError = () => {
+          if (existingScript.parentNode) {
+            existingScript.parentNode.removeChild(existingScript);
+          }
+          const error = new Error(`Unable to load application script: ${source}`);
+          error.isManagerAssetLoadError = true;
+          reject(error);
+        };
+        existingScript.addEventListener("load", handleLoad, { once: true });
+        existingScript.addEventListener("error", handleError, { once: true });
+      });
+    appShellState.scriptLoadPromises[absoluteSource] = existingPromise;
+    existingPromise.catch(() => {
+      if (appShellState.scriptLoadPromises[absoluteSource] === existingPromise) {
+        delete appShellState.scriptLoadPromises[absoluteSource];
+      }
+    });
+    return existingPromise;
+  }
+
+  const script = document.createElement("script");
+  script.src = source;
+  script.async = false;
+  script.setAttribute("data-app-manager-script", source);
+
+  const loadPromise = new Promise((resolve, reject) => {
+    script.onload = () => {
+      script.setAttribute("data-app-manager-script-loaded", "true");
+      resolve(script);
+    };
+    script.onerror = () => {
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+      const error = new Error(`Unable to load application script: ${source}`);
+      error.isManagerAssetLoadError = true;
+      reject(error);
+    };
+    document.head.appendChild(script);
+  });
+
+  appShellState.scriptLoadPromises[absoluteSource] = loadPromise;
+  loadPromise.catch(() => {
+    if (appShellState.scriptLoadPromises[absoluteSource] === loadPromise) {
+      delete appShellState.scriptLoadPromises[absoluteSource];
+    }
+  });
+  return loadPromise;
+}
+
+function ensureManagerAssetsForView(viewId, user = getCurrentUser()) {
+  if (MANAGER_VIEW_IDS.indexOf(viewId) < 0 || !isManagerUser(user)) {
+    return Promise.resolve();
+  }
+
+  if (!appShellState.managerAssetPromisesByView[viewId]) {
+    const sources = MANAGER_VIEW_SCRIPT_SOURCES[viewId] || [];
+    const viewPromise = Promise.all(sources.map(source => loadScriptOnce(source)))
+      .then(() => undefined)
+      .catch(error => {
+        if (appShellState.managerAssetPromisesByView[viewId] === viewPromise) {
+          delete appShellState.managerAssetPromisesByView[viewId];
+        }
+        throw error;
+      });
+    appShellState.managerAssetPromisesByView[viewId] = viewPromise;
+  }
+
+  return appShellState.managerAssetPromisesByView[viewId];
+}
 
 function resetViewState() {
   appShellState.viewState = {};
@@ -205,10 +327,14 @@ function getViewsAffectedBySyncState(syncState) {
 
   if (category === "employee") {
     if (isManagerUser(user)) {
-      return ["dashboardView", "employeesView", "adminView", "projectsView"];
+      const affectedViews = ["dashboardView", "employeesView", "adminView", "projectsView"];
+      if (userHasEmployeeWorkspace(user) && (resource === "*" || user.employeeCode === resource)) {
+        affectedViews.push("selfView");
+      }
+      return affectedViews;
     }
 
-    return resource && user.employeeCode === resource
+    return resource && (resource === "*" || user.employeeCode === resource)
       ? ["selfView"]
       : [];
   }
@@ -844,6 +970,15 @@ function scheduleNextSyncPoll(delayMs) {
 }
 
 async function runViewRefresh(viewId) {
+  try {
+    await ensureManagerAssetsForView(viewId);
+  } catch (error) {
+    console.error(`Unable to load assets for ${viewId}:`, error);
+    setSyncStatus(t("status.syncPaused"));
+    showToast(error && error.message ? error.message : t("dashboard.loadError"), "error");
+    throw error;
+  }
+
   if (viewId === "selfView" && typeof refreshSelfView === "function") {
     await refreshSelfView();
     return;
@@ -901,6 +1036,9 @@ async function refreshViewById(viewId, options) {
     })
     .catch(error => {
       state.stale = true;
+      if (error && error.isManagerAssetLoadError) {
+        return;
+      }
       throw error;
     })
     .finally(() => {
@@ -944,24 +1082,42 @@ async function pollSyncState() {
     const syncState = await parseResponse(response);
     setLastSyncStatus(syncState);
     const nextVersion = syncState && typeof syncState.version === "number" ? syncState.version : 0;
+    const nextChangeKey = getSyncStateChangeKey(syncState);
 
-    if (appShellState.lastSyncVersion === null) {
+    if (appShellState.lastSyncChangeKey === null) {
       appShellState.lastSyncVersion = nextVersion;
+      appShellState.lastSyncChangeKey = nextChangeKey;
       setSyncStatus(t("status.liveRev", { version: nextVersion }));
       return;
     }
 
-    if (nextVersion !== appShellState.lastSyncVersion) {
-      appShellState.lastSyncVersion = nextVersion;
+    if (nextChangeKey !== appShellState.lastSyncChangeKey) {
+      const isSequentialChange = nextVersion === appShellState.lastSyncVersion + 1;
+      const routedSyncState = isSequentialChange
+        ? syncState
+        : {
+          ...(syncState || {}),
+          category: "seed",
+          resource: "sync-gap",
+        };
+
       if (typeof window.handleSyncStateChange === "function") {
-        window.handleSyncStateChange(syncState);
+        window.handleSyncStateChange(routedSyncState);
       }
-      markViewsStale(getViewsAffectedBySyncState(syncState));
+      if (isSequentialChange) {
+        markViewsStale(getViewsAffectedBySyncState(syncState));
+      } else {
+        markAllowedViewsStale(getCurrentUser());
+      }
       setSyncStatus(t("status.updatedRev", { version: nextVersion }));
       if (document.hidden) {
+        appShellState.lastSyncVersion = nextVersion;
+        appShellState.lastSyncChangeKey = nextChangeKey;
         return;
       }
       await refreshActiveView();
+      appShellState.lastSyncVersion = nextVersion;
+      appShellState.lastSyncChangeKey = nextChangeKey;
       return;
     }
 
@@ -994,11 +1150,14 @@ async function bootstrapApplication() {
     showView(preferredView);
   }
 
-  await refreshViewById(preferredView, { force: true });
-  pollSyncState().catch(error => {
-    console.error("Unable to start sync polling:", error);
-  });
   appShellState.initialized = true;
+  try {
+    await refreshViewById(preferredView, { force: true });
+  } finally {
+    pollSyncState().catch(error => {
+      console.error("Unable to start sync polling:", error);
+    });
+  }
 }
 
 function installFetchWrapper() {
@@ -1051,6 +1210,7 @@ function installFetchWrapper() {
 function handleSessionExpired() {
   stopSyncPolling();
   appShellState.lastSyncVersion = null;
+  appShellState.lastSyncChangeKey = null;
   resetViewState();
   clearClientLookupCaches();
   clearStoredSession();
@@ -1078,6 +1238,23 @@ function validateAuthenticatedUser(user) {
   user.role = role;
 }
 
+async function loadAuthenticatedWorkspace() {
+  try {
+    if (!appShellState.initialized) {
+      await bootstrapApplication();
+    } else {
+      await refreshActiveView({ force: true });
+      await pollSyncState();
+    }
+    return true;
+  } catch (error) {
+    console.error("Unable to load the authenticated workspace:", error);
+    setSyncStatus(t("status.syncPaused"));
+    showToast(error && error.message ? error.message : t("dashboard.loadError"), "error");
+    return false;
+  }
+}
+
 async function applySession(authResult) {
   if (!authResult || !authResult.token || !authResult.user) {
     throw new Error(t("auth.authenticationIncomplete"));
@@ -1090,6 +1267,7 @@ async function applySession(authResult) {
     user: authResult.user,
   });
   appShellState.lastSyncVersion = null;
+  appShellState.lastSyncChangeKey = null;
   resetViewState();
   clearClientLookupCaches();
   markAllowedViewsStale(authResult.user);
@@ -1104,13 +1282,7 @@ async function applySession(authResult) {
   }
 
   hideAuthOverlay();
-
-  if (!appShellState.initialized) {
-    await bootstrapApplication();
-  } else {
-    await refreshActiveView({ force: true });
-    await pollSyncState();
-  }
+  await loadAuthenticatedWorkspace();
 }
 
 async function submitLogin(event) {
@@ -1265,6 +1437,7 @@ async function submitLogout() {
   }
 
   appShellState.lastSyncVersion = null;
+  appShellState.lastSyncChangeKey = null;
   resetViewState();
   clearClientLookupCaches();
   clearStoredSession();

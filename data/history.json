@@ -18,5 +18,15 @@
     "authorUsername": "000379070",
     "authorRole": "superAdmin",
     "timestamp": "2026-07-09 13:43:14"
+  },
+  {
+    "action": "Import",
+    "message": "Imported <strong>10</strong> GC179 entries for month <strong>2026-06</strong> into project <strong>P001</strong>. Batch: <strong>gc179-3375e741ed72427dae4313c16b0f610f</strong>.",
+    "employee": "Peter Sarateanu",
+    "targetEmployee": "Peter Sarateanu",
+    "author": "Administrator",
+    "authorUsername": "admin",
+    "authorRole": "superAdmin",
+    "timestamp": "2026-07-13 20:46:13"
   }
 ]

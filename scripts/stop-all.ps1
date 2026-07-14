@@ -11,7 +11,7 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 . (Join-Path -Path $scriptDir -ChildPath "lib/RuntimeLayout.ps1")
 
 $service = Get-ManagedServiceConfig -Name "app"
-[void](Stop-ManagedService -Name $service.Name -DisplayName $service.DisplayName -Port $service.Port -PidFile $service.PidFile -Quiet)
+[void](Stop-ManagedService -Name $service.Name -DisplayName $service.DisplayName -Port $service.Port -PidFile $service.PidFile -ServerScript $service.ServerScript -Quiet)
 
 foreach ($legacyService in Get-LegacyServiceConfigs) {
     if (Read-ServiceMetadata -PidFile $legacyService.PidFile) {

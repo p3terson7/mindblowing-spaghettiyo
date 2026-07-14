@@ -29,14 +29,55 @@ function Test-FrontendUrlAvailable {
 
 $service = Get-ManagedServiceConfig -Name "app"
 $status = Get-ServiceStatus -Name $service.Name -DisplayName $service.DisplayName -Port $service.Port -PidFile $service.PidFile
-if (-not ($status.IsRunning -and (Test-FrontendUrlAvailable -Url $service.FrontendUrl))) {
-    Start-ManagedService -Name $service.Name -DisplayName $service.DisplayName -ServerScript $service.ServerScript -Port $service.Port -PidFile $service.PidFile -StdOutLog $service.StdOutLog -StdErrLog $service.StdErrLog -WorkingDirectory $service.WorkingDirectory -Force:$Force | Out-Null
+$expectedScriptPath = [System.IO.Path]::GetFullPath($service.ServerScript)
+$trackedScriptPath = if ($status.Metadata -and $status.Metadata.scriptPath) {
+    try { [System.IO.Path]::GetFullPath([string]$status.Metadata.scriptPath) } catch { "" }
 }
 else {
+    ""
+}
+$scriptPathComparison = if (Test-IsWindowsHost) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+$isExpectedManagedInstance = $status.TrackedProcessId -and
+    -not [string]::IsNullOrWhiteSpace($trackedScriptPath) -and
+    $trackedScriptPath.Equals($expectedScriptPath, $scriptPathComparison)
+$frontendIsAvailable = $status.IsRunning -and (Test-FrontendUrlAvailable -Url $service.FrontendUrl)
+
+if ($isExpectedManagedInstance -and $frontendIsAvailable -and -not $Force) {
     Write-Host "$($service.DisplayName) is already available at $($service.FrontendUrl)."
+}
+else {
+    if ($status.IsRunning -and -not $status.TrackedProcessId -and -not $Force) {
+        throw "Port $($service.Port) is already used by another program. GEEM did not stop or replace that program."
+    }
+
+    $restartTrackedService = $status.TrackedProcessId -and (-not $isExpectedManagedInstance -or -not $frontendIsAvailable)
+    Start-ManagedService -Name $service.Name -DisplayName $service.DisplayName -ServerScript $service.ServerScript -Port $service.Port -PidFile $service.PidFile -StdOutLog $service.StdOutLog -StdErrLog $service.StdErrLog -WorkingDirectory $service.WorkingDirectory -Force:($Force -or $restartTrackedService) | Out-Null
+}
+
+if (-not (Test-FrontendUrlAvailable -Url $service.FrontendUrl)) {
+    try {
+        [void](Stop-ManagedService -Name $service.Name -DisplayName $service.DisplayName -Port $service.Port -PidFile $service.PidFile -ServerScript $service.ServerScript -Quiet)
+    }
+    catch {
+        Write-Warning "GEEM did not become ready, and its local backend could not be stopped cleanly."
+    }
+    throw "GEEM started but did not pass its local web readiness check at $($service.FrontendUrl)."
 }
 
 Write-Host ""
 Write-Host "Opening GÉEM..."
-Open-UriInDefaultBrowser -Uri $service.FrontendUrl
+try {
+    Open-UriInDefaultBrowser -Uri $service.FrontendUrl
+}
+catch {
+    Write-Warning "GEEM is ready, but the browser could not be opened automatically. Open $($service.FrontendUrl) manually."
+    if (Test-IsWindowsHost) {
+        try {
+            $shell = New-Object -ComObject WScript.Shell
+            [void]$shell.Popup("GEEM is ready. Open $($service.FrontendUrl) in your browser.", 0, "GEEM is ready", 64)
+        }
+        catch {
+        }
+    }
+}
 Write-Host "GÉEM is ready at $($service.FrontendUrl)"

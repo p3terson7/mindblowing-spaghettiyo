@@ -333,6 +333,7 @@ function setProjectEditorMessage(message, type) {
 
 function resetProjectEditorForm() {
   document.getElementById("projectEditorMode").value = "create";
+  document.getElementById("projectEditorOriginalCodeInput").value = "";
   document.getElementById("projectEditorModalLabel").textContent = t("projects.addProject");
   document.getElementById("projectEditorCodeInput").value = "";
   document.getElementById("projectEditorCodeInput").readOnly = false;
@@ -347,10 +348,15 @@ function resetProjectEditorForm() {
   document.getElementById("projectEditorAdminsList").innerHTML = "";
   document.getElementById("projectEditorBackupAdminsList").innerHTML = "";
   document.getElementById("projectEditorRemoveButton").classList.add("d-none");
+  document.getElementById("projectEditorDeleteButton").classList.add("d-none");
   setProjectEditorMessage("");
 }
 
 async function openProjectEditorModal(mode, project) {
+  if (!canManageProjects()) {
+    return;
+  }
+
   resetProjectEditorForm();
   await ensureProjectEditorEmployees(true);
 
@@ -362,12 +368,14 @@ async function openProjectEditorModal(mode, project) {
 
   if (mode === "edit" && project) {
     document.getElementById("projectEditorMode").value = "edit";
+    document.getElementById("projectEditorOriginalCodeInput").value = project.projectCode || "";
     document.getElementById("projectEditorModalLabel").textContent = t("projects.editProject");
     document.getElementById("projectEditorCodeInput").value = project.projectCode || "";
-    document.getElementById("projectEditorCodeInput").readOnly = true;
+    document.getElementById("projectEditorCodeInput").readOnly = false;
     document.getElementById("projectEditorNameInput").value = project.projectName || "";
     document.getElementById("projectEditorSectorInput").value = project.sector || "";
     document.getElementById("projectEditorRemoveButton").classList.toggle("d-none", Boolean(project.archived));
+    document.getElementById("projectEditorDeleteButton").classList.remove("d-none");
   }
 
   const modal = new bootstrap.Modal(document.getElementById("projectEditorModal"));
@@ -1098,23 +1106,47 @@ function renderProjectDetail(detail) {
 }
 
 async function submitProjectEditor() {
+  if (!canManageProjects()) {
+    return;
+  }
+
   setProjectEditorMessage("");
 
   const mode = document.getElementById("projectEditorMode").value;
+  const originalProjectCode = document.getElementById("projectEditorOriginalCodeInput").value.trim();
   const projectCode = document.getElementById("projectEditorCodeInput").value.trim();
   const projectName = document.getElementById("projectEditorNameInput").value.trim();
   const sector = document.getElementById("projectEditorSectorInput").value.trim();
   const admins = getProjectEditorAssignmentCodes("admins");
   const backupAdmins = getProjectEditorAssignmentCodes("backupAdmins");
-  const existingProject = getProjectByCode(projectCode);
+  const existingProject = mode === "edit" ? getProjectByCode(originalProjectCode) : null;
 
-  if (!projectCode || !projectName) {
+  if (!projectCode || !projectName || (mode === "edit" && !originalProjectCode)) {
     setProjectEditorMessage(t("projects.codeAndNameRequired"), "danger");
+    return;
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$/.test(projectCode)) {
+    setProjectEditorMessage(t("projects.projectCodeInvalid"), "danger");
+    return;
+  }
+  if (projectName.length > 200) {
+    setProjectEditorMessage(t("projects.projectNameTooLong"), "danger");
+    return;
+  }
+
+  const normalizedOriginalCode = originalProjectCode.toLowerCase();
+  const duplicateProjectCode = projectsViewState.projects.some(project => {
+    const candidateCode = String(project && project.projectCode || "").trim();
+    return candidateCode.toLowerCase() === projectCode.toLowerCase()
+      && candidateCode.toLowerCase() !== normalizedOriginalCode;
+  });
+  if (duplicateProjectCode) {
+    setProjectEditorMessage(t("projects.projectCodeDuplicate"), "danger");
     return;
   }
 
   try {
-    const response = await fetch(mode === "create" ? apiUrl + "projects" : apiUrl + "projects/" + encodeURIComponent(projectCode), {
+    const response = await fetch(mode === "create" ? apiUrl + "projects" : apiUrl + "projects/" + encodeURIComponent(originalProjectCode), {
       method: mode === "create" ? "POST" : "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -1129,6 +1161,9 @@ async function submitProjectEditor() {
       }),
     });
 
+    if (response.status === 409) {
+      throw new Error(t("projects.renameInUse"));
+    }
     await parseResponse(response);
     if (typeof fetchOvertimeEntryLookups === "function") {
       await fetchOvertimeEntryLookups(true);
@@ -1141,6 +1176,9 @@ async function submitProjectEditor() {
       modal.hide();
     }
     resetProjectEditorForm();
+    if (mode === "edit" && currentProjectCode === originalProjectCode) {
+      currentProjectCode = projectCode;
+    }
     showToast(t(mode === "create" ? "projects.projectCreated" : "projects.projectUpdated"), "success");
     await refreshProjectsView();
   } catch (error) {
@@ -1150,13 +1188,13 @@ async function submitProjectEditor() {
 }
 
 async function archiveProject(project) {
-  if (!project || !project.projectCode) {
-    return;
+  if (!canManageProjects() || !project || !project.projectCode) {
+    return false;
   }
 
   const confirmed = window.confirm(t("projects.archiveConfirm", { name: project.projectName, code: project.projectCode }));
   if (!confirmed) {
-    return;
+    return false;
   }
 
   try {
@@ -1175,9 +1213,48 @@ async function archiveProject(project) {
     }
     showToast(t("projects.projectArchived"), "success");
     await refreshProjectsView();
+    return true;
   } catch (error) {
     console.error("Error archiving project:", error);
     showToast(error.message || t("projects.archiveError"), "error");
+    return false;
+  }
+}
+
+async function deleteProject(project) {
+  if (!canManageProjects() || !project || !project.projectCode) {
+    return false;
+  }
+
+  const confirmed = window.confirm(t("projects.deleteConfirm", { name: project.projectName, code: project.projectCode }));
+  if (!confirmed) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(apiUrl + "projects/" + encodeURIComponent(project.projectCode) + "?permanent=true", {
+      method: "DELETE",
+    });
+    if (response.status === 409) {
+      throw new Error(t("projects.deleteInUse"));
+    }
+    await parseResponse(response);
+    if (typeof fetchOvertimeEntryLookups === "function") {
+      await fetchOvertimeEntryLookups(true);
+    }
+    if (typeof fetchScopedProjects === "function") {
+      await fetchScopedProjects(true);
+    }
+    if (currentProjectCode === project.projectCode) {
+      currentProjectCode = null;
+    }
+    showToast(t("projects.projectDeleted"), "success");
+    await refreshProjectsView();
+    return true;
+  } catch (error) {
+    console.error("Error deleting project:", error);
+    showToast(error.message || t("projects.deleteError"), "error");
+    return false;
   }
 }
 
@@ -1379,12 +1456,24 @@ document.getElementById("addProjectButton").addEventListener("click", () => {
   });
 });
 document.getElementById("projectEditorRemoveButton").addEventListener("click", async () => {
-  const project = getProjectByCode(document.getElementById("projectEditorCodeInput").value.trim());
-  const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
-  if (modal) {
-    modal.hide();
+  const project = getProjectByCode(document.getElementById("projectEditorOriginalCodeInput").value.trim());
+  const archived = await archiveProject(project);
+  if (archived) {
+    const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
+    if (modal) {
+      modal.hide();
+    }
   }
-  await archiveProject(project);
+});
+document.getElementById("projectEditorDeleteButton").addEventListener("click", async () => {
+  const project = getProjectByCode(document.getElementById("projectEditorOriginalCodeInput").value.trim());
+  const deleted = await deleteProject(project);
+  if (deleted) {
+    const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
+    if (modal) {
+      modal.hide();
+    }
+  }
 });
 document.getElementById("projectEditorAdminsSearchInput").addEventListener("input", event => {
   projectsViewState.editorAssignments.adminsSearch = event.target.value || "";

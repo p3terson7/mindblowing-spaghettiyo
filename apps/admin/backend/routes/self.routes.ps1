@@ -40,7 +40,7 @@
 
                 $updatedUser = Get-EmployeeUserByCode -EmployeeCode ([string]$currentUser.employeeCode)
                 $updatedProfile = Get-Gc179ProfileFromUserRecord -UserRecord $updatedUser
-                Publish-DataChange -Category "auth" -Resource ([string]$currentUser.employeeCode)
+                Publish-DataChange -Category "auth" -Resource ([string]$currentUser.employeeCode) | Out-Null
 
                 respondWithSuccess $response (([PSCustomObject]@{
                     message      = "GC179 profile updated successfully."
@@ -239,20 +239,7 @@
                 $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
                 try {
                     $existingData = Read-JsonArrayFile -Path $dataFile
-                    $sortedEntries = @(
-                        $existingData | Sort-Object @{
-                            Expression = {
-                                try {
-                                    [DateTime]::ParseExact(("{0} {1}" -f $_.date, $_.punchIn), "yyyy-MM-dd HH:mm:ss", $null)
-                                }
-                                catch {
-                                    [DateTime]::MinValue
-                                }
-                            }
-                        }
-                    )
-                    $lastEntry = $sortedEntries | Select-Object -Last 1
-                    $activeEntry = @($sortedEntries | Where-Object { $_.punchIn -and -not $_.punchOut -and -not (Test-EntryForgottenClockOut -Entry $_) }) | Select-Object -Last 1
+                    $activeEntry = Get-LatestActiveEntry -Entries $existingData
 
                     $now = Get-Date
                     $exactNow = Get-Date -Year $now.Year -Month $now.Month -Day $now.Day -Hour $now.Hour -Minute $now.Minute -Second 0
@@ -335,7 +322,7 @@
                     Release-ResourceLock -LockHandle $lockHandle
                 }
 
-                Publish-DataChange -Category "employee" -Resource $employeeCode
+                Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
 
                 $result = [PSCustomObject]@{
                     message = $punchResultMessage

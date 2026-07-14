@@ -32,72 +32,114 @@
                     }
 
                     if (-not $groupedEntries.ContainsKey($employeeCode)) {
-                        $groupedEntries[$employeeCode] = @()
+                        $groupedEntries[$employeeCode] = New-Object System.Collections.ArrayList
                     }
 
-                    $groupedEntries[$employeeCode] += $entryRequest
+                    [void]$groupedEntries[$employeeCode].Add($entryRequest)
                 }
 
-                foreach ($employeeCode in $groupedEntries.Keys) {
-                    $dataFile = Join-Path -Path $sharedFolder -ChildPath "${employeeCode}_data.json"
-                    if (!(Test-Path -Path $dataFile)) {
-                        continue
-                    }
+                $batchHistoryEntries = New-Object System.Collections.ArrayList
+                $updatedEmployeeCodes = New-Object System.Collections.ArrayList
+                $updatedEmployeeCodeSet = @{}
+                $batchMutationError = $null
 
-                    $employeeRole = Get-EmployeeRoleByCode -EmployeeCode $employeeCode
-                    $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
-                    try {
-                        $existingData = Read-JsonArrayFile -Path $dataFile
-                        $historyEntries = @()
-
-                        foreach ($entryRequest in @($groupedEntries[$employeeCode])) {
-                            $requestEntryId = if ($entryRequest.PSObject.Properties.Name -contains "entryId") { [string]$entryRequest.entryId } else { "" }
-                            $requestDate = if ($entryRequest.PSObject.Properties.Name -contains "date") { [string]$entryRequest.date } else { "" }
-                            $requestPunchIn = if ($entryRequest.PSObject.Properties.Name -contains "punchIn") { [string]$entryRequest.punchIn } else { "" }
-                            $entryIndex = Find-EntryIndex -Entries $existingData -EntryId $requestEntryId -Date $requestDate -PunchIn $requestPunchIn
-                            if ($entryIndex -lt 0) {
-                                continue
-                            }
-
-                            $entry = $existingData[$entryIndex]
-                            if (-not (Test-CurrentUserCanManageEntry -CurrentUser $currentUser -Entry $entry)) {
-                                continue
-                            }
-
-                            if (-not (Test-CurrentUserCanApproveEmployeeRole -CurrentUser $currentUser -EmployeeRole $employeeRole)) {
-                                continue
-                            }
-
-                            if (-not $entry.punchOut) {
-                                continue
-                            }
-
-                            $entry.status = $normalizedStatus
-                            if ($normalizedStatus -eq "rejected") {
-                                $entry.message = $managerMessage.Trim()
-                            }
-
-                            $action = if ($normalizedStatus -eq "approved") { "Approved" } else { "Rejected" }
-                            $formattedDate = (Get-Date ([string]$entry.date)).ToString("MMMM dd, yyyy")
-                            $historySpan = Get-EntryHistorySpanText -StartTime ([string]$entry.punchIn) -EndTime ([string]$entry.punchOut)
-                            $historyEntries += [PSCustomObject]@{
-                                action  = $action
-                                message = "$action an entry on $formattedDate $historySpan."
-                            }
-                            $updatedCount++
+                try {
+                    foreach ($employeeCode in $groupedEntries.Keys) {
+                        $dataFile = Join-Path -Path $sharedFolder -ChildPath "${employeeCode}_data.json"
+                        if (!(Test-Path -Path $dataFile)) {
+                            continue
                         }
 
-                        if ($historyEntries.Count -gt 0) {
-                            Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 8
+                        $employeeRole = Get-EmployeeRoleByCode -EmployeeCode $employeeCode
+                        $employeeHistoryEntries = New-Object System.Collections.ArrayList
+                        $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
+                        try {
+                            Clear-CachedFileContent -Path $dataFile
+                            $existingData = @(Read-JsonArrayFile -Path $dataFile)
+                            $entryLookup = New-EntryIndexLookup -Entries $existingData
+
+                            foreach ($entryRequest in @($groupedEntries[$employeeCode])) {
+                                $requestEntryId = if ($entryRequest.PSObject.Properties.Name -contains "entryId") { [string]$entryRequest.entryId } else { "" }
+                                $requestDate = if ($entryRequest.PSObject.Properties.Name -contains "date") { [string]$entryRequest.date } else { "" }
+                                $requestPunchIn = if ($entryRequest.PSObject.Properties.Name -contains "punchIn") { [string]$entryRequest.punchIn } else { "" }
+                                $entryIndex = Find-EntryIndexFromLookup -Lookup $entryLookup -EntryId $requestEntryId -Date $requestDate -PunchIn $requestPunchIn
+                                if ($entryIndex -lt 0) {
+                                    continue
+                                }
+
+                                $entry = $existingData[$entryIndex]
+                                if (-not (Test-CurrentUserCanManageEntry -CurrentUser $currentUser -Entry $entry)) {
+                                    continue
+                                }
+
+                                if (-not (Test-CurrentUserCanApproveEmployeeRole -CurrentUser $currentUser -EmployeeRole $employeeRole)) {
+                                    continue
+                                }
+
+                                if (-not $entry.punchOut) {
+                                    continue
+                                }
+
+                                $entry.status = $normalizedStatus
+                                if ($normalizedStatus -eq "rejected") {
+                                    $entry.message = $managerMessage.Trim()
+                                }
+
+                                $action = if ($normalizedStatus -eq "approved") { "Approved" } else { "Rejected" }
+                                $formattedDate = (Get-Date ([string]$entry.date)).ToString("MMMM dd, yyyy")
+                                $historySpan = Get-EntryHistorySpanText -StartTime ([string]$entry.punchIn) -EndTime ([string]$entry.punchOut)
+                                [void]$employeeHistoryEntries.Add([PSCustomObject]@{
+                                    action  = $action
+                                    message = "$action an entry on $formattedDate $historySpan."
+                                })
+                                $updatedCount++
+                            }
+
+                            if ($employeeHistoryEntries.Count -gt 0) {
+                                Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 8
+                                if (-not $updatedEmployeeCodeSet.ContainsKey($employeeCode)) {
+                                    $updatedEmployeeCodeSet[$employeeCode] = $true
+                                    [void]$updatedEmployeeCodes.Add($employeeCode)
+                                }
+                            }
+                        }
+                        finally {
+                            Release-ResourceLock -LockHandle $lockHandle
+                        }
+
+                        if ($employeeHistoryEntries.Count -gt 0) {
                             $employeeName = Get-EmployeeName $employeeCode
-                            foreach ($historyEntry in $historyEntries) {
-                                logHistory $historyEntry.action $historyEntry.message $employeeName
+                            foreach ($historyEntry in $employeeHistoryEntries) {
+                                [void]$batchHistoryEntries.Add([PSCustomObject]@{
+                                    action       = [string]$historyEntry.action
+                                    message      = [string]$historyEntry.message
+                                    employeeName = $employeeName
+                                })
                             }
-                            Publish-DataChange -Category "employee" -Resource $employeeCode
                         }
                     }
-                    finally {
-                        Release-ResourceLock -LockHandle $lockHandle
+
+                    if ($batchHistoryEntries.Count -gt 0) {
+                        Add-HistoryEntries -Entries @($batchHistoryEntries.ToArray()) -PublishChange:$false | Out-Null
+                    }
+                }
+                catch {
+                    $batchMutationError = $_
+                    throw
+                }
+                finally {
+                    if ($updatedEmployeeCodes.Count -gt 0) {
+                        $syncResource = if ($updatedEmployeeCodes.Count -eq 1) { [string]$updatedEmployeeCodes[0] } else { "*" }
+                        try {
+                            Publish-DataChange -Category "employee" -Resource $syncResource -AffectedEmployeeCodes @($updatedEmployeeCodes.ToArray()) | Out-Null
+                        }
+                        catch {
+                            if ($null -eq $batchMutationError) {
+                                throw
+                            }
+
+                            Write-Warning "Unable to publish batch employee cache invalidation after a failed operation: $($_.Exception.Message)"
+                        }
                     }
                 }
 

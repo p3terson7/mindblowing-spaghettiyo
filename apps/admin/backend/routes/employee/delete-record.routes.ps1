@@ -7,22 +7,51 @@
 
             $employeeCode = $matches[1]
 
+            $directoryMutationMayHaveCommitted = $false
+            $directoryMutationError = $null
             try {
-                $existingEmployee = Get-EmployeeDirectoryList | Where-Object { $_.code -eq $employeeCode } | Select-Object -First 1
+                $existingEmployee = Get-EmployeeDirectoryRecordMetadata -EmployeeCode $employeeCode
                 if ($null -eq $existingEmployee) {
                     respondWithError $response 404 "Employee not found."
                     continue
                 }
 
-                $removeResult = Remove-EmployeeDirectoryRecord -EmployeeCode $employeeCode
-                if (-not $removeResult.updated) {
-                    respondWithError $response 500 "Unable to remove employee."
-                    continue
-                }
+                try {
+                    try {
+                        $removeResult = Remove-EmployeeDirectoryRecord -EmployeeCode $employeeCode
+                    }
+                    catch {
+                        # Session revocation can fail after the auth record has already been disabled.
+                        $directoryMutationMayHaveCommitted = $true
+                        throw
+                    }
+                    if (-not $removeResult.updated) {
+                        respondWithError $response 500 "Unable to remove employee."
+                        continue
+                    }
 
-                $historyMessage = "Removed employee access for <strong>$($existingEmployee.name)</strong>."
-                logHistory "Delete" $historyMessage $existingEmployee.name
-                Publish-DataChange -Category "employee-directory" -Resource $employeeCode
+                    $directoryMutationMayHaveCommitted = $true
+                    $historyMessage = "Removed employee access for <strong>$($existingEmployee.name)</strong>."
+                    logHistory "Delete" $historyMessage $existingEmployee.name
+                }
+                catch {
+                    $directoryMutationError = $_
+                    throw
+                }
+                finally {
+                    if ($directoryMutationMayHaveCommitted) {
+                        try {
+                            Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
+                        }
+                        catch {
+                            if ($null -eq $directoryMutationError) {
+                                throw
+                            }
+
+                            Write-Warning "Unable to publish employee-directory cache invalidation after a failed delete operation: $($_.Exception.Message)"
+                        }
+                    }
+                }
 
                 respondWithSuccess $response (([PSCustomObject]@{
                     message      = "Employee removed successfully."

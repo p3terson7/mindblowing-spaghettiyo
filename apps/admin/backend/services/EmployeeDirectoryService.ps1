@@ -445,6 +445,41 @@ function Get-EmployeeDirectoryList {
     return (Get-EmployeeDirectoryListUncached -IncludeDisabled:$IncludeDisabled -CurrentUser $CurrentUser)
 }
 
+function Get-EmployeeDirectoryRecordMetadata {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [bool]$IncludeDisabled = $false
+    )
+
+    $normalizedEmployeeCode = $EmployeeCode.Trim()
+    if ([string]::IsNullOrWhiteSpace($normalizedEmployeeCode)) {
+        return $null
+    }
+
+    $user = Get-EmployeeUserByCode -EmployeeCode $normalizedEmployeeCode
+    if ($null -eq $user -or -not (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $normalizedEmployeeCode)) {
+        return $null
+    }
+
+    $isArchived = [bool]$user.disabled
+    if ($isArchived -and -not $IncludeDisabled) {
+        return $null
+    }
+
+    $displayName = if ($user.displayName) {
+        [string]$user.displayName
+    }
+    else {
+        [string](Get-EmployeeName $normalizedEmployeeCode)
+    }
+
+    return [PSCustomObject]@{
+        code     = $normalizedEmployeeCode
+        name     = $displayName
+        archived = $isArchived
+    }
+}
+
 function Add-EmployeeDirectoryRecord {
     param(
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
@@ -495,16 +530,20 @@ function Update-EmployeeDirectoryRecord {
         Release-ResourceLock -LockHandle $mappingLock
     }
 
-    $userUpdated = Set-EmployeeUserDisplayName -EmployeeCode $EmployeeCode -DisplayName $DisplayName
+    $profileUpdateParameters = @{
+        EmployeeCode = $EmployeeCode
+        DisplayName  = $DisplayName
+    }
     if (-not [string]::IsNullOrWhiteSpace($Role)) {
-        $userUpdated = (Set-EmployeeUserRole -EmployeeCode $EmployeeCode -Role $Role) -or $userUpdated
+        $profileUpdateParameters["Role"] = $Role
     }
     if ($null -ne $TimeEntryTypes) {
-        $userUpdated = (Set-EmployeeUserTimeEntryTypes -EmployeeCode $EmployeeCode -TimeEntryTypes $TimeEntryTypes) -or $userUpdated
+        $profileUpdateParameters["TimeEntryTypes"] = $TimeEntryTypes
     }
     if ($null -ne $Gc179Profile) {
-        $userUpdated = (Set-EmployeeUserGc179Profile -EmployeeCode $EmployeeCode -Gc179Profile $Gc179Profile) -or $userUpdated
+        $profileUpdateParameters["Gc179Profile"] = $Gc179Profile
     }
+    $userUpdated = Set-EmployeeUserProfile @profileUpdateParameters
     Update-EmployeeEntryDisplayName -EmployeeCode $EmployeeCode -DisplayName $DisplayName | Out-Null
 
     return [PSCustomObject]@{

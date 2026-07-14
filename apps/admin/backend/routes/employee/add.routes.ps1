@@ -89,40 +89,62 @@
                 continue
             }
 
-            $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
+            $entryMutationCommitted = $false
+            $entryMutationError = $null
             try {
-                $existingData = Read-JsonArrayFile -Path $dataFile
+                $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
+                try {
+                    $existingData = Read-JsonArrayFile -Path $dataFile
 
-                # Create the new entry with an empty message and the projectCode.
-                $newEntry = [PSCustomObject]@{
-                    entryId      = New-EntryIdentifier
-                    name        = Get-EmployeeName $employeeCode
-                    date        = $payload.date
-                    punchIn     = $punchInRounded
-                    exactPunchIn = $exactPunchIn
-                    punchOut    = $punchOutRounded
-                    exactPunchOut = $exactPunchOut
-                    overtime    = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
-                    status      = "pending"
-                    message     = ""
-                    projectCode = $payload.projectCode
-                    overtimeCode = $payload.overtimeCode
-                    paymentOption = $payload.paymentOption
-                    reasonCode = $payload.reasonCode
+                    # Create the new entry with an empty message and the projectCode.
+                    $newEntry = [PSCustomObject]@{
+                        entryId      = New-EntryIdentifier
+                        name        = Get-EmployeeName $employeeCode
+                        date        = $payload.date
+                        punchIn     = $punchInRounded
+                        exactPunchIn = $exactPunchIn
+                        punchOut    = $punchOutRounded
+                        exactPunchOut = $exactPunchOut
+                        overtime    = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
+                        status      = "pending"
+                        message     = ""
+                        projectCode = $payload.projectCode
+                        overtimeCode = $payload.overtimeCode
+                        paymentOption = $payload.paymentOption
+                        reasonCode = $payload.reasonCode
+                    }
+                    $existingData += $newEntry
+                    Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 6
+                    $entryMutationCommitted = $true
                 }
-                $existingData += $newEntry
-                Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 6
+                finally {
+                    Release-ResourceLock -LockHandle $lockHandle
+                }
+
+                # Log history for adding.
+                $employeeName = Get-EmployeeName $employeeCode
+                $formattedDate = (Get-Date $payload.date).ToString("MMMM dd, yyyy")
+                $historyMessage = "Added an entry on $formattedDate, starting at <strong>$(Format-TimeForHistory $punchInRounded)</strong> and finishing at <strong>$(Format-TimeForHistory $punchOutRounded)</strong> for project <strong>$($payload.projectCode)</strong>, overtime code <strong>$($payload.overtimeCode)</strong>, payment <strong>$($payload.paymentOption)</strong>, and reason <strong>$($payload.reasonCode)</strong>."
+                logHistory "Add" $historyMessage $employeeName
+            }
+            catch {
+                $entryMutationError = $_
+                throw
             }
             finally {
-                Release-ResourceLock -LockHandle $lockHandle
-            }
+                if ($entryMutationCommitted) {
+                    try {
+                        Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
+                    }
+                    catch {
+                        if ($null -eq $entryMutationError) {
+                            throw
+                        }
 
-            # Log history for adding.
-            $employeeName = Get-EmployeeName $employeeCode
-            $formattedDate = (Get-Date $payload.date).ToString("MMMM dd, yyyy")
-            $historyMessage = "Added an entry on $formattedDate, starting at <strong>$(Format-TimeForHistory $punchInRounded)</strong> and finishing at <strong>$(Format-TimeForHistory $punchOutRounded)</strong> for project <strong>$($payload.projectCode)</strong>, overtime code <strong>$($payload.overtimeCode)</strong>, payment <strong>$($payload.paymentOption)</strong>, and reason <strong>$($payload.reasonCode)</strong>."
-            logHistory "Add" $historyMessage $employeeName
-            Publish-DataChange -Category "employee" -Resource $employeeCode
+                        Write-Warning "Unable to publish employee cache invalidation after a failed add operation: $($_.Exception.Message)"
+                    }
+                }
+            }
 
             $responseMessage = @{
                 message = "Entry added successfully."

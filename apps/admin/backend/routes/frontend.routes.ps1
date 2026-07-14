@@ -9,7 +9,7 @@
                 $relativePath = if ($absolutePath -eq "/") { "index.html" } else { $absolutePath.TrimStart("/") }
                 $frontendFile = Resolve-FrontendFilePath -FrontendRoot $frontendRoot -RelativePath $relativePath
                 if (-not $frontendFile) {
-                    respondWithError $response 404 "Frontend asset not found."
+                    respondWithError $response 404 "Frontend asset not found: /$relativePath"
                     continue
                 }
 

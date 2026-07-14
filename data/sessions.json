@@ -3,16 +3,16 @@
     "username": "admin",
     "role": "superAdmin",
     "employeeCode": "",
-    "tokenHash": "6d01627048c7fea950a63d6fc30d1863523b1fb4a09e9ba7fcfd58cf28c8a8c7",
-    "issuedAtUtc": "2026-07-09T17:13:48.513623Z",
-    "expiresAtUtc": "2026-07-10T05:13:48.513623Z"
+    "tokenHash": "5be07377c6b6816fea04518e50e3d71fdce76218f2bd661c5dcb8f32360ade75",
+    "issuedAtUtc": "2026-07-13T19:49:39.952005Z",
+    "expiresAtUtc": "2026-07-14T07:49:39.952005Z"
   },
   {
-    "username": "000379070",
+    "username": "admin",
     "role": "superAdmin",
-    "employeeCode": "000379070",
-    "tokenHash": "3714980986fc41310c9f4bbf07e1f44ce7c4d10cd01b6280cdcff0bbc997a94e",
-    "issuedAtUtc": "2026-07-09T17:32:21.629474Z",
-    "expiresAtUtc": "2026-07-10T05:32:21.629474Z"
+    "employeeCode": "",
+    "tokenHash": "622f594722fa3e95be9a8395894b6a6a04de19ebd288657246e3c0298999ef0c",
+    "issuedAtUtc": "2026-07-14T00:43:01.2101130Z",
+    "expiresAtUtc": "2026-07-14T12:43:01.2101130Z"
   }
 ]

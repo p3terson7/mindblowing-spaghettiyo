@@ -394,13 +394,9 @@ L’application n’utilise pas de mots de passe en clair. Dans `AuthService.ps1
 
 Cela dit, il faut être honnête : les fichiers JSON de données ne sont pas chiffrés. JSON est un format de stockage, pas un mécanisme de sécurité. Les entrées, projets et historiques restent lisibles si quelqu’un a accès au dossier `data/`.
 
-Pour un déploiement sur lecteur réseau, la bonne pratique est :
+Pour le déploiement actuel, où chaque employé exécute son propre backend local, le backend utilise le compte Windows de cet employé. Les employés doivent donc conserver l’accès en modification au dossier partagé `data/`. Le dossier `GEEM-Distribution`, lui, peut rester en lecture et exécution seulement. Il faut éviter les modifications manuelles des fichiers JSON et sauvegarder régulièrement le dossier de données.
 
-- mettre `data/` dans un dossier partagé contrôlé;
-- donner l’accès en modification seulement au compte qui exécute le backend;
-- éviter que tous les employés puissent parcourir ou modifier les fichiers JSON directement;
-- donner aux utilisateurs l’accès à l’application, pas au dossier de données;
-- faire des sauvegardes régulières du dossier `data/`.
+Si un backend central « toujours actif » est ajouté plus tard, l’accès en modification aux données pourra alors être limité au compte de service qui l’exécute.
 
 Le backend valide les permissions côté serveur. Le frontend masque aussi les boutons non disponibles, mais ce n’est pas la protection principale.
 
@@ -476,6 +472,8 @@ Launch GEEM.bat
 Launch GEEM.vbs
 ```
 
+Dans une distribution d'équipe, ces lanceurs arrêtent d'abord toute ancienne instance GÉEM vérifiée, consultent un petit manifeste réseau, installent automatiquement la version courante dans `%LOCALAPPDATA%\OvertimeManager\versions`, puis exécutent l'application localement. Il faut créer un **raccourci** vers le lanceur réseau, et non copier le fichier VBS sur le bureau. Voir [le guide de déploiement avec cache local](docs/LOCAL-CACHE-DEPLOYMENT.md) et [le guide de démarrage des employés](docs/EMPLOYEE-QUICK-START.md).
+
 Pour arrêter l’application :
 
 ```text
@@ -500,7 +498,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start-all.ps1
 Sur macOS, il faut utiliser `pwsh` au lieu de `powershell.exe` :
 
 ```bash
-pwsh ./scripts/launch-app.ps1
+pwsh ./scripts/launch-app.ps1 -Force
 ```
 
 ou :
