@@ -20,8 +20,12 @@ function Assert-LauncherContains {
     }
 }
 
-Assert-LauncherContains -RelativePath "Launch GEEM.bat" -ExpectedText 'launch-cached-app.ps1" -Force'
-Assert-LauncherContains -RelativePath "Launch GEEM.vbs" -ExpectedText 'scriptPath & " -Force"'
-Assert-LauncherContains -RelativePath "Launch GEEM.command" -ExpectedText 'launch-cached-app.ps1" -Force'
+Assert-LauncherContains -RelativePath "Launch SAPHIR.bat" -ExpectedText 'launch-cached-app.ps1" -Force'
+Assert-LauncherContains -RelativePath "Launch SAPHIR.vbs" -ExpectedText 'scriptPath & " -Force"'
+Assert-LauncherContains -RelativePath "Launch SAPHIR.command" -ExpectedText 'launch-cached-app.ps1" -Force'
+Assert-LauncherContains -RelativePath "Launch SAPHIR.bat" -ExpectedText '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe'
+Assert-LauncherContains -RelativePath "Launch SAPHIR.vbs" -ExpectedText '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe'
+Assert-LauncherContains -RelativePath "Install SAPHIR Shortcut.vbs" -ExpectedText 'shortcut.IconLocation = localIconPath & ",0"'
+Assert-LauncherContains -RelativePath "Install SAPHIR Shortcut.vbs" -ExpectedText 'shortcut.Arguments = Chr(34) & launchScriptPath & Chr(34)'
 
 Write-Host "Force-restart launcher test passed."

@@ -114,7 +114,7 @@ function Enter-PackagePublishLock {
         }
         catch [System.IO.IOException] {
             if ((Get-Date) -ge $deadline) {
-                throw "Another GEEM release is currently being published. Wait for it to finish and try again."
+                throw "Another SAPHIR release is currently being published. Wait for it to finish and try again."
             }
             Start-Sleep -Milliseconds 500
         }
@@ -206,20 +206,20 @@ function Resolve-PackageDataFolderPath {
     )
 
     if ([string]::IsNullOrWhiteSpace($Path)) {
-        throw "DataFolderPath is required. Use a shared UNC path or a mapped network drive such as R:\GEEM-Data."
+        throw "DataFolderPath is required. Use a shared UNC path or a mapped network drive such as R:\SAPHIR-Data."
     }
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
-        throw "The configured GEEM data folder does not exist or is unavailable: $Path"
+        throw "The configured SAPHIR data folder does not exist or is unavailable: $Path"
     }
 
     $pathInfo = Resolve-PackageNetworkPath -Path $Path
     $resolvedPath = [string]$pathInfo.Path
     if ([bool]$pathInfo.IsMappedDrive -and -not [bool]$pathInfo.ResolvedToUnc) {
-        Write-Warning ("Windows identifies '{0}' as a network drive, but its UNC provider path could not be read. GEEM will store '{1}' in the release. Every employee must therefore have the same drive letter mapped before launching GEEM." -f $Path, $resolvedPath)
+        Write-Warning ("Windows identifies '{0}' as a network drive, but its UNC provider path could not be read. SAPHIR will store '{1}' in the release. Every employee must therefore have the same drive letter mapped before launching SAPHIR." -f $Path, $resolvedPath)
     }
 
     if (-not [bool]$pathInfo.IsNetwork -and -not $AllowLocal) {
-        throw "Production releases require a shared UNC path or a mapped network drive such as R:\GEEM-Data. Windows reports this path as a local drive."
+        throw "Production releases require a shared UNC path or a mapped network drive such as R:\SAPHIR-Data. Windows reports this path as a local drive."
     }
 
     return $resolvedPath
@@ -305,20 +305,20 @@ if (-not (Test-PackageReleaseId -Value $ReleaseId)) {
 }
 
 $resolvedDataFolderPath = Resolve-PackageDataFolderPath -Path $DataFolderPath -AllowLocal:$AllowLocalDataPath
-$distributionRoot = Join-Path -Path $OutputRoot -ChildPath "GEEM-Distribution"
+$distributionRoot = Join-Path -Path $OutputRoot -ChildPath "SAPHIR-Distribution"
 $deploymentRoot = Join-Path -Path $distributionRoot -ChildPath "deployment"
 $releasesRoot = Join-Path -Path $deploymentRoot -ChildPath "releases"
 
 if ((Test-PackagePathContains -ParentPath $distributionRoot -ChildPath $resolvedDataFolderPath) -or
     (Test-PackagePathContains -ParentPath $resolvedDataFolderPath -ChildPath $distributionRoot)) {
-    throw "The GEEM distribution folder and shared data folder must be separate and must not contain one another."
+    throw "The SAPHIR distribution folder and shared data folder must be separate and must not contain one another."
 }
 
-$buildRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("geem-build-{0}" -f [Guid]::NewGuid().ToString("N"))
+$buildRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("saphir-build-{0}" -f [Guid]::NewGuid().ToString("N"))
 $runtimeRoot = Join-Path -Path $buildRoot -ChildPath "runtime"
 $bootstrapRoot = Join-Path -Path $buildRoot -ChildPath "bootstrap"
-$temporaryReleaseZip = Join-Path -Path $buildRoot -ChildPath ("GEEM-{0}.zip" -f $ReleaseId)
-$publishLock = Enter-PackagePublishLock -Path (Join-Path -Path $OutputRoot -ChildPath ".GEEM-Distribution.publish.lock")
+$temporaryReleaseZip = Join-Path -Path $buildRoot -ChildPath ("SAPHIR-{0}.zip" -f $ReleaseId)
+$publishLock = Enter-PackagePublishLock -Path (Join-Path -Path $OutputRoot -ChildPath ".SAPHIR-Distribution.publish.lock")
 
 try {
     Ensure-PackageDirectory -Path $distributionRoot
@@ -329,10 +329,10 @@ try {
     # until the release ZIP has also been built and validated successfully.
     Ensure-PackageDirectory -Path $bootstrapRoot
     Ensure-PackageDirectory -Path (Join-Path -Path $bootstrapRoot -ChildPath "scripts/lib")
-    foreach ($launcherName in @("Launch GEEM.bat", "Launch GEEM.vbs", "Stop GEEM.bat", "Stop GEEM.vbs")) {
+    foreach ($launcherName in @("Launch SAPHIR.bat", "Launch SAPHIR.vbs", "Stop SAPHIR.bat", "Stop SAPHIR.vbs", "Install SAPHIR Shortcut.vbs", "SAPHIR.ico")) {
         Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath $launcherName) -Destination (Join-Path -Path $bootstrapRoot -ChildPath $launcherName)
     }
-    Write-PackagePlainTextGuide -Source (Join-Path -Path $repoRoot -ChildPath "docs/EMPLOYEE-QUICK-START.md") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "GUIDE-DEMARRAGE-GEEM.txt")
+    Write-PackagePlainTextGuide -Source (Join-Path -Path $repoRoot -ChildPath "docs/EMPLOYEE-QUICK-START.md") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "GUIDE-DEMARRAGE-SAPHIR.txt")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/launch-cached-app.ps1") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "scripts/launch-cached-app.ps1")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/stop-all.ps1") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "scripts/stop-all.ps1")
     foreach ($libraryName in @("LocalAppCache.ps1", "RuntimeLayout.ps1", "ServerControl.ps1")) {
@@ -390,7 +390,7 @@ try {
 
     Compress-Archive -Path (Join-Path -Path $runtimeRoot -ChildPath "*") -DestinationPath $temporaryReleaseZip -CompressionLevel Optimal -Force
     $releaseHash = (Get-FileHash -LiteralPath $temporaryReleaseZip -Algorithm SHA256).Hash.ToLowerInvariant()
-    $releaseFileName = "GEEM-{0}.zip" -f $ReleaseId
+    $releaseFileName = "SAPHIR-{0}.zip" -f $ReleaseId
     $publishedReleasePath = Join-Path -Path $releasesRoot -ChildPath $releaseFileName
 
     if (Test-Path -LiteralPath $publishedReleasePath -PathType Leaf) {
@@ -425,11 +425,13 @@ try {
         "scripts/lib/LocalAppCache.ps1",
         "scripts/stop-all.ps1",
         "scripts/launch-cached-app.ps1",
-        "GUIDE-DEMARRAGE-GEEM.txt",
-        "Stop GEEM.bat",
-        "Stop GEEM.vbs",
-        "Launch GEEM.bat",
-        "Launch GEEM.vbs"
+        "GUIDE-DEMARRAGE-SAPHIR.txt",
+        "SAPHIR.ico",
+        "Install SAPHIR Shortcut.vbs",
+        "Stop SAPHIR.bat",
+        "Stop SAPHIR.vbs",
+        "Launch SAPHIR.bat",
+        "Launch SAPHIR.vbs"
     )
     foreach ($relativePath in $bootstrapRelativePaths) {
         Publish-PackageFileAtomic -Source (Join-Path -Path $bootstrapRoot -ChildPath $relativePath) -Destination (Join-Path -Path $distributionRoot -ChildPath $relativePath)
@@ -449,7 +451,7 @@ try {
 
     # Keep the manifest's current release plus two server-side rollback choices,
     # even if an administrator intentionally republishes an older release ID.
-    $oldReleases = @(Get-ChildItem -LiteralPath $releasesRoot -Filter "GEEM-*.zip" -File -ErrorAction SilentlyContinue |
+    $oldReleases = @(Get-ChildItem -LiteralPath $releasesRoot -Filter "SAPHIR-*.zip" -File -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -ne $publishedReleasePath } |
         Sort-Object LastWriteTime -Descending |
         Select-Object -Skip 2)
@@ -459,14 +461,14 @@ try {
 
     $outerZipPath = ""
     if (-not $NoZip) {
-        $outerZipPath = Join-Path -Path $OutputRoot -ChildPath ("GEEM-Distribution-{0}.zip" -f $ReleaseId)
+        $outerZipPath = Join-Path -Path $OutputRoot -ChildPath ("SAPHIR-Distribution-{0}.zip" -f $ReleaseId)
         try {
             if (Test-Path -LiteralPath $outerZipPath) {
                 Remove-Item -LiteralPath $outerZipPath -Force
             }
             Compress-Archive -Path (Join-Path -Path $distributionRoot -ChildPath "*") -DestinationPath $outerZipPath -CompressionLevel Optimal -Force
 
-            $oldDistributionZips = @(Get-ChildItem -LiteralPath $OutputRoot -Filter "GEEM-Distribution-*.zip" -File -ErrorAction SilentlyContinue |
+            $oldDistributionZips = @(Get-ChildItem -LiteralPath $OutputRoot -Filter "SAPHIR-Distribution-*.zip" -File -ErrorAction SilentlyContinue |
                 Where-Object { $_.FullName -ne $outerZipPath } |
                 Sort-Object LastWriteTime -Descending |
                 Select-Object -Skip 2)
@@ -475,7 +477,7 @@ try {
             }
         }
         catch {
-            Write-Warning "The live GEEM release was published, but the optional distribution ZIP could not be created. $($_.Exception.Message)"
+            Write-Warning "The live SAPHIR release was published, but the optional distribution ZIP could not be created. $($_.Exception.Message)"
             $outerZipPath = ""
         }
     }

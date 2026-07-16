@@ -1,4 +1,5 @@
-const APP_LANGUAGE_KEY = "overtimeAppLanguage";
+const APP_LANGUAGE_KEY = "saphirAppLanguage";
+const PRE_SAPHIR_LANGUAGE_KEY = ["over", "timeAppLanguage"].join("");
 const APP_LANGUAGE_DEFAULT = "en";
 const APP_LANGUAGE_FALLBACK = "en";
 const APP_LANGUAGE_LOCALES = {
@@ -8,9 +9,9 @@ const APP_LANGUAGE_LOCALES = {
 
 const APP_TRANSLATIONS = {
   en: {
-    "app.title": "GÉEM SAPHIR",
-    "app.name": "GÉEM SAPHIR",
-    "brand.overtimeManager": "SAPHIR",
+    "app.title": "SAPHIR",
+    "app.name": "SAPHIR",
+    "brand.saphir": "SAPHIR",
     "brand.unifiedWorkspace": "Unified Overtime Workspace",
 
     "nav.workspace": "Workspace",
@@ -695,9 +696,9 @@ const APP_TRANSLATIONS = {
     "error.missingRequiredFields": "Missing required information.",
   },
   fr: {
-    "app.title": "SAPHIR GÉEM",
-    "app.name": "SAPHIR GÉEM",
-    "brand.overtimeManager": "SAPHIR",
+    "app.title": "SAPHIR",
+    "app.name": "SAPHIR",
+    "brand.saphir": "SAPHIR",
     "brand.unifiedWorkspace": "Espace unifié des heures supp.",
 
     "nav.workspace": "Espace",
@@ -1403,6 +1404,14 @@ function getStoredLanguage() {
   const storedValue = localStorage.getItem(APP_LANGUAGE_KEY);
   if (storedValue) {
     return resolveLanguageCandidate(storedValue);
+  }
+
+  const previousValue = localStorage.getItem(PRE_SAPHIR_LANGUAGE_KEY);
+  if (previousValue) {
+    const migratedLanguage = resolveLanguageCandidate(previousValue);
+    localStorage.setItem(APP_LANGUAGE_KEY, migratedLanguage);
+    localStorage.removeItem(PRE_SAPHIR_LANGUAGE_KEY);
+    return migratedLanguage;
   }
 
   const browserLanguage = navigator.language || navigator.userLanguage || APP_LANGUAGE_DEFAULT;

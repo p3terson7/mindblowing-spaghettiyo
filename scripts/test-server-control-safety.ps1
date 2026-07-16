@@ -34,8 +34,8 @@ function Get-ProcessCommandLine {
     return ""
 }
 
-$quotedArguments = ConvertTo-WindowsPowerShellFileArguments -ScriptPath "C:\Users\Test User\GEEM Cache\admin-server.ps1"
-Assert-True -Condition ($quotedArguments -eq '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\Test User\GEEM Cache\admin-server.ps1"') -Message "Windows launch arguments must quote cached paths containing spaces"
+$quotedArguments = ConvertTo-WindowsPowerShellFileArguments -ScriptPath "C:\Users\Test User\SAPHIR Cache\admin-server.ps1"
+Assert-True -Condition ($quotedArguments -eq '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\Test User\SAPHIR Cache\admin-server.ps1"') -Message "Windows launch arguments must quote cached paths containing spaces"
 
 $fixtureScriptPath = [System.IO.Path]::GetFullPath((Join-Path -Path $repoRoot -ChildPath "fixture folder/admin-server.ps1"))
 $fixtureProcess = [PSCustomObject]@{ Id = 999; ProcessName = "pwsh" }
@@ -104,7 +104,7 @@ $untrackedError = ""
 $script:runningPowerShellProcesses = @($fixtureProcess)
 $script:processCommandLines["999"] = 'pwsh -NoProfile -File other-server.ps1'
 try {
-    Stop-ManagedService -Name "app" -DisplayName "GEEM" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
+    Stop-ManagedService -Name "app" -DisplayName "SAPHIR" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
 }
 catch {
     $untrackedError = [string]$_.Exception.Message
@@ -113,13 +113,13 @@ Assert-True -Condition ($untrackedError -match "untracked process") -Message "st
 Assert-True -Condition ($script:stoppedProcessIds.Count -eq 0) -Message "stop must not terminate an untracked process"
 
 $script:processCommandLines["999"] = $matchingCommandLine
-Stop-ManagedService -Name "app" -DisplayName "GEEM" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
+Stop-ManagedService -Name "app" -DisplayName "SAPHIR" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
 Assert-True -Condition ($script:stoppedProcessIds.Count -eq 1 -and [int]$script:stoppedProcessIds[0] -eq 999) -Message "stop must recover and terminate an untracked instance with the exact managed script path"
 
 $script:testStatusMode = "tracked"
 $script:stoppedProcessIds = @()
 $script:runningPowerShellProcesses = @()
-Stop-ManagedService -Name "app" -DisplayName "GEEM" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
+Stop-ManagedService -Name "app" -DisplayName "SAPHIR" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
 Assert-True -Condition ($script:stoppedProcessIds.Count -eq 1 -and [int]$script:stoppedProcessIds[0] -eq 123) -Message "stop must terminate only the tracked PowerShell process"
 Assert-True -Condition ($script:stoppedProcessIds -notcontains 999) -Message "stop must never add an unrelated port owner"
 

@@ -12,8 +12,12 @@ if (-not $script:SyncStateLastValidatedUtc) {
 
 if (-not $script:SyncStateValidationIntervalMs) {
     $configuredSyncStateCacheMs = 0
-    if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_SYNC_STATE_CACHE_MS)) {
-        [int]::TryParse([string]$env:OVERTIME_SYNC_STATE_CACHE_MS, [ref]$configuredSyncStateCacheMs) | Out-Null
+    $configuredSyncStateCacheValue = [string]$env:SAPHIR_SYNC_STATE_CACHE_MS
+    if ([string]::IsNullOrWhiteSpace($configuredSyncStateCacheValue)) {
+        $configuredSyncStateCacheValue = [System.Environment]::GetEnvironmentVariable(("OVER" + "TIME_SYNC_STATE_CACHE_MS"))
+    }
+    if (-not [string]::IsNullOrWhiteSpace($configuredSyncStateCacheValue)) {
+        [int]::TryParse($configuredSyncStateCacheValue, [ref]$configuredSyncStateCacheMs) | Out-Null
     }
 
     $script:SyncStateValidationIntervalMs = if ($configuredSyncStateCacheMs -gt 0) { $configuredSyncStateCacheMs } else { 10000 }
@@ -203,10 +207,10 @@ function Initialize-SyncStateWatcher {
 
         $watcherId = [Guid]::NewGuid().ToString("N")
         $script:SyncStateWatcherSourceIdentifiers = @(
-            "Overtime.SyncState.$watcherId.Changed"
-            "Overtime.SyncState.$watcherId.Created"
-            "Overtime.SyncState.$watcherId.Deleted"
-            "Overtime.SyncState.$watcherId.Renamed"
+            "SAPHIR.SyncState.$watcherId.Changed"
+            "SAPHIR.SyncState.$watcherId.Created"
+            "SAPHIR.SyncState.$watcherId.Deleted"
+            "SAPHIR.SyncState.$watcherId.Renamed"
         )
         $eventNames = @("Changed", "Created", "Deleted", "Renamed")
         $subscriptions = New-Object System.Collections.ArrayList

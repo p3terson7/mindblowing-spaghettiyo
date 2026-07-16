@@ -45,15 +45,15 @@ function Invoke-TestBootstrap {
     }
 }
 
-$testRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("geem-bootstrap {0}" -f [Guid]::NewGuid().ToString("N"))
+$testRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("saphir-bootstrap {0}" -f [Guid]::NewGuid().ToString("N"))
 $distributionRoot = Join-Path -Path $testRoot -ChildPath "network distribution"
 $distributionScripts = Join-Path -Path $distributionRoot -ChildPath "scripts"
 $cacheRoot = Join-Path -Path $testRoot -ChildPath "local cache"
 $previousReleasePath = Join-Path -Path $cacheRoot -ChildPath "versions/working-release"
 $dataFolder = Join-Path -Path $testRoot -ChildPath "shared data"
 $launchMarkerPath = Join-Path -Path $testRoot -ChildPath "previous-release-launched.txt"
-$previousCacheRoot = [string]$env:OVERTIME_APP_CACHE_ROOT
-$previousLaunchMarker = [string]$env:GEEM_BOOTSTRAP_TEST_MARKER
+$previousCacheRoot = [string]$env:SAPHIR_APP_CACHE_ROOT
+$previousLaunchMarker = [string]$env:SAPHIR_BOOTSTRAP_TEST_MARKER
 
 try {
     Ensure-TestDirectory -Path (Join-Path -Path $distributionScripts -ChildPath "lib")
@@ -77,11 +77,11 @@ try {
     Set-Content -LiteralPath (Join-Path -Path $previousReleasePath -ChildPath "scripts/lib/ServerControl.ps1") -Value "# fixture" -Encoding UTF8
     Set-Content -LiteralPath (Join-Path -Path $previousReleasePath -ChildPath "scripts/launch-app.ps1") -Value @'
 param([switch]$Force)
-Set-Content -LiteralPath $env:GEEM_BOOTSTRAP_TEST_MARKER -Value "working-release" -Encoding UTF8
+Set-Content -LiteralPath $env:SAPHIR_BOOTSTRAP_TEST_MARKER -Value "working-release" -Encoding UTF8
 '@ -Encoding UTF8
 
     $workingHash = "a" * 64
-    Write-TestJson -Path (Join-Path -Path $previousReleasePath -ChildPath ".geem-release.json") -Value ([ordered]@{
+    Write-TestJson -Path (Join-Path -Path $previousReleasePath -ChildPath ".saphir-release.json") -Value ([ordered]@{
         schemaVersion  = 1
         releaseId      = "working-release"
         sha256         = $workingHash
@@ -95,7 +95,7 @@ Set-Content -LiteralPath $env:GEEM_BOOTSTRAP_TEST_MARKER -Value "working-release
     Write-TestJson -Path (Join-Path -Path $distributionRoot -ChildPath "deployment/current.json") -Value ([ordered]@{
         schemaVersion  = 1
         releaseId      = "broken-update"
-        packagePath    = "deployment/releases/GEEM-broken-update.zip"
+        packagePath    = "deployment/releases/SAPHIR-broken-update.zip"
         sha256         = ("b" * 64)
         dataFolderPath = $dataFolder
         publishedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
@@ -106,8 +106,8 @@ Set-Content -LiteralPath $env:GEEM_BOOTSTRAP_TEST_MARKER -Value "working-release
         $powerShellCommand = Get-Command -Name "powershell" -ErrorAction Stop
     }
 
-    $env:OVERTIME_APP_CACHE_ROOT = $cacheRoot
-    $env:GEEM_BOOTSTRAP_TEST_MARKER = $launchMarkerPath
+    $env:SAPHIR_APP_CACHE_ROOT = $cacheRoot
+    $env:SAPHIR_BOOTSTRAP_TEST_MARKER = $launchMarkerPath
     $bootstrapPath = Join-Path -Path $distributionScripts -ChildPath "launch-cached-app.ps1"
     $bootstrapResult = Invoke-TestBootstrap -PowerShellPath $powerShellCommand.Source -BootstrapPath $bootstrapPath
 
@@ -130,20 +130,20 @@ Set-Content -LiteralPath $env:GEEM_BOOTSTRAP_TEST_MARKER -Value "working-release
     $brokenRuntime = Join-Path -Path $brokenBuildRoot -ChildPath "runtime"
     Ensure-TestDirectory -Path $brokenBuildRoot
     Copy-Item -LiteralPath $previousReleasePath -Destination $brokenRuntime -Recurse -Force
-    Remove-Item -LiteralPath (Join-Path -Path $brokenRuntime -ChildPath ".geem-release.json") -Force
+    Remove-Item -LiteralPath (Join-Path -Path $brokenRuntime -ChildPath ".saphir-release.json") -Force
     Set-Content -LiteralPath (Join-Path -Path $brokenRuntime -ChildPath "scripts/launch-app.ps1") -Value @'
 param([switch]$Force)
 throw "Intentional launch failure for rollback testing."
 '@ -Encoding UTF8
     $releaseFolder = Join-Path -Path $distributionRoot -ChildPath "deployment/releases"
     Ensure-TestDirectory -Path $releaseFolder
-    $brokenLaunchZip = Join-Path -Path $releaseFolder -ChildPath "GEEM-launch-failure.zip"
+    $brokenLaunchZip = Join-Path -Path $releaseFolder -ChildPath "SAPHIR-launch-failure.zip"
     Compress-Archive -Path (Join-Path -Path $brokenRuntime -ChildPath "*") -DestinationPath $brokenLaunchZip -Force
     $brokenLaunchHash = (Get-FileHash -LiteralPath $brokenLaunchZip -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-TestJson -Path (Join-Path -Path $distributionRoot -ChildPath "deployment/current.json") -Value ([ordered]@{
         schemaVersion  = 1
         releaseId      = "launch-failure"
-        packagePath    = "deployment/releases/GEEM-launch-failure.zip"
+        packagePath    = "deployment/releases/SAPHIR-launch-failure.zip"
         sha256         = $brokenLaunchHash
         dataFolderPath = $dataFolder
         publishedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
@@ -164,8 +164,8 @@ throw "Intentional launch failure for rollback testing."
     Write-Host "Cached bootstrap rollback test passed."
 }
 finally {
-    $env:OVERTIME_APP_CACHE_ROOT = $previousCacheRoot
-    $env:GEEM_BOOTSTRAP_TEST_MARKER = $previousLaunchMarker
+    $env:SAPHIR_APP_CACHE_ROOT = $previousCacheRoot
+    $env:SAPHIR_BOOTSTRAP_TEST_MARKER = $previousLaunchMarker
     if (Test-Path -LiteralPath $testRoot) {
         Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
     }

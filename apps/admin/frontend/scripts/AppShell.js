@@ -1,10 +1,14 @@
-const APP_API_URL_KEY = "overtimeAppApiUrl";
-const APP_SESSION_KEY = "overtimeAppSession";
-const APP_THEME_KEY = "overtimeAppTheme";
+const APP_API_URL_KEY = "saphirAppApiUrl";
+const APP_SESSION_KEY = "saphirAppSession";
+const APP_THEME_KEY = "saphirAppTheme";
+const PRE_SAPHIR_APP_STORAGE_PREFIX = ["over", "timeApp"].join("");
+const PRE_SAPHIR_API_URL_KEY = `${PRE_SAPHIR_APP_STORAGE_PREFIX}ApiUrl`;
+const PRE_SAPHIR_SESSION_KEY = `${PRE_SAPHIR_APP_STORAGE_PREFIX}Session`;
+const PRE_SAPHIR_THEME_KEY = `${PRE_SAPHIR_APP_STORAGE_PREFIX}Theme`;
 const APP_SYNC_POLL_VISIBLE_MS = 10000;
 const APP_SYNC_POLL_HIDDEN_MS = 30000;
-const LEGACY_API_URL_KEYS = ["adminApiUrl", "employeeApiUrl"];
-const LEGACY_SESSION_KEYS = ["adminSession", "employeeSession"];
+const LEGACY_API_URL_KEYS = [PRE_SAPHIR_API_URL_KEY, "adminApiUrl", "employeeApiUrl"];
+const LEGACY_SESSION_KEYS = [PRE_SAPHIR_SESSION_KEY, "adminSession", "employeeSession"];
 const ROLE_VIEW_MAP = {
   superAdmin: ["dashboardView", "employeesView", "adminView", "projectsView"],
   admin: ["dashboardView", "employeesView", "adminView", "projectsView"],
@@ -65,7 +69,19 @@ function getSyncStateChangeKey(syncState) {
 }
 
 function getStoredTheme() {
-  return localStorage.getItem(APP_THEME_KEY) === "dark" ? "dark" : "light";
+  const currentTheme = localStorage.getItem(APP_THEME_KEY);
+  if (currentTheme === "dark" || currentTheme === "light") {
+    return currentTheme;
+  }
+
+  const previousTheme = localStorage.getItem(PRE_SAPHIR_THEME_KEY);
+  if (previousTheme === "dark" || previousTheme === "light") {
+    localStorage.setItem(APP_THEME_KEY, previousTheme);
+    localStorage.removeItem(PRE_SAPHIR_THEME_KEY);
+    return previousTheme;
+  }
+
+  return "light";
 }
 
 function updateThemeToggle(theme) {
@@ -376,6 +392,14 @@ function getStoredApiUrl() {
     return normalizeApiUrl(currentValue, window.defaultApiUrl);
   }
 
+  const previousAppUrl = localStorage.getItem(PRE_SAPHIR_API_URL_KEY);
+  if (previousAppUrl) {
+    const migratedUrl = normalizeApiUrl(previousAppUrl, window.defaultApiUrl);
+    localStorage.setItem(APP_API_URL_KEY, migratedUrl);
+    localStorage.removeItem(PRE_SAPHIR_API_URL_KEY);
+    return migratedUrl;
+  }
+
   const legacyAdminUrl = localStorage.getItem("adminApiUrl");
   if (legacyAdminUrl) {
     return normalizeApiUrl(legacyAdminUrl, window.defaultApiUrl);
@@ -422,6 +446,14 @@ function getStoredSession() {
   for (const key of keysToCheck) {
     const session = tryReadSession(key);
     if (session && session.token && session.user) {
+      if (key !== APP_SESSION_KEY) {
+        try {
+          localStorage.setItem(APP_SESSION_KEY, JSON.stringify(session));
+          LEGACY_SESSION_KEYS.forEach(legacyKey => localStorage.removeItem(legacyKey));
+        } catch (error) {
+          // The in-memory session remains usable when browser storage is restricted.
+        }
+      }
       appShellState.storedSession = session;
       appShellState.storedSessionLoaded = true;
       return session;

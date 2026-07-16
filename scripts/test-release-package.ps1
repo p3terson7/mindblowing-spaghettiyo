@@ -58,7 +58,7 @@ function Assert-Utf8Bom {
     Assert-True -Condition ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) -Message $Message
 }
 
-$testRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("geem-package-{0}" -f [Guid]::NewGuid().ToString("N"))
+$testRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("saphir-package-{0}" -f [Guid]::NewGuid().ToString("N"))
 $dataFolder = Join-Path -Path $testRoot -ChildPath "shared data"
 $outputRoot = Join-Path -Path $testRoot -ChildPath "output"
 $expandedRelease = Join-Path -Path $testRoot -ChildPath "expanded"
@@ -70,16 +70,22 @@ try {
 
     New-Item -ItemType Directory -Path $dataFolder -Force | Out-Null
     $result = & $publisherPath -OutputRoot $outputRoot -DataFolderPath $dataFolder -ReleaseId "package-test-a" -NoZip -AllowLocalDataPath
-    $distributionRoot = Join-Path -Path $outputRoot -ChildPath "GEEM-Distribution"
+    $distributionRoot = Join-Path -Path $outputRoot -ChildPath "SAPHIR-Distribution"
     $manifestPath = Join-Path -Path $distributionRoot -ChildPath "deployment/current.json"
 
     Assert-Equal -Expected $distributionRoot -Actual $result.DistributionFolder -Message "publisher must return the stable distribution folder"
-    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "Launch GEEM.vbs") -PathType Leaf) -Message "distribution must contain the stable launcher"
-    $packagedBatchLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Launch GEEM.bat"))
-    $packagedSilentLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Launch GEEM.vbs"))
-    Assert-True -Condition ($packagedBatchLauncher.IndexOf('launch-cached-app.ps1" -Force', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged batch launcher must restart a previous GEEM instance"
-    Assert-True -Condition ($packagedSilentLauncher.IndexOf('scriptPath & " -Force"', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged silent launcher must restart a previous GEEM instance"
-    $employeeGuidePath = Join-Path -Path $distributionRoot -ChildPath "GUIDE-DEMARRAGE-GEEM.txt"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.vbs") -PathType Leaf) -Message "distribution must contain the stable launcher"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "Install SAPHIR Shortcut.vbs") -PathType Leaf) -Message "distribution must contain the desktop-shortcut installer"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "SAPHIR.ico") -PathType Leaf) -Message "distribution must contain the SAPHIR Windows icon"
+    $packagedBatchLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.bat"))
+    $packagedSilentLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.vbs"))
+    $packagedShortcutInstaller = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Install SAPHIR Shortcut.vbs"))
+    Assert-True -Condition ($packagedBatchLauncher.IndexOf('launch-cached-app.ps1" -Force', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged batch launcher must restart a previous SAPHIR instance"
+    Assert-True -Condition ($packagedSilentLauncher.IndexOf('scriptPath & " -Force"', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged silent launcher must restart a previous SAPHIR instance"
+    Assert-True -Condition ($packagedSilentLauncher.IndexOf('%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged launcher must avoid a PATH search on restricted workstations"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('SAPHIR.lnk', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must create the stable SAPHIR desktop link"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('localIconPath & ",0"', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must use the locally cached icon"
+    $employeeGuidePath = Join-Path -Path $distributionRoot -ChildPath "GUIDE-DEMARRAGE-SAPHIR.txt"
     Assert-True -Condition (Test-Path -LiteralPath $employeeGuidePath -PathType Leaf) -Message "distribution must contain a guide that opens in Notepad"
     $employeeGuideText = Get-Content -LiteralPath $employeeGuidePath -Raw -Encoding UTF8
     Assert-True -Condition ($employeeGuideText -notmatch '(?m)^#|\*\*|`') -Message "packaged employee guide must be plain text rather than raw Markdown"
@@ -95,6 +101,7 @@ try {
 
     Expand-Archive -LiteralPath $releasePath -DestinationPath $expandedRelease -Force
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/admin/backend/services/RouteDispatchService.ps1") -PathType Leaf) -Message "runtime must include required untracked application files"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/admin/frontend/assets/saphir-logo.png") -PathType Leaf) -Message "runtime UI must include the optimized SAPHIR logo"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "docs/GC179.pdf") -PathType Leaf) -Message "runtime must include the GC179 template"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "data"))) -Message "runtime ZIP must exclude data"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/employee"))) -Message "runtime ZIP must exclude the legacy employee application"
@@ -111,7 +118,7 @@ try {
     & $publisherPath -OutputRoot $outputRoot -DataFolderPath $dataFolder -ReleaseId "package-test-b" -NoZip -AllowLocalDataPath | Out-Null
     $updatedManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     Assert-Equal -Expected "package-test-b" -Actual $updatedManifest.releaseId -Message "a later publish must update current.json last"
-    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "deployment/releases/GEEM-package-test-a.zip") -PathType Leaf) -Message "the previous share release must remain available"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "deployment/releases/SAPHIR-package-test-a.zip") -PathType Leaf) -Message "the previous share release must remain available"
 
     Assert-Throws -Action { & $publisherPath -OutputRoot $outputRoot -DataFolderPath $dataFolder -ReleaseId "CON" -NoZip -AllowLocalDataPath | Out-Null } -MessagePattern "Windows-safe" -Message "publisher must reject Windows reserved release IDs"
     Assert-Throws -Action { & $publisherPath -OutputRoot $dataFolder -DataFolderPath $dataFolder -ReleaseId "overlap-test" -NoZip -AllowLocalDataPath | Out-Null } -MessagePattern "must be separate" -Message "publisher must reject overlapping data and distribution paths"

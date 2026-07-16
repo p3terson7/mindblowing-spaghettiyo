@@ -28,6 +28,18 @@ function Test-FrontendUrlAvailable {
 }
 
 $service = Get-ManagedServiceConfig -Name "app"
+
+# A backend started before the SAPHIR rebrand is tracked under the previous
+# AppData root. Stop only that verified PID before inspecting the shared port;
+# an unrelated process on 8081 remains protected by ServerControl.
+foreach ($previousService in @(Get-PreviousProductServiceConfigs)) {
+    $previousStatus = Get-ServiceStatus -Name $previousService.Name -DisplayName $previousService.DisplayName -Port $previousService.Port -PidFile $previousService.PidFile
+    if ($previousStatus.TrackedProcessId) {
+        Write-Host "Stopping a verified pre-SAPHIR backend..."
+        [void](Stop-ManagedService -Name $previousService.Name -DisplayName $previousService.DisplayName -Port $previousService.Port -PidFile $previousService.PidFile -Quiet)
+    }
+}
+
 $status = Get-ServiceStatus -Name $service.Name -DisplayName $service.DisplayName -Port $service.Port -PidFile $service.PidFile
 $expectedScriptPath = [System.IO.Path]::GetFullPath($service.ServerScript)
 $trackedScriptPath = if ($status.Metadata -and $status.Metadata.scriptPath) {
@@ -47,7 +59,7 @@ if ($isExpectedManagedInstance -and $frontendIsAvailable -and -not $Force) {
 }
 else {
     if ($status.IsRunning -and -not $status.TrackedProcessId -and -not $Force) {
-        throw "Port $($service.Port) is already used by another program. GEEM did not stop or replace that program."
+        throw "Port $($service.Port) is already used by another program. SAPHIR did not stop or replace that program."
     }
 
     $restartTrackedService = $status.TrackedProcessId -and (-not $isExpectedManagedInstance -or -not $frontendIsAvailable)
@@ -59,25 +71,25 @@ if (-not (Test-FrontendUrlAvailable -Url $service.FrontendUrl)) {
         [void](Stop-ManagedService -Name $service.Name -DisplayName $service.DisplayName -Port $service.Port -PidFile $service.PidFile -ServerScript $service.ServerScript -Quiet)
     }
     catch {
-        Write-Warning "GEEM did not become ready, and its local backend could not be stopped cleanly."
+        Write-Warning "SAPHIR did not become ready, and its local backend could not be stopped cleanly."
     }
-    throw "GEEM started but did not pass its local web readiness check at $($service.FrontendUrl)."
+    throw "SAPHIR started but did not pass its local web readiness check at $($service.FrontendUrl)."
 }
 
 Write-Host ""
-Write-Host "Opening GÉEM..."
+Write-Host "Opening SAPHIR..."
 try {
     Open-UriInDefaultBrowser -Uri $service.FrontendUrl
 }
 catch {
-    Write-Warning "GEEM is ready, but the browser could not be opened automatically. Open $($service.FrontendUrl) manually."
+    Write-Warning "SAPHIR is ready, but the browser could not be opened automatically. Open $($service.FrontendUrl) manually."
     if (Test-IsWindowsHost) {
         try {
             $shell = New-Object -ComObject WScript.Shell
-            [void]$shell.Popup("GEEM is ready. Open $($service.FrontendUrl) in your browser.", 0, "GEEM is ready", 64)
+            [void]$shell.Popup("SAPHIR is ready. Open $($service.FrontendUrl) in your browser.", 0, "SAPHIR is ready", 64)
         }
         catch {
         }
     }
 }
-Write-Host "GÉEM is ready at $($service.FrontendUrl)"
+Write-Host "SAPHIR is ready at $($service.FrontendUrl)"

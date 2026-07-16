@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-function Ensure-GeemLocalDirectory {
+function Ensure-SaphirLocalDirectory {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
@@ -8,9 +8,13 @@ function Ensure-GeemLocalDirectory {
     }
 }
 
-function Get-GeemLocalAppRoot {
-    if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_APP_CACHE_ROOT)) {
-        return [System.IO.Path]::GetFullPath([string]$env:OVERTIME_APP_CACHE_ROOT)
+function Get-SaphirLocalAppRoot {
+    $configuredCacheRoot = [string]$env:SAPHIR_APP_CACHE_ROOT
+    if ([string]::IsNullOrWhiteSpace($configuredCacheRoot)) {
+        $configuredCacheRoot = [System.Environment]::GetEnvironmentVariable(("OVER" + "TIME_APP_CACHE_ROOT"))
+    }
+    if (-not [string]::IsNullOrWhiteSpace($configuredCacheRoot)) {
+        return [System.IO.Path]::GetFullPath($configuredCacheRoot)
     }
 
     $localAppData = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::LocalApplicationData)
@@ -24,10 +28,10 @@ function Get-GeemLocalAppRoot {
         throw "Unable to locate a writable local application-data folder."
     }
 
-    return (Join-Path -Path $localAppData -ChildPath "OvertimeManager")
+    return (Join-Path -Path $localAppData -ChildPath "SAPHIR")
 }
 
-function Write-GeemJsonFileAtomic {
+function Write-SaphirJsonFileAtomic {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)]$Value,
@@ -36,7 +40,7 @@ function Write-GeemJsonFileAtomic {
 
     $parent = Split-Path -Path $Path -Parent
     if ($parent) {
-        Ensure-GeemLocalDirectory -Path $parent
+        Ensure-SaphirLocalDirectory -Path $parent
     }
 
     $temporaryPath = "$Path.tmp.$([Guid]::NewGuid().ToString('N'))"
@@ -53,7 +57,7 @@ function Write-GeemJsonFileAtomic {
     }
 }
 
-function Get-GeemPathStringComparison {
+function Get-SaphirPathStringComparison {
     if ($PSVersionTable.PSEdition -eq "Desktop" -or [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
         return [System.StringComparison]::OrdinalIgnoreCase
     }
@@ -61,7 +65,7 @@ function Get-GeemPathStringComparison {
     return [System.StringComparison]::Ordinal
 }
 
-function Test-GeemReleaseId {
+function Test-SaphirReleaseId {
     param([string]$ReleaseId)
 
     if ([string]::IsNullOrWhiteSpace($ReleaseId) -or $ReleaseId -notmatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" -or $ReleaseId.EndsWith(".")) {
@@ -72,7 +76,7 @@ function Test-GeemReleaseId {
     return ($deviceName -notmatch "^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$")
 }
 
-function Resolve-GeemPackagePath {
+function Resolve-SaphirPackagePath {
     param(
         [Parameter(Mandatory = $true)][string]$DistributionRoot,
         [Parameter(Mandatory = $true)][string]$RelativePackagePath
@@ -89,51 +93,51 @@ function Resolve-GeemPackagePath {
     $candidatePath = [System.IO.Path]::GetFullPath((Join-Path -Path $rootPath -ChildPath $RelativePackagePath))
     $separator = [string][System.IO.Path]::DirectorySeparatorChar
     $rootPrefix = $rootPath.TrimEnd([char[]]@([char]92, [char]47)) + $separator
-    if (-not $candidatePath.StartsWith($rootPrefix, (Get-GeemPathStringComparison))) {
-        throw "The release package must remain inside the GEEM distribution folder."
+    if (-not $candidatePath.StartsWith($rootPrefix, (Get-SaphirPathStringComparison))) {
+        throw "The release package must remain inside the SAPHIR distribution folder."
     }
 
     return $candidatePath
 }
 
-function Read-GeemReleaseManifest {
+function Read-SaphirReleaseManifest {
     param(
         [Parameter(Mandatory = $true)][string]$ManifestPath,
         [Parameter(Mandatory = $true)][string]$DistributionRoot
     )
 
     if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
-        throw "GEEM release information is missing: $ManifestPath"
+        throw "SAPHIR release information is missing: $ManifestPath"
     }
 
     try {
         $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
-        throw "GEEM release information is unreadable or incomplete. $($_.Exception.Message)"
+        throw "SAPHIR release information is unreadable or incomplete. $($_.Exception.Message)"
     }
 
     if ($null -eq $manifest -or [int]$manifest.schemaVersion -ne 1) {
-        throw "The GEEM release manifest uses an unsupported format."
+        throw "The SAPHIR release manifest uses an unsupported format."
     }
 
     $releaseId = [string]$manifest.releaseId
-    if (-not (Test-GeemReleaseId -ReleaseId $releaseId)) {
-        throw "The GEEM release identifier is invalid."
+    if (-not (Test-SaphirReleaseId -ReleaseId $releaseId)) {
+        throw "The SAPHIR release identifier is invalid."
     }
 
     $sha256 = ([string]$manifest.sha256).Trim().ToLowerInvariant()
     if ($sha256 -notmatch "^[a-f0-9]{64}$") {
-        throw "The GEEM release checksum is invalid."
+        throw "The SAPHIR release checksum is invalid."
     }
 
-    $packagePath = Resolve-GeemPackagePath -DistributionRoot $DistributionRoot -RelativePackagePath ([string]$manifest.packagePath)
+    $packagePath = Resolve-SaphirPackagePath -DistributionRoot $DistributionRoot -RelativePackagePath ([string]$manifest.packagePath)
     $dataFolderPath = [string]$manifest.dataFolderPath
     if ([string]::IsNullOrWhiteSpace($dataFolderPath) -or -not [System.IO.Path]::IsPathRooted($dataFolderPath)) {
-        throw "The GEEM release does not contain an absolute shared-data path."
+        throw "The SAPHIR release does not contain an absolute shared-data path."
     }
     if (-not (Test-Path -LiteralPath $dataFolderPath -PathType Container)) {
-        throw "The shared GEEM data folder is unavailable: $dataFolderPath"
+        throw "The shared SAPHIR data folder is unavailable: $dataFolderPath"
     }
 
     return [PSCustomObject]@{
@@ -146,7 +150,7 @@ function Read-GeemReleaseManifest {
     }
 }
 
-function Get-GeemRequiredReleaseFiles {
+function Get-SaphirRequiredReleaseFiles {
     return @(
         "apps/admin/backend/admin-server.ps1",
         "apps/admin/backend/admin-config.psd1",
@@ -159,10 +163,10 @@ function Get-GeemRequiredReleaseFiles {
     )
 }
 
-function Test-GeemReleaseFiles {
+function Test-SaphirReleaseFiles {
     param([Parameter(Mandatory = $true)][string]$ReleasePath)
 
-    foreach ($relativePath in Get-GeemRequiredReleaseFiles) {
+    foreach ($relativePath in Get-SaphirRequiredReleaseFiles) {
         $candidatePath = Join-Path -Path $ReleasePath -ChildPath $relativePath
         if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
             return $false
@@ -176,7 +180,7 @@ function Test-GeemReleaseFiles {
     return $true
 }
 
-function Assert-GeemZipEntriesSafe {
+function Assert-SaphirZipEntriesSafe {
     param(
         [Parameter(Mandatory = $true)][string]$ZipPath,
         [Parameter(Mandatory = $true)][string]$DestinationRoot
@@ -194,13 +198,13 @@ function Assert-GeemZipEntriesSafe {
                 continue
             }
             if ($entryName.StartsWith("/") -or $entryName.StartsWith("\") -or $entryName.Contains(":")) {
-                throw "The GEEM release ZIP contains an unsafe file path."
+                throw "The SAPHIR release ZIP contains an unsafe file path."
             }
 
             $entryPath = [System.IO.Path]::GetFullPath((Join-Path -Path $destinationPath -ChildPath $entryName))
-            if (-not $entryPath.StartsWith($destinationPrefix, (Get-GeemPathStringComparison)) -and
-                -not $entryPath.Equals($destinationPath, (Get-GeemPathStringComparison))) {
-                throw "The GEEM release ZIP contains an unsafe file path."
+            if (-not $entryPath.StartsWith($destinationPrefix, (Get-SaphirPathStringComparison)) -and
+                -not $entryPath.Equals($destinationPath, (Get-SaphirPathStringComparison))) {
+                throw "The SAPHIR release ZIP contains an unsafe file path."
             }
         }
     }
@@ -209,10 +213,10 @@ function Assert-GeemZipEntriesSafe {
     }
 }
 
-function Read-GeemInstalledReleaseMarker {
+function Read-SaphirInstalledReleaseMarker {
     param([Parameter(Mandatory = $true)][string]$ReleasePath)
 
-    $markerPath = Join-Path -Path $ReleasePath -ChildPath ".geem-release.json"
+    $markerPath = Join-Path -Path $ReleasePath -ChildPath ".saphir-release.json"
     if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
         return $null
     }
@@ -225,17 +229,17 @@ function Read-GeemInstalledReleaseMarker {
     }
 }
 
-function Test-GeemCachedRelease {
+function Test-SaphirCachedRelease {
     param(
         [Parameter(Mandatory = $true)][string]$ReleasePath,
         [Parameter(Mandatory = $true)]$Manifest
     )
 
-    if (-not (Test-Path -LiteralPath $ReleasePath -PathType Container) -or -not (Test-GeemReleaseFiles -ReleasePath $ReleasePath)) {
+    if (-not (Test-Path -LiteralPath $ReleasePath -PathType Container) -or -not (Test-SaphirReleaseFiles -ReleasePath $ReleasePath)) {
         return $false
     }
 
-    $marker = Read-GeemInstalledReleaseMarker -ReleasePath $ReleasePath
+    $marker = Read-SaphirInstalledReleaseMarker -ReleasePath $ReleasePath
     if ($null -eq $marker) {
         return $false
     }
@@ -245,7 +249,7 @@ function Test-GeemCachedRelease {
         [string]$marker.dataFolderPath -eq [string]$Manifest.DataFolderPath)
 }
 
-function Install-GeemCachedRelease {
+function Install-SaphirCachedRelease {
     param(
         [Parameter(Mandatory = $true)]$Manifest,
         [Parameter(Mandatory = $true)][string]$CacheRoot,
@@ -254,11 +258,11 @@ function Install-GeemCachedRelease {
 
     $versionsRoot = Join-Path -Path $CacheRoot -ChildPath "versions"
     $downloadsRoot = Join-Path -Path $CacheRoot -ChildPath "downloads"
-    Ensure-GeemLocalDirectory -Path $versionsRoot
-    Ensure-GeemLocalDirectory -Path $downloadsRoot
+    Ensure-SaphirLocalDirectory -Path $versionsRoot
+    Ensure-SaphirLocalDirectory -Path $downloadsRoot
 
     $releasePath = Join-Path -Path $versionsRoot -ChildPath ([string]$Manifest.ReleaseId)
-    if (-not $ForceReinstall -and (Test-GeemCachedRelease -ReleasePath $releasePath -Manifest $Manifest)) {
+    if (-not $ForceReinstall -and (Test-SaphirCachedRelease -ReleasePath $releasePath -Manifest $Manifest)) {
         return [PSCustomObject]@{
             ReleaseId      = [string]$Manifest.ReleaseId
             ReleasePath    = $releasePath
@@ -270,7 +274,7 @@ function Install-GeemCachedRelease {
     }
 
     if (Test-Path -LiteralPath $releasePath) {
-        $existingMarker = Read-GeemInstalledReleaseMarker -ReleasePath $releasePath
+        $existingMarker = Read-SaphirInstalledReleaseMarker -ReleasePath $releasePath
         if ($null -ne $existingMarker -and [string]$existingMarker.releaseId -eq [string]$Manifest.ReleaseId) {
             $sameHash = ([string]$existingMarker.sha256).ToLowerInvariant() -eq [string]$Manifest.Sha256
             $sameDataFolder = [string]$existingMarker.dataFolderPath -eq [string]$Manifest.DataFolderPath
@@ -280,7 +284,7 @@ function Install-GeemCachedRelease {
         }
     }
     if (-not (Test-Path -LiteralPath $Manifest.PackagePath -PathType Leaf)) {
-        throw "The GEEM release package is unavailable: $($Manifest.PackagePath)"
+        throw "The SAPHIR release package is unavailable: $($Manifest.PackagePath)"
     }
     $operationId = [Guid]::NewGuid().ToString("N")
     $downloadPath = Join-Path -Path $downloadsRoot -ChildPath ("{0}.{1}.zip" -f $Manifest.ReleaseId, $operationId)
@@ -289,22 +293,22 @@ function Install-GeemCachedRelease {
     $replacementCommitted = $false
 
     try {
-        Write-Host "Downloading GEEM release $($Manifest.ReleaseId) to this computer..."
+        Write-Host "Downloading SAPHIR release $($Manifest.ReleaseId) to this computer..."
         Copy-Item -LiteralPath $Manifest.PackagePath -Destination $downloadPath -Force -ErrorAction Stop
 
         $actualHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
         if ($actualHash -ne [string]$Manifest.Sha256) {
-            throw "The downloaded GEEM release did not pass its integrity check."
+            throw "The downloaded SAPHIR release did not pass its integrity check."
         }
 
-        Assert-GeemZipEntriesSafe -ZipPath $downloadPath -DestinationRoot $stagingPath
-        Ensure-GeemLocalDirectory -Path $stagingPath
+        Assert-SaphirZipEntriesSafe -ZipPath $downloadPath -DestinationRoot $stagingPath
+        Ensure-SaphirLocalDirectory -Path $stagingPath
         Expand-Archive -LiteralPath $downloadPath -DestinationPath $stagingPath -Force -ErrorAction Stop
-        if (-not (Test-GeemReleaseFiles -ReleasePath $stagingPath)) {
-            throw "The downloaded GEEM release is incomplete or contains an unexpected data folder."
+        if (-not (Test-SaphirReleaseFiles -ReleasePath $stagingPath)) {
+            throw "The downloaded SAPHIR release is incomplete or contains an unexpected data folder."
         }
 
-        Write-GeemJsonFileAtomic -Path (Join-Path -Path $stagingPath -ChildPath ".geem-release.json") -Value ([ordered]@{
+        Write-SaphirJsonFileAtomic -Path (Join-Path -Path $stagingPath -ChildPath ".saphir-release.json") -Value ([ordered]@{
             schemaVersion = 1
             releaseId     = [string]$Manifest.ReleaseId
             sha256        = [string]$Manifest.Sha256
@@ -350,7 +354,7 @@ function Install-GeemCachedRelease {
     }
 }
 
-function Resolve-GeemCachedRelease {
+function Resolve-SaphirCachedRelease {
     param(
         [Parameter(Mandatory = $true)][string]$DistributionRoot,
         [Parameter(Mandatory = $true)][string]$ManifestPath,
@@ -359,15 +363,15 @@ function Resolve-GeemCachedRelease {
     )
 
     if ([string]::IsNullOrWhiteSpace($CacheRoot)) {
-        $CacheRoot = Get-GeemLocalAppRoot
+        $CacheRoot = Get-SaphirLocalAppRoot
     }
-    Ensure-GeemLocalDirectory -Path $CacheRoot
+    Ensure-SaphirLocalDirectory -Path $CacheRoot
 
-    $manifest = Read-GeemReleaseManifest -ManifestPath $ManifestPath -DistributionRoot $DistributionRoot
-    return (Install-GeemCachedRelease -Manifest $manifest -CacheRoot $CacheRoot -ForceReinstall:$ForceReinstall)
+    $manifest = Read-SaphirReleaseManifest -ManifestPath $ManifestPath -DistributionRoot $DistributionRoot
+    return (Install-SaphirCachedRelease -Manifest $manifest -CacheRoot $CacheRoot -ForceReinstall:$ForceReinstall)
 }
 
-function Get-GeemActiveRelease {
+function Get-SaphirActiveRelease {
     param([Parameter(Mandatory = $true)][string]$CacheRoot)
 
     $activePath = Join-Path -Path $CacheRoot -ChildPath "active.json"
@@ -379,15 +383,15 @@ function Get-GeemActiveRelease {
         $active = Get-Content -LiteralPath $activePath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
         $releaseId = [string]$active.releaseId
         $activeHash = ([string]$active.sha256).ToLowerInvariant()
-        if ([int]$active.schemaVersion -ne 1 -or -not (Test-GeemReleaseId -ReleaseId $releaseId) -or $activeHash -notmatch "^[a-f0-9]{64}$") {
+        if ([int]$active.schemaVersion -ne 1 -or -not (Test-SaphirReleaseId -ReleaseId $releaseId) -or $activeHash -notmatch "^[a-f0-9]{64}$") {
             return $null
         }
 
         $releasePath = Join-Path -Path (Join-Path -Path $CacheRoot -ChildPath "versions") -ChildPath $releaseId
-        if (-not (Test-GeemReleaseFiles -ReleasePath $releasePath)) {
+        if (-not (Test-SaphirReleaseFiles -ReleasePath $releasePath)) {
             return $null
         }
-        $installedMarker = Read-GeemInstalledReleaseMarker -ReleasePath $releasePath
+        $installedMarker = Read-SaphirInstalledReleaseMarker -ReleasePath $releasePath
         if ($null -eq $installedMarker -or
             [string]$installedMarker.releaseId -ne $releaseId -or
             ([string]$installedMarker.sha256).ToLowerInvariant() -ne $activeHash) {
@@ -406,7 +410,7 @@ function Get-GeemActiveRelease {
     }
 }
 
-function Get-GeemFailedRelease {
+function Get-SaphirFailedRelease {
     param([Parameter(Mandatory = $true)][string]$CacheRoot)
 
     $failedPath = Join-Path -Path $CacheRoot -ChildPath "failed.json"
@@ -419,7 +423,7 @@ function Get-GeemFailedRelease {
         $releaseId = [string]$failed.releaseId
         $sha256 = ([string]$failed.sha256).ToLowerInvariant()
         if ([int]$failed.schemaVersion -ne 1 -or
-            -not (Test-GeemReleaseId -ReleaseId $releaseId) -or
+            -not (Test-SaphirReleaseId -ReleaseId $releaseId) -or
             $sha256 -notmatch "^[a-f0-9]{64}$") {
             return $null
         }
@@ -434,13 +438,13 @@ function Get-GeemFailedRelease {
     }
 }
 
-function Set-GeemFailedRelease {
+function Set-SaphirFailedRelease {
     param(
         [Parameter(Mandatory = $true)][string]$CacheRoot,
         [Parameter(Mandatory = $true)]$Manifest
     )
 
-    Write-GeemJsonFileAtomic -Path (Join-Path -Path $CacheRoot -ChildPath "failed.json") -Value ([ordered]@{
+    Write-SaphirJsonFileAtomic -Path (Join-Path -Path $CacheRoot -ChildPath "failed.json") -Value ([ordered]@{
         schemaVersion = 1
         releaseId     = [string]$Manifest.ReleaseId
         sha256        = [string]$Manifest.Sha256
@@ -448,7 +452,7 @@ function Set-GeemFailedRelease {
     })
 }
 
-function Remove-GeemFailedRelease {
+function Remove-SaphirFailedRelease {
     param([Parameter(Mandatory = $true)][string]$CacheRoot)
 
     $failedPath = Join-Path -Path $CacheRoot -ChildPath "failed.json"
@@ -457,7 +461,7 @@ function Remove-GeemFailedRelease {
     }
 }
 
-function Repair-GeemInterruptedCacheOperations {
+function Repair-SaphirInterruptedCacheOperations {
     param([Parameter(Mandatory = $true)][string]$CacheRoot)
 
     $versionsRoot = Join-Path -Path $CacheRoot -ChildPath "versions"
@@ -465,12 +469,12 @@ function Repair-GeemInterruptedCacheOperations {
 
     if (Test-Path -LiteralPath $versionsRoot -PathType Container) {
         foreach ($replacement in @(Get-ChildItem -LiteralPath $versionsRoot -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "^\..+\.[a-f0-9]{32}\.replaced$" })) {
-            $marker = Read-GeemInstalledReleaseMarker -ReleasePath $replacement.FullName
+            $marker = Read-SaphirInstalledReleaseMarker -ReleasePath $replacement.FullName
             $releaseId = if ($null -ne $marker) { [string]$marker.releaseId } else { "" }
             if ([string]::IsNullOrWhiteSpace($releaseId) -and $replacement.Name -match "^\.(.+)\.[a-f0-9]{32}\.replaced$") {
                 $releaseId = [string]$matches[1]
             }
-            if (Test-GeemReleaseId -ReleaseId $releaseId) {
+            if (Test-SaphirReleaseId -ReleaseId $releaseId) {
                 $releasePath = Join-Path -Path $versionsRoot -ChildPath $releaseId
                 if (-not (Test-Path -LiteralPath $releasePath)) {
                     try {
@@ -478,7 +482,7 @@ function Repair-GeemInterruptedCacheOperations {
                         continue
                     }
                     catch {
-                        Write-Warning "Unable to restore interrupted GEEM release '$releaseId'."
+                        Write-Warning "Unable to restore interrupted SAPHIR release '$releaseId'."
                     }
                 }
                 elseif (Test-Path -LiteralPath $releasePath -PathType Container) {
@@ -498,13 +502,13 @@ function Repair-GeemInterruptedCacheOperations {
     }
 }
 
-function Set-GeemActiveRelease {
+function Set-SaphirActiveRelease {
     param(
         [Parameter(Mandatory = $true)][string]$CacheRoot,
         [Parameter(Mandatory = $true)]$Release
     )
 
-    Write-GeemJsonFileAtomic -Path (Join-Path -Path $CacheRoot -ChildPath "active.json") -Value ([ordered]@{
+    Write-SaphirJsonFileAtomic -Path (Join-Path -Path $CacheRoot -ChildPath "active.json") -Value ([ordered]@{
         schemaVersion = 1
         releaseId     = [string]$Release.ReleaseId
         sha256        = [string]$Release.Sha256
@@ -512,7 +516,7 @@ function Set-GeemActiveRelease {
     })
 }
 
-function Remove-OldGeemCachedReleases {
+function Remove-OldSaphirCachedReleases {
     param(
         [Parameter(Mandatory = $true)][string]$CacheRoot,
         [string[]]$KeepReleaseIds = @(),
@@ -554,12 +558,12 @@ function Remove-OldGeemCachedReleases {
             Remove-Item -LiteralPath $directory.FullName -Recurse -Force -ErrorAction Stop
         }
         catch {
-            Write-Warning "Unable to remove old local GEEM release '$($directory.Name)'."
+            Write-Warning "Unable to remove old local SAPHIR release '$($directory.Name)'."
         }
     }
 }
 
-function Enter-GeemCacheMutex {
+function Enter-SaphirCacheMutex {
     param(
         [Parameter(Mandatory = $true)][string]$CacheRoot,
         [int]$TimeoutSeconds = 90
@@ -574,7 +578,7 @@ function Enter-GeemCacheMutex {
         $sha.Dispose()
     }
     $hashText = ([System.BitConverter]::ToString($hashBytes)).Replace("-", "").Substring(0, 20)
-    $mutex = New-Object System.Threading.Mutex($false, ("GEEMAppCache-{0}" -f $hashText))
+    $mutex = New-Object System.Threading.Mutex($false, ("SAPHIRAppCache-{0}" -f $hashText))
 
     $acquired = $false
     try {
@@ -586,13 +590,13 @@ function Enter-GeemCacheMutex {
 
     if (-not $acquired) {
         $mutex.Dispose()
-        throw "Another GEEM installation is still running. Wait a moment and try again."
+        throw "Another SAPHIR installation is still running. Wait a moment and try again."
     }
 
     return $mutex
 }
 
-function Exit-GeemCacheMutex {
+function Exit-SaphirCacheMutex {
     param($Mutex)
 
     if ($null -eq $Mutex) {

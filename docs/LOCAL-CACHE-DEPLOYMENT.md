@@ -1,40 +1,46 @@
-# GEEM local-cache deployment
+# SAPHIR local-cache deployment
 
-This deployment keeps only a tiny launcher, `current.json`, and versioned release ZIPs on the shared network folder. Each employee automatically runs the application from `%LOCALAPPDATA%\OvertimeManager\versions` while continuing to use the same shared data folder.
+This deployment keeps only a tiny launcher, `current.json`, and versioned release ZIPs on the shared network folder. Each employee automatically runs the application from `%LOCALAPPDATA%\SAPHIR\versions` while continuing to use the same shared data folder.
 
 ## One-time preparation
 
 1. Choose a stable application parent folder, for example `\\server\department\Applications`.
-2. Choose the existing shared GEEM data folder. A UNC path such as `\\server\department\GEEM-Data` is preferred, but a mapped network drive such as R:\GEEM-Data is also supported.
+2. Choose the existing shared SAPHIR data folder. A UNC path such as `\\server\department\SAPHIR-Data` is preferred, but a mapped network drive such as R:\SAPHIR-Data is also supported.
 3. Open PowerShell in the root of the updated source-code repository on a Windows administrator/deployment workstation, then run:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 `
   -OutputRoot "\\server\department\Applications" `
-  -DataFolderPath "\\server\department\GEEM-Data" `
+  -DataFolderPath "\\server\department\SAPHIR-Data" `
   -NoZip
 ```
 
 This creates the stable employee folder:
 
 ```text
-\\server\department\Applications\GEEM-Distribution
+\\server\department\Applications\SAPHIR-Distribution
 ```
 
-The folder contains the launch/stop files, employee guide, release pointer and current release ZIP. It does not contain production data, tests, reset scripts or source-only administration utilities. Employees use this `GEEM-Distribution` folder—not the source-code repository.
+The folder contains the launch/stop files, `Install SAPHIR Shortcut.vbs`, the Windows icon, employee guide, release pointer and current release ZIP. It does not contain production data, tests, reset scripts or source-only administration utilities. Employees use this `SAPHIR-Distribution` folder—not the source-code repository.
 
 If your department only exposes a mapped R: drive, use the equivalent command:
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 -OutputRoot "R:\Applications" -DataFolderPath "R:\GEEM-Data" -NoZip
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 -OutputRoot "R:\Applications" -DataFolderPath "R:\SAPHIR-Data" -NoZip
 
-The publisher first tries to resolve R: to its underlying UNC provider path. If Windows cannot reveal that path but confirms that R: is a network drive, the release keeps the R:\... path and prints a warning. In that fallback case, every employee must have the same R: mapping available when launching GEEM.
+The publisher first tries to resolve R: to its underlying UNC provider path. If Windows cannot reveal that path but confirms that R: is a network drive, the release keeps the R:\... path and prints a warning. In that fallback case, every employee must have the same R: mapping available when launching SAPHIR.
 
 Use simple folder permissions:
 
-- `GEEM-Distribution`: employees receive **Read & execute** only; the person who publishes releases receives **Modify**.
-- Existing GEEM data folder: employees keep their current **Modify** access under the per-user backend design.
+- `SAPHIR-Distribution`: employees receive **Read & execute** only; the person who publishes releases receives **Modify**.
+- Existing SAPHIR data folder: employees keep their current **Modify** access under the per-user backend design.
 
 These permissions do not add runtime encryption or expensive security checks. They mainly prevent accidental deletion or replacement of the launcher and release files.
+
+## One-time SAPHIR cutover
+
+`SAPHIR-Distribution` is a new stable folder. Existing Desktop shortcuts do not retarget themselves, so send employees the exact new network path and ask them to run `Install SAPHIR Shortcut.vbs` once. Keep the previous distribution available during the pilot, then archive it according to your normal retention process after everyone has confirmed the new **SAPHIR** shortcut.
+
+SAPHIR deliberately does not delete the previous local cache during this cutover, so a pilot can still be rolled back safely. That inactive cache consumes disk space only; it does not run and does not slow SAPHIR. It can be removed later through your normal managed workstation cleanup after the rollout is confirmed.
 
 ## Publishing an update
 
@@ -45,7 +51,7 @@ Run the same command again from the updated repository. The publisher:
 3. copies the complete ZIP into `deployment\releases`;
 4. updates `deployment\current.json` last.
 
-Employees receive the update automatically the next time they launch GEEM. The previous local version remains available for automatic rollback if the new version cannot start.
+Employees receive the update automatically the next time they launch SAPHIR. The previous local version remains available for automatic rollback if the new version cannot start.
 
 ## Recommended rollout and rollback
 
@@ -59,11 +65,13 @@ Before giving the shortcut to everyone:
 
 1. Test from an ordinary employee account, not an administrator account.
 2. Test from the actual UNC network folder or mapped R: drive used by employees.
-3. Confirm that the first launch creates `%LOCALAPPDATA%\OvertimeManager\versions\<release>`.
-4. Confirm that the cached release has no `data` folder.
-5. Confirm that a second launch does not download the release again.
-6. Publish one test update and confirm that the backend restarts on the new cached version.
-7. Verify that `Stop GEEM.vbs` stops the cached backend.
+3. Run `Install SAPHIR Shortcut.vbs` and confirm that a **SAPHIR** shortcut with the blue logo appears on the Desktop.
+4. Confirm that the icon was copied to `%LOCALAPPDATA%\SAPHIR\assets\SAPHIR.ico` rather than being loaded repeatedly from the network.
+5. Confirm that the first launch creates `%LOCALAPPDATA%\SAPHIR\versions\<release>`.
+6. Confirm that the cached release has no `data` folder.
+7. Confirm that a second launch does not download the release again.
+8. Publish one test update and confirm that the backend restarts on the new cached version.
+9. Verify that `Stop SAPHIR.vbs` stops the cached backend.
 
 This Windows pilot is mandatory: automated tests on another operating system cannot verify your organization’s SMB, antivirus, AppLocker, shortcut and PowerShell 5.1 policies.
 

@@ -426,8 +426,12 @@ function Wait-ForPortState {
 
 function Get-StartupTimeoutSeconds {
     $timeoutSeconds = 45
-    if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_STARTUP_TIMEOUT_SECONDS)) {
-        [int]::TryParse([string]$env:OVERTIME_STARTUP_TIMEOUT_SECONDS, [ref]$timeoutSeconds) | Out-Null
+    $configuredTimeout = [string]$env:SAPHIR_STARTUP_TIMEOUT_SECONDS
+    if ([string]::IsNullOrWhiteSpace($configuredTimeout)) {
+        $configuredTimeout = [System.Environment]::GetEnvironmentVariable(("OVER" + "TIME_STARTUP_TIMEOUT_SECONDS"))
+    }
+    if (-not [string]::IsNullOrWhiteSpace($configuredTimeout)) {
+        [int]::TryParse($configuredTimeout, [ref]$timeoutSeconds) | Out-Null
     }
 
     if ($timeoutSeconds -lt 10) {

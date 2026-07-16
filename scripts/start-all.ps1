@@ -13,6 +13,15 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 . (Join-Path -Path $scriptDir -ChildPath "lib/RuntimeLayout.ps1")
 
 $service = Get-ManagedServiceConfig -Name "app"
+
+foreach ($previousService in @(Get-PreviousProductServiceConfigs)) {
+    $previousStatus = Get-ServiceStatus -Name $previousService.Name -DisplayName $previousService.DisplayName -Port $previousService.Port -PidFile $previousService.PidFile
+    if ($previousStatus.TrackedProcessId) {
+        Write-Host "Stopping a verified pre-SAPHIR backend..."
+        [void](Stop-ManagedService -Name $previousService.Name -DisplayName $previousService.DisplayName -Port $previousService.Port -PidFile $previousService.PidFile -Quiet)
+    }
+}
+
 Start-ManagedService -Name $service.Name -DisplayName $service.DisplayName -ServerScript $service.ServerScript -Port $service.Port -PidFile $service.PidFile -StdOutLog $service.StdOutLog -StdErrLog $service.StdErrLog -WorkingDirectory $service.WorkingDirectory -Force:$Force | Out-Null
 
 Write-Host ""

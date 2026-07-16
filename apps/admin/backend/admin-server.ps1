@@ -83,7 +83,7 @@ try {
 catch {
     throw "Failed to start admin listener on $listenerPrefix. $($_.Exception.Message)"
 }
-Write-Host "Manager Server running on $listenerPrefix"
+Write-Host "SAPHIR Server running on $listenerPrefix"
 
 while ($true) {
     $context = $listener.GetContext()

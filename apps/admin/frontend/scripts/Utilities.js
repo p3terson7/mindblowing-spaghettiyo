@@ -952,7 +952,7 @@ function buildMonthlyEntriesExportHtml(config) {
   <main class="report-shell">
     <div class="report-topbar">
       <div>
-        <div class="kicker">GÉEM</div>
+        <div class="kicker">SAPHIR</div>
         <h1>${escapeHtml(reportTitle)}</h1>
       </div>
       <div class="meta-grid">

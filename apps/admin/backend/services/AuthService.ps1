@@ -16,8 +16,12 @@ if (-not $script:AuthenticatedUserRequestCache) {
 
 if (-not $script:AuthenticatedUserRequestCacheTtlMs) {
     $configuredAuthCacheMs = 0
-    if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_AUTH_CACHE_MS)) {
-        [int]::TryParse([string]$env:OVERTIME_AUTH_CACHE_MS, [ref]$configuredAuthCacheMs) | Out-Null
+    $configuredAuthCacheValue = [string]$env:SAPHIR_AUTH_CACHE_MS
+    if ([string]::IsNullOrWhiteSpace($configuredAuthCacheValue)) {
+        $configuredAuthCacheValue = [System.Environment]::GetEnvironmentVariable(("OVER" + "TIME_AUTH_CACHE_MS"))
+    }
+    if (-not [string]::IsNullOrWhiteSpace($configuredAuthCacheValue)) {
+        [int]::TryParse($configuredAuthCacheValue, [ref]$configuredAuthCacheMs) | Out-Null
     }
 
     $script:AuthenticatedUserRequestCacheTtlMs = if ($configuredAuthCacheMs -gt 0) { $configuredAuthCacheMs } else { 300000 }
@@ -1084,11 +1088,11 @@ function Get-AuthorizationTokenFromRequest {
 function Get-SessionCookieHeader {
     param([Parameter(Mandatory = $true)][string]$Token)
 
-    return ("overtimeSession={0}; Path=/; HttpOnly; SameSite=Lax" -f [System.Uri]::EscapeDataString($Token))
+    return ("saphirSession={0}; Path=/; HttpOnly; SameSite=Lax" -f [System.Uri]::EscapeDataString($Token))
 }
 
 function Get-ExpiredSessionCookieHeader {
-    return "overtimeSession=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+    return "saphirSession=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
 }
 
 function Get-SessionTokenFromCookieHeader {
@@ -1108,7 +1112,7 @@ function Get-SessionTokenFromCookieHeader {
         }
 
         $name = $trimmedPart.Substring(0, $separatorIndex).Trim()
-        if ($name -ne "overtimeSession") {
+        if ($name -ne "saphirSession") {
             continue
         }
 

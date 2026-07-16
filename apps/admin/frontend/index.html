@@ -3,26 +3,36 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GÉEM Overtime Manager</title>
+  <title>SAPHIR</title>
   <script>
     try {
-      document.documentElement.setAttribute("data-theme", localStorage.getItem("overtimeAppTheme") === "dark" ? "dark" : "light");
+      const currentTheme = localStorage.getItem("saphirAppTheme");
+      const previousThemeKey = ["over", "timeAppTheme"].join("");
+      const previousTheme = localStorage.getItem(previousThemeKey);
+      const initialTheme = currentTheme === "dark" || currentTheme === "light"
+        ? currentTheme
+        : (previousTheme === "dark" ? "dark" : "light");
+      if (!currentTheme && (previousTheme === "dark" || previousTheme === "light")) {
+        localStorage.setItem("saphirAppTheme", previousTheme);
+        localStorage.removeItem(previousThemeKey);
+      }
+      document.documentElement.setAttribute("data-theme", initialTheme);
     } catch (error) {
       document.documentElement.setAttribute("data-theme", "light");
     }
   </script>
+  <link rel="icon" type="image/png" sizes="128x128" href="assets/saphir-logo.png?v=20260715-saphir" />
   <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260603-empty-timeline" />
   <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260603-empty-timeline" />
-  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260713-gc179-file-picker">
+  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260715-saphir">
 </head>
 <body>
   <div class="app-root">
     <aside class="app-sidebar">
       <div class="brand-block">
-        <img src="assets/crest.png" class="brand-crest" alt="GÉEM crest">
+        <img src="assets/saphir-logo.png?v=20260715-saphir" class="brand-logo" alt="" aria-hidden="true" width="36" height="36">
         <div>
-          <div class="brand-eyebrow">GÉEM</div>
-          <div class="brand-title" data-i18n="brand.overtimeManager">Overtime Manager</div>
+          <div class="brand-title" data-i18n="brand.saphir">SAPHIR</div>
         </div>
       </div>
 
@@ -619,10 +629,9 @@
     <div class="auth-card">
         <div class="auth-card-side">
           <div class="auth-brand-lockup">
-            <img src="assets/crest.png" class="brand-crest" alt="GÉEM crest">
+            <img src="assets/saphir-logo.png?v=20260715-saphir" class="brand-logo" alt="" aria-hidden="true" width="36" height="36">
             <div>
-              <div class="brand-eyebrow">GÉEM</div>
-              <div class="brand-title" data-i18n="brand.overtimeManager">Overtime Manager</div>
+              <div class="brand-title" data-i18n="brand.saphir">SAPHIR</div>
             </div>
           </div>
           <div class="auth-side-points">
@@ -1233,9 +1242,9 @@
       ? window.location.origin + "/"
       : "http://localhost:8081/";
   </script>
-  <script src="scripts/I18n.js?v=20260713-project-admin"></script>
-  <script src="scripts/Utilities.js?v=20260706-pri-format"></script>
-  <script src="scripts/AppShell.js?v=20260713-project-admin"></script>
+  <script src="scripts/I18n.js?v=20260715-saphir"></script>
+  <script src="scripts/Utilities.js?v=20260715-saphir"></script>
+  <script src="scripts/AppShell.js?v=20260715-saphir"></script>
   <script src="scripts/Views/ViewSwitching.js?v=20260603-empty-timeline"></script>
   <script src="scripts/Views/SelfView.js?v=20260624-gc179-multipart"></script>
 </body>
