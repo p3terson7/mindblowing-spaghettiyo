@@ -238,7 +238,7 @@
 
                 $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
                 try {
-                    $existingData = Read-JsonArrayFile -Path $dataFile
+                    $existingData = @(Read-JsonArrayFile -Path $dataFile)
                     $activeEntry = Get-LatestActiveEntry -Entries $existingData
 
                     $now = Get-Date

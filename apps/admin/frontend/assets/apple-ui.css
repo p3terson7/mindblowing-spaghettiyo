@@ -29,6 +29,8 @@
   --live-contrast: #ffffff;
   --pending: #9a6200;
   --pending-soft: #fff3d8;
+  --pending-row: color-mix(in srgb, var(--pending) 5%, var(--surface));
+  --pending-row-accent: color-mix(in srgb, var(--pending) 48%, transparent);
   --danger: #c43840;
   --danger-soft: #fff0f1;
   --danger-contrast: #ffffff;
@@ -424,6 +426,7 @@ code {
 }
 
 .metric-card {
+  --metric-accent: var(--separator-strong);
   min-height: 126px;
   padding: 18px 19px;
   gap: 6px;
@@ -435,11 +438,11 @@ code {
 .metric-card::after {
   content: "";
   position: absolute;
-  inset: auto -30px -48px auto;
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  inset: 0 18px auto;
+  width: auto;
+  height: 2px;
+  border-radius: 0 0 999px 999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--metric-accent) 64%, transparent), transparent 72%);
   pointer-events: none;
 }
 
@@ -467,11 +470,13 @@ code {
 }
 
 .metric-card-emphasis {
+  --metric-accent: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 25%, var(--separator));
   background: radial-gradient(circle at 95% 0%, var(--accent-soft), transparent 62%), var(--surface);
 }
 
 .metric-card-attention {
+  --metric-accent: var(--pending);
   border-color: color-mix(in srgb, var(--pending) 27%, var(--separator));
   background: radial-gradient(circle at 95% 0%, var(--pending-soft), transparent 64%), var(--surface);
 }
@@ -913,6 +918,7 @@ code {
 }
 
 #dashboardView .metric-card:nth-child(3) {
+  --metric-accent: var(--live);
   border-color: color-mix(in srgb, var(--live) 28%, var(--separator));
   background: radial-gradient(circle at 95% 0%, var(--live-soft), transparent 64%), var(--surface);
 }
@@ -982,7 +988,11 @@ code {
 }
 
 .dashboard-entry-row.is-pending {
-  background: var(--pending-soft);
+  background: var(--pending-row);
+}
+
+.dashboard-entry-row.is-pending > td:first-child {
+  box-shadow: inset 2px 0 0 var(--pending-row-accent);
 }
 
 .dashboard-note-trigger {
@@ -1468,7 +1478,7 @@ code {
 }
 
 :root[data-theme="dark"] .dashboard-entry-row.is-pending {
-  background: var(--pending-soft);
+  background: var(--pending-row);
 }
 
 :root[data-theme="dark"] .dashboard-entry-table thead th,
