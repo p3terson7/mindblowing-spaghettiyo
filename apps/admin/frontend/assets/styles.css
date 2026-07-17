@@ -56,8 +56,6 @@
 *::before,
 *::after {
   box-sizing: border-box;
-  transition: none !important;
-  animation: none !important;
 }
 
 html,
@@ -65,17 +63,11 @@ body {
   min-height: 100%;
 }
 
-html,
-body,
-*,
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
 
-html::-webkit-scrollbar,
-body::-webkit-scrollbar,
-*::-webkit-scrollbar,
 .no-scrollbar::-webkit-scrollbar {
   width: 0;
   height: 0;

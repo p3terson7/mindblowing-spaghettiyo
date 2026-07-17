@@ -4,7 +4,7 @@ let currentProjectCode = null;
 let pendingProjectChartFrameId = null;
 let pendingProjectInsightFrameId = null;
 const projectInsightChartInstances = {};
-const projectPalette = ["#3574f0", "#46a35b", "#d18900", "#d14343", "#7d5cf5", "#0096b2", "#c95c9b", "#6f7b2f", "#8a6f4d"];
+const projectPalette = ["#0868d7", "#16865a", "#7558d8", "#008994", "#c27a00", "#c43840", "#c94f8a", "#4f72d8", "#7f6b52"];
 const projectsViewState = {
   projects: [],
   employees: [],
@@ -448,14 +448,22 @@ function getProjectChartTheme() {
     textPrimary: rootStyles.getPropertyValue("--text-primary").trim() || "#1f2329",
     textSecondary: rootStyles.getPropertyValue("--text-secondary").trim() || "#5e646f",
     textMuted: rootStyles.getPropertyValue("--text-muted").trim() || "#7a828f",
-    grid: document.documentElement.getAttribute("data-theme") === "dark"
-      ? "rgba(255, 255, 255, 0.1)"
-      : "rgba(31, 35, 41, 0.08)",
+    grid: rootStyles.getPropertyValue("--chart-grid").trim()
+      || (document.documentElement.getAttribute("data-theme") === "dark"
+        ? "rgba(255, 255, 255, 0.1)"
+        : "rgba(29, 29, 31, 0.08)"),
+    panel: rootStyles.getPropertyValue("--panel-bg").trim() || "#ffffff",
+    tooltip: rootStyles.getPropertyValue("--tooltip-bg").trim() || "rgba(29, 29, 31, 0.94)",
+    tooltipText: rootStyles.getPropertyValue("--tooltip-text").trim() || "#ffffff",
   };
 }
 
 function getProjectChartColors(count) {
-  return Array.from({ length: count }, (_, index) => projectPalette[index % projectPalette.length]);
+  const rootStyles = getComputedStyle(document.documentElement);
+  return Array.from({ length: count }, (_, index) => {
+    const paletteIndex = index % projectPalette.length;
+    return rootStyles.getPropertyValue(`--chart-${paletteIndex + 1}`).trim() || projectPalette[paletteIndex];
+  });
 }
 
 function normalizeProjectAssignmentCodes(value) {
@@ -550,7 +558,7 @@ function renderProjectDoughnutInsight(canvasId, items, valueType = "count") {
       datasets: [{
         data: chartItems.map(item => item.value),
         backgroundColor: getProjectChartColors(chartItems.length),
-        borderColor: document.documentElement.getAttribute("data-theme") === "dark" ? "#303236" : "#ffffff",
+        borderColor: theme.panel,
         borderWidth: 2,
       }],
     },
@@ -570,9 +578,9 @@ function renderProjectDoughnutInsight(canvasId, items, valueType = "count") {
           },
         },
         tooltip: {
-          backgroundColor: "rgba(31, 35, 41, 0.94)",
-          titleColor: "#ffffff",
-          bodyColor: "#ffffff",
+          backgroundColor: theme.tooltip,
+          titleColor: theme.tooltipText,
+          bodyColor: theme.tooltipText,
           callbacks: {
             label: context => createProjectTooltipLabel(context, valueType),
           },
@@ -1285,7 +1293,8 @@ function renderProjectMultiLineChart(trendData) {
 
   const timeLabels = Array.from(labelSet).sort();
   const formattedLabels = timeLabels.map(formatYMToWords);
-  const colors = ["#3574f0", "#46a35b", "#d18900", "#d14343", "#7d5cf5", "#0096b2"];
+  const theme = getProjectChartTheme();
+  const colors = getProjectChartColors(6);
 
   const datasets = Object.keys(compactedTrendData || {}).map((projectCode, index) => {
     const dataPoints = timeLabels.map(label => {
@@ -1332,34 +1341,34 @@ function renderProjectMultiLineChart(trendData) {
           legend: {
             position: "top",
             labels: {
-              color: "#5f6673",
+              color: theme.textSecondary,
               usePointStyle: true,
               boxWidth: 8,
               padding: 18,
             },
           },
           tooltip: {
-            backgroundColor: "rgba(31, 35, 41, 0.92)",
-            titleColor: "#ffffff",
-            bodyColor: "#ffffff",
+            backgroundColor: theme.tooltip,
+            titleColor: theme.tooltipText,
+            bodyColor: theme.tooltipText,
           },
         },
         scales: {
           x: {
             ticks: {
-              color: "#7f8796",
+              color: theme.textMuted,
             },
             grid: {
-              color: "rgba(31, 35, 41, 0.06)",
+              color: theme.grid,
             },
           },
           y: {
             beginAtZero: true,
             ticks: {
-              color: "#7f8796",
+              color: theme.textMuted,
             },
             grid: {
-              color: "rgba(31, 35, 41, 0.08)",
+              color: theme.grid,
             },
           },
         },

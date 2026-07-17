@@ -30,7 +30,7 @@ const employeesViewState = {
 };
 let pendingEmployeeAnalyticsFrameId = null;
 const employeeAnalyticsChartInstances = {};
-const employeeAnalyticsPalette = ["#3574f0", "#46a35b", "#d18900", "#d14343", "#7d5cf5", "#0096b2", "#c95c9b", "#6f7b2f", "#8a6f4d", "#b65f20"];
+const employeeAnalyticsPalette = ["#0868d7", "#16865a", "#7558d8", "#008994", "#c27a00", "#c43840", "#c94f8a", "#4f72d8", "#7f6b52", "#0f8f7a"];
 window.invalidateEmployeesViewEntryCache = function (resource) {
   const employeeCode = String(resource || "").trim();
   if (!employeeCode || employeeCode === "*") {
@@ -1974,15 +1974,22 @@ function getEmployeeAnalyticsTheme() {
   return {
     textSecondary: rootStyles.getPropertyValue("--text-secondary").trim() || "#5e646f",
     textMuted: rootStyles.getPropertyValue("--text-muted").trim() || "#7a828f",
-    grid: document.documentElement.getAttribute("data-theme") === "dark"
-      ? "rgba(255, 255, 255, 0.1)"
-      : "rgba(31, 35, 41, 0.08)",
-    panel: document.documentElement.getAttribute("data-theme") === "dark" ? "#303236" : "#ffffff",
+    grid: rootStyles.getPropertyValue("--chart-grid").trim()
+      || (document.documentElement.getAttribute("data-theme") === "dark"
+        ? "rgba(255, 255, 255, 0.1)"
+        : "rgba(29, 29, 31, 0.08)"),
+    panel: rootStyles.getPropertyValue("--panel-bg").trim() || "#ffffff",
+    tooltip: rootStyles.getPropertyValue("--tooltip-bg").trim() || "rgba(29, 29, 31, 0.94)",
+    tooltipText: rootStyles.getPropertyValue("--tooltip-text").trim() || "#ffffff",
   };
 }
 
 function getEmployeeAnalyticsColors(count) {
-  return Array.from({ length: count }, (_, index) => employeeAnalyticsPalette[index % employeeAnalyticsPalette.length]);
+  const rootStyles = getComputedStyle(document.documentElement);
+  return Array.from({ length: count }, (_, index) => {
+    const paletteIndex = index % employeeAnalyticsPalette.length;
+    return rootStyles.getPropertyValue(`--chart-${paletteIndex + 1}`).trim() || employeeAnalyticsPalette[paletteIndex];
+  });
 }
 
 function getEmployeeProjectAnalyticsStats(employee, projectCode) {
@@ -2099,9 +2106,9 @@ function renderEmployeeOvertimeShareChart(employees) {
           display: false,
         },
         tooltip: {
-          backgroundColor: "rgba(31, 35, 41, 0.94)",
-          titleColor: "#ffffff",
-          bodyColor: "#ffffff",
+          backgroundColor: theme.tooltip,
+          titleColor: theme.tooltipText,
+          bodyColor: theme.tooltipText,
           callbacks: {
             label: context => {
               const value = getEmployeeChartContextValue(context);

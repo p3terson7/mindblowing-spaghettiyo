@@ -17,11 +17,11 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20260713-project-admin",
+  employees: "scripts/Views/EmployeesView.js?v=20260716-apple-ui",
   dashboard: "scripts/Views/DashboardView.js?v=20260713-performance",
   approvals: "scripts/Views/ApprovalsView.js?v=20260713-performance",
   history: "scripts/Views/HistoryView.js?v=20260713-performance",
-  projects: "scripts/Views/ProjectsView.js?v=20260713-project-admin",
+  projects: "scripts/Views/ProjectsView.js?v=20260716-apple-ui",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
@@ -70,7 +70,7 @@ function getSyncStateChangeKey(syncState) {
 
 function getStoredTheme() {
   const currentTheme = localStorage.getItem(APP_THEME_KEY);
-  if (currentTheme === "dark" || currentTheme === "light") {
+  if (currentTheme === "system" || currentTheme === "dark" || currentTheme === "light") {
     return currentTheme;
   }
 
@@ -81,26 +81,42 @@ function getStoredTheme() {
     return previousTheme;
   }
 
+  return "system";
+}
+
+function resolveAppTheme(themeMode) {
+  if (themeMode === "dark" || themeMode === "light") {
+    return themeMode;
+  }
+
+  if (typeof window.matchMedia === "function") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
   return "light";
 }
 
-function updateThemeToggle(theme) {
+function updateThemeToggle(themeMode) {
   const toggleButton = document.getElementById("appThemeToggleButton");
   const toggleText = document.getElementById("appThemeToggleText");
   if (!toggleButton || !toggleText) {
-    updateSettingsThemeOptions(theme);
+    updateSettingsThemeOptions(themeMode);
     return;
   }
 
-  const nextTheme = theme === "dark" ? "light" : "dark";
+  const themeCycle = ["system", "light", "dark"];
+  const currentIndex = Math.max(0, themeCycle.indexOf(themeMode));
+  const nextTheme = themeCycle[(currentIndex + 1) % themeCycle.length];
   const icon = toggleButton.querySelector("i");
   if (icon) {
-    icon.className = nextTheme === "dark" ? "fa-solid fa-moon" : "fa-solid fa-sun";
+    icon.className = nextTheme === "system"
+      ? "fa-solid fa-circle-half-stroke"
+      : (nextTheme === "dark" ? "fa-solid fa-moon" : "fa-solid fa-sun");
   }
-  toggleText.textContent = t(nextTheme === "dark" ? "theme.dark" : "theme.light");
+  toggleText.textContent = t(`theme.${nextTheme}`);
   toggleButton.setAttribute("aria-label", t("theme.label"));
   toggleButton.setAttribute("title", t("theme.label"));
-  updateSettingsThemeOptions(theme);
+  updateSettingsThemeOptions(themeMode);
 }
 
 function updateSettingsThemeOptions(theme) {
@@ -112,19 +128,24 @@ function updateSettingsThemeOptions(theme) {
 }
 
 function applyAppTheme(theme) {
-  const resolvedTheme = theme === "dark" ? "dark" : "light";
+  const themeMode = theme === "system" || theme === "dark" || theme === "light" ? theme : "system";
+  const resolvedTheme = resolveAppTheme(themeMode);
   document.documentElement.setAttribute("data-theme", resolvedTheme);
-  localStorage.setItem(APP_THEME_KEY, resolvedTheme);
-  updateThemeToggle(resolvedTheme);
+  document.documentElement.setAttribute("data-theme-mode", themeMode);
+  localStorage.setItem(APP_THEME_KEY, themeMode);
+  updateThemeToggle(themeMode);
   window.dispatchEvent(new CustomEvent("app:theme-changed", {
     detail: {
       theme: resolvedTheme,
+      mode: themeMode,
     },
   }));
 }
 
 function toggleAppTheme() {
-  applyAppTheme(getStoredTheme() === "dark" ? "light" : "dark");
+  const themeCycle = ["system", "light", "dark"];
+  const currentIndex = Math.max(0, themeCycle.indexOf(getStoredTheme()));
+  applyAppTheme(themeCycle[(currentIndex + 1) % themeCycle.length]);
 }
 
 const appShellState = {
@@ -1549,6 +1570,19 @@ document.addEventListener("DOMContentLoaded", () => {
     authAdvancedToggle.addEventListener("click", () => toggleAuthAdvancedPanel());
   }
   applyAppTheme(getStoredTheme());
+  if (typeof window.matchMedia === "function") {
+    const systemThemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleSystemThemeChange = () => {
+      if (getStoredTheme() === "system") {
+        applyAppTheme("system");
+      }
+    };
+    if (typeof systemThemeQuery.addEventListener === "function") {
+      systemThemeQuery.addEventListener("change", handleSystemThemeChange);
+    } else if (typeof systemThemeQuery.addListener === "function") {
+      systemThemeQuery.addListener(handleSystemThemeChange);
+    }
+  }
   clearRoleUi();
   updateSessionSummary();
   setSyncStatus(t("status.waitingForSignIn"));

@@ -34,7 +34,7 @@ for (const translationKey of [
   assert.strictEqual(occurrences, 2, `${translationKey} must have both English and French translations.`);
 }
 
-assert(appShellSource.includes("EmployeesView.js?v=20260713-project-admin"), "EmployeesView cache version was not bumped.");
-assert(appShellSource.includes("ProjectsView.js?v=20260713-project-admin"), "ProjectsView cache version was not bumped.");
+assert(appShellSource.includes("EmployeesView.js?v=20260716-apple-ui"), "EmployeesView cache version was not bumped.");
+assert(appShellSource.includes("ProjectsView.js?v=20260716-apple-ui"), "ProjectsView cache version was not bumped.");
 
 console.log("Project admin UI contract test passed.");

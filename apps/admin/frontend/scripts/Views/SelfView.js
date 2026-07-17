@@ -640,6 +640,7 @@ function updateSelfSummaryMetrics(allEntries) {
 
 function updateSelfStatus(entries) {
   const primaryButton = document.getElementById("selfPrimaryPunchButton");
+  const trackingCard = document.getElementById("selfTrackingCard");
   const lastEntryShell = document.getElementById("selfLastEntryShell");
   const punchState = document.getElementById("selfPunchStateText");
   const statusMessage = document.getElementById("selfStatusMessage");
@@ -651,6 +652,10 @@ function updateSelfStatus(entries) {
   const diverseEndFields = document.getElementById("selfDiverseEndFields");
   const latestEntry = getLatestEntry(entries);
   const activeEntry = getSelfActiveEntry(entries);
+
+  if (trackingCard) {
+    trackingCard.classList.toggle("is-live", Boolean(activeEntry));
+  }
 
   if (activeEntry) {
     const startedAt = toEntryDateTime(activeEntry);
@@ -697,12 +702,15 @@ function updateSelfStatus(entries) {
   }
   syncSelfEntryTypeControls();
   if (selectionSummary) {
-    selectionSummary.textContent = [
+    const selectionParts = [
       selfViewState.selectedEntryType === "diverse" ? t("shared.diverse") : selfViewState.selectedProjectCode,
       selfViewState.selectedEntryType === "diverse" ? document.getElementById("selfDiverseReasonInput")?.value : selfViewState.selectedOvertimeCode,
       selfViewState.selectedEntryType === "diverse" ? "" : (selfViewState.selectedPaymentOption ? formatPaymentOptionValue(selfViewState.selectedPaymentOption) : ""),
       selfViewState.selectedEntryType === "diverse" ? "" : selfViewState.selectedReasonCode,
-    ].filter(Boolean).join(" | ");
+    ].filter(Boolean);
+    selectionSummary.textContent = selectionParts.length > 0
+      ? selectionParts.join(" · ")
+      : t("self.selectionHint");
   }
 
   if (!latestEntry) {
