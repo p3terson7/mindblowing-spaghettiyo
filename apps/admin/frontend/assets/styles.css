@@ -2585,8 +2585,7 @@ code,
   font-size: 0.75rem;
 }
 
-.employee-card-info-row:first-child .employee-card-info-value::before {
-  content: "EMP";
+.employee-card-info-prefix {
   margin-right: 6px;
   color: var(--text-muted);
   font-size: 0.66rem;

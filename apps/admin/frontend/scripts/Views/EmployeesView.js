@@ -302,17 +302,18 @@ function renderEmployeeEditorProjectAssignments() {
 
   container.innerHTML = projects.map(project => {
     const projectCode = String(project.projectCode || "").trim();
-    const projectName = String(project.projectName || projectCode);
+    const projectName = String(project.projectName || "").trim();
+    const projectTitle = getProjectDisplayName(project);
     const sector = String(project.sector || "").trim();
     const inputId = `employeeEditorProject_${projectCode}`.replace(/[^A-Za-z0-9_-]/g, "_");
     const checked = employeesViewState.editorProjectAssignments.selectedProjectCodes.has(projectCode) ? " checked" : "";
-    const meta = sector ? `${projectCode} | ${sector}` : projectCode;
+    const meta = [projectName ? projectCode : "", sector].filter(Boolean).join(" | ");
     return `
       <label class="assignment-checkitem" for="${escapeHtml(inputId)}">
         <input class="form-check-input employee-editor-project-checkbox" type="checkbox" id="${escapeHtml(inputId)}" value="${escapeHtml(projectCode)}"${checked}>
         <span class="assignment-checkitem-main">
-          <span class="assignment-checkitem-title">${escapeHtml(projectName)}</span>
-          <span class="assignment-checkitem-meta">${escapeHtml(meta)}</span>
+          <span class="assignment-checkitem-title">${escapeHtml(projectTitle)}</span>
+          ${meta ? `<span class="assignment-checkitem-meta">${escapeHtml(meta)}</span>` : ""}
         </span>
       </label>
     `;
@@ -375,7 +376,7 @@ async function saveEmployeeEditorProjectAssignments(employeeCode, role) {
       },
       body: JSON.stringify({
         projectCode,
-        projectName: String(update.project.projectName || projectCode),
+        projectName: String(update.project.projectName || "").trim(),
         sector: String(update.project.sector || ""),
         admins: update.nextAdmins,
         backupAdmins: getEmployeeEditorProjectBackupAdmins(update.project),
@@ -1512,10 +1513,13 @@ function renderEmployeeProjectBubbles(projects, responsibilityKey, compact) {
     : t("dashboard.primaryAdmin");
 
   return shownProjects.map(project => {
-    const titleParts = [responsibilityLabel, project.projectCode, project.projectName, project.sector].filter(Boolean);
+    const projectCode = String(project.projectCode || "").trim();
+    const projectName = String(project.projectName || "").trim();
+    const distinctProjectName = projectName.toLocaleLowerCase() === projectCode.toLocaleLowerCase() ? "" : projectName;
+    const titleParts = [responsibilityLabel, projectCode, distinctProjectName, project.sector].filter(Boolean);
     return `
       <span class="employee-project-bubble${responsibilityKey === "backup" ? " is-backup" : ""}" title="${escapeHtml(titleParts.join(" | "))}">
-        ${escapeHtml(project.projectName)}
+        ${escapeHtml(getProjectDisplayName(project))}
       </span>
     `;
   }).join("") + (hiddenCount > 0
@@ -1750,8 +1754,8 @@ function renderEmployeeDirectoryCard(employee, canManageProfiles) {
       ${renderEmployeeResponsibilityBubbles(employee, true)}
       <div class="employee-card-meta">
         <div class="employee-card-info-row">
-          <span class="employee-card-info-label">EMP</span>
-          <span class="employee-card-info-value mono">${escapeHtml(employee.code)}</span>
+          <span class="employee-card-info-label">${escapeHtml(t("employees.employeeCode"))}</span>
+          <span class="employee-card-info-value mono"><span class="employee-card-info-prefix">${escapeHtml(t("employees.employeeCode"))}</span>${escapeHtml(employee.code)}</span>
         </div>
         <div class="employee-card-info-row">
           <span class="employee-card-info-label">${escapeHtml(t("employees.entriesShort"))}</span>
@@ -1920,9 +1924,8 @@ function populateEmployeesProjectFilter(projects) {
   projectSelect.innerHTML = [`<option value="">${escapeHtml(t("filters.allProjects"))}</option>`]
     .concat(projectItems.map(project => {
       const projectCode = String(project.projectCode || "");
-      const projectName = String(project.projectName || projectCode);
       const selected = projectCode === selectedValue ? " selected" : "";
-      return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(projectCode)} | ${escapeHtml(projectName)}</option>`;
+      return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(formatProjectCodeAndName(project))}</option>`;
     }))
     .join("");
 
@@ -3031,7 +3034,7 @@ function renderEmployeeDetail(employee) {
         </div>
       </div>
       <div class="employee-detail-meta">
-        <span class="inline-code-pill">EMP ${escapeHtml(employee.code)}</span>
+        <span class="inline-code-pill">${escapeHtml(t("employees.employeeCode"))} ${escapeHtml(employee.code)}</span>
         <span class="meta-pill">${escapeHtml(getEmployeeRoleLabel(employee))}</span>
         <span class="meta-pill">${escapeHtml(t("employees.entryCount", { count: entries.length }))}</span>
         ${employeesViewState.selectedProjectCode ? `<span class="meta-pill">${escapeHtml(employeesViewState.selectedProjectCode)}</span>` : ""}

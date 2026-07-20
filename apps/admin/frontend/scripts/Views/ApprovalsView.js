@@ -40,7 +40,10 @@ function buildApprovalProjectOptions(projects, entries) {
   const options = [`<option value="">${escapeHtml(t("filters.allProjects"))}</option>`]
     .concat(Object.keys(projectMap).sort((left, right) => left.localeCompare(right)).map(projectCode => {
       const selected = currentValue === projectCode ? " selected" : "";
-      return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(projectCode)} | ${escapeHtml(projectMap[projectCode])}</option>`;
+      return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(formatProjectCodeAndName({
+        projectCode,
+        projectName: projectMap[projectCode],
+      }))}</option>`;
     }));
 
   return options.join("");

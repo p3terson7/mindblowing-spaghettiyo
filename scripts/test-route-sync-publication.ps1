@@ -302,6 +302,7 @@ function Invoke-PasswordRoute {
 
 function ConvertTo-CodeArray { param($Value) return @($Value) }
 function Test-EmployeeCodeHasAdminRole { param([string]$EmployeeCode) return $true }
+function Test-ProjectCodeFormat { param([string]$ProjectCode) return ($ProjectCode -match '^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$') }
 function Get-Projects { return ,@($script:Projects) }
 function Test-ProjectArchived {
     param($Project)

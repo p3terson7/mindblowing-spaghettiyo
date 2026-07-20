@@ -17,11 +17,11 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20260716-apple-ui",
-  dashboard: "scripts/Views/DashboardView.js?v=20260713-performance",
-  approvals: "scripts/Views/ApprovalsView.js?v=20260713-performance",
+  employees: "scripts/Views/EmployeesView.js?v=20260720-project-labels",
+  dashboard: "scripts/Views/DashboardView.js?v=20260720-project-labels",
+  approvals: "scripts/Views/ApprovalsView.js?v=20260720-project-labels",
   history: "scripts/Views/HistoryView.js?v=20260713-performance",
-  projects: "scripts/Views/ProjectsView.js?v=20260716-apple-ui",
+  projects: "scripts/Views/ProjectsView.js?v=20260720-project-labels",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],

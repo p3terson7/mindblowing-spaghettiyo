@@ -39,6 +39,7 @@ $script:WriteCount = 0
 $script:PublishCount = 0
 $script:PublishedResource = ""
 $script:HistoryAction = ""
+$script:HistoryMessage = ""
 
 . (Join-Path -Path $repoRoot -ChildPath "apps/admin/backend/services/ProjectMutationService.ps1")
 
@@ -61,6 +62,7 @@ function Write-JsonAtomic {
 function logHistory {
     param([string]$Action, [string]$Message, [string]$EmployeeName)
     $script:HistoryAction = $Action
+    $script:HistoryMessage = $Message
 }
 function Publish-DataChange {
     param([string]$Category, [string]$Resource, [string[]]$AffectedEmployeeCodes = @())
@@ -92,6 +94,7 @@ function Reset-ProjectScenario {
     $script:PublishCount = 0
     $script:PublishedResource = ""
     $script:HistoryAction = ""
+    $script:HistoryMessage = ""
     Get-ChildItem -LiteralPath $tempFolder -Filter "*_data.json" -File -ErrorAction SilentlyContinue | Remove-Item -Force
 }
 
@@ -115,6 +118,17 @@ function Invoke-ProjectUpdateRoute {
     $response = [PSCustomObject]@{}
     for ($routeRun = 0; $routeRun -lt 1; $routeRun++) {
         . (Join-Path -Path $repoRoot -ChildPath "apps/admin/backend/routes/projects/update.routes.ps1")
+    }
+}
+
+function Invoke-ProjectAddRoute {
+    $request = [PSCustomObject]@{
+        HttpMethod = "POST"
+        Url = [PSCustomObject]@{ AbsolutePath = "/projects" }
+    }
+    $response = [PSCustomObject]@{}
+    for ($routeRun = 0; $routeRun -lt 1; $routeRun++) {
+        . (Join-Path -Path $repoRoot -ChildPath "apps/admin/backend/routes/projects/add.routes.ps1")
     }
 }
 
@@ -142,6 +156,32 @@ function Invoke-ProjectDeleteRoute {
 try {
     Assert-True -Condition (Test-ProjectCodeFormat -ProjectCode "OPS-410") -Message "Expected a normal dossier number to be valid."
     Assert-True -Condition (-not (Test-ProjectCodeFormat -ProjectCode "OPS/410")) -Message "A slash must not be allowed in a dossier number."
+
+    Reset-ProjectScenario
+    $script:RequestPayload = [PSCustomObject]@{ projectCode = "P002"; sector = "Test"; admins = @(); backupAdmins = @() }
+    Invoke-ProjectAddRoute
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A project without a name should be created."
+    Assert-Equal -Expected "" -Actual $script:Projects[1].projectName -Message "An omitted project name should be stored as an empty string."
+    Assert-Equal -Expected "P002" -Actual $script:PublishedResource -Message "The nameless project code was not published."
+    Assert-Equal -Expected "Created a project with code <strong>P002</strong>." -Actual $script:HistoryMessage -Message "A nameless project used an unclear history message."
+
+    Reset-ProjectScenario
+    $script:RequestPayload = [PSCustomObject]@{ projectCode = "P003"; projectName = "   "; sector = ""; admins = @(); backupAdmins = @() }
+    Invoke-ProjectAddRoute
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A whitespace-only optional name should be accepted."
+    Assert-Equal -Expected "" -Actual $script:Projects[1].projectName -Message "A whitespace-only project name should be normalized."
+
+    Reset-ProjectScenario
+    $script:RequestPayload = [PSCustomObject]@{ projectCode = "BAD/CODE"; projectName = ""; sector = ""; admins = @(); backupAdmins = @() }
+    Invoke-ProjectAddRoute
+    Assert-Equal -Expected 400 -Actual $script:CapturedStatusCode -Message "An invalid dossier number should still be rejected when the name is blank."
+    Assert-Equal -Expected 0 -Actual $script:WriteCount -Message "Invalid project creation wrote project data."
+
+    Reset-ProjectScenario
+    $script:RequestPayload = [PSCustomObject]@{ projectCode = "P004"; projectName = ("N" * 201); sector = ""; admins = @(); backupAdmins = @() }
+    Invoke-ProjectAddRoute
+    Assert-Equal -Expected 400 -Actual $script:CapturedStatusCode -Message "An overlong optional project name should be rejected."
+    Assert-Equal -Expected 0 -Actual $script:WriteCount -Message "Overlong project creation wrote project data."
 
     Reset-ProjectScenario
     Set-TestEmployeeEntries -EmployeeCode "000000001" -Entries @(
@@ -173,6 +213,11 @@ try {
     Invoke-ProjectUpdateRoute
     Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A name-only project update should succeed even with entries."
     Assert-Equal -Expected "New name" -Actual $script:Projects[0].projectName -Message "Project name was not updated."
+
+    $script:RequestPayload = [PSCustomObject]@{ projectCode = "P001"; projectName = ""; sector = "Sector"; admins = @(); backupAdmins = @(); archived = $false }
+    Invoke-ProjectUpdateRoute
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "An existing project name should be clearable."
+    Assert-Equal -Expected "" -Actual $script:Projects[0].projectName -Message "The project name was not cleared."
 
     Reset-ProjectScenario
     $script:RequestPayload = [PSCustomObject]@{ projectCode = "P010"; projectName = "Renamed"; sector = ""; admins = @(); backupAdmins = @(); archived = $false }

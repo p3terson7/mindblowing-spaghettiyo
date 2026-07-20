@@ -635,6 +635,24 @@ function getEntryExactTimeLabel(entry) {
   return t("shared.exactClockIn", { time: exactStart });
 }
 
+function getProjectDisplayName(project) {
+  const projectCode = String(project && project.projectCode || "").trim();
+  const projectName = String(project && project.projectName || "").trim();
+  return projectName || projectCode;
+}
+
+function formatProjectCodeAndName(project) {
+  const projectCode = String(project && project.projectCode || "").trim();
+  const projectName = String(project && project.projectName || "").trim();
+  if (!projectCode) {
+    return projectName;
+  }
+  if (!projectName || projectName.toLocaleLowerCase() === projectCode.toLocaleLowerCase()) {
+    return projectCode;
+  }
+  return `${projectCode} | ${projectName}`;
+}
+
 function buildProjectOptions(projects, placeholder, selectedValue) {
   const options = Array.isArray(projects) ? projects : [];
   const placeholderText = placeholder || t("shared.project");
@@ -642,9 +660,8 @@ function buildProjectOptions(projects, placeholder, selectedValue) {
   return [`<option value="">${escapeHtml(placeholderText)}</option>`]
     .concat(options.map(project => {
       const code = String(project.projectCode || "");
-      const name = String(project.projectName || code);
       const selected = code === nextSelectedValue ? " selected" : "";
-      return `<option value="${escapeHtml(code)}"${selected}>${escapeHtml(code)} | ${escapeHtml(name)}</option>`;
+      return `<option value="${escapeHtml(code)}"${selected}>${escapeHtml(formatProjectCodeAndName(project))}</option>`;
     }))
     .join("");
 }
@@ -1313,6 +1330,11 @@ function translateAuditMessage(message) {
   match = rawMessage.match(/^Created a project named <strong>(.*?)<\/strong> with code <strong>(.*?)<\/strong>\.$/i);
   if (match) {
     return t("history.message.projectCreated", { name: match[1], code: match[2] });
+  }
+
+  match = rawMessage.match(/^Created a project with code <strong>(.*?)<\/strong>\.$/i);
+  if (match) {
+    return t("history.message.projectCreatedWithoutName", { code: match[1] });
   }
 
   match = rawMessage.match(/^Updated the project <strong>(.*?)<\/strong>\.$/i);

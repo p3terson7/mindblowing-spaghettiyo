@@ -948,13 +948,16 @@ function renderProjectSummaryCard(detail) {
   const maxValue = secondsToDurationLabel(timeStringToSeconds(detail.maxOvertime || "00:00:00"));
   const admins = Array.isArray(detail.admins) ? detail.admins : [];
   const backupAdmins = Array.isArray(detail.backupAdmins) ? detail.backupAdmins : [];
+  const projectName = String(detail.projectName || "").trim();
+  const projectTitle = getProjectDisplayName(detail);
+  const projectNote = [projectName ? detail.projectCode : "", detail.sector].filter(Boolean).join(" | ");
   const archivedBadge = detail.archived ? `<span class="status-badge rejected">${escapeHtml(t("projects.archived"))}</span>` : "";
   return `
     <article class="project-summary-card${currentProjectCode === detail.projectCode ? " is-active" : ""}${detail.archived ? " is-archived" : ""}" data-project-code="${escapeHtml(detail.projectCode)}">
       <div class="project-card-header">
         <div>
-          <div class="project-card-title">${escapeHtml(detail.projectName)}</div>
-          <div class="employee-card-note">${escapeHtml([detail.projectCode, detail.sector].filter(Boolean).join(" | "))}</div>
+          <div class="project-card-title">${escapeHtml(projectTitle)}</div>
+          ${projectNote ? `<div class="employee-card-note">${escapeHtml(projectNote)}</div>` : ""}
         </div>
         <div class="project-card-status-stack">
           ${archivedBadge}
@@ -1043,8 +1046,8 @@ function renderProjectDetail(detail) {
   container.innerHTML = `
     <article class="project-detail-card">
       <div class="project-detail-title">
-        <h4 class="m-0">${escapeHtml(detail.projectName || detail.projectCode)}</h4>
-        <span class="inline-code-pill">${escapeHtml(detail.projectCode)}</span>
+        <h4 class="m-0">${escapeHtml(getProjectDisplayName(detail))}</h4>
+        ${String(detail.projectName || "").trim() ? `<span class="inline-code-pill">${escapeHtml(detail.projectCode)}</span>` : ""}
         ${detail.archived ? `<span class="status-badge rejected">${escapeHtml(t("projects.archived"))}</span>` : ""}
       </div>
       <div class="project-card-meta">
@@ -1129,7 +1132,7 @@ async function submitProjectEditor() {
   const backupAdmins = getProjectEditorAssignmentCodes("backupAdmins");
   const existingProject = mode === "edit" ? getProjectByCode(originalProjectCode) : null;
 
-  if (!projectCode || !projectName || (mode === "edit" && !originalProjectCode)) {
+  if (!projectCode || (mode === "edit" && !originalProjectCode)) {
     setProjectEditorMessage(t("projects.codeAndNameRequired"), "danger");
     return;
   }
@@ -1200,7 +1203,11 @@ async function archiveProject(project) {
     return false;
   }
 
-  const confirmed = window.confirm(t("projects.archiveConfirm", { name: project.projectName, code: project.projectCode }));
+  const projectName = String(project.projectName || "").trim();
+  const confirmed = window.confirm(t(projectName ? "projects.archiveConfirm" : "projects.archiveConfirmCodeOnly", {
+    name: projectName,
+    code: project.projectCode,
+  }));
   if (!confirmed) {
     return false;
   }
@@ -1234,7 +1241,11 @@ async function deleteProject(project) {
     return false;
   }
 
-  const confirmed = window.confirm(t("projects.deleteConfirm", { name: project.projectName, code: project.projectCode }));
+  const projectName = String(project.projectName || "").trim();
+  const confirmed = window.confirm(t(projectName ? "projects.deleteConfirm" : "projects.deleteConfirmCodeOnly", {
+    name: projectName,
+    code: project.projectCode,
+  }));
   if (!confirmed) {
     return false;
   }

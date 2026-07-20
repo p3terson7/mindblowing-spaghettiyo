@@ -15,10 +15,6 @@
             $projectName = if ($payload.PSObject.Properties.Name -contains "projectName") { ([string]$payload.projectName).Trim() } else { "" }
             $requestedProjectCode = if ($payload.PSObject.Properties.Name -contains "projectCode") { ([string]$payload.projectCode).Trim() } else { $projectCode }
             $projectCodeChanged = ($requestedProjectCode -cne $projectCode)
-            if ([string]::IsNullOrWhiteSpace($projectName)) {
-                respondWithError $response 400 "Missing required field: projectName is required for update."
-                continue
-            }
             if ($projectName.Length -gt 200) {
                 respondWithError $response 400 "Project name cannot exceed 200 characters."
                 continue

@@ -288,12 +288,12 @@ function renderDashboardResponsibleProjects() {
   container.innerHTML = responsibleProjects.map(item => {
     const project = item.project;
     const projectCode = getDashboardProjectCode(project);
-    const projectName = String(project.projectName || projectCode);
+    const projectName = String(project.projectName || "").trim();
     const sector = String(project.sector || "").trim();
     return `
       <div class="project-scope-pill">
         <span class="inline-code-pill">${escapeHtml(projectCode)}</span>
-        <span class="project-scope-name">${escapeHtml(projectName)}</span>
+        ${projectName ? `<span class="project-scope-name">${escapeHtml(projectName)}</span>` : ""}
         ${sector ? `<span class="meta-pill">${escapeHtml(sector)}</span>` : ""}
         <span class="meta-pill">${escapeHtml(item.responsibility)}</span>
         ${isArchivedDashboardProject(project) ? `<span class="meta-pill">${escapeHtml(t("projects.archived"))}</span>` : ""}
