@@ -146,6 +146,10 @@ def build_story():
             "Astuce: ajoutez <font name='Courier'>[TEST - vos initiales]</font> dans les notes et les noms créés. Les tests marqués Optionnel demandent un droit ou une configuration particulière.",
             "note",
         ),
+        p(
+            "Pour comparer les compteurs et les totaux, terminez d'abord tout pointage ouvert. Une session active doit apparaître dans les sessions actives, mais pas encore dans les approbations en attente.",
+            "note",
+        ),
     ]
 
     story.extend(page_header("1 - Employé: démarrer et terminer un pointage"))
@@ -176,15 +180,15 @@ def build_story():
                 4,
                 "Session active après actualisation",
                 "Le pointage du test précédent est encore ouvert.",
-                "Actualisez la page, naviguez vers une autre section, puis revenez dans <b>Mes heures supp.</b>",
+                "Actualisez la page. Si le compte n'a pas d'autre section, déconnectez-vous puis reconnectez-vous avant de revenir dans <b>Mes heures supp.</b>",
                 "La même session est toujours active, sans doublon. La durée continue d'augmenter et les contrôles de démarrage sont remplacés par la fin du pointage.",
             ),
             test_case(
                 5,
                 "Fin du pointage et statut initial",
                 "Une session d'heures supplémentaires est active.",
-                "Cliquez sur <b>Terminer heures supp.</b>, confirmez, puis ouvrez l'entrée dans l'activité et le calendrier.",
-                "La session disparaît des sessions actives. L'entrée possède une fin, une durée positive et le statut <b>En attente</b>.",
+                "Cliquez sur <b>Terminer heures supp.</b>, confirmez, puis repérez l'entrée dans l'activité et le calendrier.",
+                "La session disparaît des sessions actives. L'entrée possède une heure de fin, une durée calculée à partir des heures arrondies et le statut <b>En attente</b>. La durée peut être de 00h 00 si le pointage est terminé dans le même quart d'heure arrondi.",
             ),
         ]
     )
@@ -197,7 +201,7 @@ def build_story():
                 6,
                 "Validation d'une entrée Divers",
                 "Le compte autorise le type <b>Divers</b> et aucun pointage n'est actif.",
-                "Choisissez Divers et essayez de démarrer sans raison. Ajoutez ensuite une raison, démarrez, puis essayez de terminer sans résumé avant d'en ajouter un.",
+                "Choisissez Divers et vérifiez que le démarrage reste désactivé sans raison. Ajoutez ensuite une raison, démarrez, puis vérifiez que la fin reste désactivée sans résumé avant d'en ajouter un.",
                 "La raison est exigée au démarrage et le résumé à la fin. Une fois terminée, l'entrée conserve les deux textes sans projet, code supp., paiement ni code raison.",
                 optional=True,
             ),
@@ -212,22 +216,22 @@ def build_story():
                 8,
                 "Mois vide, calendrier et heures exactes",
                 "Le compte possède au moins une entrée et un mois sans entrée est disponible.",
-                "Ouvrez d'abord le mois vide, puis un mois rempli. Ouvrez le détail d'une entrée dont l'heure exacte a été arrondie.",
-                "Le mois vide affiche un message clair. Le mois rempli place l'entrée à la bonne date et le détail distingue, lorsqu'elles diffèrent, la plage exacte de la plage arrondie.",
+                "Ouvrez d'abord le mois vide, puis un mois rempli. Dans le calendrier, repérez une entrée dont l'heure exacte diffère de l'heure arrondie.",
+                "Le mois vide affiche un message clair. Le mois rempli place l'entrée à la bonne date. Le calendrier affiche la plage arrondie et, lorsqu'elle diffère, une ligne séparée avec la plage exacte.",
             ),
             test_case(
                 9,
                 "Extraction mensuelle",
-                "Choisissez un mois contenant des entrées approuvées, en attente, rejetées ou Divers si possible.",
-                "Cliquez sur <b>Extraire le mois</b> et comparez les lignes et le total avec l'activité du même mois.",
-                "Le nouvel onglet montre le bon employé et le bon mois. Les entrées d'heures supp. approuvées ou en attente sont incluses; les entrées rejetées et Divers sont exclues.",
+                "Choisissez un mois contenant différents statuts, mais terminez d'abord tout pointage ouvert.",
+                "Cliquez sur <b>Extraire le mois</b>. Comparez chaque ligne admissible avec l'activité du même mois, puis additionnez seulement les lignes présentes dans l'extraction.",
+                "Le nouvel onglet montre le bon employé et le bon mois. Les entrées d'heures supp. approuvées ou en attente sont incluses; les entrées rejetées et Divers sont exclues. Le total correspond à la somme des lignes exportées.",
             ),
             test_case(
                 10,
                 "Retour d'approbation ou de rejet",
                 "Un superviseur a traité deux entrées de test, une approuvée et une rejetée avec une note.",
-                "Actualisez <b>Mes heures supp.</b>, filtrez par statut et ouvrez les deux entrées.",
-                "Les statuts <b>Approuvé</b> et <b>Rejeté</b> sont visibles. La note du superviseur apparaît sur l'entrée rejetée et les statistiques reflètent les nouveaux statuts.",
+                "Actualisez <b>Mes heures supp.</b>, filtrez par statut et repérez les deux entrées dans le calendrier.",
+                "Les statuts <b>Approuvé</b> et <b>Rejeté</b> sont visibles, la note apparaît sur l'entrée rejetée et les filtres isolent correctement chaque statut. Le total <b>Ce mois-ci</b> doit additionner seulement les heures approuvées et en attente, pas les heures rejetées.",
             ),
         ]
     )
@@ -241,7 +245,7 @@ def build_story():
                 "Passage de session active à approbation",
                 "Gardez un compte employé et un compte superviseur ouverts dans deux navigateurs.",
                 "Démarrez un pointage côté employé, actualisez la <b>Vue d'ensemble</b>, puis terminez le pointage et actualisez de nouveau.",
-                "Pendant le pointage, l'entrée apparaît dans <b>Sessions actives</b> et n'est pas approvable. Après la fin, elle quitte cette liste et apparaît dans les approbations en attente.",
+                "Pendant le pointage, l'entrée apparaît dans <b>Sessions actives</b>, n'est pas approvable et ne compte pas encore dans les approbations en attente. Après la fin, elle quitte cette liste et apparaît dans les approbations en attente.",
             ),
             test_case(
                 12,
@@ -260,7 +264,7 @@ def build_story():
             test_case(
                 14,
                 "Ajout manuel et validation des heures",
-                "Un employé et un projet de test modifiable sont disponibles.",
+                "Un employé et un projet de test modifiable sont disponibles. Si possible, utilisez un employé qui possède exactement une entrée afin de couvrir aussi ce cas limite.",
                 "Dans <b>Dossier employé</b>, ajoutez une entrée avec une fin égale ou antérieure au début. Corrigez ensuite avec 10:08 à 10:52, un projet et un paiement.",
                 "La première saisie est refusée. La saisie valide produit une plage arrondie de 10:15 à 10:45, une durée de 00h 30 et conserve la plage exacte de 10:08 à 10:52.",
             ),
@@ -311,7 +315,7 @@ def build_story():
                 20,
                 "Historique complet du parcours",
                 "Des ajouts, modifications, approbations, rejets et suppressions de test ont été faits.",
-                "Ouvrez <b>Historique</b>, essayez Tout, Ajoutées, Modifiées, Approuvées / rejetées et Supprimées, puis cherchez l'employé ou la note de test.",
+                "Dans <b>Révision</b>, descendez jusqu'à Historique. Essayez Tout, Ajoutées, Modifiées, Approuvées / rejetées et Supprimées, puis cherchez l'employé, l'action ou la date de test.",
                 "Chaque action apparaît dans la bonne catégorie avec l'auteur, l'employé concerné, la date et les détails utiles.",
             ),
         ]
@@ -339,15 +343,15 @@ def build_story():
                 23,
                 "Fiche employé, mois et projet",
                 "L'employé choisi possède des entrées sur plusieurs mois ou projets.",
-                "Comparez le résumé, le calendrier et la répartition par projet. Changez de mois, ouvrez un projet, puis ouvrez une entrée.",
-                "Les totaux, le calendrier et les entrées suivent l'employé, le mois et le projet sélectionnés. La note superviseur apparaît lorsqu'elle existe.",
+                "Comparez le résumé, le calendrier et la répartition par projet. Changez de mois, puis développez la section d'un projet. Essayez aussi le filtre Projet de la vue Personnel.",
+                "Le mois choisi change le total mensuel et le calendrier. Développer un projet affiche ses entrées sans filtrer à lui seul toute la fiche; le filtre Projet limite la fiche au projet choisi. La note superviseur apparaît lorsqu'elle existe.",
             ),
             test_case(
                 24,
-                "Droits de pointage et affectations",
+                "Droits de pointage et responsabilités d'un admin",
                 "Un super admin dispose d'un profil réservé aux essais.",
-                "Modifiez le rôle, les projets assignés ou les droits Heures supp. / Divers, enregistrez, puis reconnectez le profil de test.",
-                "Les changements restent après réouverture. Le profil voit seulement les projets et types de pointage autorisés. Remettez ensuite les valeurs originales.",
+                "Modifiez les droits <b>Heures supp. / Divers</b>. Si le profil possède le rôle Admin, modifiez aussi les projets dont il est responsable. Enregistrez, reconnectez le profil, puis remettez les valeurs originales.",
+                "Les droits Heures supp. / Divers déterminent les types de pointage disponibles. Pour un Admin, les affectations déterminent les projets qu'il supervise et peut modifier; elles ne limitent pas la liste des projets actifs proposés au pointage.",
                 optional=True,
             ),
             test_case(
@@ -369,8 +373,8 @@ def build_story():
                 26,
                 "Recherche, statistiques et navigation",
                 "Plusieurs projets contiennent des entrées.",
-                "Recherchez par numéro, nom, secteur et superviseur. Essayez Tout, 1 mois, 6 mois, 1 an et une période personnalisée, puis ouvrez un employé depuis la répartition.",
-                "Les cartes, graphiques et totaux suivent la recherche et la période. <b>Ouvrir dans Personnel</b> mène à la bonne fiche filtrée sur le projet.",
+                "Recherchez par numéro, nom, secteur et superviseur, puis effacez la recherche. Essayez ensuite Tout, 1 mois, 6 mois, 1 an et une période personnalisée. Ouvrez enfin un employé depuis la répartition.",
+                "La recherche filtre les cartes de projets. La période recalcule les heures, tendances, graphiques et le détail sélectionné; les totaux de <b>Tout</b> doivent être au moins aussi grands que ceux d'une période plus courte. <b>Ouvrir dans Personnel</b> ouvre la bonne fiche et développe le projet concerné.",
             ),
             test_case(
                 27,
@@ -384,16 +388,16 @@ def build_story():
                 28,
                 "Validations du projet",
                 "La fenêtre Ajouter projet est ouverte par un super admin.",
-                "Essayez un numéro vide, un caractère interdit, puis un numéro déjà utilisé. Dans Admins, cherchez aussi un employé sans rôle admin.",
-                "Chaque sauvegarde invalide est refusée sans créer de projet. Seuls les comptes Admin ou Super Admin peuvent être responsables ou remplaçants.",
+                "Essayez un numéro vide, un caractère interdit, puis un numéro déjà utilisé. Cherchez ensuite un employé normal, puis choisissez un Admin principal et un Admin remplaçant distincts. Enregistrez et rouvrez le projet.",
+                "Chaque sauvegarde invalide est refusée sans créer de projet. L'employé normal n'est pas sélectionnable. Les deux responsables autorisés sont conservés et apparaissent encore après réouverture.",
                 optional=True,
             ),
             test_case(
                 29,
-                "Projet utilisé: numéro verrouillé et suppression bloquée",
-                "Le projet de test contient maintenant au moins une entrée d'heures supp.",
-                "Essayez de changer son numéro de dossier, puis son nom. Essayez ensuite la suppression définitive et terminez par l'archivage.",
-                "Le numéro ne peut plus changer, mais le nom reste modifiable. La suppression définitive est refusée. L'archivage réussit, conserve le projet avec le badge Archivé et le retire des choix de nouveau pointage.",
+                "Projet utilisé: changement de numéro et suppression refusés",
+                "Le projet jetable contient au moins une entrée. Un projet archivé ne peut pas être réactivé depuis l'interface.",
+                "Essayez de changer son numéro de dossier, puis son nom. Essayez ensuite la suppression définitive. Archivez-le seulement à la fin du parcours.",
+                "Le numéro reste éditable, mais sa modification est refusée; le nom reste modifiable. La suppression définitive est refusée. Après archivage, le projet garde son historique et le badge Archivé, disparaît des nouveaux pointages et reste archivé.",
                 optional=True,
             ),
             test_case(
@@ -406,20 +410,12 @@ def build_story():
             test_case(
                 31,
                 "Aperçu d'une importation GC179",
-                "Le modèle GC179 et un fichier FDF d'essai sont disponibles.",
-                "Ouvrez <b>Importer GC179</b>, choisissez l'employé, le projet et le FDF, puis lancez seulement l'aperçu. Vérifiez identité, lignes valides, doublons et lignes ignorées.",
-                "L'aperçu bloque l'importation si l'identité ou les confirmations obligatoires ne sont pas valides. Aucun doublon n'est importé; n'importez que les lignes de test sélectionnées.",
+                "L'importation GC179 est activée, un compte Admin ou Super Admin est utilisé, un projet actif modifiable est disponible et un fichier FDF d'essai est prêt. Le modèle PDF n'est pas requis.",
+                "Ouvrez <b>Importer GC179</b>, choisissez l'employé, le projet et le FDF, puis lancez seulement l'aperçu. Vérifiez l'identité, les lignes valides, invalides, ignorées et en doublon. Ne confirmez pas l'importation.",
+                "L'aperçu n'écrit aucune entrée. Les doublons sont clairement marqués et non sélectionnables. Le bouton d'importation reste bloqué tant que l'identité, les lignes choisies ou les confirmations obligatoires ne sont pas valides.",
                 optional=True,
             ),
         ]
-    )
-    story.append(Spacer(1, 1 * mm))
-    story.append(p("Pour signaler un problème", "test_title"))
-    story.append(
-        p(
-            "Notez le numéro du test, le rôle utilisé, ce que vous avez fait, ce qui s'est passé, ce qui était attendu et le message d'erreur exact. Ajoutez une capture d'écran si elle aide.",
-            "intro",
-        )
     )
     return story
 
