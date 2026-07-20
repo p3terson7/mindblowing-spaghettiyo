@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the one-page French SAPHIR test checklist."""
+"""Generate the plain French SAPHIR functional demo guide."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     HRFlowable,
-    KeepTogether,
+    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -21,14 +21,12 @@ from reportlab.platypus import (
 )
 
 
-PAGE_WIDTH, _ = A4
+PAGE_WIDTH, PAGE_HEIGHT = A4
 MARGIN = 20 * mm
 CONTENT_WIDTH = PAGE_WIDTH - (2 * MARGIN)
-
-INK = colors.HexColor("#1D2939")
-MUTED = colors.HexColor("#667085")
-BLUE = colors.HexColor("#175CD3")
-LINE = colors.HexColor("#D0D5DD")
+BLACK = colors.black
+GRAY = colors.HexColor("#555555")
+LIGHT_GRAY = colors.HexColor("#BBBBBB")
 
 
 def make_styles():
@@ -38,70 +36,66 @@ def make_styles():
             "title",
             parent=base["Title"],
             fontName="Helvetica-Bold",
-            fontSize=21,
-            leading=25,
-            textColor=INK,
-            spaceAfter=2.5 * mm,
-        ),
-        "lead": ParagraphStyle(
-            "lead",
-            parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=10.2,
-            leading=14.5,
-            textColor=MUTED,
+            fontSize=18,
+            leading=22,
+            textColor=BLACK,
             spaceAfter=3 * mm,
         ),
-        "number": ParagraphStyle(
-            "number",
-            parent=base["Normal"],
-            fontName="Helvetica-Bold",
-            fontSize=13,
-            leading=16,
-            textColor=BLUE,
+        "intro": ParagraphStyle(
+            "intro",
+            parent=base["BodyText"],
+            fontName="Helvetica",
+            fontSize=10,
+            leading=14,
+            textColor=BLACK,
+            spaceAfter=2.5 * mm,
         ),
-        "heading": ParagraphStyle(
-            "heading",
+        "section": ParagraphStyle(
+            "section",
+            parent=base["Heading1"],
+            fontName="Helvetica-Bold",
+            fontSize=14,
+            leading=17,
+            textColor=BLACK,
+            spaceBefore=1 * mm,
+            spaceAfter=3 * mm,
+        ),
+        "subsection": ParagraphStyle(
+            "subsection",
             parent=base["Heading2"],
             fontName="Helvetica-Bold",
-            fontSize=12.2,
-            leading=15.5,
-            textColor=INK,
-            spaceAfter=1.2 * mm,
+            fontSize=11.5,
+            leading=14,
+            textColor=BLACK,
+            spaceBefore=2.5 * mm,
+            spaceAfter=1.5 * mm,
         ),
-        "body": ParagraphStyle(
-            "body",
-            parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=9.4,
-            leading=13.3,
-            textColor=INK,
-        ),
-        "check": ParagraphStyle(
-            "check",
-            parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=9.35,
-            leading=13.1,
-            textColor=INK,
-        ),
-        "box": ParagraphStyle(
-            "box",
+        "step_number": ParagraphStyle(
+            "step_number",
             parent=base["Normal"],
-            fontName="Courier-Bold",
-            fontSize=8.8,
-            leading=12,
-            textColor=MUTED,
+            fontName="Helvetica-Bold",
+            fontSize=9.5,
+            leading=13.5,
+            textColor=BLACK,
         ),
-        "expected": ParagraphStyle(
-            "expected",
+        "step": ParagraphStyle(
+            "step",
             parent=base["BodyText"],
             fontName="Helvetica",
-            fontSize=9.2,
-            leading=13,
-            textColor=colors.HexColor("#344054"),
-            leftIndent=7 * mm,
-            spaceBefore=1.2 * mm,
+            fontSize=9.5,
+            leading=13.5,
+            textColor=BLACK,
+        ),
+        "note": ParagraphStyle(
+            "note",
+            parent=base["BodyText"],
+            fontName="Helvetica-Oblique",
+            fontSize=8.8,
+            leading=12.2,
+            textColor=GRAY,
+            leftIndent=6 * mm,
+            spaceBefore=2 * mm,
+            spaceAfter=2 * mm,
         ),
         "footer": ParagraphStyle(
             "footer",
@@ -109,7 +103,7 @@ def make_styles():
             fontName="Helvetica",
             fontSize=7.5,
             leading=9,
-            textColor=MUTED,
+            textColor=GRAY,
         ),
     }
 
@@ -117,136 +111,178 @@ def make_styles():
 STYLES = make_styles()
 
 
-def paragraph(text: str, style: str = "body") -> Paragraph:
+def p(text: str, style: str = "step") -> Paragraph:
     return Paragraph(text, STYLES[style])
 
 
-def checklist_line(text: str):
-    table = Table(
-        [[paragraph("[ ]", "box"), paragraph(text, "check")]],
-        colWidths=[8 * mm, CONTENT_WIDTH - 18 * mm],
-    )
-    table.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 1.5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
-            ]
+def steps(items: list[str]):
+    flowables = []
+    for number, item in enumerate(items, 1):
+        row = Table(
+            [[p(f"{number}.", "step_number"), p(item, "step")]],
+            colWidths=[8 * mm, CONTENT_WIDTH - 8 * mm],
         )
-    )
-    return table
-
-
-def test_section(number: int, title: str, checks: list[str], expected: str):
-    heading = Table(
-        [[paragraph(f"{number}.", "number"), paragraph(title, "heading")]],
-        colWidths=[9 * mm, CONTENT_WIDTH - 9 * mm],
-    )
-    heading.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-            ]
+        row.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2.6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2.6),
+                ]
+            )
         )
-    )
+        flowables.append(row)
+    return flowables
 
-    content = [heading]
-    content.extend(checklist_line(item) for item in checks)
-    content.append(paragraph(f"<b>Résultat attendu:</b> {expected}", "expected"))
-    content.append(Spacer(1, 2.5 * mm))
-    content.append(HRFlowable(width="100%", thickness=0.45, color=LINE, spaceBefore=0, spaceAfter=3.5 * mm))
-    return KeepTogether(content)
+
+def page_header(title: str):
+    return [
+        p(title, "section"),
+        HRFlowable(width="100%", thickness=0.7, color=BLACK, spaceBefore=0, spaceAfter=4 * mm),
+    ]
 
 
 def draw_page(canvas, doc):
+    page_number = canvas.getPageNumber()
     canvas.saveState()
-    canvas.setTitle("SAPHIR - vérifications rapides")
+    canvas.setTitle("SAPHIR - Parcours de démonstration")
     canvas.setAuthor("Équipe SAPHIR")
-    canvas.setSubject("Mini-checklist de validation SAPHIR")
-    canvas.setStrokeColor(LINE)
-    canvas.setLineWidth(0.45)
+    canvas.setSubject("Étapes de démonstration des fonctionnalités SAPHIR")
+
+    canvas.setStrokeColor(LIGHT_GRAY)
+    canvas.setLineWidth(0.4)
     canvas.line(MARGIN, 14 * mm, PAGE_WIDTH - MARGIN, 14 * mm)
     canvas.setFont("Helvetica", 7.5)
-    canvas.setFillColor(MUTED)
-    canvas.drawString(MARGIN, 9.5 * mm, "SAPHIR - mini-checklist de test")
-    canvas.drawRightString(PAGE_WIDTH - MARGIN, 9.5 * mm, "Juillet 2026")
+    canvas.setFillColor(GRAY)
+    canvas.drawString(MARGIN, 9.5 * mm, "SAPHIR - Parcours de démonstration")
+    canvas.drawRightString(PAGE_WIDTH - MARGIN, 9.5 * mm, f"Page {page_number} / 3")
     canvas.restoreState()
 
 
 def build_story():
     story = [
-        paragraph("SAPHIR - vérifications rapides", "title"),
-        paragraph(
-            "Pas besoin de refaire tout le parcours ni d'utiliser des comptes particuliers. Merci de vérifier seulement ces quelques cas faciles à manquer.",
-            "lead",
+        p("SAPHIR - Parcours de démonstration", "title"),
+        p(
+            "Faites les parcours permis par votre compte. Utilisez vos comptes habituels et créez seulement des éléments de test. Le but est simplement d'essayer les principales fonctionnalités de l'application.",
+            "intro",
         ),
-        HRFlowable(width="100%", thickness=1.1, color=BLUE, spaceBefore=0, spaceAfter=5 * mm),
+        p(
+            "Pour faciliter le ménage, ajoutez <font name='Courier'>[TEST - vos initiales]</font> dans les notes ou les noms des éléments créés.",
+            "note",
+        ),
+        Spacer(1, 2 * mm),
     ]
 
-    story.append(
-        test_section(
-            1,
-            "Premier pointage sans historique",
-            [
-                "Avec un employé qui n'a encore aucune entrée, démarrez des heures supplémentaires.",
-                "Rechargez la page pendant le pointage, puis arrêtez-le normalement.",
-            ],
-            "aucune erreur ne s'affiche, le pointage actif revient après le rechargement et la nouvelle entrée apparaît <b>En attente</b>.",
-        )
-    )
-
-    story.append(
-        test_section(
-            2,
-            "Projet sans nom",
-            [
-                "Ajoutez un projet avec un code unique, mais laissez le nom vide.",
-                "Vérifiez ce projet dans sa carte, ses détails et au moins un menu de sélection.",
-                "Modifiez-le une fois sans ajouter de nom, puis ajoutez un nom et enregistrez de nouveau.",
-            ],
-            "le projet est accepté et son code s'affiche seul. Aucun titre vide, <font name='Courier'>CODE | CODE</font> ou doublon visuel ne devrait apparaître.",
-        )
-    )
-
-    story.append(
-        test_section(
-            3,
-            "Libellé SIGRH / HRMIS",
-            [
-                "Ouvrez une fiche employé en français, puis la même fiche en anglais.",
-                "Essayez aussi de retrouver l'employé avec son identifiant dans la recherche.",
-            ],
-            "l'identifiant s'appelle <b>SIGRH</b> en français et <b>HRMIS</b> en anglais. « Code employé » et « Employee Code » ne devraient plus apparaître dans la fiche.",
-        )
-    )
-
-    story.append(
-        test_section(
-            4,
-            "Petit contrôle visuel",
-            [
-                "Ouvrez une entrée <b>En attente</b> en thème clair, puis en thème sombre.",
-                "Jetez aussi un coup d'oeil aux cartes du tableau de bord.",
-            ],
-            "le statut reste facile à repérer sans colorer agressivement toute la ligne, et aucune décoration ronde inutile ne devrait apparaître dans les cartes.",
-        )
-    )
-
+    story.extend(page_header("Parcours 1 - Employé"))
     story.extend(
-        [
-            paragraph("Si quelque chose coince", "heading"),
-            paragraph(
-                "Notez simplement la vue, l'étape, ce que vous attendiez et ce qui s'est passé. Une capture d'écran aide, mais pas besoin d'un long rapport.",
-                "body",
-            ),
-        ]
+        steps(
+            [
+                "Connectez-vous, puis ouvrez <b>Mes heures supp.</b>",
+                "Si le choix est offert, sélectionnez la catégorie <b>Heures supp.</b>",
+                "Choisissez un projet, un code d'heures supplémentaires, un mode de paiement et une raison.",
+                "Cliquez sur <b>Débuter heures supp.</b>, vérifiez le résumé présenté, puis confirmez.",
+                "Vérifiez que l'entrée est affichée comme active. Rechargez la page et confirmez qu'elle est toujours en cours.",
+                "Cliquez sur <b>Terminer heures supp.</b>, puis confirmez.",
+                "Retrouvez l'entrée dans l'activité et dans le calendrier. Vérifiez la plage horaire, la durée et le statut <b>En attente</b>.",
+                "Essayez les filtres de période, de projet et de statut. Vérifiez que la liste, les totaux et les statistiques changent avec les filtres.",
+                "Choisissez un mois qui contient des entrées et cliquez sur <b>Extraire le mois</b>. Vérifiez que le rapport s'ouvre dans un nouvel onglet.",
+            ]
+        )
+    )
+    story.append(p("Optionnel - si votre compte permet le type Divers", "subsection"))
+    story.extend(
+        steps(
+            [
+                "Choisissez <b>Divers</b>, écrivez une courte raison et démarrez l'entrée.",
+                "Terminez l'entrée en ajoutant un résumé du travail effectué.",
+                "Vérifiez que l'entrée apparaît dans votre activité sans projet, code, paiement ou code de raison.",
+            ]
+        )
+    )
+    story.append(PageBreak())
+
+    story.extend(page_header("Parcours 2 - Superviseur"))
+    story.extend(
+        steps(
+            [
+                "Connectez-vous avec un compte admin et ouvrez <b>Vue d'ensemble</b>.",
+                "Vérifiez les compteurs d'heures, les approbations en attente, les sessions actives et le nombre d'employés suivis.",
+                "Consultez les projets supervisés, la file des approbations, les sessions actives et l'activité récente.",
+                "Dans <b>Dossier employé</b>, cherchez une personne par son nom ou son SIGRH, puis ouvrez sa chronologie.",
+                "Filtrez la chronologie par projet et par période.",
+                "Ouvrez une entrée de test en attente et cliquez sur <b>Approuver</b>. Vérifiez que son statut change.",
+                "Ouvrez une autre entrée de test, cliquez sur <b>Rejeter</b> et ajoutez une note de superviseur.",
+                "Modifiez une entrée de test: changez une heure ou une option, enregistrez et vérifiez le résultat.",
+                "Ajoutez manuellement une entrée de test pour l'employé sélectionné.",
+                "Supprimez uniquement une entrée créée pour ce test et ajoutez la note demandée.",
+            ]
+        )
+    )
+
+    story.append(p("Révision et historique", "subsection"))
+    story.extend(
+        steps(
+            [
+                "Ouvrez <b>Révision</b> et passez entre les listes <b>En attente</b>, <b>Rejeté</b> et <b>Approuvé</b>.",
+                "Filtrez par employé, projet, dates et recherche. Vérifiez que les résultats correspondent aux filtres.",
+                "Approuvez une entrée depuis cette vue. Utilisez l'approbation en lot seulement sur des entrées prévues pour le test.",
+                "Ouvrez <b>Historique</b> et retrouvez les approbations, rejets, modifications, ajouts et suppressions effectués pendant le parcours.",
+            ]
+        )
+    )
+    story.append(p("Un admin peut consulter largement, mais les actions de modification doivent respecter les projets dont il est responsable ou remplaçant.", "note"))
+    story.append(PageBreak())
+
+    story.extend(page_header("Parcours 3 - Personnel et projets"))
+    story.append(p("Personnel", "subsection"))
+    story.extend(
+        steps(
+            [
+                "Ouvrez <b>Personnel</b> et cherchez des employés par nom, SIGRH, projet ou secteur.",
+                "Ouvrez une fiche employé et consultez le résumé, les statistiques, le calendrier, les projets et les entrées.",
+                "Changez de mois et de projet dans la fiche pour vérifier que les détails affichés suivent la sélection.",
+                "Si votre rôle le permet, ajoutez ou modifiez un employé de test. Vérifiez le rôle, les projets assignés et les types d'entrée autorisés.",
+                "Si nécessaire, testez l'archivage et la réactivation uniquement avec un profil créé pour la démonstration.",
+            ]
+        )
+    )
+
+    story.append(p("Projets", "subsection"))
+    story.extend(
+        steps(
+            [
+                "Ouvrez <b>Projets</b>, utilisez la recherche et changez la période affichée.",
+                "Ouvrez un projet existant et consultez ses statistiques, ses graphiques et sa répartition par employé.",
+                "Depuis la répartition, ouvrez une fiche employé filtrée sur ce projet.",
+                "Avec un super admin, ajoutez un projet de test avec un code unique, un secteur, un admin et un admin remplaçant. Le nom peut être laissé vide.",
+                "Vérifiez que le nouveau projet apparaît dans les cartes et les menus de sélection. Sans nom, son code doit servir de titre.",
+                "Modifiez le projet, ajoutez ou changez son nom et ses responsables, puis enregistrez.",
+                "À la fin, archivez ou supprimez uniquement le projet créé pour la démonstration.",
+            ]
+        )
+    )
+
+    story.append(p("Réglages et vérifications optionnelles", "subsection"))
+    story.extend(
+        steps(
+            [
+                "Ouvrez <b>Réglages</b>, changez la langue et le thème, puis rechargez la page pour vérifier que les choix sont conservés.",
+                "Vérifiez l'état du système si cette section est disponible.",
+                "Si GC179 est configuré, enregistrez l'en-tête de l'employé et essayez l'export d'un mois qui contient des entrées.",
+                "Déconnectez-vous et reconnectez-vous pour terminer le parcours.",
+            ]
+        )
+    )
+    story.append(Spacer(1, 3 * mm))
+    story.append(HRFlowable(width="100%", thickness=0.7, color=BLACK, spaceBefore=0, spaceAfter=3 * mm))
+    story.append(p("Pour signaler un problème", "subsection"))
+    story.append(
+        p(
+            "Indiquez le parcours et l'étape, votre rôle, ce que vous vouliez faire, ce qui s'est passé et, si possible, ajoutez une capture d'écran.",
+            "intro",
+        )
     )
     return story
 
@@ -260,9 +296,9 @@ def generate_pdf(output_path: Path):
         rightMargin=MARGIN,
         topMargin=18 * mm,
         bottomMargin=20 * mm,
-        title="SAPHIR - vérifications rapides",
+        title="SAPHIR - Parcours de démonstration",
         author="Équipe SAPHIR",
-        subject="Mini-checklist de validation SAPHIR",
+        subject="Étapes de démonstration des fonctionnalités SAPHIR",
         pageCompression=1,
     )
     document.build(build_story(), onFirstPage=draw_page, onLaterPages=draw_page)
