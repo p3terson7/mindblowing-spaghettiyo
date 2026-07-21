@@ -86,10 +86,10 @@
     "role": "superAdmin",
     "employeeCode": "000208784",
     "disabled": false,
-    "mustChangePassword": true,
+    "mustChangePassword": false,
     "createdAtUtc": "2026-07-09T17:41:45.906116Z",
-    "passwordSalt": "Q0VKafU8WDxXH0FQEOWL6Q==",
-    "passwordHash": "v5xgw7scII9Ox6+9+BhzGOGed32m9oB2ZAkaTLsNO+Y=",
+    "passwordSalt": "AhTkfxiEbE42EHuhoJbdkg==",
+    "passwordHash": "GZ4eONb4OFZW/gLDbvoIoVWNdWGLJn0wZ2M4UgpISco=",
     "passwordIterations": 120000,
     "passwordAlgorithm": "PBKDF2-HMACSHA1",
     "timeEntryTypes": [

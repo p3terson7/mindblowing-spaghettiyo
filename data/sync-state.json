@@ -1,11 +1,11 @@
 {
-  "version": 67,
-  "changeId": "a2bd1cc95008448baa03ed15fdcf9a5e",
-  "updatedAtUtc": "2026-07-14T00:46:13.4980570Z",
-  "category": "history",
-  "resource": "Peter Sarateanu",
+  "version": 83,
+  "changeId": "d9cf4fcad0ef4a79bc41f98caea06e6d",
+  "updatedAtUtc": "2026-07-17T17:38:34.9331780Z",
+  "category": "employee",
+  "resource": "000379070",
   "employeeDataEpoch": "b3c9ed4ec82b4aca84fbe94578eed8c7",
   "employeeDataRevisions": {
-    "000379070": "8640f1884e2a4aca979709d6c7207871"
+    "000379070": "d9cf4fcad0ef4a79bc41f98caea06e6d"
   }
 }

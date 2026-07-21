@@ -28,5 +28,85 @@
     "authorUsername": "admin",
     "authorRole": "superAdmin",
     "timestamp": "2026-07-13 20:46:13"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on June 29, 2026 from <strong>18h00</strong> to <strong>20h00</strong>.",
+    "employee": "Peter Sarateanu",
+    "targetEmployee": "Peter Sarateanu",
+    "author": "Joel Rodriguez",
+    "authorUsername": "000208784",
+    "authorRole": "superAdmin",
+    "timestamp": "2026-07-17 13:38:26"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on June 25, 2026 from <strong>15h30</strong> to <strong>18h15</strong>.",
+    "employee": "Peter Sarateanu",
+    "targetEmployee": "Peter Sarateanu",
+    "author": "Joel Rodriguez",
+    "authorUsername": "000208784",
+    "authorRole": "superAdmin",
+    "timestamp": "2026-07-17 13:38:28"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on June 25, 2026 from <strong>13h00</strong> to <strong>15h30</strong>.",
+    "employee": "Peter Sarateanu",
+    "targetEmployee": "Peter Sarateanu",
+    "author": "Joel Rodriguez",
+    "authorUsername": "000208784",
+    "authorRole": "superAdmin",
+    "timestamp": "2026-07-17 13:38:29"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on June 24, 2026 from <strong>11h30</strong> to <strong>18h00</strong>.",
+    "employee": "Peter Sarateanu",
+    "targetEmployee": "Peter Sarateanu",
+    "author": "Joel Rodriguez",
+    "authorUsername": "000208784",
+    "authorRole": "superAdmin",
+    "timestamp": "2026-07-17 13:38:29"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on June 22, 2026 from <strong>18h00</strong> to <strong>22h00</strong>.",
+    "employee": "Peter Sarateanu",
+    "targetEmployee": "Peter Sarateanu",
+    "author": "Joel Rodriguez",
+    "authorUsername": "000208784",
+    "authorRole": "superAdmin",
+    "timestamp": "2026-07-17 13:38:30"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on June 22, 2026 from <strong>10h30</strong> to <strong>13h00</strong>.",
+    "employee": "Peter Sarateanu",
+    "targetEmployee": "Peter Sarateanu",
+    "author": "Joel Rodriguez",
+    "authorUsername": "000208784",
+    "authorRole": "superAdmin",
+    "timestamp": "2026-07-17 13:38:33"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on June 18, 2026 from <strong>16h00</strong> to <strong>19h00</strong>.",
+    "employee": "Peter Sarateanu",
+    "targetEmployee": "Peter Sarateanu",
+    "author": "Joel Rodriguez",
+    "authorUsername": "000208784",
+    "authorRole": "superAdmin",
+    "timestamp": "2026-07-17 13:38:34"
+  },
+  {
+    "action": "Approved",
+    "message": "Approved an entry on June 18, 2026 from <strong>13h30</strong> to <strong>16h00</strong>.",
+    "employee": "Peter Sarateanu",
+    "targetEmployee": "Peter Sarateanu",
+    "author": "Joel Rodriguez",
+    "authorUsername": "000208784",
+    "authorRole": "superAdmin",
+    "timestamp": "2026-07-17 13:38:34"
   }
 ]
