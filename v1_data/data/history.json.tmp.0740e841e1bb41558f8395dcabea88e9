@@ -1,0 +1,102 @@
+[
+    {
+        "action":  "Delete",
+        "message":  "Deleted an entry on July 09, 2026 from \u003cstrong\u003e13h45\u003c/strong\u003e to \u003cstrong\u003e13h45\u003c/strong\u003e. Reason: test",
+        "employee":  "Peter Sarateanu",
+        "targetEmployee":  "Peter Sarateanu",
+        "author":  "Peter Sarateanu",
+        "authorUsername":  "000379070",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-09 13:43:00"
+    },
+    {
+        "action":  "Delete",
+        "message":  "Removed employee access for \u003cstrong\u003eAlexandre Roy\u003c/strong\u003e.",
+        "employee":  "Alexandre Roy",
+        "targetEmployee":  "Alexandre Roy",
+        "author":  "Peter Sarateanu",
+        "authorUsername":  "000379070",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-09 13:43:14"
+    },
+    {
+        "action":  "Archive",
+        "message":  "Archived the project \u003cstrong\u003eP001\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-09 15:27:27"
+    },
+    {
+        "action":  "Archive",
+        "message":  "Archived the project \u003cstrong\u003eP002\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-16 14:02:09"
+    },
+    {
+        "action":  "Archive",
+        "message":  "Archived the project \u003cstrong\u003eP003\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-16 14:02:22"
+    },
+    {
+        "action":  "Archive",
+        "message":  "Archived the project \u003cstrong\u003eP004\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-16 14:02:28"
+    },
+    {
+        "action":  "Add",
+        "message":  "Created a project named \u003cstrong\u003exxx\u003c/strong\u003e with code \u003cstrong\u003e2025-1352851\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-16 14:40:33"
+    },
+    {
+        "action":  "Add",
+        "message":  "Created an employee profile for \u003cstrong\u003eLangevin Mélanie\u003c/strong\u003e with code \u003cstrong\u003e000321928\u003c/strong\u003e.",
+        "employee":  "Langevin Mélanie",
+        "targetEmployee":  "Langevin Mélanie",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 09:32:20"
+    },
+    {
+        "action":  "Update",
+        "message":  "Updated the project \u003cstrong\u003e2025-1352851\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 09:32:20"
+    },
+    {
+        "action":  "Update",
+        "message":  "Updated the project \u003cstrong\u003e2025-1352851\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 09:32:45"
+    }
+]

@@ -1,0 +1,19 @@
+{
+    "entryId":  "ef37be66f1614d5994d7e1f24fd6b053",
+    "entryType":  "diverse",
+    "name":  "Peter Sarateanu",
+    "date":  "2026-07-21",
+    "punchIn":  "10:15:00",
+    "exactPunchIn":  "10:12:00",
+    "punchOut":  "10:15:00",
+    "exactPunchOut":  "10:15:00",
+    "overtime":  "00:00:00",
+    "status":  "pending",
+    "message":  "",
+    "projectCode":  "",
+    "overtimeCode":  "",
+    "paymentOption":  "",
+    "reasonCode":  "",
+    "diverseReason":  "REDESIGN",
+    "diverseSummary":  "J\u0027ai terminé mon travail"
+}

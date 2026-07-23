@@ -17,11 +17,11 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20260720-project-labels",
-  dashboard: "scripts/Views/DashboardView.js?v=20260720-project-labels",
-  approvals: "scripts/Views/ApprovalsView.js?v=20260720-project-labels",
-  history: "scripts/Views/HistoryView.js?v=20260713-performance",
-  projects: "scripts/Views/ProjectsView.js?v=20260720-project-labels",
+  employees: "scripts/Views/EmployeesView.js?v=20260722-button-busy",
+  dashboard: "scripts/Views/DashboardView.js?v=20260722-button-busy",
+  approvals: "scripts/Views/ApprovalsView.js?v=20260722-button-busy",
+  history: "scripts/Views/HistoryView.js?v=20260722-button-busy",
+  projects: "scripts/Views/ProjectsView.js?v=20260722-button-busy",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
@@ -677,19 +677,25 @@ function renderSettingsHealth(payload) {
   `;
 }
 
-async function loadSettingsHealth() {
+async function loadSettingsHealth(triggerButton) {
   if (!getSessionToken()) {
     return;
   }
 
-  renderSettingsHealthLoading();
-  try {
-    const response = await fetch(apiUrl + "health");
-    const payload = await parseResponse(response);
-    renderSettingsHealth(payload);
-  } catch (error) {
-    renderSettingsHealthError(error.message || t("settings.healthUnavailable"));
-  }
+  const loadHealth = async () => {
+    renderSettingsHealthLoading();
+    try {
+      const response = await fetch(apiUrl + "health");
+      const payload = await parseResponse(response);
+      renderSettingsHealth(payload);
+    } catch (error) {
+      renderSettingsHealthError(error.message || t("settings.healthUnavailable"));
+    }
+  };
+
+  return triggerButton
+    ? runButtonAction(triggerButton, loadHealth, { key: "settings-health" })
+    : loadHealth();
 }
 
 function updateSessionSummary() {
@@ -876,7 +882,7 @@ function updateStoredUserGc179Profile(profile) {
   setStoredSession(session);
 }
 
-async function openSelfSettingsForm() {
+async function openSelfSettingsForm(triggerButton) {
   const user = getCurrentUser();
   if (!user) {
     return;
@@ -888,21 +894,31 @@ async function openSelfSettingsForm() {
   setSelfGc179ProfileForm(user.gc179Profile, user.displayName || user.username || "");
   const modal = new bootstrap.Modal(document.getElementById("selfSettingsModal"));
   modal.show();
-  loadSettingsHealth();
 
-  try {
-    const response = await fetch(apiUrl + "self/profile");
-    const profile = await parseResponse(response);
-    if (profile && profile.gc179Profile) {
-      updateStoredUserGc179Profile(profile.gc179Profile);
-      setSelfGc179ProfileForm(profile.gc179Profile, profile.displayName || user.displayName || user.username || "");
+  const loadProfile = async () => {
+    try {
+      const response = await fetch(apiUrl + "self/profile");
+      const profile = await parseResponse(response);
+      if (profile && profile.gc179Profile) {
+        updateStoredUserGc179Profile(profile.gc179Profile);
+        setSelfGc179ProfileForm(profile.gc179Profile, profile.displayName || user.displayName || user.username || "");
+      }
+    } catch (error) {
+      setSelfGc179ProfileMessage(error.message || t("self.gc179ProfileError"), "warning");
     }
-  } catch (error) {
-    setSelfGc179ProfileMessage(error.message || t("self.gc179ProfileError"), "warning");
-  }
+  };
+
+  const loadSettings = () => Promise.all([
+    loadSettingsHealth(),
+    loadProfile(),
+  ]).then(() => undefined);
+
+  return triggerButton
+    ? runButtonAction(triggerButton, loadSettings, { key: "self-settings" })
+    : loadSettings();
 }
 
-async function submitSelfGc179Profile() {
+async function submitSelfGc179Profile(triggerButton) {
   const user = getCurrentUser();
   if (!user || !user.employeeCode) {
     return;
@@ -911,27 +927,32 @@ async function submitSelfGc179Profile() {
   setSelfGc179ProfileMessage("");
   const gc179Profile = getSelfGc179ProfileForm(user.displayName || user.username || "");
 
-  try {
-    const response = await fetch(apiUrl + "self/gc179-profile", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        gc179Profile,
-      }),
-    });
-    const result = await parseResponse(response);
-    const savedProfile = result && result.gc179Profile ? result.gc179Profile : gc179Profile;
-    updateStoredUserGc179Profile(savedProfile);
-    updateSessionSummary();
-    setSelfGc179ProfileForm(savedProfile, user.displayName || user.username || "");
-    bootstrap.Modal.getInstance(document.getElementById("selfSettingsModal")).hide();
-    showToast(t("self.gc179ProfileSaved"), "success");
-    markViewsStale(["selfView", "employeesView"]);
-  } catch (error) {
-    setSelfGc179ProfileMessage(error.message || t("self.gc179ProfileError"), "danger");
-  }
+  const saveProfile = async () => {
+    try {
+      const response = await fetch(apiUrl + "self/gc179-profile", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          gc179Profile,
+        }),
+      });
+      const result = await parseResponse(response);
+      const savedProfile = result && result.gc179Profile ? result.gc179Profile : gc179Profile;
+      updateStoredUserGc179Profile(savedProfile);
+      updateSessionSummary();
+      setSelfGc179ProfileForm(savedProfile, user.displayName || user.username || "");
+      bootstrap.Modal.getInstance(document.getElementById("selfSettingsModal")).hide();
+      showToast(t("self.gc179ProfileSaved"), "success");
+      markViewsStale(["selfView", "employeesView"]);
+    } catch (error) {
+      setSelfGc179ProfileMessage(error.message || t("self.gc179ProfileError"), "danger");
+    }
+  };
+
+  const saveButton = triggerButton || document.getElementById("selfGc179ProfileSaveButton");
+  return runButtonAction(saveButton, saveProfile, { key: "self-gc179-profile" });
 }
 
 function setRoleScopeVisibility(role, isVisible) {
@@ -1352,23 +1373,26 @@ async function submitLogin(event) {
     return;
   }
 
-  try {
-    const response = await appShellState.nativeFetch(apiUrl + "auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ username, password }),
-    });
+  const loginButton = event.submitter || document.getElementById("loginSubmitButton");
+  return runButtonAction(loginButton, async () => {
+    try {
+      const response = await appShellState.nativeFetch(apiUrl + "auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      });
 
-    const authResult = await parseResponse(response);
-    await applySession(authResult);
-  } catch (error) {
-    setAuthMessage(error.message || t("auth.signInError"), "danger");
-  }
+      const authResult = await parseResponse(response);
+      await applySession(authResult);
+    } catch (error) {
+      setAuthMessage(error.message || t("auth.signInError"), "danger");
+    }
+  }, { key: "auth-login" });
 }
 
-async function submitPasswordChange() {
+async function submitPasswordChange(triggerButton) {
   setAuthMessage("");
 
   const currentPassword = document.getElementById("passwordInput").value;
@@ -1385,49 +1409,52 @@ async function submitPasswordChange() {
     return;
   }
 
-  try {
-    const response = await fetch(apiUrl + "auth/change-password", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        currentPassword,
-        newPassword,
-      }),
-    });
+  const changeButton = triggerButton || document.getElementById("changePasswordButton");
+  return runButtonAction(changeButton, async () => {
+    try {
+      const response = await fetch(apiUrl + "auth/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      });
 
-    await parseResponse(response);
+      await parseResponse(response);
 
-    const session = getStoredSession();
-    if (session && session.user) {
-      session.user.mustChangePassword = false;
-      setStoredSession(session);
-    }
-
-    document.getElementById("newPasswordInput").value = "";
-    document.getElementById("confirmPasswordInput").value = "";
-    updateSessionSummary();
-    hideAuthOverlay();
-
-    if (!appShellState.initialized) {
-      await bootstrapApplication();
-    } else {
-      const user = getCurrentUser();
-      if (user) {
-        markAllowedViewsStale(user);
+      const session = getStoredSession();
+      if (session && session.user) {
+        session.user.mustChangePassword = false;
+        setStoredSession(session);
       }
-      await refreshActiveView({ force: true });
-      await pollSyncState();
-    }
 
-    showToast(t("auth.passwordUpdated"), "success");
-  } catch (error) {
-    setAuthMessage(error.message || t("auth.passwordUpdateError"), "danger");
-  }
+      document.getElementById("newPasswordInput").value = "";
+      document.getElementById("confirmPasswordInput").value = "";
+      updateSessionSummary();
+      hideAuthOverlay();
+
+      if (!appShellState.initialized) {
+        await bootstrapApplication();
+      } else {
+        const user = getCurrentUser();
+        if (user) {
+          markAllowedViewsStale(user);
+        }
+        await refreshActiveView({ force: true });
+        await pollSyncState();
+      }
+
+      showToast(t("auth.passwordUpdated"), "success");
+    } catch (error) {
+      setAuthMessage(error.message || t("auth.passwordUpdateError"), "danger");
+    }
+  }, { key: "auth-password-change" });
 }
 
-async function submitModalPasswordChange() {
+async function submitModalPasswordChange(triggerButton) {
   setModalPasswordMessage("");
 
   const currentPassword = document.getElementById("selfCurrentPasswordInput").value;
@@ -1444,61 +1471,67 @@ async function submitModalPasswordChange() {
     return;
   }
 
-  try {
-    const response = await fetch(apiUrl + "auth/change-password", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        currentPassword,
-        newPassword,
-      }),
-    });
-
-    await parseResponse(response);
-
-    const session = getStoredSession();
-    if (session && session.user) {
-      session.user.mustChangePassword = false;
-      setStoredSession(session);
-    }
-
-    updateSessionSummary();
-    resetModalPasswordForm();
-    showToast(t("auth.passwordUpdated"), "success");
-  } catch (error) {
-    setModalPasswordMessage(error.message || t("auth.passwordUpdateError"), "danger");
-  }
-}
-
-async function submitLogout() {
-  stopSyncPolling();
-
-  const token = getSessionToken();
-  if (token) {
+  const saveButton = triggerButton || document.getElementById("selfPasswordSaveButton");
+  return runButtonAction(saveButton, async () => {
     try {
-      await appShellState.nativeFetch(apiUrl + "auth/logout", {
+      const response = await fetch(apiUrl + "auth/change-password", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
       });
-    } catch (error) {
-      console.error("Unable to sign out cleanly:", error);
-    }
-  }
 
-  appShellState.lastSyncVersion = null;
-  appShellState.lastSyncChangeKey = null;
-  resetViewState();
-  clearClientLookupCaches();
-  clearStoredSession();
-  clearRoleUi();
-  updateSessionSummary();
-  setSyncStatus(t("status.signedOut"));
-  showAuthOverlay(false);
-  setAuthMessage(t("auth.signOutSuccess"), "success");
+      await parseResponse(response);
+
+      const session = getStoredSession();
+      if (session && session.user) {
+        session.user.mustChangePassword = false;
+        setStoredSession(session);
+      }
+
+      updateSessionSummary();
+      resetModalPasswordForm();
+      showToast(t("auth.passwordUpdated"), "success");
+    } catch (error) {
+      setModalPasswordMessage(error.message || t("auth.passwordUpdateError"), "danger");
+    }
+  }, { key: "self-password-change" });
+}
+
+async function submitLogout(triggerButton) {
+  const logoutButton = triggerButton || document.getElementById("appLogoutButton");
+  return runButtonAction(logoutButton, async () => {
+    stopSyncPolling();
+
+    const token = getSessionToken();
+    if (token) {
+      try {
+        await appShellState.nativeFetch(apiUrl + "auth/logout", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      } catch (error) {
+        console.error("Unable to sign out cleanly:", error);
+      }
+    }
+
+    appShellState.lastSyncVersion = null;
+    appShellState.lastSyncChangeKey = null;
+    resetViewState();
+    clearClientLookupCaches();
+    clearStoredSession();
+    clearRoleUi();
+    updateSessionSummary();
+    setSyncStatus(t("status.signedOut"));
+    showAuthOverlay(false);
+    setAuthMessage(t("auth.signOutSuccess"), "success");
+  }, { key: "auth-logout" });
 }
 
 async function restoreSession() {
@@ -1548,20 +1581,20 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("loginForm").addEventListener("submit", submitLogin);
   document.getElementById("selfPasswordForm").addEventListener("submit", event => {
     event.preventDefault();
-    submitModalPasswordChange();
+    submitModalPasswordChange(event.submitter || document.getElementById("selfPasswordSaveButton"));
   });
   document.getElementById("selfGc179ProfileForm").addEventListener("submit", event => {
     event.preventDefault();
-    submitSelfGc179Profile();
+    submitSelfGc179Profile(event.submitter || document.getElementById("selfGc179ProfileSaveButton"));
   });
-  document.getElementById("changePasswordButton").addEventListener("click", submitPasswordChange);
-  document.getElementById("appSettingsButton").addEventListener("click", openSelfSettingsForm);
-  document.getElementById("settingsHealthRefreshButton").addEventListener("click", loadSettingsHealth);
-  document.getElementById("selfPasswordSaveButton").addEventListener("click", submitModalPasswordChange);
-  document.getElementById("selfGc179ProfileSaveButton").addEventListener("click", submitSelfGc179Profile);
+  document.getElementById("changePasswordButton").addEventListener("click", event => submitPasswordChange(event.currentTarget));
+  document.getElementById("appSettingsButton").addEventListener("click", event => openSelfSettingsForm(event.currentTarget));
+  document.getElementById("settingsHealthRefreshButton").addEventListener("click", event => loadSettingsHealth(event.currentTarget));
+  document.getElementById("selfPasswordSaveButton").addEventListener("click", event => submitModalPasswordChange(event.currentTarget));
+  document.getElementById("selfGc179ProfileSaveButton").addEventListener("click", event => submitSelfGc179Profile(event.currentTarget));
   bindGc179PriFormatter(document.getElementById("selfGc179PriInput"));
   bindGc179PriFormatter(document.getElementById("employeeEditorGc179PriInput"));
-  document.getElementById("appLogoutButton").addEventListener("click", submitLogout);
+  document.getElementById("appLogoutButton").addEventListener("click", event => submitLogout(event.currentTarget));
   document.querySelectorAll("[data-settings-theme]").forEach(button => {
     button.addEventListener("click", () => applyAppTheme(button.getAttribute("data-settings-theme")));
   });

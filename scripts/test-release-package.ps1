@@ -80,8 +80,13 @@ try {
     $packagedBatchLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.bat"))
     $packagedSilentLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.vbs"))
     $packagedShortcutInstaller = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Install SAPHIR Shortcut.vbs"))
-    Assert-True -Condition ($packagedBatchLauncher.IndexOf('launch-cached-app.ps1" -Force', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged batch launcher must restart a previous SAPHIR instance"
-    Assert-True -Condition ($packagedSilentLauncher.IndexOf('scriptPath & " -Force"', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged silent launcher must restart a previous SAPHIR instance"
+    Assert-True -Condition ($packagedBatchLauncher.IndexOf('launch-cached-app.ps1"', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged batch launcher must call the cached application bootstrap"
+    Assert-True -Condition ($packagedBatchLauncher.IndexOf('launch-cached-app.ps1" -Force', [System.StringComparison]::Ordinal) -lt 0) -Message "packaged batch launcher must allow a healthy current version to remain warm"
+    Assert-True -Condition ($packagedSilentLauncher.IndexOf('& scriptPath, 0, True', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged silent launcher must call the cached application bootstrap"
+    Assert-True -Condition ($packagedSilentLauncher.IndexOf('scriptPath & " -Force"', [System.StringComparison]::Ordinal) -lt 0) -Message "packaged silent launcher must allow a healthy current version to remain warm"
+    Assert-True -Condition ($packagedSilentLauncher.IndexOf('GetResponseHeader("X-SAPHIR-App")', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged silent launcher must verify and reopen a warm SAPHIR instance before starting PowerShell"
+    Assert-True -Condition ($packagedSilentLauncher.IndexOf('GetResponseHeader("X-SAPHIR-Instance")', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged silent launcher must match the running instance token before reopening SAPHIR"
+    Assert-True -Condition ($packagedSilentLauncher.IndexOf('StrComp(expectedServerPath, metadataServerPath, vbTextCompare) = 0', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged silent launcher must bind the warm process to the active cached release"
     Assert-True -Condition ($packagedSilentLauncher.IndexOf('%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged launcher must avoid a PATH search on restricted workstations"
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('SAPHIR.lnk', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must create the stable SAPHIR desktop link"
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('localIconPath & ",0"', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must use the locally cached icon"
@@ -98,6 +103,9 @@ try {
     $actualHash = (Get-FileHash -LiteralPath $releasePath -Algorithm SHA256).Hash.ToLowerInvariant()
     Assert-Equal -Expected ([string]$manifest.sha256) -Actual $actualHash -Message "manifest checksum must match the release ZIP"
     Assert-Utf8Bom -Path (Join-Path -Path $distributionRoot -ChildPath "scripts/launch-cached-app.ps1") -Message "shared PowerShell bootstrap must include a UTF-8 BOM for Windows PowerShell 5.1"
+    foreach ($bootstrapLibrary in @("LocalAppCache.ps1", "RuntimeLayout.ps1", "ServerControl.ps1")) {
+        Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath ("scripts/lib/{0}" -f $bootstrapLibrary)) -PathType Leaf) -Message ("distribution must contain bootstrap library {0}" -f $bootstrapLibrary)
+    }
 
     Expand-Archive -LiteralPath $releasePath -DestinationPath $expandedRelease -Force
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/admin/backend/services/RouteDispatchService.ps1") -PathType Leaf) -Message "runtime must include required untracked application files"

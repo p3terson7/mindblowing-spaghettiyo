@@ -20,6 +20,29 @@ try {
     Set-Content -LiteralPath (Join-Path -Path $fixtureLib -ChildPath "ServerControl.ps1") -Value @'
 function Test-IsWindowsHost { return $false }
 
+function Get-ManagedServiceLaunchPlan {
+    param($IsRunning, $HasTrackedProcess, $IsExpectedManagedInstance, $FrontendIsAvailable, [switch]$Force)
+
+    if ($IsExpectedManagedInstance -and $FrontendIsAvailable -and -not $Force) {
+        return [PSCustomObject]@{ Action = "Reuse"; ForceRestart = $false }
+    }
+    if ($IsRunning -and -not $HasTrackedProcess -and -not $Force) {
+        return [PSCustomObject]@{ Action = "Block"; ForceRestart = $false }
+    }
+
+    $restartTrackedService = $HasTrackedProcess -and (-not $IsExpectedManagedInstance -or -not $FrontendIsAvailable)
+    $forceRestart = [bool]($Force -or $restartTrackedService)
+    return [PSCustomObject]@{
+        Action       = if ($forceRestart) { "Restart" } else { "Start" }
+        ForceRestart = $forceRestart
+    }
+}
+
+function Test-ManagedServiceHealthyForScript {
+    param($Name, $DisplayName, $ServerScript, $Port, $PidFile, $FrontendUrl, $TimeoutMilliseconds)
+    return $false
+}
+
 function Get-ServiceStatus {
     param($Name, $DisplayName, $Port, $PidFile)
     $isUntracked = $env:SAPHIR_TEST_STATUS_MODE -eq "untracked"
@@ -27,7 +50,7 @@ function Get-ServiceStatus {
         IsRunning       = $true
         PortOwnerId     = 999
         TrackedProcessId = if ($isUntracked) { $null } else { 123 }
-        Metadata        = if ($isUntracked) { $null } else { [PSCustomObject]@{ scriptPath = $env:SAPHIR_TEST_SERVER_SCRIPT } }
+        Metadata        = if ($isUntracked) { $null } else { [PSCustomObject]@{ scriptPath = $env:SAPHIR_TEST_SERVER_SCRIPT; instanceToken = "fixture-token" } }
     }
 }
 

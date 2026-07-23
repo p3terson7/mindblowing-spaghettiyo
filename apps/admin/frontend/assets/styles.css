@@ -1343,6 +1343,40 @@ code,
   box-shadow: none !important;
 }
 
+button.is-async-busy,
+.app-nav-link.is-async-busy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  cursor: progress;
+}
+
+button.is-async-busy::before,
+.app-nav-link.is-async-busy::before {
+  content: "";
+  width: 0.85em;
+  height: 0.85em;
+  flex: 0 0 0.85em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: asyncButtonSpin 700ms linear infinite;
+}
+
+@keyframes asyncButtonSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.is-async-busy::before,
+  .app-nav-link.is-async-busy::before {
+    animation: none;
+  }
+}
+
 .btn-primary,
 .btn-success,
 .btn-danger {

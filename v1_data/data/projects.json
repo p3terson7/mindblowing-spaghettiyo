@@ -1,0 +1,82 @@
+[
+    {
+        "projectCode":  "P001",
+        "projectName":  "Project Alpha",
+        "sector":  "",
+        "admins":  [
+
+                   ],
+        "backupAdmins":  [
+
+                         ],
+        "archived":  true
+    },
+    {
+        "projectCode":  "P002",
+        "projectName":  "Project Beta",
+        "sector":  "",
+        "admins":  [
+
+                   ],
+        "backupAdmins":  [
+
+                         ],
+        "archived":  true
+    },
+    {
+        "projectCode":  "P003",
+        "projectName":  "Project Gamma",
+        "sector":  "",
+        "admins":  [
+
+                   ],
+        "backupAdmins":  [
+
+                         ],
+        "archived":  true
+    },
+    {
+        "projectCode":  "P004",
+        "projectName":  "Project Charlie",
+        "sector":  "",
+        "admins":  [
+
+                   ],
+        "backupAdmins":  [
+
+                         ],
+        "archived":  true
+    },
+    {
+        "projectCode":  "2025-1352851",
+        "projectName":  "xxx",
+        "sector":  "UMECO",
+        "admins":  "000046386",
+        "backupAdmins":  null,
+        "archived":  false
+    },
+    {
+        "projectCode":  "2022-1596783",
+        "projectName":  "COINCIDENCE",
+        "sector":  "EEBA",
+        "admins":  [
+
+                   ],
+        "backupAdmins":  [
+
+                         ],
+        "archived":  false
+    },
+    {
+        "projectCode":  "2024-801645",
+        "projectName":  "xx",
+        "sector":  "EEBA",
+        "admins":  [
+
+                   ],
+        "backupAdmins":  [
+
+                         ],
+        "archived":  false
+    }
+]

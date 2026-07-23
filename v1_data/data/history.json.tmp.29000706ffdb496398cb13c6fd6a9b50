@@ -1,0 +1,202 @@
+[
+    {
+        "action":  "Delete",
+        "message":  "Deleted an entry on July 09, 2026 from \u003cstrong\u003e13h45\u003c/strong\u003e to \u003cstrong\u003e13h45\u003c/strong\u003e. Reason: test",
+        "employee":  "Peter Sarateanu",
+        "targetEmployee":  "Peter Sarateanu",
+        "author":  "Peter Sarateanu",
+        "authorUsername":  "000379070",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-09 13:43:00"
+    },
+    {
+        "action":  "Delete",
+        "message":  "Removed employee access for \u003cstrong\u003eAlexandre Roy\u003c/strong\u003e.",
+        "employee":  "Alexandre Roy",
+        "targetEmployee":  "Alexandre Roy",
+        "author":  "Peter Sarateanu",
+        "authorUsername":  "000379070",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-09 13:43:14"
+    },
+    {
+        "action":  "Archive",
+        "message":  "Archived the project \u003cstrong\u003eP001\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-09 15:27:27"
+    },
+    {
+        "action":  "Archive",
+        "message":  "Archived the project \u003cstrong\u003eP002\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-16 14:02:09"
+    },
+    {
+        "action":  "Archive",
+        "message":  "Archived the project \u003cstrong\u003eP003\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-16 14:02:22"
+    },
+    {
+        "action":  "Archive",
+        "message":  "Archived the project \u003cstrong\u003eP004\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-16 14:02:28"
+    },
+    {
+        "action":  "Add",
+        "message":  "Created a project named \u003cstrong\u003exxx\u003c/strong\u003e with code \u003cstrong\u003e2025-1352851\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-16 14:40:33"
+    },
+    {
+        "action":  "Add",
+        "message":  "Created an employee profile for \u003cstrong\u003eLangevin Mélanie\u003c/strong\u003e with code \u003cstrong\u003e000321928\u003c/strong\u003e.",
+        "employee":  "Langevin Mélanie",
+        "targetEmployee":  "Langevin Mélanie",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 09:32:20"
+    },
+    {
+        "action":  "Update",
+        "message":  "Updated the project \u003cstrong\u003e2025-1352851\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 09:32:20"
+    },
+    {
+        "action":  "Add",
+        "message":  "Created an employee profile for \u003cstrong\u003eCIVIL Bethleen\u003c/strong\u003e with code \u003cstrong\u003e000340566\u003c/strong\u003e.",
+        "employee":  "CIVIL Bethleen",
+        "targetEmployee":  "CIVIL Bethleen",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 09:34:35"
+    },
+    {
+        "action":  "Add",
+        "message":  "Created an employee profile for \u003cstrong\u003eBONNEAU Annie\u003c/strong\u003e with code \u003cstrong\u003e000221996\u003c/strong\u003e.",
+        "employee":  "BONNEAU Annie",
+        "targetEmployee":  "BONNEAU Annie",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 09:48:58"
+    },
+    {
+        "action":  "Update",
+        "message":  "Updated the employee profile for \u003cstrong\u003eLANGEVIN Mélanie\u003c/strong\u003e.",
+        "employee":  "LANGEVIN Mélanie",
+        "targetEmployee":  "LANGEVIN Mélanie",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 09:49:13"
+    },
+    {
+        "action":  "Add",
+        "message":  "Created a project named \u003cstrong\u003eCOINCIDENCE\u003c/strong\u003e with code \u003cstrong\u003e2022-1596783\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 10:35:58"
+    },
+    {
+        "action":  "Update",
+        "message":  "Updated the project \u003cstrong\u003e2022-1596783\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 10:36:16"
+    },
+    {
+        "action":  "Add",
+        "message":  "Created a project named \u003cstrong\u003exx\u003c/strong\u003e with code \u003cstrong\u003e2024-801645\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 10:44:11"
+    },
+    {
+        "action":  "Update",
+        "message":  "Updated the project \u003cstrong\u003e2025-1352851\u003c/strong\u003e.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Joel Rodriguez",
+        "authorUsername":  "000208784",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-17 10:44:37"
+    },
+    {
+        "action":  "Update",
+        "message":  "Reset the password for \u003cstrong\u003eJoel Rodriguez\u003c/strong\u003e and required a password change at next sign-in.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Peter Sarateanu",
+        "authorUsername":  "000379070",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-22 20:07:17"
+    },
+    {
+        "action":  "Update",
+        "message":  "Updated the project \u003cstrong\u003e2025-1352851\u003c/strong\u003e.",
+        "employee":  "Peter Sarateanu",
+        "targetEmployee":  "Peter Sarateanu",
+        "author":  "Peter Sarateanu",
+        "authorUsername":  "000379070",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-22 20:07:21"
+    },
+    {
+        "action":  "Update",
+        "message":  "Reset the password for \u003cstrong\u003eJoel Rodriguez\u003c/strong\u003e and required a password change at next sign-in.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Peter Sarateanu",
+        "authorUsername":  "000379070",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-22 20:07:27"
+    },
+    {
+        "action":  "Update",
+        "message":  "Reset the password for \u003cstrong\u003eJoel Rodriguez\u003c/strong\u003e and required a password change at next sign-in.",
+        "employee":  "Joel Rodriguez",
+        "targetEmployee":  "Joel Rodriguez",
+        "author":  "Peter Sarateanu",
+        "authorUsername":  "000379070",
+        "authorRole":  "superAdmin",
+        "timestamp":  "2026-07-22 20:07:34"
+    }
+]

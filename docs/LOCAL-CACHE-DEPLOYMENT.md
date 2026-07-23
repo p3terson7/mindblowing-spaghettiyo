@@ -51,7 +51,7 @@ Run the same command again from the updated repository. The publisher:
 3. copies the complete ZIP into `deployment\releases`;
 4. updates `deployment\current.json` last.
 
-Employees receive the update automatically the next time they launch SAPHIR. The previous local version remains available for automatic rollback if the new version cannot start.
+Employees receive the update automatically at the next cold launch, after **Stop SAPHIR** or a computer restart. Reopening an instance that is already healthy only brings its browser window back and intentionally skips the network check. The previous local version remains available for automatic rollback if the new version cannot start.
 
 ## Recommended rollout and rollback
 
@@ -69,8 +69,8 @@ Before giving the shortcut to everyone:
 4. Confirm that the icon was copied to `%LOCALAPPDATA%\SAPHIR\assets\SAPHIR.ico` rather than being loaded repeatedly from the network.
 5. Confirm that the first launch creates `%LOCALAPPDATA%\SAPHIR\versions\<release>`.
 6. Confirm that the cached release has no `data` folder.
-7. Confirm that a second launch does not download the release again.
-8. Publish one test update and confirm that the backend restarts on the new cached version.
+7. Confirm that a second launch skips the network release check, does not download the release again, and keeps the healthy backend process running with the same PID.
+8. Publish one test update, run **Stop SAPHIR**, then launch SAPHIR again and confirm that the backend starts on the new cached version.
 9. Verify that `Stop SAPHIR.vbs` stops the cached backend.
 
 This Windows pilot is mandatory: automated tests on another operating system cannot verify your organization’s SMB, antivirus, AppLocker, shortcut and PowerShell 5.1 policies.

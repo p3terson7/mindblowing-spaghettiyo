@@ -238,12 +238,14 @@ document.getElementById("historyTabs").addEventListener("shown.bs.tab", event =>
   }
 });
 
-document.getElementById("refreshHistoryBtn").addEventListener("click", () => {
-  if (typeof loadReviewView === "function") {
-    loadReviewView();
-    return;
-  }
+document.getElementById("refreshHistoryBtn").addEventListener("click", async event => {
+  await runButtonAction(event.currentTarget, async () => {
+    if (typeof loadReviewView === "function") {
+      await loadReviewView();
+      return;
+    }
 
-  fetchHistory();
+    await fetchHistory();
+  }, { key: "review-refresh" });
 });
 updateHistoryTabLabels([], [], [], [], []);

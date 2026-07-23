@@ -1400,7 +1400,10 @@ document.getElementById("projectsSummaryContainer").addEventListener("click", ev
     event.stopPropagation();
     const project = getProjectByCode(editButton.getAttribute("data-project-code"));
     if (project) {
-      openProjectEditorModal("edit", project).catch(error => {
+      runButtonAction(editButton, () => openProjectEditorModal("edit", project), {
+        key: "project-editor-open",
+        disableWhileRunning: () => document.querySelectorAll("#addProjectButton, .project-edit-button"),
+      }).catch(error => {
         console.error("Unable to open project editor:", error);
         showToast(t("projects.unableToLoad"), "error");
       });
@@ -1434,7 +1437,12 @@ document.getElementById("projectDetailContainer").addEventListener("click", even
   const employeeCode = navigatorButton.getAttribute("data-employee-code");
   const projectCode = navigatorButton.getAttribute("data-project-code");
   if (typeof window.openPeopleProjectFilter === "function") {
-    window.openPeopleProjectFilter(employeeCode, projectCode);
+    runButtonAction(navigatorButton, () => window.openPeopleProjectFilter(employeeCode, projectCode), {
+      key: "open-employee",
+    }).catch(error => {
+      console.error("Unable to open employee file:", error);
+      showToast(t("employees.loadError"), "error");
+    });
   }
 });
 
@@ -1449,51 +1457,80 @@ document.getElementById("projectQuickRangeButtons").addEventListener("click", ev
     return;
   }
 
-  setProjectRange(nextRange);
+  runButtonAction(rangeButton, () => setProjectRange(nextRange), {
+    key: "projects-filter-refresh",
+  }).catch(error => {
+    console.error("Unable to change the project range:", error);
+    showToast(t("projects.unableToLoad"), "error");
+  });
 });
-document.getElementById("projectApplyCustomRangeButton").addEventListener("click", () => {
+document.getElementById("projectApplyCustomRangeButton").addEventListener("click", event => {
   const startDate = document.getElementById("projectStartDate").value;
   const endDate = document.getElementById("projectEndDate").value;
   if (startDate && endDate && startDate > endDate) {
     showToast(t("filters.invalidRange"), "error");
     return;
   }
-  projectsViewState.customRange.startDate = startDate;
-  projectsViewState.customRange.endDate = endDate;
-  currentProjectFilter = getMatchingPresetProjectRange(startDate, endDate);
-  syncProjectRangeButtons();
-  refreshProjectsView();
+
+  runButtonAction(event.currentTarget, async () => {
+    projectsViewState.customRange.startDate = startDate;
+    projectsViewState.customRange.endDate = endDate;
+    currentProjectFilter = getMatchingPresetProjectRange(startDate, endDate);
+    syncProjectRangeButtons();
+    await refreshProjectsView();
+  }, { key: "projects-filter-refresh" }).catch(error => {
+    console.error("Unable to apply the custom project range:", error);
+    showToast(t("projects.unableToLoad"), "error");
+  });
 });
-document.getElementById("projectClearCustomRangeButton").addEventListener("click", () => {
-  projectsViewState.customRange.startDate = "";
-  projectsViewState.customRange.endDate = "";
-  setProjectRange("6M");
+document.getElementById("projectClearCustomRangeButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, async () => {
+    projectsViewState.customRange.startDate = "";
+    projectsViewState.customRange.endDate = "";
+    await setProjectRange("6M");
+  }, { key: "projects-filter-refresh" }).catch(error => {
+    console.error("Unable to reset the project range:", error);
+    showToast(t("projects.unableToLoad"), "error");
+  });
 });
-document.getElementById("addProjectButton").addEventListener("click", () => {
-  openProjectEditorModal("create").catch(error => {
+document.getElementById("addProjectButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, () => openProjectEditorModal("create"), {
+    key: "project-editor-open",
+    disableWhileRunning: () => document.querySelectorAll("#addProjectButton, .project-edit-button"),
+  }).catch(error => {
     console.error("Unable to open project editor:", error);
     showToast(t("projects.unableToLoad"), "error");
   });
 });
-document.getElementById("projectEditorRemoveButton").addEventListener("click", async () => {
-  const project = getProjectByCode(document.getElementById("projectEditorOriginalCodeInput").value.trim());
-  const archived = await archiveProject(project);
-  if (archived) {
-    const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
-    if (modal) {
-      modal.hide();
+document.getElementById("projectEditorRemoveButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, async () => {
+    const project = getProjectByCode(document.getElementById("projectEditorOriginalCodeInput").value.trim());
+    const archived = await archiveProject(project);
+    if (archived) {
+      const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
+      if (modal) {
+        modal.hide();
+      }
     }
-  }
+  }, { key: "project-editor-mutation" }).catch(error => {
+    console.error("Error archiving project:", error);
+    showToast(error.message || t("projects.archiveError"), "error");
+  });
 });
-document.getElementById("projectEditorDeleteButton").addEventListener("click", async () => {
-  const project = getProjectByCode(document.getElementById("projectEditorOriginalCodeInput").value.trim());
-  const deleted = await deleteProject(project);
-  if (deleted) {
-    const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
-    if (modal) {
-      modal.hide();
+document.getElementById("projectEditorDeleteButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, async () => {
+    const project = getProjectByCode(document.getElementById("projectEditorOriginalCodeInput").value.trim());
+    const deleted = await deleteProject(project);
+    if (deleted) {
+      const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
+      if (modal) {
+        modal.hide();
+      }
     }
-  }
+  }, { key: "project-editor-mutation" }).catch(error => {
+    console.error("Error deleting project:", error);
+    showToast(error.message || t("projects.deleteError"), "error");
+  });
 });
 document.getElementById("projectEditorAdminsSearchInput").addEventListener("input", event => {
   projectsViewState.editorAssignments.adminsSearch = event.target.value || "";
@@ -1533,10 +1570,23 @@ document.getElementById("projectEditorBackupAdminsList").addEventListener("chang
     projectsViewState.editorAssignments.backupAdmins.delete(employeeCode);
   }
 });
-document.getElementById("projectEditorSaveButton").addEventListener("click", submitProjectEditor);
+document.getElementById("projectEditorSaveButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, submitProjectEditor, {
+    key: "project-editor-mutation",
+  }).catch(error => {
+    console.error("Error saving project:", error);
+    setProjectEditorMessage(error.message || t("projects.updateError"), "danger");
+  });
+});
 document.getElementById("projectEditorForm").addEventListener("submit", event => {
   event.preventDefault();
-  submitProjectEditor();
+  const saveButton = document.getElementById("projectEditorSaveButton");
+  runButtonAction(saveButton, submitProjectEditor, {
+    key: "project-editor-mutation",
+  }).catch(error => {
+    console.error("Error saving project:", error);
+    setProjectEditorMessage(error.message || t("projects.updateError"), "danger");
+  });
 });
 
 window.addEventListener("app:theme-changed", () => {

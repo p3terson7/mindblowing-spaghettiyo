@@ -7,6 +7,173 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+const asyncButtonActions = new Map();
+const asyncButtonStates = new WeakMap();
+const asyncDisabledControlStates = new WeakMap();
+
+function getAsyncButtonActionKey(button, options) {
+  if (options && options.key != null && String(options.key).trim()) {
+    return `key:${String(options.key).trim()}`;
+  }
+
+  if (button && button.id) {
+    return `button:${button.id}`;
+  }
+
+  return button || null;
+}
+
+function setAsyncButtonBusy(button) {
+  if (!button || typeof button.setAttribute !== "function") {
+    return null;
+  }
+
+  const existingState = asyncButtonStates.get(button);
+  if (existingState) {
+    existingState.count += 1;
+    return existingState;
+  }
+
+  const state = {
+    count: 1,
+    disabled: Boolean(button.disabled),
+    ariaBusy: button.getAttribute("aria-busy"),
+    ariaDisabled: button.getAttribute("aria-disabled"),
+  };
+  asyncButtonStates.set(button, state);
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  button.setAttribute("aria-disabled", "true");
+  button.classList.add("is-async-busy");
+  return state;
+}
+
+function restoreAsyncButton(button, state, options) {
+  if (!button || !state || asyncButtonStates.get(button) !== state) {
+    return;
+  }
+
+  if (options && Object.prototype.hasOwnProperty.call(options, "disabledAfter")) {
+    state.disabledAfter = options.disabledAfter;
+  }
+  state.count -= 1;
+  if (state.count > 0) {
+    return;
+  }
+
+  asyncButtonStates.delete(button);
+  const disabledAfter = Object.prototype.hasOwnProperty.call(state, "disabledAfter")
+    ? state.disabledAfter
+    : state.disabled;
+  button.disabled = typeof disabledAfter === "function"
+    ? Boolean(disabledAfter(button, state.disabled))
+    : Boolean(disabledAfter);
+  button.classList.remove("is-async-busy");
+  if (state.ariaBusy == null) {
+    button.removeAttribute("aria-busy");
+  } else {
+    button.setAttribute("aria-busy", state.ariaBusy);
+  }
+  if (state.ariaDisabled == null) {
+    button.removeAttribute("aria-disabled");
+  } else {
+    button.setAttribute("aria-disabled", state.ariaDisabled);
+  }
+}
+
+function setAsyncControlDisabled(control) {
+  if (!control || typeof control.setAttribute !== "function") {
+    return null;
+  }
+
+  const existingState = asyncDisabledControlStates.get(control);
+  if (existingState) {
+    existingState.count += 1;
+    return existingState;
+  }
+
+  const state = {
+    count: 1,
+    disabled: Boolean(control.disabled),
+    ariaDisabled: control.getAttribute("aria-disabled"),
+  };
+  asyncDisabledControlStates.set(control, state);
+  control.disabled = true;
+  control.setAttribute("aria-disabled", "true");
+  return state;
+}
+
+function restoreAsyncControlDisabled(control, state) {
+  if (!control || !state || asyncDisabledControlStates.get(control) !== state) {
+    return;
+  }
+
+  state.count -= 1;
+  if (state.count > 0) {
+    return;
+  }
+
+  asyncDisabledControlStates.delete(control);
+  control.disabled = state.disabled;
+  if (state.ariaDisabled == null) {
+    control.removeAttribute("aria-disabled");
+  } else {
+    control.setAttribute("aria-disabled", state.ariaDisabled);
+  }
+}
+
+function getAsyncDisabledControls(button, options) {
+  if (!options || !options.disableWhileRunning) {
+    return [];
+  }
+
+  const configuredControls = typeof options.disableWhileRunning === "function"
+    ? options.disableWhileRunning()
+    : options.disableWhileRunning;
+  const controls = configuredControls && typeof configuredControls[Symbol.iterator] === "function"
+    ? Array.from(configuredControls)
+    : [configuredControls];
+  return Array.from(new Set(controls.filter(control => control && control !== button)));
+}
+
+// Deduplicates by explicit key (or stable button id), including across a rerendered
+// replacement button. Use disabledAfter when the completed action must intentionally
+// leave the control in a different disabled state than it had before the request.
+function runButtonAction(button, action, options = {}) {
+  if (typeof action !== "function") {
+    return Promise.reject(new TypeError("A button action function is required."));
+  }
+
+  const actionKey = getAsyncButtonActionKey(button, options);
+  const inFlightAction = actionKey == null ? null : asyncButtonActions.get(actionKey);
+  const buttonState = setAsyncButtonBusy(button);
+  const disabledControls = getAsyncDisabledControls(button, options);
+  const disabledControlStates = disabledControls.map(control => ({
+    control,
+    state: setAsyncControlDisabled(control),
+  }));
+  const restoreControls = () => {
+    restoreAsyncButton(button, buttonState, options);
+    disabledControlStates.forEach(({ control, state }) => restoreAsyncControlDisabled(control, state));
+  };
+
+  if (inFlightAction) {
+    return inFlightAction.finally(restoreControls);
+  }
+
+  const actionPromise = Promise.resolve().then(action);
+  if (actionKey != null) {
+    asyncButtonActions.set(actionKey, actionPromise);
+  }
+
+  return actionPromise.finally(() => {
+    if (actionKey != null && asyncButtonActions.get(actionKey) === actionPromise) {
+      asyncButtonActions.delete(actionKey);
+    }
+    restoreControls();
+  });
+}
+
 function timeRangeArrowIconMarkup() {
   return '<i class="fa-solid fa-arrow-right-long time-range-arrow" aria-hidden="true"></i>';
 }

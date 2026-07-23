@@ -52,18 +52,30 @@ $scriptPathComparison = if (Test-IsWindowsHost) { [System.StringComparison]::Ord
 $isExpectedManagedInstance = $status.TrackedProcessId -and
     -not [string]::IsNullOrWhiteSpace($trackedScriptPath) -and
     $trackedScriptPath.Equals($expectedScriptPath, $scriptPathComparison)
-$frontendIsAvailable = $status.IsRunning -and (Test-FrontendUrlAvailable -Url $service.FrontendUrl)
+$frontendIsAvailable = $isExpectedManagedInstance -and (Test-ManagedServiceHealthyForScript `
+    -Name $service.Name `
+    -DisplayName $service.DisplayName `
+    -ServerScript $service.ServerScript `
+    -Port $service.Port `
+    -PidFile $service.PidFile `
+    -FrontendUrl $service.FrontendUrl `
+    -TimeoutMilliseconds 3000)
+$launchPlan = Get-ManagedServiceLaunchPlan `
+    -IsRunning ([bool]$status.IsRunning) `
+    -HasTrackedProcess ([bool]$status.TrackedProcessId) `
+    -IsExpectedManagedInstance ([bool]$isExpectedManagedInstance) `
+    -FrontendIsAvailable ([bool]$frontendIsAvailable) `
+    -Force:$Force
 
-if ($isExpectedManagedInstance -and $frontendIsAvailable -and -not $Force) {
+if ($launchPlan.Action -eq "Reuse") {
     Write-Host "$($service.DisplayName) is already available at $($service.FrontendUrl)."
 }
 else {
-    if ($status.IsRunning -and -not $status.TrackedProcessId -and -not $Force) {
+    if ($launchPlan.Action -eq "Block") {
         throw "Port $($service.Port) is already used by another program. SAPHIR did not stop or replace that program."
     }
 
-    $restartTrackedService = $status.TrackedProcessId -and (-not $isExpectedManagedInstance -or -not $frontendIsAvailable)
-    Start-ManagedService -Name $service.Name -DisplayName $service.DisplayName -ServerScript $service.ServerScript -Port $service.Port -PidFile $service.PidFile -StdOutLog $service.StdOutLog -StdErrLog $service.StdErrLog -WorkingDirectory $service.WorkingDirectory -Force:($Force -or $restartTrackedService) | Out-Null
+    Start-ManagedService -Name $service.Name -DisplayName $service.DisplayName -ServerScript $service.ServerScript -Port $service.Port -PidFile $service.PidFile -StdOutLog $service.StdOutLog -StdErrLog $service.StdErrLog -WorkingDirectory $service.WorkingDirectory -Force:([bool]$launchPlan.ForceRestart) | Out-Null
 }
 
 if (-not (Test-FrontendUrlAvailable -Url $service.FrontendUrl)) {

@@ -41,7 +41,7 @@ function showSelfConfirmationModal(title, message, callback) {
   confirmButton.parentNode.replaceChild(replacementButton, confirmButton);
 
   replacementButton.addEventListener("click", async () => {
-    await callback();
+    await runButtonAction(replacementButton, callback, { key: "self-punch" });
     const confirmModal = bootstrap.Modal.getInstance(document.getElementById("selfConfirmModal"));
     confirmModal.hide();
   });
@@ -1098,10 +1098,11 @@ document.getElementById("selfStatsResetFiltersBtn").addEventListener("click", ()
 document.getElementById("selfEntriesContainer").addEventListener("click", event => {
   const gc179Button = event.target.closest(".self-gc179-fdf-button");
   if (gc179Button) {
-    downloadGc179FdfExport({
+    const monthKey = gc179Button.getAttribute("data-self-gc179-month") || selfViewState.currentMonthKey;
+    runButtonAction(gc179Button, () => downloadGc179FdfExport({
       self: true,
-      monthKey: gc179Button.getAttribute("data-self-gc179-month") || selfViewState.currentMonthKey,
-    });
+      monthKey,
+    }), { key: `self-gc179-export:${monthKey}` });
     return;
   }
 

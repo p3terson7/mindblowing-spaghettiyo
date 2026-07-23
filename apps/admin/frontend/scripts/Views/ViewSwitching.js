@@ -101,13 +101,23 @@ function bindNavigation(navId) {
 
   navLink.addEventListener("click", event => {
     event.preventDefault();
-    const viewId = NAV_VIEW_MAP[navId];
-    showView(viewId);
-    if (typeof window.refreshAppViewById === "function") {
-      window.refreshAppViewById(viewId);
-    } else if (typeof window.refreshAdminViewById === "function") {
-      window.refreshAdminViewById(viewId);
+    if (navLink.getAttribute("aria-disabled") === "true") {
+      return;
     }
+    const viewId = NAV_VIEW_MAP[navId];
+    runButtonAction(navLink, async () => {
+      showView(viewId);
+      if (typeof window.refreshAppViewById === "function") {
+        await window.refreshAppViewById(viewId);
+      } else if (typeof window.refreshAdminViewById === "function") {
+        await window.refreshAdminViewById(viewId);
+      }
+    }, {
+      key: "view-navigation",
+      disableWhileRunning: () => document.querySelectorAll(".app-nav-link"),
+    }).catch(error => {
+      console.error(`Unable to open ${viewId}:`, error);
+    });
   });
 }
 

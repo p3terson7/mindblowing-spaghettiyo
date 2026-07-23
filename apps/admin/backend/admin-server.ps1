@@ -1,6 +1,7 @@
 # admin-server.ps1
 
 $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
+$script:saphirInstanceToken = [string]$env:SAPHIR_INSTANCE_TOKEN
 
 # Shared context + helpers + services
 . (Join-Path -Path $scriptDir -ChildPath "lib/AdminContext.ps1")
@@ -92,6 +93,10 @@ while ($true) {
 
     try {
         $response.Headers.Add("Access-Control-Allow-Origin", "*")
+        $response.Headers.Add("X-SAPHIR-App", "SAPHIR")
+        if (-not [string]::IsNullOrWhiteSpace($script:saphirInstanceToken)) {
+            $response.Headers.Add("X-SAPHIR-Instance", $script:saphirInstanceToken)
+        }
 
         if ($request.HttpMethod -eq "OPTIONS") {
             $response.Headers.Add("Access-Control-Allow-Methods", "GET, OPTIONS, PUT, DELETE, POST")

@@ -472,7 +472,7 @@ Launch SAPHIR.bat
 Launch SAPHIR.vbs
 ```
 
-Dans une distribution d'équipe, ces lanceurs arrêtent d'abord toute ancienne instance SAPHIR vérifiée, consultent un petit manifeste réseau, installent automatiquement la version courante dans `%LOCALAPPDATA%\SAPHIR\versions`, puis exécutent l'application localement. Il faut créer un **raccourci** vers le lanceur réseau, et non copier le fichier VBS sur le bureau. Voir [le guide de déploiement avec cache local](docs/LOCAL-CACHE-DEPLOYMENT.md) et [le guide de démarrage des employés](docs/EMPLOYEE-QUICK-START.md).
+Dans une distribution d'équipe, ces lanceurs consultent un petit manifeste réseau au démarrage à froid, installent automatiquement la version courante dans `%LOCALAPPDATA%\SAPHIR\versions`, puis exécutent l'application localement. Si la version locale active est déjà en cours d'exécution et répond normalement, un nouveau clic rouvre seulement le navigateur sans relire le manifeste réseau. Les mises à jour sont donc détectées au prochain démarrage à froid (après **Stop SAPHIR**, un redémarrage du poste ou l'arrêt du serveur local); une version différente ou un serveur qui ne répond plus déclenche alors automatiquement un redémarrage. Il faut créer un **raccourci** vers le lanceur réseau, et non copier le fichier VBS sur le bureau. Voir [le guide de déploiement avec cache local](docs/LOCAL-CACHE-DEPLOYMENT.md) et [le guide de démarrage des employés](docs/EMPLOYEE-QUICK-START.md).
 
 Dans le dossier distribué, l’employé double-clique une fois sur `Install SAPHIR Shortcut.vbs`. Ce script crée `SAPHIR.lnk` sur le Bureau, copie `SAPHIR.ico` dans `%LOCALAPPDATA%\SAPHIR\assets` pour éviter les lectures répétées du lecteur réseau, puis configure le raccourci pour appeler le lanceur VBS réseau. Aucun exécutable compilé ni droit administrateur n’est nécessaire.
 
@@ -500,7 +500,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start-all.ps1
 Sur macOS, il faut utiliser `pwsh` au lieu de `powershell.exe` :
 
 ```bash
-pwsh ./scripts/launch-app.ps1 -Force
+pwsh ./scripts/launch-app.ps1
 ```
 
 ou :
@@ -508,6 +508,8 @@ ou :
 ```bash
 ./Launch\ SAPHIR.command
 ```
+
+Après avoir modifié le code source en développement, on peut forcer un redémarrage avec `pwsh ./scripts/launch-app.ps1 -Force`.
 
 Pour arrêter :
 

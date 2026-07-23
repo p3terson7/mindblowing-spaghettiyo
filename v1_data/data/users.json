@@ -1,0 +1,193 @@
+[
+    {
+        "username":  "000100000",
+        "displayName":  "Alexandre Roy",
+        "role":  "superAdmin",
+        "employeeCode":  "000100000",
+        "disabled":  true,
+        "mustChangePassword":  false,
+        "createdAtUtc":  "2026-06-04T19:48:56.00069Z",
+        "passwordSalt":  "W6Rf9a+r5h13B1cXd7ExJQ==",
+        "passwordHash":  "OHE6tgRp+QInkMzefcjQFZmd16jsYXqdrJs1zipksNk=",
+        "passwordIterations":  120000,
+        "passwordAlgorithm":  "PBKDF2-HMACSHA1",
+        "timeEntryTypes":  [
+                               "diverse",
+                               "overtime"
+                           ]
+    },
+    {
+        "username":  "admin",
+        "displayName":  "Administrator",
+        "role":  "superAdmin",
+        "employeeCode":  null,
+        "disabled":  false,
+        "mustChangePassword":  false,
+        "createdAtUtc":  "2026-07-09T17:12:03.613513Z",
+        "passwordSalt":  "Ge5EBfXilpyUPp2yuMdMNQ==",
+        "passwordHash":  "5G9Pz/4eN2wPpXiOlglKw4lV8W6WQQwPMT1bwSlmnDU=",
+        "passwordIterations":  120000,
+        "passwordAlgorithm":  "PBKDF2-HMACSHA1"
+    },
+    {
+        "username":  "000379070",
+        "displayName":  "Peter Sarateanu",
+        "role":  "superAdmin",
+        "employeeCode":  "000379070",
+        "disabled":  false,
+        "mustChangePassword":  false,
+        "createdAtUtc":  "2026-07-09T17:31:55.679771Z",
+        "passwordSalt":  "F4dmY7QoKbf/IhlNXS0NJA==",
+        "passwordHash":  "F8O/5I4+8P1qubgB8JIu55F7veZCDcU79JtPEmLqTKk=",
+        "passwordIterations":  120000,
+        "passwordAlgorithm":  "PBKDF2-HMACSHA1",
+        "timeEntryTypes":  [
+                               "overtime",
+                               "diverse"
+                           ],
+        "gc179Profile":  {
+                             "surname":  "SARATEANU",
+                             "givenName":  "PETER",
+                             "initials":  "P.S",
+                             "pri":  "",
+                             "position":  "",
+                             "level":  "",
+                             "compressedWorkWeek":  false
+                         }
+    },
+    {
+        "username":  "000046386",
+        "displayName":  "Brigitte Brodeur",
+        "role":  "superAdmin",
+        "employeeCode":  "000046386",
+        "disabled":  false,
+        "mustChangePassword":  true,
+        "createdAtUtc":  "2026-07-09T17:39:46.517769Z",
+        "passwordSalt":  "21QXUkC3uMWuqHbmgPUNwA==",
+        "passwordHash":  "OlXIw4U5OISSe6Axcb0TLX5fTGhKiSnvmuEsBXRuskQ=",
+        "passwordIterations":  120000,
+        "passwordAlgorithm":  "PBKDF2-HMACSHA1",
+        "timeEntryTypes":  [
+                               "overtime",
+                               "diverse"
+                           ]
+    },
+    {
+        "username":  "000382166",
+        "displayName":  "Marie-Josée Desforges",
+        "role":  "superAdmin",
+        "employeeCode":  "000382166",
+        "disabled":  false,
+        "mustChangePassword":  false,
+        "createdAtUtc":  "2026-07-09T17:40:32.867648Z",
+        "passwordSalt":  "Fl6kk3KfZXc+2Gu+yhv+3w==",
+        "passwordHash":  "w7/GgfcHjJCnttvTtScE/iCIo1n+npuAhTaCRBp+qkc=",
+        "passwordIterations":  120000,
+        "passwordAlgorithm":  "PBKDF2-HMACSHA1",
+        "timeEntryTypes":  [
+                               "overtime",
+                               "diverse"
+                           ]
+    },
+    {
+        "username":  "000208784",
+        "displayName":  "Joel Rodriguez",
+        "role":  "superAdmin",
+        "employeeCode":  "000208784",
+        "disabled":  false,
+        "mustChangePassword":  true,
+        "createdAtUtc":  "2026-07-09T17:41:45.906116Z",
+        "passwordSalt":  "R9eQ4PQTfA7RBgzTbvmugA==",
+        "passwordHash":  "y6FC0U/aj2HGmy4o6CIn+x8fbZORk7eQVibBMgI9RGE=",
+        "passwordIterations":  120000,
+        "passwordAlgorithm":  "PBKDF2-HMACSHA1",
+        "timeEntryTypes":  [
+                               "overtime",
+                               "diverse"
+                           ],
+        "gc179Profile":  {
+                             "surname":  "RODRIGUEZ",
+                             "givenName":  "JOEL",
+                             "initials":  "J.R",
+                             "pri":  "028 643 755",
+                             "position":  "AS04",
+                             "level":  "3",
+                             "compressedWorkWeek":  false
+                         }
+    },
+    {
+        "username":  "000321928",
+        "displayName":  "LANGEVIN Mélanie",
+        "role":  "admin",
+        "employeeCode":  "000321928",
+        "timeEntryTypes":  [
+                               "overtime"
+                           ],
+        "gc179Profile":  {
+                             "surname":  "LANGEVIN",
+                             "givenName":  "MÉLANIE",
+                             "initials":  "L.M",
+                             "pri":  "084 543 116",
+                             "position":  "AS03",
+                             "level":  "3",
+                             "compressedWorkWeek":  true
+                         },
+        "disabled":  false,
+        "mustChangePassword":  false,
+        "createdAtUtc":  "2026-07-17T13:32:19.6516283Z",
+        "passwordSalt":  "wwMhGr43tS8oUtggW+qNmQ==",
+        "passwordHash":  "PJ+8ebyi69TY6mj8O/jcAnU59+M4Y5ODlCSex0x9WJs=",
+        "passwordIterations":  120000,
+        "passwordAlgorithm":  "PBKDF2-HMACSHA1"
+    },
+    {
+        "username":  "000340566",
+        "displayName":  "CIVIL Bethleen",
+        "role":  "admin",
+        "employeeCode":  "000340566",
+        "timeEntryTypes":  [
+                               "overtime"
+                           ],
+        "gc179Profile":  {
+                             "surname":  "CIVIL",
+                             "givenName":  "BETHLEEN",
+                             "initials":  "C.B",
+                             "pri":  "042 390 796",
+                             "position":  "AS03",
+                             "level":  "1",
+                             "compressedWorkWeek":  true
+                         },
+        "disabled":  false,
+        "mustChangePassword":  false,
+        "createdAtUtc":  "2026-07-17T13:34:35.0474942Z",
+        "passwordSalt":  "HAkowSsBXMd36vecr3KKpA==",
+        "passwordHash":  "PBvAgBRwNYZOaHJ5L2vE4ZiII6jbt1O2+tEhQnon3WQ=",
+        "passwordIterations":  120000,
+        "passwordAlgorithm":  "PBKDF2-HMACSHA1"
+    },
+    {
+        "username":  "000221996",
+        "displayName":  "BONNEAU Annie",
+        "role":  "employee",
+        "employeeCode":  "000221996",
+        "timeEntryTypes":  [
+                               "overtime"
+                           ],
+        "gc179Profile":  {
+                             "surname":  "BONNEAU",
+                             "givenName":  "ANNIE",
+                             "initials":  "B.A",
+                             "pri":  "041 863 526",
+                             "position":  "CR4",
+                             "level":  "4",
+                             "compressedWorkWeek":  true
+                         },
+        "disabled":  false,
+        "mustChangePassword":  false,
+        "createdAtUtc":  "2026-07-17T13:48:57.9790829Z",
+        "passwordSalt":  "Rd3SqGCy7okCqu3iTcLAqw==",
+        "passwordHash":  "GYYXczTePhFAkhE8dhV4wn9aHaP/9pbAAn/L4pLVNQ4=",
+        "passwordIterations":  120000,
+        "passwordAlgorithm":  "PBKDF2-HMACSHA1"
+    }
+]
