@@ -102,7 +102,7 @@ function New-FixtureRelease {
     Set-Content -LiteralPath (Join-Path -Path $releaseRoot -ChildPath "scripts/lib/RuntimeLayout.ps1") -Value "# runtime" -Encoding UTF8
     Set-Content -LiteralPath (Join-Path -Path $releaseRoot -ChildPath "scripts/lib/ServerControl.ps1") -Value "# server control" -Encoding UTF8
 
-    $releaseFileName = "GEEM-{0}.zip" -f $ReleaseId
+    $releaseFileName = "SAPHIR-{0}.zip" -f $ReleaseId
     $releasePath = Join-Path -Path $releasesRoot -ChildPath $releaseFileName
     Compress-Archive -Path (Join-Path -Path $releaseRoot -ChildPath "*") -DestinationPath $releasePath -Force
     $sha256 = (Get-FileHash -LiteralPath $releasePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -116,63 +116,63 @@ function New-FixtureRelease {
     }
 }
 
-$testRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("geem cache é {0}" -f [Guid]::NewGuid().ToString("N"))
+$testRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("saphir cache é {0}" -f [Guid]::NewGuid().ToString("N"))
 $distributionRoot = Join-Path -Path $testRoot -ChildPath "network distribution"
 $dataFolder = Join-Path -Path $testRoot -ChildPath "shared data"
 $cacheRoot = Join-Path -Path $testRoot -ChildPath "local cache"
 $manifestPath = Join-Path -Path $distributionRoot -ChildPath "deployment/current.json"
-$originalCacheRoot = [string]$env:OVERTIME_APP_CACHE_ROOT
+$originalCacheRoot = [string]$env:SAPHIR_APP_CACHE_ROOT
 
 try {
     New-Item -ItemType Directory -Path $distributionRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $dataFolder -Force | Out-Null
-    $env:OVERTIME_APP_CACHE_ROOT = $cacheRoot
+    $env:SAPHIR_APP_CACHE_ROOT = $cacheRoot
 
     $releaseA = New-FixtureRelease -DistributionRoot $distributionRoot -ReleaseId "release-a" -DataFolderPath $dataFolder
-    $coldResult = Resolve-GeemCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath
+    $coldResult = Resolve-SaphirCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath
     Assert-True -Condition ([bool]$coldResult.Installed) -Message "cold resolution must install the release"
     Assert-True -Condition (Test-Path -LiteralPath $coldResult.LaunchScript -PathType Leaf) -Message "cold install must return a local launch script"
     Assert-True -Condition ([System.IO.Path]::GetFullPath($coldResult.LaunchScript).StartsWith([System.IO.Path]::GetFullPath($cacheRoot))) -Message "the launch script must be inside the local cache"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $coldResult.ReleasePath -ChildPath "data"))) -Message "a release must never contain data"
 
     Remove-Item -LiteralPath $releaseA.ReleasePath -Force
-    $warmResult = Resolve-GeemCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath
+    $warmResult = Resolve-SaphirCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath
     Assert-True -Condition (-not [bool]$warmResult.Installed) -Message "warm resolution must reuse the cached release without the ZIP"
 
     $cachedTemplatePath = Join-Path -Path $warmResult.ReleasePath -ChildPath "docs/GC179.pdf"
     Remove-Item -LiteralPath $cachedTemplatePath -Force
     Set-Content -LiteralPath $releaseA.ReleasePath -Value "corrupted network package" -Encoding ASCII
-    Assert-Throws -Action { Resolve-GeemCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "integrity check" -Message "repairing a damaged local release must still validate the network package"
+    Assert-Throws -Action { Resolve-SaphirCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "integrity check" -Message "repairing a damaged local release must still validate the network package"
     Assert-True -Condition (Test-Path -LiteralPath $warmResult.ReleasePath -PathType Container) -Message "a failed repair must preserve the existing local release directory"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $warmResult.ReleasePath -ChildPath "apps/admin/backend/admin-server.ps1") -PathType Leaf) -Message "a failed repair must preserve existing local files"
     Remove-Item -LiteralPath $releaseA.ReleasePath -Force
     Set-Content -LiteralPath $cachedTemplatePath -Value "fixture" -Encoding ASCII
 
-    Write-FixtureManifest -DistributionRoot $distributionRoot -ReleaseId "release-a" -PackageRelativePath "deployment/releases/GEEM-release-a.zip" -Sha256 ("a" * 64) -DataFolderPath $dataFolder
-    Assert-Throws -Action { Resolve-GeemCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "different immutable settings" -Message "reusing a release ID with another hash must fail"
+    Write-FixtureManifest -DistributionRoot $distributionRoot -ReleaseId "release-a" -PackageRelativePath "deployment/releases/SAPHIR-release-a.zip" -Sha256 ("a" * 64) -DataFolderPath $dataFolder
+    Assert-Throws -Action { Resolve-SaphirCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "different immutable settings" -Message "reusing a release ID with another hash must fail"
     Assert-True -Condition (Test-Path -LiteralPath $warmResult.ReleasePath -PathType Container) -Message "an immutable-manifest failure must preserve the cached release"
 
     $releaseB = New-FixtureRelease -DistributionRoot $distributionRoot -ReleaseId "release-b" -DataFolderPath $dataFolder
     $previousRelease = $warmResult
-    Set-GeemActiveRelease -CacheRoot $cacheRoot -Release $previousRelease
-    $updateResult = Resolve-GeemCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath
+    Set-SaphirActiveRelease -CacheRoot $cacheRoot -Release $previousRelease
+    $updateResult = Resolve-SaphirCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath
     Assert-Equal -Expected "release-b" -Actual $updateResult.ReleaseId -Message "an update must install the new version"
     Assert-True -Condition (Test-Path -LiteralPath $previousRelease.ReleasePath -PathType Container) -Message "the previous version must remain available for rollback"
-    Set-GeemActiveRelease -CacheRoot $cacheRoot -Release $updateResult
-    $activeRelease = Get-GeemActiveRelease -CacheRoot $cacheRoot
+    Set-SaphirActiveRelease -CacheRoot $cacheRoot -Release $updateResult
+    $activeRelease = Get-SaphirActiveRelease -CacheRoot $cacheRoot
     Assert-Equal -Expected "release-b" -Actual $activeRelease.ReleaseId -Message "the active pointer must update after a successful launch"
 
     $releaseC = New-FixtureRelease -DistributionRoot $distributionRoot -ReleaseId "release-c" -DataFolderPath $dataFolder
-    Write-FixtureManifest -DistributionRoot $distributionRoot -ReleaseId "release-c" -PackageRelativePath "deployment/releases/GEEM-release-c.zip" -Sha256 ("b" * 64) -DataFolderPath $dataFolder
-    Assert-Throws -Action { Resolve-GeemCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "integrity check" -Message "a bad package hash must fail"
+    Write-FixtureManifest -DistributionRoot $distributionRoot -ReleaseId "release-c" -PackageRelativePath "deployment/releases/SAPHIR-release-c.zip" -Sha256 ("b" * 64) -DataFolderPath $dataFolder
+    Assert-Throws -Action { Resolve-SaphirCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "integrity check" -Message "a bad package hash must fail"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $cacheRoot -ChildPath "versions/release-c"))) -Message "a bad hash must not create a final release"
 
     $releaseD = New-FixtureRelease -DistributionRoot $distributionRoot -ReleaseId "release-d" -DataFolderPath $dataFolder -OmitGc179Template
-    Assert-Throws -Action { Resolve-GeemCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "incomplete" -Message "a package missing a required runtime file must fail"
+    Assert-Throws -Action { Resolve-SaphirCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "incomplete" -Message "a package missing a required runtime file must fail"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $cacheRoot -ChildPath "versions/release-d"))) -Message "an incomplete package must not become active"
 
     Write-FixtureManifest -DistributionRoot $distributionRoot -ReleaseId "release-e" -PackageRelativePath "../outside.zip" -Sha256 ("c" * 64) -DataFolderPath $dataFolder
-    Assert-Throws -Action { Resolve-GeemCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "unsafe package path" -Message "path traversal in the manifest must fail"
+    Assert-Throws -Action { Resolve-SaphirCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "unsafe package path" -Message "path traversal in the manifest must fail"
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
     $unsafeZip = Join-Path -Path $testRoot -ChildPath "unsafe-release.zip"
@@ -183,25 +183,25 @@ try {
     finally {
         $unsafeArchive.Dispose()
     }
-    Assert-Throws -Action { Assert-GeemZipEntriesSafe -ZipPath $unsafeZip -DestinationRoot (Join-Path -Path $testRoot -ChildPath "unsafe staging") } -MessagePattern "unsafe file path" -Message "path traversal inside a release ZIP must fail before extraction"
+    Assert-Throws -Action { Assert-SaphirZipEntriesSafe -ZipPath $unsafeZip -DestinationRoot (Join-Path -Path $testRoot -ChildPath "unsafe staging") } -MessagePattern "unsafe file path" -Message "path traversal inside a release ZIP must fail before extraction"
 
-    Assert-True -Condition (-not (Test-GeemReleaseId -ReleaseId "CON")) -Message "Windows reserved device names must not be valid release IDs"
-    Assert-True -Condition (-not (Test-GeemReleaseId -ReleaseId "release.")) -Message "release IDs ending in a period must be rejected"
+    Assert-True -Condition (-not (Test-SaphirReleaseId -ReleaseId "CON")) -Message "Windows reserved device names must not be valid release IDs"
+    Assert-True -Condition (-not (Test-SaphirReleaseId -ReleaseId "release.")) -Message "release IDs ending in a period must be rejected"
 
     $missingDataFolder = Join-Path -Path $testRoot -ChildPath "missing data"
     Write-FixtureManifest -DistributionRoot $distributionRoot -ReleaseId "release-f" -PackageRelativePath "deployment/releases/missing.zip" -Sha256 ("d" * 64) -DataFolderPath $missingDataFolder
-    Assert-Throws -Action { Resolve-GeemCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "data folder is unavailable" -Message "an unavailable shared data folder must fail closed"
+    Assert-Throws -Action { Resolve-SaphirCachedRelease -DistributionRoot $distributionRoot -ManifestPath $manifestPath | Out-Null } -MessagePattern "data folder is unavailable" -Message "an unavailable shared data folder must fail closed"
 
-    $mutex = Enter-GeemCacheMutex -CacheRoot $cacheRoot -TimeoutSeconds 2
+    $mutex = Enter-SaphirCacheMutex -CacheRoot $cacheRoot -TimeoutSeconds 2
     Assert-True -Condition ($null -ne $mutex) -Message "the local install mutex must be obtainable"
-    Exit-GeemCacheMutex -Mutex $mutex
+    Exit-SaphirCacheMutex -Mutex $mutex
 
     $downloadsRoot = Join-Path -Path $cacheRoot -ChildPath "downloads"
     $orphanDownload = Join-Path -Path $downloadsRoot -ChildPath "orphan.zip"
     Set-Content -LiteralPath $orphanDownload -Value "orphan" -Encoding ASCII
     $orphanStaging = Join-Path -Path $cacheRoot -ChildPath ("versions/.orphan.{0}.staging" -f [Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $orphanStaging -Force | Out-Null
-    Repair-GeemInterruptedCacheOperations -CacheRoot $cacheRoot
+    Repair-SaphirInterruptedCacheOperations -CacheRoot $cacheRoot
     Assert-True -Condition (-not (Test-Path -LiteralPath $orphanDownload)) -Message "interrupted downloads must be removed on the next launch"
     Assert-True -Condition (-not (Test-Path -LiteralPath $orphanStaging)) -Message "interrupted staging directories must be removed on the next launch"
 
@@ -215,7 +215,7 @@ try {
     (Get-Item -LiteralPath (Join-Path -Path $retentionVersions -ChildPath "newest-b")).LastWriteTime = (Get-Date).AddMinutes(-2)
     (Get-Item -LiteralPath (Join-Path -Path $retentionVersions -ChildPath "keep-old-a")).LastWriteTime = (Get-Date).AddMinutes(-3)
     (Get-Item -LiteralPath (Join-Path -Path $retentionVersions -ChildPath "keep-old-b")).LastWriteTime = (Get-Date).AddMinutes(-4)
-    Remove-OldGeemCachedReleases -CacheRoot $retentionCache -KeepReleaseIds @("keep-old-a", "keep-old-b") -MaximumVersionCount 2
+    Remove-OldSaphirCachedReleases -CacheRoot $retentionCache -KeepReleaseIds @("keep-old-a", "keep-old-b") -MaximumVersionCount 2
     $retainedNames = @(Get-ChildItem -LiteralPath $retentionVersions -Directory | ForEach-Object { $_.Name } | Sort-Object)
     Assert-Equal -Expected "keep-old-a keep-old-b" -Actual ($retainedNames -join " ") -Message "protected releases must count toward the local retention maximum"
 
@@ -225,7 +225,7 @@ try {
     Write-Host "Local application cache tests passed."
 }
 finally {
-    $env:OVERTIME_APP_CACHE_ROOT = $originalCacheRoot
+    $env:SAPHIR_APP_CACHE_ROOT = $originalCacheRoot
     if (Test-Path -LiteralPath $testRoot) {
         Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
     }

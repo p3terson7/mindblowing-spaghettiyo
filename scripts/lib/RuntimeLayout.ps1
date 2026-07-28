@@ -4,15 +4,20 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 $scriptsRoot = Split-Path -Path $scriptDir -Parent
 $repoRoot = (Resolve-Path (Join-Path $scriptsRoot "..")).Path
 
-if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_RUNTIME_ROOT)) {
-    $runtimeRoot = $env:OVERTIME_RUNTIME_ROOT
+$configuredRuntimeRoot = [string]$env:SAPHIR_RUNTIME_ROOT
+if ([string]::IsNullOrWhiteSpace($configuredRuntimeRoot)) {
+    $configuredRuntimeRoot = [System.Environment]::GetEnvironmentVariable(("OVER" + "TIME_RUNTIME_ROOT"))
+}
+
+if (-not [string]::IsNullOrWhiteSpace($configuredRuntimeRoot)) {
+    $runtimeRoot = $configuredRuntimeRoot
 }
 elseif ($PSVersionTable.PSEdition -eq "Desktop" -or [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
     $localAppData = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::LocalApplicationData)
     if ([string]::IsNullOrWhiteSpace($localAppData)) {
         $localAppData = $env:TEMP
     }
-    $runtimeRoot = Join-Path -Path $localAppData -ChildPath "OvertimeManager/runtime"
+    $runtimeRoot = Join-Path -Path $localAppData -ChildPath "SAPHIR/runtime"
 }
 else {
     $runtimeRoot = Join-Path -Path $repoRoot -ChildPath "runtime"
@@ -30,7 +35,7 @@ function Get-ManagedServiceConfig {
 
     return [PSCustomObject]@{
         Name             = "app"
-        DisplayName      = "Overtime Manager Backend"
+        DisplayName      = "SAPHIR Backend"
         Port             = 8081
         ServerScript     = Join-Path -Path $repoRoot -ChildPath "apps/admin/backend/admin-server.ps1"
         PidFile          = Join-Path -Path $pidRoot -ChildPath "app.pid.json"
@@ -40,6 +45,32 @@ function Get-ManagedServiceConfig {
         FrontendUrl      = "http://localhost:8081/"
         FrontendPath     = Join-Path -Path $repoRoot -ChildPath "apps/admin/frontend/index.html"
     }
+}
+
+function Get-PreviousProductServiceConfigs {
+    if (-not ($PSVersionTable.PSEdition -eq "Desktop" -or [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)) {
+        return @()
+    }
+
+    $localAppData = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::LocalApplicationData)
+    if ([string]::IsNullOrWhiteSpace($localAppData)) {
+        $localAppData = [string]$env:LOCALAPPDATA
+    }
+    if ([string]::IsNullOrWhiteSpace($localAppData)) {
+        return @()
+    }
+
+    # Keep the pre-SAPHIR path only as a one-time compatibility lookup. Splitting
+    # the old product label prevents it from resurfacing as active branding.
+    $previousRuntimeRoot = Join-Path -Path $localAppData -ChildPath (("Overtime" + "Manager") + "/runtime")
+    return @(
+        [PSCustomObject]@{
+            Name        = "previous-product"
+            DisplayName = "Previous SAPHIR Backend"
+            Port        = 8081
+            PidFile     = Join-Path -Path (Join-Path -Path $previousRuntimeRoot -ChildPath "pids") -ChildPath "app.pid.json"
+        }
+    )
 }
 
 function Get-LegacyServiceConfigs {

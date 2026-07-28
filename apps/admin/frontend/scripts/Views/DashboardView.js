@@ -8,6 +8,14 @@ const dashboardState = {
 };
 let dashboardEmployeeSearchTimer = null;
 
+function getDashboardEntryActionKey(button, employeeCodeOverride = "") {
+  const employeeCode = String(employeeCodeOverride || button?.getAttribute("data-employee-code") || document.getElementById("employeeSelect")?.value || "").trim();
+  const entryId = String(button?.getAttribute("data-entryid") || "").trim();
+  const date = String(button?.getAttribute("data-date") || "").trim();
+  const punchIn = String(button?.getAttribute("data-punchin") || "").trim();
+  return `entry:${employeeCode}:${entryId || `${date}:${punchIn}`}`;
+}
+
 function buildEmployeeOptions(employees) {
   return `<option value="">${escapeHtml(t("shared.selectEmployee"))}</option>${employees.map(emp => `<option value="${escapeHtml(emp.code)}">${escapeHtml(emp.name)}</option>`).join("")}`;
 }
@@ -288,12 +296,12 @@ function renderDashboardResponsibleProjects() {
   container.innerHTML = responsibleProjects.map(item => {
     const project = item.project;
     const projectCode = getDashboardProjectCode(project);
-    const projectName = String(project.projectName || projectCode);
+    const projectName = String(project.projectName || "").trim();
     const sector = String(project.sector || "").trim();
     return `
       <div class="project-scope-pill">
         <span class="inline-code-pill">${escapeHtml(projectCode)}</span>
-        <span class="project-scope-name">${escapeHtml(projectName)}</span>
+        ${projectName ? `<span class="project-scope-name">${escapeHtml(projectName)}</span>` : ""}
         ${sector ? `<span class="meta-pill">${escapeHtml(sector)}</span>` : ""}
         <span class="meta-pill">${escapeHtml(item.responsibility)}</span>
         ${isArchivedDashboardProject(project) ? `<span class="meta-pill">${escapeHtml(t("projects.archived"))}</span>` : ""}
@@ -384,7 +392,7 @@ function openDashboardNoteEditor(noteButton) {
   modal.show();
 }
 
-async function saveDashboardNoteFromModal() {
+async function saveDashboardNoteFromModal(saveButton = document.getElementById("dashboardSaveNoteBtn")) {
   const employeeCode = document.getElementById("employeeSelect").value;
   if (!employeeCode) {
     showToast(t("dashboard.selectEmployeeBeforeNote"), "info");
@@ -394,29 +402,26 @@ async function saveDashboardNoteFromModal() {
   const date = document.getElementById("dashboardNoteDate").value;
   const punchIn = document.getElementById("dashboardNotePunchIn").value;
   const message = document.getElementById("dashboardNoteInput").value;
-  const saveButton = document.getElementById("dashboardSaveNoteBtn");
-  saveButton.disabled = true;
-
   try {
-    const response = await fetch(apiUrl + "employee/message/" + employeeCode, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, punchIn, message }),
-    });
-    await parseResponse(response);
-    dashboardState.entriesByEmployee[employeeCode] = undefined;
-    dashboardState.historyLoaded = false;
-    showToast(t("dashboard.managerMessageSaved"), "success");
-    const modalInstance = bootstrap.Modal.getInstance(document.getElementById("dashboardNoteModal"));
-    if (modalInstance) {
-      modalInstance.hide();
-    }
-    await refreshDashboardView();
+    await runButtonAction(saveButton, async () => {
+      const response = await fetch(apiUrl + "employee/message/" + employeeCode, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, punchIn, message }),
+      });
+      await parseResponse(response);
+      dashboardState.entriesByEmployee[employeeCode] = undefined;
+      dashboardState.historyLoaded = false;
+      showToast(t("dashboard.managerMessageSaved"), "success");
+      const modalInstance = bootstrap.Modal.getInstance(document.getElementById("dashboardNoteModal"));
+      if (modalInstance) {
+        modalInstance.hide();
+      }
+      await refreshDashboardView();
+    }, { key: `entry:${employeeCode}:${date}:${punchIn}` });
   } catch (error) {
     console.error("Error updating message:", error);
     showToast(t("dashboard.managerMessageError"), "error");
-  } finally {
-    saveButton.disabled = false;
   }
 }
 
@@ -930,27 +935,30 @@ function setUpdateEntryModalType(entryType) {
   });
 }
 
-async function openAddEntryModal(employeeCodeOverride = "") {
+async function openAddEntryModal(employeeCodeOverride = "", triggerButton = null) {
   const employeeCode = employeeCodeOverride || document.getElementById("employeeSelect").value;
   if (!employeeCode) {
     showToast(t("dashboard.selectEmployeeBeforeAdd"), "info");
     return;
   }
 
-  document.getElementById("addEntryForm").dataset.employeeCode = employeeCode;
-  document.getElementById("addEntryForm").dataset.refreshPeopleEmployee = employeeCodeOverride ? employeeCode : "";
-  document.getElementById("addEntryDate").value = new Date().toISOString().slice(0, 10);
-  ["addPunchInHours", "addPunchInMinutes", "addPunchOutHours", "addPunchOutMinutes"].forEach(id => {
-    document.getElementById(id).value = "";
+  return runButtonAction(triggerButton, async () => {
+    document.getElementById("addEntryForm").dataset.employeeCode = employeeCode;
+    document.getElementById("addEntryForm").dataset.refreshPeopleEmployee = employeeCodeOverride ? employeeCode : "";
+    document.getElementById("addEntryDate").value = new Date().toISOString().slice(0, 10);
+    ["addPunchInHours", "addPunchInMinutes", "addPunchOutHours", "addPunchOutMinutes"].forEach(id => {
+      document.getElementById(id).value = "";
+    });
+    await populateEntryLookups("addProjectCode", "addOvertimeCode", "", "", "addPaymentOption", "addReasonCode");
+    const addModal = new bootstrap.Modal(document.getElementById("addEntryModal"));
+    addModal.show();
+  }, {
+    key: "entry-add-modal",
+    disableWhileRunning: () => document.querySelectorAll("#addEntryButton, .people-add-entry-button"),
   });
-  await populateEntryLookups("addProjectCode", "addOvertimeCode", "", "", "addPaymentOption", "addReasonCode");
-  const addModal = new bootstrap.Modal(document.getElementById("addEntryModal"));
-  addModal.show();
 }
 
-function openUpdateModal(button) {
-  document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee = "";
-  document.getElementById("updateEntryForm").dataset.employeeCode = button.getAttribute("data-employee-code") || "";
+async function openUpdateModal(button, refreshPeopleEmployee = "") {
   const date = button.getAttribute("data-date");
   const originalPunchIn = button.getAttribute("data-punchin");
   const currentPunchOut = button.getAttribute("data-punchout");
@@ -967,67 +975,73 @@ function openUpdateModal(button) {
   const entryId = button.getAttribute("data-entryid") || "";
   const message = button.getAttribute("data-message") || "";
 
-  document.getElementById("updateDate").value = date;
-  document.getElementById("originalPunchIn").value = originalPunchIn;
-  document.getElementById("originalPunchOut").value = currentPunchOut;
-  document.getElementById("updateEntryId").value = entryId;
-  document.getElementById("updateManagerMessage").value = message;
-  document.getElementById("updateDiverseReason").value = diverseReason;
-  document.getElementById("originalDiverseReason").value = diverseReason;
-  document.getElementById("updateDiverseSummary").value = diverseSummary;
-  document.getElementById("originalDiverseSummary").value = diverseSummary;
-  document.getElementById("updateEntryForm").dataset.originalExactPunchIn = exactPunchIn || "";
-  document.getElementById("updateEntryForm").dataset.originalExactPunchOut = exactPunchOut || "";
-  setUpdateEntryModalType(entryType);
+  try {
+    await runButtonAction(button, async () => {
+      document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee = refreshPeopleEmployee;
+      document.getElementById("updateEntryForm").dataset.employeeCode = button.getAttribute("data-employee-code") || "";
+      document.getElementById("updateDate").value = date;
+      document.getElementById("originalPunchIn").value = originalPunchIn;
+      document.getElementById("originalPunchOut").value = currentPunchOut;
+      document.getElementById("updateEntryId").value = entryId;
+      document.getElementById("updateManagerMessage").value = message;
+      document.getElementById("updateDiverseReason").value = diverseReason;
+      document.getElementById("originalDiverseReason").value = diverseReason;
+      document.getElementById("updateDiverseSummary").value = diverseSummary;
+      document.getElementById("originalDiverseSummary").value = diverseSummary;
+      document.getElementById("updateEntryForm").dataset.originalExactPunchIn = exactPunchIn || "";
+      document.getElementById("updateEntryForm").dataset.originalExactPunchOut = exactPunchOut || "";
+      setUpdateEntryModalType(entryType);
 
-  if (exactPunchIn) {
-    const [hours, minutes] = exactPunchIn.split(":");
-    document.getElementById("updatePunchInHours").value = hours;
-    document.getElementById("updatePunchInMinutes").value = minutes;
-  }
+      if (exactPunchIn) {
+        const [hours, minutes] = exactPunchIn.split(":");
+        document.getElementById("updatePunchInHours").value = hours;
+        document.getElementById("updatePunchInMinutes").value = minutes;
+      }
 
-  if (exactPunchOut) {
-    const [hours, minutes] = exactPunchOut.split(":");
-    document.getElementById("updatePunchOutHours").value = hours;
-    document.getElementById("updatePunchOutMinutes").value = minutes;
-  } else {
-    document.getElementById("updatePunchOutHours").value = "";
-    document.getElementById("updatePunchOutMinutes").value = "";
-  }
+      if (exactPunchOut) {
+        const [hours, minutes] = exactPunchOut.split(":");
+        document.getElementById("updatePunchOutHours").value = hours;
+        document.getElementById("updatePunchOutMinutes").value = minutes;
+      } else {
+        document.getElementById("updatePunchOutHours").value = "";
+        document.getElementById("updatePunchOutMinutes").value = "";
+      }
 
-  if (entryType === "diverse") {
-    document.getElementById("updateProjectCode").value = "";
-    document.getElementById("originalProjectCode").value = "";
-    document.getElementById("updateOvertimeCode").value = "";
-    document.getElementById("originalOvertimeCode").value = "";
-    document.getElementById("updatePaymentOption").value = "";
-    document.getElementById("originalPaymentOption").value = "";
-    document.getElementById("updateReasonCode").value = "";
-    document.getElementById("originalReasonCode").value = "";
-    document.getElementById("updateEntryStatus").value = ["approved", "rejected", "pending"].includes(entryStatus) ? entryStatus : "pending";
-    document.getElementById("originalEntryStatus").value = document.getElementById("updateEntryStatus").value;
-    const updateModal = new bootstrap.Modal(document.getElementById("updateEntryModal"));
-    updateModal.show();
-    return;
-  }
+      if (entryType === "diverse") {
+        document.getElementById("updateProjectCode").value = "";
+        document.getElementById("originalProjectCode").value = "";
+        document.getElementById("updateOvertimeCode").value = "";
+        document.getElementById("originalOvertimeCode").value = "";
+        document.getElementById("updatePaymentOption").value = "";
+        document.getElementById("originalPaymentOption").value = "";
+        document.getElementById("updateReasonCode").value = "";
+        document.getElementById("originalReasonCode").value = "";
+      } else {
+        await populateEntryLookups("updateProjectCode", "updateOvertimeCode", projectCode, overtimeCode, "updatePaymentOption", "updateReasonCode", paymentOption, reasonCode);
+        document.getElementById("updateProjectCode").value = projectCode;
+        document.getElementById("originalProjectCode").value = projectCode;
+        document.getElementById("updateOvertimeCode").value = overtimeCode;
+        document.getElementById("originalOvertimeCode").value = overtimeCode;
+        document.getElementById("updatePaymentOption").value = paymentOption;
+        document.getElementById("originalPaymentOption").value = paymentOption;
+        document.getElementById("updateReasonCode").value = reasonCode;
+        document.getElementById("originalReasonCode").value = reasonCode;
+      }
 
-  populateEntryLookups("updateProjectCode", "updateOvertimeCode", projectCode, overtimeCode, "updatePaymentOption", "updateReasonCode", paymentOption, reasonCode).then(() => {
-    document.getElementById("updateProjectCode").value = projectCode;
-    document.getElementById("originalProjectCode").value = projectCode;
-    document.getElementById("updateOvertimeCode").value = overtimeCode;
-    document.getElementById("originalOvertimeCode").value = overtimeCode;
-    document.getElementById("updatePaymentOption").value = paymentOption;
-    document.getElementById("originalPaymentOption").value = paymentOption;
-    document.getElementById("updateReasonCode").value = reasonCode;
-    document.getElementById("originalReasonCode").value = reasonCode;
-    document.getElementById("updateEntryStatus").value = ["approved", "rejected", "pending"].includes(entryStatus) ? entryStatus : "pending";
-    document.getElementById("originalEntryStatus").value = document.getElementById("updateEntryStatus").value;
-    const updateModal = new bootstrap.Modal(document.getElementById("updateEntryModal"));
-    updateModal.show();
-  }).catch(error => {
+      document.getElementById("updateEntryStatus").value = ["approved", "rejected", "pending"].includes(entryStatus) ? entryStatus : "pending";
+      document.getElementById("originalEntryStatus").value = document.getElementById("updateEntryStatus").value;
+      const updateModal = new bootstrap.Modal(document.getElementById("updateEntryModal"));
+      updateModal.show();
+    }, {
+      key: "entry-update-modal",
+      disableWhileRunning: () => document.querySelectorAll(".update-button, .people-calendar-edit"),
+    });
+    return true;
+  } catch (error) {
     console.error("Error fetching entry lookups:", error);
     showToast(t("dashboard.entryOptionsError"), "error");
-  });
+    return false;
+  }
 }
 
 async function deleteEntry(button) {
@@ -1051,16 +1065,18 @@ async function deleteEntry(button) {
   }
 
   try {
-    const response = await fetch(apiUrl + `employee/${employeeCode}`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entryId, date, punchIn, message: managerMessage.trim() }),
-    });
-    await parseResponse(response);
-    dashboardState.entriesByEmployee[employeeCode] = undefined;
-    dashboardState.historyLoaded = false;
-    showToast(t("dashboard.entryDeleted"), "success");
-    await refreshAfterEntryMutation(employeeCode);
+    await runButtonAction(button, async () => {
+      const response = await fetch(apiUrl + `employee/${employeeCode}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId, date, punchIn, message: managerMessage.trim() }),
+      });
+      await parseResponse(response);
+      dashboardState.entriesByEmployee[employeeCode] = undefined;
+      dashboardState.historyLoaded = false;
+      showToast(t("dashboard.entryDeleted"), "success");
+      await refreshAfterEntryMutation(employeeCode);
+    }, { key: getDashboardEntryActionKey(button, employeeCode) });
   } catch (error) {
     console.error("Error deleting entry:", error);
     showToast(t("dashboard.entryDeleteError", { message: error.message }), "error");
@@ -1086,16 +1102,18 @@ async function updateApprovalAction(button, newStatus) {
   }
 
   try {
-    const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entryId, date, punchIn, status: newStatus, message: managerMessage }),
-    });
-    await parseResponse(response);
-    dashboardState.entriesByEmployee[employeeCode] = undefined;
-    dashboardState.historyLoaded = false;
-    showToast(t("dashboard.entryUpdated"), "success");
-    await refreshAfterEntryMutation(employeeCode);
+    await runButtonAction(button, async () => {
+      const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId, date, punchIn, status: newStatus, message: managerMessage }),
+      });
+      await parseResponse(response);
+      dashboardState.entriesByEmployee[employeeCode] = undefined;
+      dashboardState.historyLoaded = false;
+      showToast(t("dashboard.entryUpdated"), "success");
+      await refreshAfterEntryMutation(employeeCode);
+    }, { key: getDashboardEntryActionKey(button, employeeCode) });
   } catch (error) {
     console.error("Approval update error:", error);
     showToast(t("dashboard.approvalError", { message: error.message }), "error");
@@ -1119,16 +1137,18 @@ async function updateApprovalActionInApprovals(button, employeeCode, newStatus) 
     }
   }
   try {
-    const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entryId, date, punchIn, status: newStatus, message: managerMessage }),
-    });
-    await parseResponse(response);
-    dashboardState.entriesByEmployee[employeeCode] = undefined;
-    dashboardState.historyLoaded = false;
-    showToast(t("dashboard.entryUpdated"), "success");
-    await refreshAfterEntryMutation(employeeCode);
+    await runButtonAction(button, async () => {
+      const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId, date, punchIn, status: newStatus, message: managerMessage }),
+      });
+      await parseResponse(response);
+      dashboardState.entriesByEmployee[employeeCode] = undefined;
+      dashboardState.historyLoaded = false;
+      showToast(t("dashboard.entryUpdated"), "success");
+      await refreshAfterEntryMutation(employeeCode);
+    }, { key: getDashboardEntryActionKey(button, employeeCode) });
   } catch (error) {
     console.error("Approval update error in Approvals view:", error);
     showToast(t("dashboard.genericApprovalError"), "error");
@@ -1152,28 +1172,30 @@ async function updateApprovalActionInDashboardQueue(button, employeeCode, newSta
     }
   }
   try {
-    const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entryId, date, punchIn, status: newStatus, message: managerMessage }),
-    });
-    await parseResponse(response);
-    dashboardState.entriesByEmployee[employeeCode] = undefined;
-    dashboardState.historyLoaded = false;
-    showToast(t("dashboard.entryUpdated"), "success");
-    await refreshAfterEntryMutation(employeeCode);
+    await runButtonAction(button, async () => {
+      const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId, date, punchIn, status: newStatus, message: managerMessage }),
+      });
+      await parseResponse(response);
+      dashboardState.entriesByEmployee[employeeCode] = undefined;
+      dashboardState.historyLoaded = false;
+      showToast(t("dashboard.entryUpdated"), "success");
+      await refreshAfterEntryMutation(employeeCode);
+    }, { key: getDashboardEntryActionKey(button, employeeCode) });
   } catch (error) {
     console.error("Dashboard queue approval error:", error);
     showToast(t("dashboard.genericApprovalError"), "error");
   }
 }
 
-function focusDashboardEmployee(employeeCode) {
+async function focusDashboardEmployee(employeeCode) {
   setDashboardSelectedEmployee(employeeCode);
   if (typeof showView === "function") {
     showView("dashboardView");
   }
-  fetchEmployeeData();
+  await fetchEmployeeData();
 }
 
 window.focusDashboardEmployee = focusDashboardEmployee;
@@ -1191,7 +1213,7 @@ async function openEmployeeFileFromDashboard(employeeCode, projectCode = "") {
     return;
   }
 
-  focusDashboardEmployee(normalizedEmployeeCode);
+  await focusDashboardEmployee(normalizedEmployeeCode);
 }
 
 window.openEmployeeFileFromDashboard = openEmployeeFileFromDashboard;
@@ -1210,16 +1232,22 @@ document.getElementById("startDateFilter").addEventListener("input", fetchEmploy
 document.getElementById("endDateFilter").addEventListener("input", fetchEmployeeData);
 document.getElementById("projectFilter").addEventListener("change", fetchEmployeeData);
 document.getElementById("latestCheck").addEventListener("change", fetchEmployeeData);
-document.getElementById("dashboardResetFiltersBtn").addEventListener("click", () => {
+document.getElementById("dashboardResetFiltersBtn").addEventListener("click", event => {
   document.getElementById("startDateFilter").value = "";
   document.getElementById("endDateFilter").value = "";
   document.getElementById("projectFilter").value = "";
   document.getElementById("latestCheck").checked = true;
-  fetchEmployeeData();
+  runButtonAction(event.currentTarget, fetchEmployeeData, { key: "dashboard-filter-refresh" });
 });
-document.getElementById("addEntryButton").addEventListener("click", openAddEntryModal);
+document.getElementById("addEntryButton").addEventListener("click", event => {
+  openAddEntryModal("", event.currentTarget).catch(error => {
+    console.error("Error opening add entry modal:", error);
+    showToast(t("dashboard.entryOptionsError"), "error");
+  });
+});
 
-document.getElementById("saveAddEntryBtn").addEventListener("click", async () => {
+document.getElementById("saveAddEntryBtn").addEventListener("click", async event => {
+  const saveButton = event.currentTarget;
   const addEntryForm = document.getElementById("addEntryForm");
   const employeeCode = addEntryForm.dataset.employeeCode || document.getElementById("employeeSelect").value;
   const date = document.getElementById("addEntryDate").value;
@@ -1266,36 +1294,39 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async () =>
   }
 
   try {
-    const response = await fetch(apiUrl + "employee/add/" + employeeCode, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        date,
-        punchIn: punchInTime,
-        punchOut: punchOutTime,
-        status: "pending",
-        projectCode,
-        overtimeCode,
-        paymentOption,
-        reasonCode,
-      }),
-    });
-    const data = await parseResponse(response);
-    bootstrap.Modal.getInstance(document.getElementById("addEntryModal")).hide();
-    const refreshPeopleEmployee = addEntryForm.dataset.refreshPeopleEmployee || "";
-    addEntryForm.dataset.employeeCode = "";
-    addEntryForm.dataset.refreshPeopleEmployee = "";
-    dashboardState.entriesByEmployee[employeeCode] = undefined;
-    dashboardState.historyLoaded = false;
-    showToast(t("dashboard.entryAdded"), "success");
-    await refreshAfterEntryMutation(employeeCode, refreshPeopleEmployee);
+    await runButtonAction(saveButton, async () => {
+      const response = await fetch(apiUrl + "employee/add/" + employeeCode, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date,
+          punchIn: punchInTime,
+          punchOut: punchOutTime,
+          status: "pending",
+          projectCode,
+          overtimeCode,
+          paymentOption,
+          reasonCode,
+        }),
+      });
+      await parseResponse(response);
+      bootstrap.Modal.getInstance(document.getElementById("addEntryModal")).hide();
+      const refreshPeopleEmployee = addEntryForm.dataset.refreshPeopleEmployee || "";
+      addEntryForm.dataset.employeeCode = "";
+      addEntryForm.dataset.refreshPeopleEmployee = "";
+      dashboardState.entriesByEmployee[employeeCode] = undefined;
+      dashboardState.historyLoaded = false;
+      showToast(t("dashboard.entryAdded"), "success");
+      await refreshAfterEntryMutation(employeeCode, refreshPeopleEmployee);
+    }, { key: `entry-add:${employeeCode}:${date}:${punchInTime}` });
   } catch (error) {
     console.error("Error adding entry:", error);
     showToast(t("dashboard.entryAddError", { message: error.message }), "error");
   }
 });
 
-document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
+document.getElementById("saveUpdateBtn").addEventListener("click", async event => {
+  const saveButton = event.currentTarget;
   const employeeCode = document.getElementById("updateEntryForm").dataset.employeeCode || document.getElementById("employeeSelect").value;
   const date = document.getElementById("updateDate").value;
   const originalPunchIn = document.getElementById("originalPunchIn").value;
@@ -1377,22 +1408,24 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async () => {
   }
 
   try {
-    const response = await fetch(apiUrl + "employee/" + employeeCode, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(entryType === "diverse"
-        ? { entryId, entryType, date, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, diverseReason, diverseSummary, status: entryStatus, message: managerMessage }
-        : { entryId, entryType, date, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, paymentOption, reasonCode, status: entryStatus, message: managerMessage }),
-    });
-    const data = await parseResponse(response);
-    const refreshPeopleEmployee = document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee || "";
-    bootstrap.Modal.getInstance(document.getElementById("updateEntryModal")).hide();
-    document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee = "";
-    document.getElementById("updateEntryForm").dataset.employeeCode = "";
-    dashboardState.entriesByEmployee[employeeCode] = undefined;
-    dashboardState.historyLoaded = false;
-    showToast(t("dashboard.entryUpdated"), "success");
-    await refreshAfterEntryMutation(employeeCode, refreshPeopleEmployee);
+    await runButtonAction(saveButton, async () => {
+      const response = await fetch(apiUrl + "employee/" + employeeCode, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entryType === "diverse"
+          ? { entryId, entryType, date, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, diverseReason, diverseSummary, status: entryStatus, message: managerMessage }
+          : { entryId, entryType, date, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, paymentOption, reasonCode, status: entryStatus, message: managerMessage }),
+      });
+      await parseResponse(response);
+      const refreshPeopleEmployee = document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee || "";
+      bootstrap.Modal.getInstance(document.getElementById("updateEntryModal")).hide();
+      document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee = "";
+      document.getElementById("updateEntryForm").dataset.employeeCode = "";
+      dashboardState.entriesByEmployee[employeeCode] = undefined;
+      dashboardState.historyLoaded = false;
+      showToast(t("dashboard.entryUpdated"), "success");
+      await refreshAfterEntryMutation(employeeCode, refreshPeopleEmployee);
+    }, { key: `entry:${employeeCode}:${entryId || `${date}:${originalPunchIn}`}` });
   } catch (error) {
     console.error("Error updating entry:", error);
     showToast(t("dashboard.entryUpdateError", { message: error.message }), "error");
@@ -1445,7 +1478,11 @@ document.getElementById("dashboardApprovalQueue").addEventListener("click", even
 
   const jumpButton = event.target.closest(".dashboard-jump-button");
   if (jumpButton) {
-    openEmployeeFileFromDashboard(jumpButton.getAttribute("data-employee-code"), jumpButton.getAttribute("data-project-code")).catch(error => {
+    const employeeCode = jumpButton.getAttribute("data-employee-code");
+    const projectCode = jumpButton.getAttribute("data-project-code");
+    runButtonAction(jumpButton, () => openEmployeeFileFromDashboard(employeeCode, projectCode), {
+      key: "open-employee",
+    }).catch(error => {
       console.error("Unable to open employee file:", error);
       showToast(t("employees.loadError"), "error");
     });
@@ -1455,14 +1492,20 @@ document.getElementById("dashboardApprovalQueue").addEventListener("click", even
 document.getElementById("dashboardActiveList").addEventListener("click", event => {
   const jumpButton = event.target.closest(".dashboard-jump-button");
   if (jumpButton) {
-    openEmployeeFileFromDashboard(jumpButton.getAttribute("data-employee-code"), jumpButton.getAttribute("data-project-code")).catch(error => {
+    const employeeCode = jumpButton.getAttribute("data-employee-code");
+    const projectCode = jumpButton.getAttribute("data-project-code");
+    runButtonAction(jumpButton, () => openEmployeeFileFromDashboard(employeeCode, projectCode), {
+      key: "open-employee",
+    }).catch(error => {
       console.error("Unable to open employee file:", error);
       showToast(t("employees.loadError"), "error");
     });
   }
 });
 
-document.getElementById("dashboardSaveNoteBtn").addEventListener("click", saveDashboardNoteFromModal);
+document.getElementById("dashboardSaveNoteBtn").addEventListener("click", event => {
+  saveDashboardNoteFromModal(event.currentTarget);
+});
 document.getElementById("dashboardRecentSearchInput").addEventListener("input", () => {
   renderDashboardRecentActivity(dashboardState.history || []);
 });

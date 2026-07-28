@@ -4,7 +4,7 @@ let currentProjectCode = null;
 let pendingProjectChartFrameId = null;
 let pendingProjectInsightFrameId = null;
 const projectInsightChartInstances = {};
-const projectPalette = ["#3574f0", "#46a35b", "#d18900", "#d14343", "#7d5cf5", "#0096b2", "#c95c9b", "#6f7b2f", "#8a6f4d"];
+const projectPalette = ["#0868d7", "#16865a", "#7558d8", "#008994", "#c27a00", "#c43840", "#c94f8a", "#4f72d8", "#7f6b52"];
 const projectsViewState = {
   projects: [],
   employees: [],
@@ -448,14 +448,22 @@ function getProjectChartTheme() {
     textPrimary: rootStyles.getPropertyValue("--text-primary").trim() || "#1f2329",
     textSecondary: rootStyles.getPropertyValue("--text-secondary").trim() || "#5e646f",
     textMuted: rootStyles.getPropertyValue("--text-muted").trim() || "#7a828f",
-    grid: document.documentElement.getAttribute("data-theme") === "dark"
-      ? "rgba(255, 255, 255, 0.1)"
-      : "rgba(31, 35, 41, 0.08)",
+    grid: rootStyles.getPropertyValue("--chart-grid").trim()
+      || (document.documentElement.getAttribute("data-theme") === "dark"
+        ? "rgba(255, 255, 255, 0.1)"
+        : "rgba(29, 29, 31, 0.08)"),
+    panel: rootStyles.getPropertyValue("--panel-bg").trim() || "#ffffff",
+    tooltip: rootStyles.getPropertyValue("--tooltip-bg").trim() || "rgba(29, 29, 31, 0.94)",
+    tooltipText: rootStyles.getPropertyValue("--tooltip-text").trim() || "#ffffff",
   };
 }
 
 function getProjectChartColors(count) {
-  return Array.from({ length: count }, (_, index) => projectPalette[index % projectPalette.length]);
+  const rootStyles = getComputedStyle(document.documentElement);
+  return Array.from({ length: count }, (_, index) => {
+    const paletteIndex = index % projectPalette.length;
+    return rootStyles.getPropertyValue(`--chart-${paletteIndex + 1}`).trim() || projectPalette[paletteIndex];
+  });
 }
 
 function normalizeProjectAssignmentCodes(value) {
@@ -550,7 +558,7 @@ function renderProjectDoughnutInsight(canvasId, items, valueType = "count") {
       datasets: [{
         data: chartItems.map(item => item.value),
         backgroundColor: getProjectChartColors(chartItems.length),
-        borderColor: document.documentElement.getAttribute("data-theme") === "dark" ? "#303236" : "#ffffff",
+        borderColor: theme.panel,
         borderWidth: 2,
       }],
     },
@@ -570,9 +578,9 @@ function renderProjectDoughnutInsight(canvasId, items, valueType = "count") {
           },
         },
         tooltip: {
-          backgroundColor: "rgba(31, 35, 41, 0.94)",
-          titleColor: "#ffffff",
-          bodyColor: "#ffffff",
+          backgroundColor: theme.tooltip,
+          titleColor: theme.tooltipText,
+          bodyColor: theme.tooltipText,
           callbacks: {
             label: context => createProjectTooltipLabel(context, valueType),
           },
@@ -940,13 +948,16 @@ function renderProjectSummaryCard(detail) {
   const maxValue = secondsToDurationLabel(timeStringToSeconds(detail.maxOvertime || "00:00:00"));
   const admins = Array.isArray(detail.admins) ? detail.admins : [];
   const backupAdmins = Array.isArray(detail.backupAdmins) ? detail.backupAdmins : [];
+  const projectName = String(detail.projectName || "").trim();
+  const projectTitle = getProjectDisplayName(detail);
+  const projectNote = [projectName ? detail.projectCode : "", detail.sector].filter(Boolean).join(" | ");
   const archivedBadge = detail.archived ? `<span class="status-badge rejected">${escapeHtml(t("projects.archived"))}</span>` : "";
   return `
     <article class="project-summary-card${currentProjectCode === detail.projectCode ? " is-active" : ""}${detail.archived ? " is-archived" : ""}" data-project-code="${escapeHtml(detail.projectCode)}">
       <div class="project-card-header">
         <div>
-          <div class="project-card-title">${escapeHtml(detail.projectName)}</div>
-          <div class="employee-card-note">${escapeHtml([detail.projectCode, detail.sector].filter(Boolean).join(" | "))}</div>
+          <div class="project-card-title">${escapeHtml(projectTitle)}</div>
+          ${projectNote ? `<div class="employee-card-note">${escapeHtml(projectNote)}</div>` : ""}
         </div>
         <div class="project-card-status-stack">
           ${archivedBadge}
@@ -1035,8 +1046,8 @@ function renderProjectDetail(detail) {
   container.innerHTML = `
     <article class="project-detail-card">
       <div class="project-detail-title">
-        <h4 class="m-0">${escapeHtml(detail.projectName || detail.projectCode)}</h4>
-        <span class="inline-code-pill">${escapeHtml(detail.projectCode)}</span>
+        <h4 class="m-0">${escapeHtml(getProjectDisplayName(detail))}</h4>
+        ${String(detail.projectName || "").trim() ? `<span class="inline-code-pill">${escapeHtml(detail.projectCode)}</span>` : ""}
         ${detail.archived ? `<span class="status-badge rejected">${escapeHtml(t("projects.archived"))}</span>` : ""}
       </div>
       <div class="project-card-meta">
@@ -1121,7 +1132,7 @@ async function submitProjectEditor() {
   const backupAdmins = getProjectEditorAssignmentCodes("backupAdmins");
   const existingProject = mode === "edit" ? getProjectByCode(originalProjectCode) : null;
 
-  if (!projectCode || !projectName || (mode === "edit" && !originalProjectCode)) {
+  if (!projectCode || (mode === "edit" && !originalProjectCode)) {
     setProjectEditorMessage(t("projects.codeAndNameRequired"), "danger");
     return;
   }
@@ -1192,7 +1203,11 @@ async function archiveProject(project) {
     return false;
   }
 
-  const confirmed = window.confirm(t("projects.archiveConfirm", { name: project.projectName, code: project.projectCode }));
+  const projectName = String(project.projectName || "").trim();
+  const confirmed = window.confirm(t(projectName ? "projects.archiveConfirm" : "projects.archiveConfirmCodeOnly", {
+    name: projectName,
+    code: project.projectCode,
+  }));
   if (!confirmed) {
     return false;
   }
@@ -1226,7 +1241,11 @@ async function deleteProject(project) {
     return false;
   }
 
-  const confirmed = window.confirm(t("projects.deleteConfirm", { name: project.projectName, code: project.projectCode }));
+  const projectName = String(project.projectName || "").trim();
+  const confirmed = window.confirm(t(projectName ? "projects.deleteConfirm" : "projects.deleteConfirmCodeOnly", {
+    name: projectName,
+    code: project.projectCode,
+  }));
   if (!confirmed) {
     return false;
   }
@@ -1285,7 +1304,8 @@ function renderProjectMultiLineChart(trendData) {
 
   const timeLabels = Array.from(labelSet).sort();
   const formattedLabels = timeLabels.map(formatYMToWords);
-  const colors = ["#3574f0", "#46a35b", "#d18900", "#d14343", "#7d5cf5", "#0096b2"];
+  const theme = getProjectChartTheme();
+  const colors = getProjectChartColors(6);
 
   const datasets = Object.keys(compactedTrendData || {}).map((projectCode, index) => {
     const dataPoints = timeLabels.map(label => {
@@ -1332,34 +1352,34 @@ function renderProjectMultiLineChart(trendData) {
           legend: {
             position: "top",
             labels: {
-              color: "#5f6673",
+              color: theme.textSecondary,
               usePointStyle: true,
               boxWidth: 8,
               padding: 18,
             },
           },
           tooltip: {
-            backgroundColor: "rgba(31, 35, 41, 0.92)",
-            titleColor: "#ffffff",
-            bodyColor: "#ffffff",
+            backgroundColor: theme.tooltip,
+            titleColor: theme.tooltipText,
+            bodyColor: theme.tooltipText,
           },
         },
         scales: {
           x: {
             ticks: {
-              color: "#7f8796",
+              color: theme.textMuted,
             },
             grid: {
-              color: "rgba(31, 35, 41, 0.06)",
+              color: theme.grid,
             },
           },
           y: {
             beginAtZero: true,
             ticks: {
-              color: "#7f8796",
+              color: theme.textMuted,
             },
             grid: {
-              color: "rgba(31, 35, 41, 0.08)",
+              color: theme.grid,
             },
           },
         },
@@ -1380,7 +1400,10 @@ document.getElementById("projectsSummaryContainer").addEventListener("click", ev
     event.stopPropagation();
     const project = getProjectByCode(editButton.getAttribute("data-project-code"));
     if (project) {
-      openProjectEditorModal("edit", project).catch(error => {
+      runButtonAction(editButton, () => openProjectEditorModal("edit", project), {
+        key: "project-editor-open",
+        disableWhileRunning: () => document.querySelectorAll("#addProjectButton, .project-edit-button"),
+      }).catch(error => {
         console.error("Unable to open project editor:", error);
         showToast(t("projects.unableToLoad"), "error");
       });
@@ -1414,7 +1437,12 @@ document.getElementById("projectDetailContainer").addEventListener("click", even
   const employeeCode = navigatorButton.getAttribute("data-employee-code");
   const projectCode = navigatorButton.getAttribute("data-project-code");
   if (typeof window.openPeopleProjectFilter === "function") {
-    window.openPeopleProjectFilter(employeeCode, projectCode);
+    runButtonAction(navigatorButton, () => window.openPeopleProjectFilter(employeeCode, projectCode), {
+      key: "open-employee",
+    }).catch(error => {
+      console.error("Unable to open employee file:", error);
+      showToast(t("employees.loadError"), "error");
+    });
   }
 });
 
@@ -1429,51 +1457,80 @@ document.getElementById("projectQuickRangeButtons").addEventListener("click", ev
     return;
   }
 
-  setProjectRange(nextRange);
+  runButtonAction(rangeButton, () => setProjectRange(nextRange), {
+    key: "projects-filter-refresh",
+  }).catch(error => {
+    console.error("Unable to change the project range:", error);
+    showToast(t("projects.unableToLoad"), "error");
+  });
 });
-document.getElementById("projectApplyCustomRangeButton").addEventListener("click", () => {
+document.getElementById("projectApplyCustomRangeButton").addEventListener("click", event => {
   const startDate = document.getElementById("projectStartDate").value;
   const endDate = document.getElementById("projectEndDate").value;
   if (startDate && endDate && startDate > endDate) {
     showToast(t("filters.invalidRange"), "error");
     return;
   }
-  projectsViewState.customRange.startDate = startDate;
-  projectsViewState.customRange.endDate = endDate;
-  currentProjectFilter = getMatchingPresetProjectRange(startDate, endDate);
-  syncProjectRangeButtons();
-  refreshProjectsView();
+
+  runButtonAction(event.currentTarget, async () => {
+    projectsViewState.customRange.startDate = startDate;
+    projectsViewState.customRange.endDate = endDate;
+    currentProjectFilter = getMatchingPresetProjectRange(startDate, endDate);
+    syncProjectRangeButtons();
+    await refreshProjectsView();
+  }, { key: "projects-filter-refresh" }).catch(error => {
+    console.error("Unable to apply the custom project range:", error);
+    showToast(t("projects.unableToLoad"), "error");
+  });
 });
-document.getElementById("projectClearCustomRangeButton").addEventListener("click", () => {
-  projectsViewState.customRange.startDate = "";
-  projectsViewState.customRange.endDate = "";
-  setProjectRange("6M");
+document.getElementById("projectClearCustomRangeButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, async () => {
+    projectsViewState.customRange.startDate = "";
+    projectsViewState.customRange.endDate = "";
+    await setProjectRange("6M");
+  }, { key: "projects-filter-refresh" }).catch(error => {
+    console.error("Unable to reset the project range:", error);
+    showToast(t("projects.unableToLoad"), "error");
+  });
 });
-document.getElementById("addProjectButton").addEventListener("click", () => {
-  openProjectEditorModal("create").catch(error => {
+document.getElementById("addProjectButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, () => openProjectEditorModal("create"), {
+    key: "project-editor-open",
+    disableWhileRunning: () => document.querySelectorAll("#addProjectButton, .project-edit-button"),
+  }).catch(error => {
     console.error("Unable to open project editor:", error);
     showToast(t("projects.unableToLoad"), "error");
   });
 });
-document.getElementById("projectEditorRemoveButton").addEventListener("click", async () => {
-  const project = getProjectByCode(document.getElementById("projectEditorOriginalCodeInput").value.trim());
-  const archived = await archiveProject(project);
-  if (archived) {
-    const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
-    if (modal) {
-      modal.hide();
+document.getElementById("projectEditorRemoveButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, async () => {
+    const project = getProjectByCode(document.getElementById("projectEditorOriginalCodeInput").value.trim());
+    const archived = await archiveProject(project);
+    if (archived) {
+      const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
+      if (modal) {
+        modal.hide();
+      }
     }
-  }
+  }, { key: "project-editor-mutation" }).catch(error => {
+    console.error("Error archiving project:", error);
+    showToast(error.message || t("projects.archiveError"), "error");
+  });
 });
-document.getElementById("projectEditorDeleteButton").addEventListener("click", async () => {
-  const project = getProjectByCode(document.getElementById("projectEditorOriginalCodeInput").value.trim());
-  const deleted = await deleteProject(project);
-  if (deleted) {
-    const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
-    if (modal) {
-      modal.hide();
+document.getElementById("projectEditorDeleteButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, async () => {
+    const project = getProjectByCode(document.getElementById("projectEditorOriginalCodeInput").value.trim());
+    const deleted = await deleteProject(project);
+    if (deleted) {
+      const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
+      if (modal) {
+        modal.hide();
+      }
     }
-  }
+  }, { key: "project-editor-mutation" }).catch(error => {
+    console.error("Error deleting project:", error);
+    showToast(error.message || t("projects.deleteError"), "error");
+  });
 });
 document.getElementById("projectEditorAdminsSearchInput").addEventListener("input", event => {
   projectsViewState.editorAssignments.adminsSearch = event.target.value || "";
@@ -1513,10 +1570,23 @@ document.getElementById("projectEditorBackupAdminsList").addEventListener("chang
     projectsViewState.editorAssignments.backupAdmins.delete(employeeCode);
   }
 });
-document.getElementById("projectEditorSaveButton").addEventListener("click", submitProjectEditor);
+document.getElementById("projectEditorSaveButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, submitProjectEditor, {
+    key: "project-editor-mutation",
+  }).catch(error => {
+    console.error("Error saving project:", error);
+    setProjectEditorMessage(error.message || t("projects.updateError"), "danger");
+  });
+});
 document.getElementById("projectEditorForm").addEventListener("submit", event => {
   event.preventDefault();
-  submitProjectEditor();
+  const saveButton = document.getElementById("projectEditorSaveButton");
+  runButtonAction(saveButton, submitProjectEditor, {
+    key: "project-editor-mutation",
+  }).catch(error => {
+    console.error("Error saving project:", error);
+    setProjectEditorMessage(error.message || t("projects.updateError"), "danger");
+  });
 });
 
 window.addEventListener("app:theme-changed", () => {

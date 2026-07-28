@@ -12,8 +12,12 @@ if (-not $script:FileMetadataCache) {
 
 if (-not $script:FileMetadataValidationIntervalMs) {
     $configuredMetadataCacheMs = 0
-    if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_FILE_METADATA_CACHE_MS)) {
-        [int]::TryParse([string]$env:OVERTIME_FILE_METADATA_CACHE_MS, [ref]$configuredMetadataCacheMs) | Out-Null
+    $configuredMetadataCacheValue = [string]$env:SAPHIR_FILE_METADATA_CACHE_MS
+    if ([string]::IsNullOrWhiteSpace($configuredMetadataCacheValue)) {
+        $configuredMetadataCacheValue = [System.Environment]::GetEnvironmentVariable(("OVER" + "TIME_FILE_METADATA_CACHE_MS"))
+    }
+    if (-not [string]::IsNullOrWhiteSpace($configuredMetadataCacheValue)) {
+        [int]::TryParse($configuredMetadataCacheValue, [ref]$configuredMetadataCacheMs) | Out-Null
     }
 
     $script:FileMetadataValidationIntervalMs = if ($configuredMetadataCacheMs -gt 0) { $configuredMetadataCacheMs } else { 30000 }

@@ -34,8 +34,26 @@ function Get-ProcessCommandLine {
     return ""
 }
 
-$quotedArguments = ConvertTo-WindowsPowerShellFileArguments -ScriptPath "C:\Users\Test User\GEEM Cache\admin-server.ps1"
-Assert-True -Condition ($quotedArguments -eq '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\Test User\GEEM Cache\admin-server.ps1"') -Message "Windows launch arguments must quote cached paths containing spaces"
+$quotedArguments = ConvertTo-WindowsPowerShellFileArguments -ScriptPath "C:\Users\Test User\SAPHIR Cache\admin-server.ps1"
+Assert-True -Condition ($quotedArguments -eq '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\Test User\SAPHIR Cache\admin-server.ps1"') -Message "Windows launch arguments must quote cached paths containing spaces"
+
+$healthyCurrentRelease = Get-ManagedServiceLaunchPlan -IsRunning $true -HasTrackedProcess $true -IsExpectedManagedInstance $true -FrontendIsAvailable $true
+Assert-True -Condition ($healthyCurrentRelease.Action -eq "Reuse" -and -not $healthyCurrentRelease.ForceRestart) -Message "a healthy current release must be reused"
+
+$changedRelease = Get-ManagedServiceLaunchPlan -IsRunning $true -HasTrackedProcess $true -IsExpectedManagedInstance $false -FrontendIsAvailable $true
+Assert-True -Condition ($changedRelease.Action -eq "Restart" -and $changedRelease.ForceRestart) -Message "a changed cached release must replace the tracked server"
+
+$unhealthyCurrentRelease = Get-ManagedServiceLaunchPlan -IsRunning $true -HasTrackedProcess $true -IsExpectedManagedInstance $true -FrontendIsAvailable $false
+Assert-True -Condition ($unhealthyCurrentRelease.Action -eq "Restart" -and $unhealthyCurrentRelease.ForceRestart) -Message "an unhealthy current release must restart automatically"
+
+$unrelatedListener = Get-ManagedServiceLaunchPlan -IsRunning $true -HasTrackedProcess $false -IsExpectedManagedInstance $false -FrontendIsAvailable $false
+Assert-True -Condition ($unrelatedListener.Action -eq "Block" -and -not $unrelatedListener.ForceRestart) -Message "an unrelated port listener must remain protected"
+
+$coldStart = Get-ManagedServiceLaunchPlan -IsRunning $false -HasTrackedProcess $false -IsExpectedManagedInstance $false -FrontendIsAvailable $false
+Assert-True -Condition ($coldStart.Action -eq "Start" -and -not $coldStart.ForceRestart) -Message "a stopped app must start normally"
+
+$explicitRestart = Get-ManagedServiceLaunchPlan -IsRunning $true -HasTrackedProcess $true -IsExpectedManagedInstance $true -FrontendIsAvailable $true -Force
+Assert-True -Condition ($explicitRestart.Action -eq "Restart" -and $explicitRestart.ForceRestart) -Message "an explicit force request must restart a healthy release"
 
 $fixtureScriptPath = [System.IO.Path]::GetFullPath((Join-Path -Path $repoRoot -ChildPath "fixture folder/admin-server.ps1"))
 $fixtureProcess = [PSCustomObject]@{ Id = 999; ProcessName = "pwsh" }
@@ -104,7 +122,7 @@ $untrackedError = ""
 $script:runningPowerShellProcesses = @($fixtureProcess)
 $script:processCommandLines["999"] = 'pwsh -NoProfile -File other-server.ps1'
 try {
-    Stop-ManagedService -Name "app" -DisplayName "GEEM" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
+    Stop-ManagedService -Name "app" -DisplayName "SAPHIR" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
 }
 catch {
     $untrackedError = [string]$_.Exception.Message
@@ -113,13 +131,13 @@ Assert-True -Condition ($untrackedError -match "untracked process") -Message "st
 Assert-True -Condition ($script:stoppedProcessIds.Count -eq 0) -Message "stop must not terminate an untracked process"
 
 $script:processCommandLines["999"] = $matchingCommandLine
-Stop-ManagedService -Name "app" -DisplayName "GEEM" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
+Stop-ManagedService -Name "app" -DisplayName "SAPHIR" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
 Assert-True -Condition ($script:stoppedProcessIds.Count -eq 1 -and [int]$script:stoppedProcessIds[0] -eq 999) -Message "stop must recover and terminate an untracked instance with the exact managed script path"
 
 $script:testStatusMode = "tracked"
 $script:stoppedProcessIds = @()
 $script:runningPowerShellProcesses = @()
-Stop-ManagedService -Name "app" -DisplayName "GEEM" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
+Stop-ManagedService -Name "app" -DisplayName "SAPHIR" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
 Assert-True -Condition ($script:stoppedProcessIds.Count -eq 1 -and [int]$script:stoppedProcessIds[0] -eq 123) -Message "stop must terminate only the tracked PowerShell process"
 Assert-True -Condition ($script:stoppedProcessIds -notcontains 999) -Message "stop must never add an unrelated port owner"
 

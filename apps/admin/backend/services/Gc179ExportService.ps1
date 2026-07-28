@@ -44,6 +44,7 @@ function Get-Gc179HeaderValues {
         Month     = [string]$MonthParts.Month
         Year      = [string]$MonthParts.Year
         Department = "GRC-RCMP"
+        # Official GC179 organizational branch code; this is form data, not the application name.
         Branch    = "CDIV-PTSO-GEEM"
         Paylist   = "0337"
         Group     = "STS"
@@ -680,21 +681,21 @@ function Get-Gc179LocalExportRoot {
     if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
         $basePath = [string]$env:LOCALAPPDATA
         if ([string]::IsNullOrWhiteSpace($basePath)) {
-            $basePath = Join-Path -Path ([System.Environment]::GetFolderPath("LocalApplicationData")) -ChildPath "GEEM"
+            $basePath = Join-Path -Path ([System.Environment]::GetFolderPath("LocalApplicationData")) -ChildPath "SAPHIR"
         }
         else {
-            $basePath = Join-Path -Path $basePath -ChildPath "GEEM"
+            $basePath = Join-Path -Path $basePath -ChildPath "SAPHIR"
         }
 
         return (Join-Path -Path $basePath -ChildPath "GC179")
     }
 
     if (-not [string]::IsNullOrWhiteSpace([string]$env:HOME)) {
-        $basePath = Join-Path -Path ([string]$env:HOME) -ChildPath "Library/Application Support/GEEM"
+        $basePath = Join-Path -Path ([string]$env:HOME) -ChildPath "Library/Application Support/SAPHIR"
         return (Join-Path -Path $basePath -ChildPath "GC179")
     }
 
-    $fallbackBasePath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "GEEM"
+    $fallbackBasePath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "SAPHIR"
     return (Join-Path -Path $fallbackBasePath -ChildPath "GC179")
 }
 

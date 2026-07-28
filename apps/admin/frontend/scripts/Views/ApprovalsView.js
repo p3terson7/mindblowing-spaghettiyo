@@ -40,7 +40,10 @@ function buildApprovalProjectOptions(projects, entries) {
   const options = [`<option value="">${escapeHtml(t("filters.allProjects"))}</option>`]
     .concat(Object.keys(projectMap).sort((left, right) => left.localeCompare(right)).map(projectCode => {
       const selected = currentValue === projectCode ? " selected" : "";
-      return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(projectCode)} | ${escapeHtml(projectMap[projectCode])}</option>`;
+      return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(formatProjectCodeAndName({
+        projectCode,
+        projectName: projectMap[projectCode],
+      }))}</option>`;
     }));
 
   return options.join("");
@@ -208,7 +211,7 @@ function applyApprovalFilters() {
   renderApprovalTabsFromFiltered(getFilteredApprovalEntries());
 }
 
-async function approveFilteredEntries() {
+async function approveFilteredEntries(button = document.getElementById("approveFilteredBtn")) {
   const filteredPendingEntries = getFilteredApprovalEntries().filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry) && !isEntryForgottenClockOut(entry) && canApproveEntry(entry));
   if (filteredPendingEntries.length === 0) {
     showToast(t("review.approveFilteredNone"), "info");
@@ -220,33 +223,35 @@ async function approveFilteredEntries() {
   }
 
   try {
-    const response = await fetch(apiUrl + "employee/approval/batch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        status: "approved",
-        entries: filteredPendingEntries.map(entry => ({
-          employeeCode: entry.employeeCode,
-          entryId: entry.entryId || "",
-          date: entry.date,
-          punchIn: entry.punchIn,
-        })),
-      }),
-    });
-    const result = await parseResponse(response);
-    showToast(t("review.batchApproveSuccess", { count: result.updatedCount || filteredPendingEntries.length }), "success");
-    if (window.dashboardState) {
-      dashboardState.bootstrap = null;
-      dashboardState.historyLoaded = false;
-      filteredPendingEntries.forEach(entry => {
-        dashboardState.entriesByEmployee[entry.employeeCode] = undefined;
+    await runButtonAction(button, async () => {
+      const response = await fetch(apiUrl + "employee/approval/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "approved",
+          entries: filteredPendingEntries.map(entry => ({
+            employeeCode: entry.employeeCode,
+            entryId: entry.entryId || "",
+            date: entry.date,
+            punchIn: entry.punchIn,
+          })),
+        }),
       });
-    }
-    if (typeof window.requestAppViewRefresh === "function") {
-      await window.requestAppViewRefresh(["adminView", "dashboardView", "employeesView", "projectsView"], { forceActive: true });
-    } else {
-      await loadReviewView();
-    }
+      const result = await parseResponse(response);
+      showToast(t("review.batchApproveSuccess", { count: result.updatedCount || filteredPendingEntries.length }), "success");
+      if (window.dashboardState) {
+        dashboardState.bootstrap = null;
+        dashboardState.historyLoaded = false;
+        filteredPendingEntries.forEach(entry => {
+          dashboardState.entriesByEmployee[entry.employeeCode] = undefined;
+        });
+      }
+      if (typeof window.requestAppViewRefresh === "function") {
+        await window.requestAppViewRefresh(["adminView", "dashboardView", "employeesView", "projectsView"], { forceActive: true });
+      } else {
+        await loadReviewView();
+      }
+    }, { key: "approval-batch" });
   } catch (error) {
     console.error("Error during batch approve:", error);
     showToast(error.message || t("review.batchApproveError"), "error");
@@ -258,7 +263,9 @@ document.getElementById("reviewEmployeeFilter").addEventListener("change", apply
 document.getElementById("reviewProjectFilter").addEventListener("change", applyApprovalFilters);
 document.getElementById("reviewStartDate").addEventListener("input", applyApprovalFilters);
 document.getElementById("reviewEndDate").addEventListener("input", applyApprovalFilters);
-document.getElementById("approveFilteredBtn").addEventListener("click", approveFilteredEntries);
+document.getElementById("approveFilteredBtn").addEventListener("click", event => {
+  approveFilteredEntries(event.currentTarget);
+});
 document.getElementById("reviewResetFiltersBtn").addEventListener("click", () => {
   document.getElementById("approvalsSearchInput").value = "";
   document.getElementById("reviewEmployeeFilter").value = "";
@@ -283,12 +290,22 @@ document.getElementById("approvalsSection").addEventListener("click", event => {
 
   const jumpButton = event.target.closest(".approvals-jump-button");
   if (jumpButton && typeof window.openEmployeeFileFromDashboard === "function") {
-    window.openEmployeeFileFromDashboard(jumpButton.getAttribute("data-employee-code"), jumpButton.getAttribute("data-project-code")).catch(error => {
+    const employeeCode = jumpButton.getAttribute("data-employee-code");
+    const projectCode = jumpButton.getAttribute("data-project-code");
+    runButtonAction(jumpButton, () => window.openEmployeeFileFromDashboard(employeeCode, projectCode), {
+      key: "open-employee",
+    }).catch(error => {
       console.error("Unable to open employee file:", error);
       showToast(t("employees.loadError"), "error");
     });
   } else if (jumpButton && typeof focusDashboardEmployee === "function") {
-    focusDashboardEmployee(jumpButton.getAttribute("data-employee-code"));
+    const employeeCode = jumpButton.getAttribute("data-employee-code");
+    runButtonAction(jumpButton, () => focusDashboardEmployee(employeeCode), {
+      key: "open-employee",
+    }).catch(error => {
+      console.error("Unable to open employee file:", error);
+      showToast(t("employees.loadError"), "error");
+    });
   }
 });
 

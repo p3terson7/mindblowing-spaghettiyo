@@ -30,7 +30,7 @@ const employeesViewState = {
 };
 let pendingEmployeeAnalyticsFrameId = null;
 const employeeAnalyticsChartInstances = {};
-const employeeAnalyticsPalette = ["#3574f0", "#46a35b", "#d18900", "#d14343", "#7d5cf5", "#0096b2", "#c95c9b", "#6f7b2f", "#8a6f4d", "#b65f20"];
+const employeeAnalyticsPalette = ["#0868d7", "#16865a", "#7558d8", "#008994", "#c27a00", "#c43840", "#c94f8a", "#4f72d8", "#7f6b52", "#0f8f7a"];
 window.invalidateEmployeesViewEntryCache = function (resource) {
   const employeeCode = String(resource || "").trim();
   if (!employeeCode || employeeCode === "*") {
@@ -302,17 +302,18 @@ function renderEmployeeEditorProjectAssignments() {
 
   container.innerHTML = projects.map(project => {
     const projectCode = String(project.projectCode || "").trim();
-    const projectName = String(project.projectName || projectCode);
+    const projectName = String(project.projectName || "").trim();
+    const projectTitle = getProjectDisplayName(project);
     const sector = String(project.sector || "").trim();
     const inputId = `employeeEditorProject_${projectCode}`.replace(/[^A-Za-z0-9_-]/g, "_");
     const checked = employeesViewState.editorProjectAssignments.selectedProjectCodes.has(projectCode) ? " checked" : "";
-    const meta = sector ? `${projectCode} | ${sector}` : projectCode;
+    const meta = [projectName ? projectCode : "", sector].filter(Boolean).join(" | ");
     return `
       <label class="assignment-checkitem" for="${escapeHtml(inputId)}">
         <input class="form-check-input employee-editor-project-checkbox" type="checkbox" id="${escapeHtml(inputId)}" value="${escapeHtml(projectCode)}"${checked}>
         <span class="assignment-checkitem-main">
-          <span class="assignment-checkitem-title">${escapeHtml(projectName)}</span>
-          <span class="assignment-checkitem-meta">${escapeHtml(meta)}</span>
+          <span class="assignment-checkitem-title">${escapeHtml(projectTitle)}</span>
+          ${meta ? `<span class="assignment-checkitem-meta">${escapeHtml(meta)}</span>` : ""}
         </span>
       </label>
     `;
@@ -375,7 +376,7 @@ async function saveEmployeeEditorProjectAssignments(employeeCode, role) {
       },
       body: JSON.stringify({
         projectCode,
-        projectName: String(update.project.projectName || projectCode),
+        projectName: String(update.project.projectName || "").trim(),
         sector: String(update.project.sector || ""),
         admins: update.nextAdmins,
         backupAdmins: getEmployeeEditorProjectBackupAdmins(update.project),
@@ -598,12 +599,12 @@ async function submitEmployeeEditor() {
 
 async function removeEmployee(employee) {
   if (!employee || !employee.code) {
-    return;
+    return false;
   }
 
   const confirmed = window.confirm(t("employees.removeConfirm", { name: employee.name, code: employee.code }));
   if (!confirmed) {
-    return;
+    return false;
   }
 
   try {
@@ -613,20 +614,22 @@ async function removeEmployee(employee) {
     await parseResponse(response);
     showToast(t("employees.employeeRemoved"), "success");
     await loadEmployeesView();
+    return true;
   } catch (error) {
     console.error("Error removing employee:", error);
     showToast(error.message || t("employees.removeError"), "error");
+    return false;
   }
 }
 
 async function restoreEmployee(employee) {
   if (!employee || !employee.code) {
-    return;
+    return false;
   }
 
   const confirmed = window.confirm(t("employees.restoreConfirm", { name: employee.name, code: employee.code }));
   if (!confirmed) {
-    return;
+    return false;
   }
 
   try {
@@ -636,9 +639,11 @@ async function restoreEmployee(employee) {
     await parseResponse(response);
     showToast(t("employees.employeeRestored"), "success");
     await loadEmployeesView();
+    return true;
   } catch (error) {
     console.error("Error restoring employee:", error);
     showToast(error.message || t("employees.restoreError"), "error");
+    return false;
   }
 }
 
@@ -1231,32 +1236,25 @@ function renderGc179ImportPreview(preview, { initializeSelection = true } = {}) 
 
 async function previewGc179Import() {
   const button = document.getElementById("gc179ImportPreviewButton");
-  if (button) {
-    button.disabled = true;
-    setGc179ButtonLabel(button, "shared.loading");
-  }
-  try {
-    const payload = await buildGc179ImportPayload({ requireFile: true });
-    const response = await fetch(apiUrl + "employee/gc179-import/preview", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const preview = await parseResponse(response);
-    employeesViewState.gc179Import.preview = preview;
-    employeesViewState.gc179Import.lastImportResult = null;
-    renderGc179ImportPreview(preview);
-    updateGc179ImportGuidanceMessage();
-  } catch (error) {
-    console.error("Unable to preview GC179 import:", error);
-    resetGc179ImportPreview();
-    setGc179ImportMessage(error.message || t("employees.gc179ImportError"), "danger");
-  } finally {
-    if (button) {
-      button.disabled = false;
-      setGc179ButtonLabel(button, "employees.gc179Preview");
+  return runButtonAction(button, async () => {
+    try {
+      const payload = await buildGc179ImportPayload({ requireFile: true });
+      const response = await fetch(apiUrl + "employee/gc179-import/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const preview = await parseResponse(response);
+      employeesViewState.gc179Import.preview = preview;
+      employeesViewState.gc179Import.lastImportResult = null;
+      renderGc179ImportPreview(preview);
+      updateGc179ImportGuidanceMessage();
+    } catch (error) {
+      console.error("Unable to preview GC179 import:", error);
+      resetGc179ImportPreview();
+      setGc179ImportMessage(error.message || t("employees.gc179ImportError"), "danger");
     }
-  }
+  }, { key: "gc179-import-action" });
 }
 
 async function refreshGc179ImportTarget(employeeCode, monthKey) {
@@ -1343,41 +1341,40 @@ async function commitGc179Import() {
   }
 
   const button = document.getElementById("gc179ImportCommitButton");
-  if (button) {
-    button.disabled = true;
-    setGc179ButtonLabel(button, "shared.loading");
-  }
-  let payload;
-  let result;
-  try {
-    payload = await buildGc179ImportPayload({ requireFile: false, includeSelection: true });
-    const response = await fetch(apiUrl + "employee/gc179-import/commit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    result = await parseResponse(response);
-  } catch (error) {
-    console.error("Unable to commit GC179 import:", error);
-    setGc179ImportMessage(error.message || t("employees.gc179ImportError"), "danger");
-    updateGc179ImportCommitAvailability();
-    return;
-  } finally {
-    setGc179ButtonLabel(button, "employees.gc179ImportConfirm");
-  }
+  return runButtonAction(button, async () => {
+    let payload;
+    let result;
+    try {
+      payload = await buildGc179ImportPayload({ requireFile: false, includeSelection: true });
+      const response = await fetch(apiUrl + "employee/gc179-import/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      result = await parseResponse(response);
+    } catch (error) {
+      console.error("Unable to commit GC179 import:", error);
+      setGc179ImportMessage(error.message || t("employees.gc179ImportError"), "danger");
+      updateGc179ImportCommitAvailability();
+      return;
+    }
 
-  const employeeCode = String(result && result.employeeCode || payload.employeeCode);
-  employeesViewState.gc179Import.lastImportResult = {
-    ...result,
-    employeeCode,
-  };
-  setGc179ImportMessage("");
-  renderGc179ImportCompleted(result, payload);
-  showToast(t("employees.gc179ImportSuccess", {
-    count: Number(result && result.importedCount || 0),
-    duplicates: Number(result && result.skippedDuplicateCount || 0),
-  }), "success");
-  await refreshGc179ImportTarget(employeeCode, result && result.monthKey);
+    const employeeCode = String(result && result.employeeCode || payload.employeeCode);
+    employeesViewState.gc179Import.lastImportResult = {
+      ...result,
+      employeeCode,
+    };
+    setGc179ImportMessage("");
+    renderGc179ImportCompleted(result, payload);
+    showToast(t("employees.gc179ImportSuccess", {
+      count: Number(result && result.importedCount || 0),
+      duplicates: Number(result && result.skippedDuplicateCount || 0),
+    }), "success");
+    await refreshGc179ImportTarget(employeeCode, result && result.monthKey);
+  }, {
+    key: "gc179-import-action",
+    disabledAfter: () => Boolean(employeesViewState.gc179Import.lastImportResult) || !getGc179ImportReadiness().ready,
+  });
 }
 
 async function undoGc179Import() {
@@ -1392,48 +1389,44 @@ async function undoGc179Import() {
   }
 
   const button = document.getElementById("gc179ImportUndoButton");
-  if (button) {
-    button.disabled = true;
-    setGc179ButtonLabel(button, "shared.loading");
-  }
-  try {
-    const response = await fetch(apiUrl + "employee/gc179-import/undo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ employeeCode, batchId }),
-    });
-    const result = await parseResponse(response);
-    const undoneCount = Number(result && result.undoneCount || 0);
-    const operationWarnings = normalizeGc179ImportMessages(result && result.warnings);
-    employeesViewState.gc179Import.lastImportResult = null;
-    if (button) {
-      button.classList.add("d-none");
-    }
-    const container = document.getElementById("gc179ImportPreviewContainer");
-    if (container) {
-      container.innerHTML = `
-        <div class="gc179-import-result success">
-          <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-          <div>
-            <strong>${escapeHtml(t("employees.gc179UndoComplete"))}</strong>
-            <p>${escapeHtml(t("employees.gc179UndoSuccess", { count: undoneCount }))}</p>
-            ${operationWarnings.length > 0 ? `<ul class="gc179-import-result-warnings">${operationWarnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}
+  return runButtonAction(button, async () => {
+    try {
+      const response = await fetch(apiUrl + "employee/gc179-import/undo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeCode, batchId }),
+      });
+      const result = await parseResponse(response);
+      const undoneCount = Number(result && result.undoneCount || 0);
+      const operationWarnings = normalizeGc179ImportMessages(result && result.warnings);
+      employeesViewState.gc179Import.lastImportResult = null;
+      if (button) {
+        button.classList.add("d-none");
+      }
+      const container = document.getElementById("gc179ImportPreviewContainer");
+      if (container) {
+        container.innerHTML = `
+          <div class="gc179-import-result success">
+            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+            <div>
+              <strong>${escapeHtml(t("employees.gc179UndoComplete"))}</strong>
+              <p>${escapeHtml(t("employees.gc179UndoSuccess", { count: undoneCount }))}</p>
+              ${operationWarnings.length > 0 ? `<ul class="gc179-import-result-warnings">${operationWarnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      }
+      setGc179ImportMessage(operationWarnings.length > 0 ? t("employees.gc179SavedWithWarnings") : "", operationWarnings.length > 0 ? "warning" : "info");
+      showToast(t("employees.gc179UndoSuccess", { count: undoneCount }), "success");
+      await refreshGc179ImportTarget(employeeCode, result && result.monthKey || lastResult.monthKey);
+    } catch (error) {
+      console.error("Unable to undo GC179 import:", error);
+      setGc179ImportMessage(error.message || t("employees.gc179UndoError"), "danger");
     }
-    setGc179ImportMessage(operationWarnings.length > 0 ? t("employees.gc179SavedWithWarnings") : "", operationWarnings.length > 0 ? "warning" : "info");
-    showToast(t("employees.gc179UndoSuccess", { count: undoneCount }), "success");
-    await refreshGc179ImportTarget(employeeCode, result && result.monthKey || lastResult.monthKey);
-  } catch (error) {
-    console.error("Unable to undo GC179 import:", error);
-    setGc179ImportMessage(error.message || t("employees.gc179UndoError"), "danger");
-    if (button) {
-      button.disabled = false;
-    }
-  } finally {
-    setGc179ButtonLabel(button, "employees.gc179Undo");
-  }
+  }, {
+    key: "gc179-import-action",
+    disabledAfter: () => Boolean(button && button.classList.contains("d-none")),
+  });
 }
 
 function handleGc179ImportPreviewChange(event) {
@@ -1512,10 +1505,13 @@ function renderEmployeeProjectBubbles(projects, responsibilityKey, compact) {
     : t("dashboard.primaryAdmin");
 
   return shownProjects.map(project => {
-    const titleParts = [responsibilityLabel, project.projectCode, project.projectName, project.sector].filter(Boolean);
+    const projectCode = String(project.projectCode || "").trim();
+    const projectName = String(project.projectName || "").trim();
+    const distinctProjectName = projectName.toLocaleLowerCase() === projectCode.toLocaleLowerCase() ? "" : projectName;
+    const titleParts = [responsibilityLabel, projectCode, distinctProjectName, project.sector].filter(Boolean);
     return `
       <span class="employee-project-bubble${responsibilityKey === "backup" ? " is-backup" : ""}" title="${escapeHtml(titleParts.join(" | "))}">
-        ${escapeHtml(project.projectName)}
+        ${escapeHtml(getProjectDisplayName(project))}
       </span>
     `;
   }).join("") + (hiddenCount > 0
@@ -1750,8 +1746,8 @@ function renderEmployeeDirectoryCard(employee, canManageProfiles) {
       ${renderEmployeeResponsibilityBubbles(employee, true)}
       <div class="employee-card-meta">
         <div class="employee-card-info-row">
-          <span class="employee-card-info-label">EMP</span>
-          <span class="employee-card-info-value mono">${escapeHtml(employee.code)}</span>
+          <span class="employee-card-info-label">${escapeHtml(t("employees.employeeCode"))}</span>
+          <span class="employee-card-info-value mono"><span class="employee-card-info-prefix">${escapeHtml(t("employees.employeeCode"))}</span>${escapeHtml(employee.code)}</span>
         </div>
         <div class="employee-card-info-row">
           <span class="employee-card-info-label">${escapeHtml(t("employees.entriesShort"))}</span>
@@ -1920,9 +1916,8 @@ function populateEmployeesProjectFilter(projects) {
   projectSelect.innerHTML = [`<option value="">${escapeHtml(t("filters.allProjects"))}</option>`]
     .concat(projectItems.map(project => {
       const projectCode = String(project.projectCode || "");
-      const projectName = String(project.projectName || projectCode);
       const selected = projectCode === selectedValue ? " selected" : "";
-      return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(projectCode)} | ${escapeHtml(projectName)}</option>`;
+      return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(formatProjectCodeAndName(project))}</option>`;
     }))
     .join("");
 
@@ -1974,15 +1969,22 @@ function getEmployeeAnalyticsTheme() {
   return {
     textSecondary: rootStyles.getPropertyValue("--text-secondary").trim() || "#5e646f",
     textMuted: rootStyles.getPropertyValue("--text-muted").trim() || "#7a828f",
-    grid: document.documentElement.getAttribute("data-theme") === "dark"
-      ? "rgba(255, 255, 255, 0.1)"
-      : "rgba(31, 35, 41, 0.08)",
-    panel: document.documentElement.getAttribute("data-theme") === "dark" ? "#303236" : "#ffffff",
+    grid: rootStyles.getPropertyValue("--chart-grid").trim()
+      || (document.documentElement.getAttribute("data-theme") === "dark"
+        ? "rgba(255, 255, 255, 0.1)"
+        : "rgba(29, 29, 31, 0.08)"),
+    panel: rootStyles.getPropertyValue("--panel-bg").trim() || "#ffffff",
+    tooltip: rootStyles.getPropertyValue("--tooltip-bg").trim() || "rgba(29, 29, 31, 0.94)",
+    tooltipText: rootStyles.getPropertyValue("--tooltip-text").trim() || "#ffffff",
   };
 }
 
 function getEmployeeAnalyticsColors(count) {
-  return Array.from({ length: count }, (_, index) => employeeAnalyticsPalette[index % employeeAnalyticsPalette.length]);
+  const rootStyles = getComputedStyle(document.documentElement);
+  return Array.from({ length: count }, (_, index) => {
+    const paletteIndex = index % employeeAnalyticsPalette.length;
+    return rootStyles.getPropertyValue(`--chart-${paletteIndex + 1}`).trim() || employeeAnalyticsPalette[paletteIndex];
+  });
 }
 
 function getEmployeeProjectAnalyticsStats(employee, projectCode) {
@@ -2099,9 +2101,9 @@ function renderEmployeeOvertimeShareChart(employees) {
           display: false,
         },
         tooltip: {
-          backgroundColor: "rgba(31, 35, 41, 0.94)",
-          titleColor: "#ffffff",
-          bodyColor: "#ffffff",
+          backgroundColor: theme.tooltip,
+          titleColor: theme.tooltipText,
+          bodyColor: theme.tooltipText,
           callbacks: {
             label: context => {
               const value = getEmployeeChartContextValue(context);
@@ -3024,7 +3026,7 @@ function renderEmployeeDetail(employee) {
         </div>
       </div>
       <div class="employee-detail-meta">
-        <span class="inline-code-pill">EMP ${escapeHtml(employee.code)}</span>
+        <span class="inline-code-pill">${escapeHtml(t("employees.employeeCode"))} ${escapeHtml(employee.code)}</span>
         <span class="meta-pill">${escapeHtml(getEmployeeRoleLabel(employee))}</span>
         <span class="meta-pill">${escapeHtml(t("employees.entryCount", { count: entries.length }))}</span>
         ${employeesViewState.selectedProjectCode ? `<span class="meta-pill">${escapeHtml(employeesViewState.selectedProjectCode)}</span>` : ""}
@@ -3191,7 +3193,10 @@ document.getElementById("employeesDirectoryContainer").addEventListener("click",
   if (editButton) {
     const employee = getEmployeeByCode(editButton.getAttribute("data-employee-code"));
     if (employee) {
-      openEmployeeEditorModal("edit", employee).catch(error => {
+      runButtonAction(editButton, () => openEmployeeEditorModal("edit", employee), {
+        key: "employee-editor-open",
+        disableWhileRunning: () => document.querySelectorAll("#addEmployeeButton, .employee-edit-button"),
+      }).catch(error => {
         console.error("Unable to open employee editor:", error);
         showToast(t("employees.loadError"), "error");
       });
@@ -3225,10 +3230,12 @@ document.getElementById("employeeDetailContainer").addEventListener("toggle", ev
 document.getElementById("employeeDetailContainer").addEventListener("click", async event => {
   const gc179Button = event.target.closest(".people-gc179-fdf-button");
   if (gc179Button) {
-    downloadGc179FdfExport({
-      employeeCode: gc179Button.getAttribute("data-employee-code"),
-      monthKey: gc179Button.getAttribute("data-export-month") || employeesViewState.currentMonthByEmployee[gc179Button.getAttribute("data-employee-code")],
-    });
+    const employeeCode = gc179Button.getAttribute("data-employee-code");
+    const monthKey = gc179Button.getAttribute("data-export-month") || employeesViewState.currentMonthByEmployee[employeeCode];
+    await runButtonAction(gc179Button, () => downloadGc179FdfExport({
+      employeeCode,
+      monthKey,
+    }), { key: `people-gc179-export:${employeeCode}:${monthKey}` });
     return;
   }
 
@@ -3284,26 +3291,29 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
   if (approveButton) {
     const employeeCode = approveButton.getAttribute("data-employee-code");
     if (employeeCode) {
-      try {
-        const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            entryId: approveButton.getAttribute("data-entryid") || "",
-            date: approveButton.getAttribute("data-date"),
-            punchIn: approveButton.getAttribute("data-punchin"),
-            status: "approved",
-            message: "",
-          }),
-        });
-        await parseResponse(response);
-        showToast(t("dashboard.entryUpdated"), "success");
-        await refreshPeopleEmployeeDetail(employeeCode);
-        markEntryRelatedViewsStaleFromPeople();
-      } catch (error) {
-        console.error("Error approving entry from calendar:", error);
-        showToast(t("dashboard.approvalError", { message: error.message }), "error");
-      }
+      const actionKey = `people-entry-action:${employeeCode}:${approveButton.getAttribute("data-entryid") || `${approveButton.getAttribute("data-date")}:${approveButton.getAttribute("data-punchin")}`}`;
+      await runButtonAction(approveButton, async () => {
+        try {
+          const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              entryId: approveButton.getAttribute("data-entryid") || "",
+              date: approveButton.getAttribute("data-date"),
+              punchIn: approveButton.getAttribute("data-punchin"),
+              status: "approved",
+              message: "",
+            }),
+          });
+          await parseResponse(response);
+          showToast(t("dashboard.entryUpdated"), "success");
+          await refreshPeopleEmployeeDetail(employeeCode);
+          markEntryRelatedViewsStaleFromPeople();
+        } catch (error) {
+          console.error("Error approving entry from calendar:", error);
+          showToast(t("dashboard.approvalError", { message: error.message }), "error");
+        }
+      }, { key: actionKey });
     }
     return;
   }
@@ -3320,26 +3330,29 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
       return;
     }
     if (employeeCode) {
-      try {
-        const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            entryId: rejectButton.getAttribute("data-entryid") || "",
-            date: rejectButton.getAttribute("data-date"),
-            punchIn: rejectButton.getAttribute("data-punchin"),
-            status: "rejected",
-            message: managerMessage.trim(),
-          }),
-        });
-        await parseResponse(response);
-        showToast(t("dashboard.entryUpdated"), "success");
-        await refreshPeopleEmployeeDetail(employeeCode);
-        markEntryRelatedViewsStaleFromPeople();
-      } catch (error) {
-        console.error("Error rejecting entry from calendar:", error);
-        showToast(t("dashboard.approvalError", { message: error.message }), "error");
-      }
+      const actionKey = `people-entry-action:${employeeCode}:${rejectButton.getAttribute("data-entryid") || `${rejectButton.getAttribute("data-date")}:${rejectButton.getAttribute("data-punchin")}`}`;
+      await runButtonAction(rejectButton, async () => {
+        try {
+          const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              entryId: rejectButton.getAttribute("data-entryid") || "",
+              date: rejectButton.getAttribute("data-date"),
+              punchIn: rejectButton.getAttribute("data-punchin"),
+              status: "rejected",
+              message: managerMessage.trim(),
+            }),
+          });
+          await parseResponse(response);
+          showToast(t("dashboard.entryUpdated"), "success");
+          await refreshPeopleEmployeeDetail(employeeCode);
+          markEntryRelatedViewsStaleFromPeople();
+        } catch (error) {
+          console.error("Error rejecting entry from calendar:", error);
+          showToast(t("dashboard.approvalError", { message: error.message }), "error");
+        }
+      }, { key: actionKey });
     }
     return;
   }
@@ -3359,25 +3372,28 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
       return;
     }
     if (employeeCode) {
-      try {
-        const response = await fetch(apiUrl + "employee/" + employeeCode, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            entryId: deleteButton.getAttribute("data-entryid") || "",
-            date: deleteButton.getAttribute("data-date"),
-            punchIn: deleteButton.getAttribute("data-punchin"),
-            message: managerMessage.trim(),
-          }),
-        });
-        await parseResponse(response);
-        showToast(t("dashboard.entryDeleted"), "success");
-        await refreshPeopleEmployeeDetail(employeeCode);
-        markEntryRelatedViewsStaleFromPeople();
-      } catch (error) {
-        console.error("Error deleting entry from calendar:", error);
-        showToast(t("dashboard.entryDeleteError", { message: error.message }), "error");
-      }
+      const actionKey = `people-entry-action:${employeeCode}:${deleteButton.getAttribute("data-entryid") || `${deleteButton.getAttribute("data-date")}:${deleteButton.getAttribute("data-punchin")}`}`;
+      await runButtonAction(deleteButton, async () => {
+        try {
+          const response = await fetch(apiUrl + "employee/" + employeeCode, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              entryId: deleteButton.getAttribute("data-entryid") || "",
+              date: deleteButton.getAttribute("data-date"),
+              punchIn: deleteButton.getAttribute("data-punchin"),
+              message: managerMessage.trim(),
+            }),
+          });
+          await parseResponse(response);
+          showToast(t("dashboard.entryDeleted"), "success");
+          await refreshPeopleEmployeeDetail(employeeCode);
+          markEntryRelatedViewsStaleFromPeople();
+        } catch (error) {
+          console.error("Error deleting entry from calendar:", error);
+          showToast(t("dashboard.entryDeleteError", { message: error.message }), "error");
+        }
+      }, { key: actionKey });
     }
     return;
   }
@@ -3386,7 +3402,10 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
   if (editButton) {
     const employee = getEmployeeByCode(editButton.getAttribute("data-employee-code"));
     if (employee) {
-      openEmployeeEditorModal("edit", employee).catch(error => {
+      await runButtonAction(editButton, () => openEmployeeEditorModal("edit", employee), {
+        key: "employee-editor-open",
+        disableWhileRunning: () => document.querySelectorAll("#addEmployeeButton, .employee-edit-button"),
+      }).catch(error => {
         console.error("Unable to open employee editor:", error);
         showToast(t("employees.loadError"), "error");
       });
@@ -3400,7 +3419,10 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
     if (employeeCode && typeof openAddEntryModal === "function") {
       employeesViewState.selectedEmployeeCode = employeeCode;
       setDashboardEmployeeContext(employeeCode);
-      await openAddEntryModal(employeeCode);
+      await openAddEntryModal(employeeCode, addEntryButton).catch(error => {
+        console.error("Error opening add entry modal from People:", error);
+        showToast(t("dashboard.entryOptionsError"), "error");
+      });
     }
     return;
   }
@@ -3411,15 +3433,17 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
     if (employeeCode) {
       setDashboardEmployeeContext(employeeCode);
       if (typeof openUpdateModal === "function") {
-        openUpdateModal(entryEditButton);
-        document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee = employeeCode;
+        await openUpdateModal(entryEditButton, employeeCode);
       }
     }
   }
 });
 
-document.getElementById("addEmployeeButton").addEventListener("click", () => {
-  openEmployeeEditorModal("create").catch(error => {
+document.getElementById("addEmployeeButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, () => openEmployeeEditorModal("create"), {
+    key: "employee-editor-open",
+    disableWhileRunning: () => document.querySelectorAll("#addEmployeeButton, .employee-edit-button"),
+  }).catch(error => {
     console.error("Unable to open employee editor:", error);
     showToast(t("employees.loadError"), "error");
   });
@@ -3437,26 +3461,40 @@ document.getElementById("gc179ImportForm").addEventListener("change", () => {
   setGc179ImportMessage("");
   resetGc179ImportPreview();
 });
-document.getElementById("employeeEditorRemoveButton").addEventListener("click", async () => {
+document.getElementById("employeeEditorRemoveButton").addEventListener("click", async event => {
+  const triggerButton = event.currentTarget;
   const employee = getEmployeeByCode(document.getElementById("employeeEditorCodeInput").value.trim());
-  const modal = bootstrap.Modal.getInstance(document.getElementById("employeeEditorModal"));
-  if (modal) {
-    modal.hide();
-  }
-  await removeEmployee(employee);
+  await runButtonAction(triggerButton, async () => {
+    const removed = await removeEmployee(employee);
+    if (removed) {
+      const modal = bootstrap.Modal.getInstance(document.getElementById("employeeEditorModal"));
+      if (modal) {
+        modal.hide();
+      }
+    }
+  }, { key: "employee-editor-mutation" });
 });
-document.getElementById("employeeEditorRestoreButton").addEventListener("click", async () => {
+document.getElementById("employeeEditorRestoreButton").addEventListener("click", async event => {
+  const triggerButton = event.currentTarget;
   const employee = getEmployeeByCode(document.getElementById("employeeEditorCodeInput").value.trim());
-  const modal = bootstrap.Modal.getInstance(document.getElementById("employeeEditorModal"));
-  if (modal) {
-    modal.hide();
-  }
-  await restoreEmployee(employee);
+  await runButtonAction(triggerButton, async () => {
+    const restored = await restoreEmployee(employee);
+    if (restored) {
+      const modal = bootstrap.Modal.getInstance(document.getElementById("employeeEditorModal"));
+      if (modal) {
+        modal.hide();
+      }
+    }
+  }, { key: "employee-editor-mutation" });
 });
-document.getElementById("employeeEditorSaveButton").addEventListener("click", submitEmployeeEditor);
+document.getElementById("employeeEditorSaveButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, submitEmployeeEditor, { key: "employee-editor-mutation" });
+});
 document.getElementById("employeeEditorForm").addEventListener("submit", event => {
   event.preventDefault();
-  submitEmployeeEditor();
+  runButtonAction(event.submitter || document.getElementById("employeeEditorSaveButton"), submitEmployeeEditor, {
+    key: "employee-editor-mutation",
+  });
 });
 document.getElementById("employeeEditorRoleSelect").addEventListener("change", syncEmployeeEditorProjectAssignmentsPanel);
 document.getElementById("employeeEditorProjectSearchInput").addEventListener("input", event => {

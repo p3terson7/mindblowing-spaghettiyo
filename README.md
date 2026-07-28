@@ -1,8 +1,8 @@
-# Documentation du projet - Gestion des heures GÉEM
+# SAPHIR — documentation du projet
 
 ## 1. Présentation générale
 
-Ce projet est une application interne de gestion des heures pour GÉEM. À la base, l’objectif était surtout de mieux gérer les heures supplémentaires, mais l’application permet maintenant aussi de gérer une catégorie de temps plus générale appelée `Divers`, utilisée pour certains types de travail qui ne sont pas nécessairement des heures supplémentaires.
+SAPHIR est une application interne de gestion des heures. À la base, l’objectif était surtout de mieux gérer les heures supplémentaires, mais l’application permet maintenant aussi de gérer une catégorie de temps plus générale appelée `Divers`, utilisée pour certains types de travail qui ne sont pas nécessairement des heures supplémentaires.
 
 L’application sert à centraliser les entrées de temps des employés, à donner aux superviseurs une vue claire de ce qui doit être approuvé, et à faciliter la préparation des formulaires mensuels. Elle a été pensée pour un environnement de travail assez réaliste : environ 30 à 40 employés, 10 à 20 projets actifs, un poste de travail Windows parfois limité, et un dossier de données qui peut éventuellement être placé sur un lecteur réseau partagé.
 
@@ -207,7 +207,7 @@ Un scénario normal ressemble à ceci :
 Le projet est organisé autour d’une seule application :
 
 ```text
-overtime_manager/
+SAPHIR/
   apps/admin/backend/      backend PowerShell
   apps/admin/frontend/     interface web
   data/                    fichiers JSON de données
@@ -394,7 +394,7 @@ L’application n’utilise pas de mots de passe en clair. Dans `AuthService.ps1
 
 Cela dit, il faut être honnête : les fichiers JSON de données ne sont pas chiffrés. JSON est un format de stockage, pas un mécanisme de sécurité. Les entrées, projets et historiques restent lisibles si quelqu’un a accès au dossier `data/`.
 
-Pour le déploiement actuel, où chaque employé exécute son propre backend local, le backend utilise le compte Windows de cet employé. Les employés doivent donc conserver l’accès en modification au dossier partagé `data/`. Le dossier `GEEM-Distribution`, lui, peut rester en lecture et exécution seulement. Il faut éviter les modifications manuelles des fichiers JSON et sauvegarder régulièrement le dossier de données.
+Pour le déploiement actuel, où chaque employé exécute son propre backend local, le backend utilise le compte Windows de cet employé. Les employés doivent donc conserver l’accès en modification au dossier partagé `data/`. Le dossier `SAPHIR-Distribution`, lui, peut rester en lecture et exécution seulement. Il faut éviter les modifications manuelles des fichiers JSON et sauvegarder régulièrement le dossier de données.
 
 Si un backend central « toujours actif » est ajouté plus tard, l’accès en modification aux données pourra alors être limité au compte de service qui l’exécute.
 
@@ -468,17 +468,19 @@ Sur macOS :
 La façon la plus simple est d’utiliser les lanceurs :
 
 ```text
-Launch GEEM.bat
-Launch GEEM.vbs
+Launch SAPHIR.bat
+Launch SAPHIR.vbs
 ```
 
-Dans une distribution d'équipe, ces lanceurs arrêtent d'abord toute ancienne instance GÉEM vérifiée, consultent un petit manifeste réseau, installent automatiquement la version courante dans `%LOCALAPPDATA%\OvertimeManager\versions`, puis exécutent l'application localement. Il faut créer un **raccourci** vers le lanceur réseau, et non copier le fichier VBS sur le bureau. Voir [le guide de déploiement avec cache local](docs/LOCAL-CACHE-DEPLOYMENT.md) et [le guide de démarrage des employés](docs/EMPLOYEE-QUICK-START.md).
+Dans une distribution d'équipe, ces lanceurs consultent un petit manifeste réseau au démarrage à froid, installent automatiquement la version courante dans `%LOCALAPPDATA%\SAPHIR\versions`, puis exécutent l'application localement. Si la version locale active est déjà en cours d'exécution et répond normalement, un nouveau clic rouvre seulement le navigateur sans relire le manifeste réseau. Les mises à jour sont donc détectées au prochain démarrage à froid (après **Stop SAPHIR**, un redémarrage du poste ou l'arrêt du serveur local); une version différente ou un serveur qui ne répond plus déclenche alors automatiquement un redémarrage. Il faut créer un **raccourci** vers le lanceur réseau, et non copier le fichier VBS sur le bureau. Voir [le guide de déploiement avec cache local](docs/LOCAL-CACHE-DEPLOYMENT.md) et [le guide de démarrage des employés](docs/EMPLOYEE-QUICK-START.md).
+
+Dans le dossier distribué, l’employé double-clique une fois sur `Install SAPHIR Shortcut.vbs`. Ce script crée `SAPHIR.lnk` sur le Bureau, copie `SAPHIR.ico` dans `%LOCALAPPDATA%\SAPHIR\assets` pour éviter les lectures répétées du lecteur réseau, puis configure le raccourci pour appeler le lanceur VBS réseau. Aucun exécutable compilé ni droit administrateur n’est nécessaire.
 
 Pour arrêter l’application :
 
 ```text
-Stop GEEM.bat
-Stop GEEM.vbs
+Stop SAPHIR.bat
+Stop SAPHIR.vbs
 ```
 
 On peut aussi utiliser PowerShell directement :
@@ -498,14 +500,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start-all.ps1
 Sur macOS, il faut utiliser `pwsh` au lieu de `powershell.exe` :
 
 ```bash
-pwsh ./scripts/launch-app.ps1 -Force
+pwsh ./scripts/launch-app.ps1
 ```
 
 ou :
 
 ```bash
-./Launch\ GEEM.command
+./Launch\ SAPHIR.command
 ```
+
+Après avoir modifié le code source en développement, on peut forcer un redémarrage avec `pwsh ./scripts/launch-app.ps1 -Force`.
 
 Pour arrêter :
 
@@ -542,7 +546,7 @@ Exemple avec un dossier réseau :
 ```powershell
 @{
     ListenerPrefix = "http://localhost:8081/"
-    DataFolderPath = "\\SERVEUR\Partage\GEEM\data"
+    DataFolderPath = "\\SERVEUR\Partage\SAPHIR\data"
 }
 ```
 
@@ -599,15 +603,18 @@ En plus des actions d’un admin, un super admin peut :
 ## 14. Structure des fichiers importants
 
 ```text
-overtime_manager/
+SAPHIR/
   README.md
   DOCUMENTATION_PROJET.md
-  Launch GEEM.bat
-  Launch GEEM.command
-  Launch GEEM.vbs
-  Stop GEEM.bat
-  Stop GEEM.command
-  Stop GEEM.vbs
+  Launch SAPHIR.bat
+  Launch SAPHIR.command
+  Launch SAPHIR.vbs
+  Install SAPHIR Shortcut.vbs
+  SAPHIR.ico
+  icon_cropped_final.png
+  Stop SAPHIR.bat
+  Stop SAPHIR.command
+  Stop SAPHIR.vbs
 
   apps/
     admin/

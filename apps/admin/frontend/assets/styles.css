@@ -56,8 +56,6 @@
 *::before,
 *::after {
   box-sizing: border-box;
-  transition: none !important;
-  animation: none !important;
 }
 
 html,
@@ -65,17 +63,11 @@ body {
   min-height: 100%;
 }
 
-html,
-body,
-*,
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
 
-html::-webkit-scrollbar,
-body::-webkit-scrollbar,
-*::-webkit-scrollbar,
 .no-scrollbar::-webkit-scrollbar {
   width: 0;
   height: 0;
@@ -164,10 +156,11 @@ code,
   justify-self: start;
 }
 
-.brand-crest {
+.brand-logo {
   width: 36px;
   height: 36px;
   object-fit: contain;
+  flex: 0 0 36px;
 }
 
 .brand-eyebrow,
@@ -1348,6 +1341,40 @@ code,
   padding: 0.38rem 0.72rem;
   font-weight: 600;
   box-shadow: none !important;
+}
+
+button.is-async-busy,
+.app-nav-link.is-async-busy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  cursor: progress;
+}
+
+button.is-async-busy::before,
+.app-nav-link.is-async-busy::before {
+  content: "";
+  width: 0.85em;
+  height: 0.85em;
+  flex: 0 0 0.85em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: asyncButtonSpin 700ms linear infinite;
+}
+
+@keyframes asyncButtonSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.is-async-busy::before,
+  .app-nav-link.is-async-busy::before {
+    animation: none;
+  }
 }
 
 .btn-primary,
@@ -2592,8 +2619,7 @@ code,
   font-size: 0.75rem;
 }
 
-.employee-card-info-row:first-child .employee-card-info-value::before {
-  content: "EMP";
+.employee-card-info-prefix {
   margin-right: 6px;
   color: var(--text-muted);
   font-size: 0.66rem;

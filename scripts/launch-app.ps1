@@ -28,6 +28,18 @@ function Test-FrontendUrlAvailable {
 }
 
 $service = Get-ManagedServiceConfig -Name "app"
+
+# A backend started before the SAPHIR rebrand is tracked under the previous
+# AppData root. Stop only that verified PID before inspecting the shared port;
+# an unrelated process on 8081 remains protected by ServerControl.
+foreach ($previousService in @(Get-PreviousProductServiceConfigs)) {
+    $previousStatus = Get-ServiceStatus -Name $previousService.Name -DisplayName $previousService.DisplayName -Port $previousService.Port -PidFile $previousService.PidFile
+    if ($previousStatus.TrackedProcessId) {
+        Write-Host "Stopping a verified pre-SAPHIR backend..."
+        [void](Stop-ManagedService -Name $previousService.Name -DisplayName $previousService.DisplayName -Port $previousService.Port -PidFile $previousService.PidFile -Quiet)
+    }
+}
+
 $status = Get-ServiceStatus -Name $service.Name -DisplayName $service.DisplayName -Port $service.Port -PidFile $service.PidFile
 $expectedScriptPath = [System.IO.Path]::GetFullPath($service.ServerScript)
 $trackedScriptPath = if ($status.Metadata -and $status.Metadata.scriptPath) {
@@ -40,18 +52,30 @@ $scriptPathComparison = if (Test-IsWindowsHost) { [System.StringComparison]::Ord
 $isExpectedManagedInstance = $status.TrackedProcessId -and
     -not [string]::IsNullOrWhiteSpace($trackedScriptPath) -and
     $trackedScriptPath.Equals($expectedScriptPath, $scriptPathComparison)
-$frontendIsAvailable = $status.IsRunning -and (Test-FrontendUrlAvailable -Url $service.FrontendUrl)
+$frontendIsAvailable = $isExpectedManagedInstance -and (Test-ManagedServiceHealthyForScript `
+    -Name $service.Name `
+    -DisplayName $service.DisplayName `
+    -ServerScript $service.ServerScript `
+    -Port $service.Port `
+    -PidFile $service.PidFile `
+    -FrontendUrl $service.FrontendUrl `
+    -TimeoutMilliseconds 3000)
+$launchPlan = Get-ManagedServiceLaunchPlan `
+    -IsRunning ([bool]$status.IsRunning) `
+    -HasTrackedProcess ([bool]$status.TrackedProcessId) `
+    -IsExpectedManagedInstance ([bool]$isExpectedManagedInstance) `
+    -FrontendIsAvailable ([bool]$frontendIsAvailable) `
+    -Force:$Force
 
-if ($isExpectedManagedInstance -and $frontendIsAvailable -and -not $Force) {
+if ($launchPlan.Action -eq "Reuse") {
     Write-Host "$($service.DisplayName) is already available at $($service.FrontendUrl)."
 }
 else {
-    if ($status.IsRunning -and -not $status.TrackedProcessId -and -not $Force) {
-        throw "Port $($service.Port) is already used by another program. GEEM did not stop or replace that program."
+    if ($launchPlan.Action -eq "Block") {
+        throw "Port $($service.Port) is already used by another program. SAPHIR did not stop or replace that program."
     }
 
-    $restartTrackedService = $status.TrackedProcessId -and (-not $isExpectedManagedInstance -or -not $frontendIsAvailable)
-    Start-ManagedService -Name $service.Name -DisplayName $service.DisplayName -ServerScript $service.ServerScript -Port $service.Port -PidFile $service.PidFile -StdOutLog $service.StdOutLog -StdErrLog $service.StdErrLog -WorkingDirectory $service.WorkingDirectory -Force:($Force -or $restartTrackedService) | Out-Null
+    Start-ManagedService -Name $service.Name -DisplayName $service.DisplayName -ServerScript $service.ServerScript -Port $service.Port -PidFile $service.PidFile -StdOutLog $service.StdOutLog -StdErrLog $service.StdErrLog -WorkingDirectory $service.WorkingDirectory -Force:([bool]$launchPlan.ForceRestart) | Out-Null
 }
 
 if (-not (Test-FrontendUrlAvailable -Url $service.FrontendUrl)) {
@@ -59,25 +83,25 @@ if (-not (Test-FrontendUrlAvailable -Url $service.FrontendUrl)) {
         [void](Stop-ManagedService -Name $service.Name -DisplayName $service.DisplayName -Port $service.Port -PidFile $service.PidFile -ServerScript $service.ServerScript -Quiet)
     }
     catch {
-        Write-Warning "GEEM did not become ready, and its local backend could not be stopped cleanly."
+        Write-Warning "SAPHIR did not become ready, and its local backend could not be stopped cleanly."
     }
-    throw "GEEM started but did not pass its local web readiness check at $($service.FrontendUrl)."
+    throw "SAPHIR started but did not pass its local web readiness check at $($service.FrontendUrl)."
 }
 
 Write-Host ""
-Write-Host "Opening GÉEM..."
+Write-Host "Opening SAPHIR..."
 try {
     Open-UriInDefaultBrowser -Uri $service.FrontendUrl
 }
 catch {
-    Write-Warning "GEEM is ready, but the browser could not be opened automatically. Open $($service.FrontendUrl) manually."
+    Write-Warning "SAPHIR is ready, but the browser could not be opened automatically. Open $($service.FrontendUrl) manually."
     if (Test-IsWindowsHost) {
         try {
             $shell = New-Object -ComObject WScript.Shell
-            [void]$shell.Popup("GEEM is ready. Open $($service.FrontendUrl) in your browser.", 0, "GEEM is ready", 64)
+            [void]$shell.Popup("SAPHIR is ready. Open $($service.FrontendUrl) in your browser.", 0, "SAPHIR is ready", 64)
         }
         catch {
         }
     }
 }
-Write-Host "GÉEM is ready at $($service.FrontendUrl)"
+Write-Host "SAPHIR is ready at $($service.FrontendUrl)"

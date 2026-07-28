@@ -23,6 +23,87 @@ function ConvertTo-WindowsPowerShellFileArguments {
     return ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $ScriptPath)
 }
 
+function Get-ManagedServiceLaunchPlan {
+    param(
+        [Parameter(Mandatory = $true)][bool]$IsRunning,
+        [Parameter(Mandatory = $true)][bool]$HasTrackedProcess,
+        [Parameter(Mandatory = $true)][bool]$IsExpectedManagedInstance,
+        [Parameter(Mandatory = $true)][bool]$FrontendIsAvailable,
+        [switch]$Force
+    )
+
+    if ($IsExpectedManagedInstance -and $FrontendIsAvailable -and -not $Force) {
+        return [PSCustomObject]@{
+            Action       = "Reuse"
+            ForceRestart = $false
+        }
+    }
+
+    if ($IsRunning -and -not $HasTrackedProcess -and -not $Force) {
+        return [PSCustomObject]@{
+            Action       = "Block"
+            ForceRestart = $false
+        }
+    }
+
+    $restartTrackedService = $HasTrackedProcess -and (-not $IsExpectedManagedInstance -or -not $FrontendIsAvailable)
+    $forceRestart = [bool]($Force -or $restartTrackedService)
+    return [PSCustomObject]@{
+        Action       = if ($forceRestart) { "Restart" } else { "Start" }
+        ForceRestart = $forceRestart
+    }
+}
+
+function Test-ManagedServiceHealthyForScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$DisplayName,
+        [Parameter(Mandatory = $true)][string]$ServerScript,
+        [Parameter(Mandatory = $true)][int]$Port,
+        [Parameter(Mandatory = $true)][string]$PidFile,
+        [Parameter(Mandatory = $true)][string]$FrontendUrl,
+        [int]$TimeoutMilliseconds = 1500
+    )
+
+    try {
+        $status = Get-ServiceStatus -Name $Name -DisplayName $DisplayName -Port $Port -PidFile $PidFile
+        if (-not $status.IsRunning -or -not $status.TrackedProcessId -or $null -eq $status.Metadata -or
+            [string]::IsNullOrWhiteSpace([string]$status.Metadata.scriptPath) -or
+            [string]::IsNullOrWhiteSpace([string]$status.Metadata.instanceToken)) {
+            return $false
+        }
+
+        $expectedScriptPath = [System.IO.Path]::GetFullPath($ServerScript)
+        $trackedScriptPath = [System.IO.Path]::GetFullPath([string]$status.Metadata.scriptPath)
+        $comparison = if (Test-IsWindowsHost) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+        if (-not $trackedScriptPath.Equals($expectedScriptPath, $comparison)) {
+            return $false
+        }
+
+        $request = [System.Net.WebRequest]::Create($FrontendUrl)
+        $request.Method = "GET"
+        $request.Timeout = $TimeoutMilliseconds
+        $request.ReadWriteTimeout = $TimeoutMilliseconds
+        $response = [System.Net.HttpWebResponse]$request.GetResponse()
+        try {
+            $statusCode = [int]$response.StatusCode
+            $appIdentity = [string]$response.Headers["X-SAPHIR-App"]
+            $responseInstanceToken = [string]$response.Headers["X-SAPHIR-Instance"]
+            $expectedInstanceToken = [string]$status.Metadata.instanceToken
+            return ($statusCode -ge 200 -and
+                $statusCode -lt 400 -and
+                $appIdentity -eq "SAPHIR" -and
+                $responseInstanceToken.Equals($expectedInstanceToken, [System.StringComparison]::Ordinal))
+        }
+        finally {
+            $response.Close()
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
 function Get-PowerShellExecutable {
     $candidates = @("pwsh", "powershell", "powershell.exe")
     foreach ($candidate in $candidates) {
@@ -426,8 +507,12 @@ function Wait-ForPortState {
 
 function Get-StartupTimeoutSeconds {
     $timeoutSeconds = 45
-    if (-not [string]::IsNullOrWhiteSpace([string]$env:OVERTIME_STARTUP_TIMEOUT_SECONDS)) {
-        [int]::TryParse([string]$env:OVERTIME_STARTUP_TIMEOUT_SECONDS, [ref]$timeoutSeconds) | Out-Null
+    $configuredTimeout = [string]$env:SAPHIR_STARTUP_TIMEOUT_SECONDS
+    if ([string]::IsNullOrWhiteSpace($configuredTimeout)) {
+        $configuredTimeout = [System.Environment]::GetEnvironmentVariable(("OVER" + "TIME_STARTUP_TIMEOUT_SECONDS"))
+    }
+    if (-not [string]::IsNullOrWhiteSpace($configuredTimeout)) {
+        [int]::TryParse($configuredTimeout, [ref]$timeoutSeconds) | Out-Null
     }
 
     if ($timeoutSeconds -lt 10) {
@@ -519,39 +604,47 @@ function Start-ManagedService {
     }
 
     $powerShellExecutable = Get-PowerShellExecutable
-    if (Test-IsWindowsHost) {
-        $arguments = ConvertTo-WindowsPowerShellFileArguments -ScriptPath $ServerScript
-        $startProcessParams = @{
-            FilePath               = $powerShellExecutable
-            ArgumentList           = $arguments
-            WorkingDirectory       = $WorkingDirectory
-            RedirectStandardOutput = $StdOutLog
-            RedirectStandardError  = $StdErrLog
-            PassThru               = $true
-            WindowStyle            = "Hidden"
-        }
+    $instanceToken = [Guid]::NewGuid().ToString("N")
+    $previousInstanceToken = [System.Environment]::GetEnvironmentVariable("SAPHIR_INSTANCE_TOKEN", [System.EnvironmentVariableTarget]::Process)
+    try {
+        [System.Environment]::SetEnvironmentVariable("SAPHIR_INSTANCE_TOKEN", $instanceToken, [System.EnvironmentVariableTarget]::Process)
+        if (Test-IsWindowsHost) {
+            $arguments = ConvertTo-WindowsPowerShellFileArguments -ScriptPath $ServerScript
+            $startProcessParams = @{
+                FilePath               = $powerShellExecutable
+                ArgumentList           = $arguments
+                WorkingDirectory       = $WorkingDirectory
+                RedirectStandardOutput = $StdOutLog
+                RedirectStandardError  = $StdErrLog
+                PassThru               = $true
+                WindowStyle            = "Hidden"
+            }
 
-        $process = Start-Process @startProcessParams
-        $requestedProcessId = [int]$process.Id
+            $process = Start-Process @startProcessParams
+            $requestedProcessId = [int]$process.Id
+        }
+        else {
+            $nohupCommand = Get-Command -Name "nohup" -ErrorAction SilentlyContinue
+            $launcherPrefix = if ($null -ne $nohupCommand) { (ConvertTo-ShellSingleQuotedLiteral -Value ([string]$nohupCommand.Source)) + " " } else { "" }
+            $shellCommand = "cd {0}; {1}{2} -NoProfile -File {3} > {4} 2> {5} < /dev/null &" -f `
+                (ConvertTo-ShellSingleQuotedLiteral -Value $WorkingDirectory),
+                $launcherPrefix,
+                (ConvertTo-ShellSingleQuotedLiteral -Value $powerShellExecutable),
+                (ConvertTo-ShellSingleQuotedLiteral -Value $ServerScript),
+                (ConvertTo-ShellSingleQuotedLiteral -Value $StdOutLog),
+                (ConvertTo-ShellSingleQuotedLiteral -Value $StdErrLog)
+            $processStartInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $processStartInfo.FileName = "/bin/sh"
+            $processStartInfo.WorkingDirectory = $WorkingDirectory
+            $processStartInfo.UseShellExecute = $false
+            [void]$processStartInfo.ArgumentList.Add("-c")
+            [void]$processStartInfo.ArgumentList.Add($shellCommand)
+            $process = [System.Diagnostics.Process]::Start($processStartInfo)
+            $requestedProcessId = [int]$process.Id
+        }
     }
-    else {
-        $nohupCommand = Get-Command -Name "nohup" -ErrorAction SilentlyContinue
-        $launcherPrefix = if ($null -ne $nohupCommand) { (ConvertTo-ShellSingleQuotedLiteral -Value ([string]$nohupCommand.Source)) + " " } else { "" }
-        $shellCommand = "cd {0}; {1}{2} -NoProfile -File {3} > {4} 2> {5} < /dev/null &" -f `
-            (ConvertTo-ShellSingleQuotedLiteral -Value $WorkingDirectory),
-            $launcherPrefix,
-            (ConvertTo-ShellSingleQuotedLiteral -Value $powerShellExecutable),
-            (ConvertTo-ShellSingleQuotedLiteral -Value $ServerScript),
-            (ConvertTo-ShellSingleQuotedLiteral -Value $StdOutLog),
-            (ConvertTo-ShellSingleQuotedLiteral -Value $StdErrLog)
-        $processStartInfo = New-Object System.Diagnostics.ProcessStartInfo
-        $processStartInfo.FileName = "/bin/sh"
-        $processStartInfo.WorkingDirectory = $WorkingDirectory
-        $processStartInfo.UseShellExecute = $false
-        [void]$processStartInfo.ArgumentList.Add("-c")
-        [void]$processStartInfo.ArgumentList.Add($shellCommand)
-        $process = [System.Diagnostics.Process]::Start($processStartInfo)
-        $requestedProcessId = [int]$process.Id
+    finally {
+        [System.Environment]::SetEnvironmentVariable("SAPHIR_INSTANCE_TOKEN", $previousInstanceToken, [System.EnvironmentVariableTarget]::Process)
     }
 
     $startupTimeoutSeconds = Get-StartupTimeoutSeconds
@@ -594,6 +687,7 @@ function Start-ManagedService {
         stderrLog         = $StdErrLog
         startedAtUtc      = (Get-Date).ToUniversalTime().ToString("o")
         processStartedAtUtc = $processStartedAtUtc
+        instanceToken     = $instanceToken
     }
     Write-ServiceMetadata -PidFile $PidFile -Metadata $metadata
 

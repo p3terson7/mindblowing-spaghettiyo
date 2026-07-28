@@ -12,3 +12,6 @@ legacy/git-metadata/
 # Managed runtime files
 runtime/
 dist/
+
+# Local data snapshots must never be published
+v1_data/

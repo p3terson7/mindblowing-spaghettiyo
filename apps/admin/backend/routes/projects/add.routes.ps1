@@ -7,13 +7,23 @@
 
             $payload = Read-JsonRequestBody -Request $request
             
-            # Validate that projectCode and projectName are provided.
-            if (-not ($payload.projectCode -and $payload.projectName)) {
-                respondWithError $response 400 "Missing required fields: projectCode and projectName are required."
+            $projectCode = if ($null -ne $payload -and $payload.PSObject.Properties.Name -contains "projectCode") { ([string]$payload.projectCode).Trim() } else { "" }
+            $projectName = if ($null -ne $payload -and $payload.PSObject.Properties.Name -contains "projectName") { ([string]$payload.projectName).Trim() } else { "" }
+
+            if ([string]::IsNullOrWhiteSpace($projectCode)) {
+                respondWithError $response 400 "Missing required field: projectCode is required."
+                continue
+            }
+            if (-not (Test-ProjectCodeFormat -ProjectCode $projectCode)) {
+                respondWithError $response 400 "File number must be 1 to 64 characters and use letters, numbers, spaces, periods, underscores, or hyphens."
+                continue
+            }
+            if ($projectName.Length -gt 200) {
+                respondWithError $response 400 "Project name cannot exceed 200 characters."
                 continue
             }
 
-            $sector = if ($payload.PSObject.Properties.Name -contains "sector") { [string]$payload.sector } else { "" }
+            $sector = if ($payload.PSObject.Properties.Name -contains "sector") { ([string]$payload.sector).Trim() } else { "" }
             $admins = if ($payload.PSObject.Properties.Name -contains "admins") { @(ConvertTo-CodeArray -Value $payload.admins) } else { @() }
             $backupAdmins = if ($payload.PSObject.Properties.Name -contains "backupAdmins") { @(ConvertTo-CodeArray -Value $payload.backupAdmins) } else { @() }
             $invalidAdminCode = ""
@@ -33,18 +43,18 @@
             try {
                 $lockHandle = Acquire-ResourceLock -ResourcePath $projectsFile
                 try {
-                    $projects = Get-Projects
+                    $projects = @(Get-Projects)
 
                     # Check for duplicate projectCode.
-                    if ($projects | Where-Object { $_.projectCode -eq $payload.projectCode }) {
-                        respondWithError $response 400 "Project with code $($payload.projectCode) already exists."
+                    if ($projects | Where-Object { [string]$_.projectCode -ieq $projectCode }) {
+                        respondWithError $response 400 "Project with code $projectCode already exists."
                         continue
                     }
 
                     # Append the new project.
                     $projects += [PSCustomObject]@{
-                        projectCode  = [string]$payload.projectCode
-                        projectName  = [string]$payload.projectName
+                        projectCode  = $projectCode
+                        projectName  = $projectName
                         sector       = $sector
                         admins       = $admins
                         backupAdmins = $backupAdmins
@@ -57,7 +67,13 @@
                     Release-ResourceLock -LockHandle $lockHandle
                 }
 
-                logHistory "Add" "Created a project named <strong>$([string]$payload.projectName)</strong> with code <strong>$([string]$payload.projectCode)</strong>." ([string]$currentUser.displayName)
+                $historyMessage = if ([string]::IsNullOrWhiteSpace($projectName)) {
+                    "Created a project with code <strong>$projectCode</strong>."
+                }
+                else {
+                    "Created a project named <strong>$projectName</strong> with code <strong>$projectCode</strong>."
+                }
+                logHistory "Add" $historyMessage ([string]$currentUser.displayName)
             }
             catch {
                 $projectMutationError = $_
@@ -66,7 +82,7 @@
             finally {
                 if ($projectMutationCommitted) {
                     try {
-                        Publish-DataChange -Category "project" -Resource ([string]$payload.projectCode) | Out-Null
+                        Publish-DataChange -Category "project" -Resource $projectCode | Out-Null
                     }
                     catch {
                         if ($null -eq $projectMutationError) {

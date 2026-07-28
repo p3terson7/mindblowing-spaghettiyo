@@ -13,6 +13,13 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 $service = Get-ManagedServiceConfig -Name "app"
 [void](Show-ServiceStatus -Name $service.Name -DisplayName $service.DisplayName -Port $service.Port -PidFile $service.PidFile)
 
+foreach ($previousService in @(Get-PreviousProductServiceConfigs)) {
+    $previousStatus = Get-ServiceStatus -Name $previousService.Name -DisplayName $previousService.DisplayName -Port $previousService.Port -PidFile $previousService.PidFile
+    if ($previousStatus.Metadata) {
+        [void](Show-ServiceStatus -Name $previousService.Name -DisplayName $previousService.DisplayName -Port $previousService.Port -PidFile $previousService.PidFile)
+    }
+}
+
 foreach ($legacyService in Get-LegacyServiceConfigs) {
     $legacyStatus = Get-ServiceStatus -Name $legacyService.Name -DisplayName $legacyService.DisplayName -Port $legacyService.Port -PidFile $legacyService.PidFile
     if ($legacyStatus.Metadata) {
