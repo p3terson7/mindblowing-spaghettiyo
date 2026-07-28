@@ -1,5 +1,6 @@
-param(
-    [string]$DistributionRoot = ""
+﻿param(
+    [string]$DistributionRoot = "",
+    [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,9 +9,9 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
     throw "PowerShell 5.1 or newer is required."
 }
 
-$isWindows = $PSVersionTable.PSEdition -eq "Desktop" -or
+$runningOnWindows = $PSVersionTable.PSEdition -eq "Desktop" -or
     [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
-if (-not $isWindows) {
+if (-not $runningOnWindows) {
     throw "The SAPHIR graphical launcher is available on Windows only."
 }
 if ([System.Threading.Thread]::CurrentThread.ApartmentState -ne [System.Threading.ApartmentState]::STA) {
@@ -384,6 +385,11 @@ try {
         $window.Background = [System.Windows.SystemColors]::WindowBrush
         $script:MainCard.Background = [System.Windows.SystemColors]::ControlBrush
         $script:MainCard.BorderBrush = [System.Windows.SystemColors]::ActiveBorderBrush
+    }
+
+    if ($ValidateOnly) {
+        Write-Host "SAPHIR launcher validation passed."
+        return
     }
 
     function New-Brush {

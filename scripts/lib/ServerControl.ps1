@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 function Test-IsWindowsHost {
     return ($PSVersionTable.PSEdition -eq "Desktop") -or ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)

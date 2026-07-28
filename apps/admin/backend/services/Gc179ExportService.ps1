@@ -1,4 +1,4 @@
-function ConvertTo-Gc179MonthParts {
+﻿function ConvertTo-Gc179MonthParts {
     param([Parameter(Mandatory = $true)][string]$MonthKey)
 
     $normalized = ([string]$MonthKey).Trim()
