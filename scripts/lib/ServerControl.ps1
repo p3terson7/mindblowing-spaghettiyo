@@ -104,6 +104,92 @@ function Test-ManagedServiceHealthyForScript {
     }
 }
 
+function Test-ManagedServiceHttpIdentity {
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [Parameter(Mandatory = $true)][string]$InstanceToken,
+        [int]$TimeoutMilliseconds = 1500
+    )
+
+    if ([string]::IsNullOrWhiteSpace($InstanceToken)) {
+        return $false
+    }
+
+    try {
+        $request = [System.Net.WebRequest]::Create($Uri)
+        $request.Method = "GET"
+        $request.Timeout = $TimeoutMilliseconds
+        $request.ReadWriteTimeout = $TimeoutMilliseconds
+        $request.AllowAutoRedirect = $false
+        $request.Proxy = $null
+        $response = [System.Net.HttpWebResponse]$request.GetResponse()
+        try {
+            $statusCode = [int]$response.StatusCode
+            $appIdentity = [string]$response.Headers["X-SAPHIR-App"]
+            $responseInstanceToken = [string]$response.Headers["X-SAPHIR-Instance"]
+            return ($statusCode -ge 200 -and
+                $statusCode -lt 400 -and
+                $appIdentity -eq "SAPHIR" -and
+                $responseInstanceToken.Equals($InstanceToken, [System.StringComparison]::Ordinal))
+        }
+        finally {
+            $response.Close()
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
+function Invoke-ManagedServiceGracefulShutdown {
+    param(
+        [Parameter(Mandatory = $true)][int]$Port,
+        [Parameter(Mandatory = $true)][string]$InstanceToken,
+        [int]$TimeoutMilliseconds = 30000
+    )
+
+    if ([string]::IsNullOrWhiteSpace($InstanceToken)) {
+        return $false
+    }
+
+    # The backend intentionally serializes requests so file mutations cannot
+    # overlap. A health request may therefore wait behind a legitimate shared
+    # data write. Give that request enough time to finish before the protected
+    # force-stop fallback is considered.
+    $baseUri = "http://localhost:{0}/" -f $Port
+    if (-not (Test-ManagedServiceHttpIdentity `
+        -Uri $baseUri `
+        -InstanceToken $InstanceToken `
+        -TimeoutMilliseconds $TimeoutMilliseconds)) {
+        return $false
+    }
+
+    try {
+        $request = [System.Net.WebRequest]::Create(("{0}__saphir/control/shutdown" -f $baseUri))
+        $request.Method = "POST"
+        $request.Timeout = $TimeoutMilliseconds
+        $request.ReadWriteTimeout = $TimeoutMilliseconds
+        $request.AllowAutoRedirect = $false
+        $request.Proxy = $null
+        $request.ContentLength = 0
+        $request.Headers["X-SAPHIR-Control-Token"] = $InstanceToken
+        $response = [System.Net.HttpWebResponse]$request.GetResponse()
+        try {
+            $appIdentity = [string]$response.Headers["X-SAPHIR-App"]
+            $responseInstanceToken = [string]$response.Headers["X-SAPHIR-Instance"]
+            return ([int]$response.StatusCode -eq 202 -and
+                $appIdentity -eq "SAPHIR" -and
+                $responseInstanceToken.Equals($InstanceToken, [System.StringComparison]::Ordinal))
+        }
+        finally {
+            $response.Close()
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
 function Get-PowerShellExecutable {
     $candidates = @("pwsh", "powershell", "powershell.exe")
     foreach ($candidate in $candidates) {
@@ -743,6 +829,38 @@ function Stop-ManagedService {
         return $false
     }
 
+    $managedProcessIds = @($processIds | Where-Object { [int]$_ -gt 0 -and [int]$_ -ne 4 })
+    $instanceToken = if ($status.Metadata -and $status.Metadata.instanceToken) {
+        [string]$status.Metadata.instanceToken
+    }
+    else {
+        ""
+    }
+    $canRequestGracefulShutdown = $status.IsRunning -and
+        $status.TrackedProcessId -and
+        ($processIds -contains [int]$status.TrackedProcessId) -and
+        -not [string]::IsNullOrWhiteSpace($instanceToken)
+
+    if ($canRequestGracefulShutdown -and
+        (Invoke-ManagedServiceGracefulShutdown -Port $Port -InstanceToken $instanceToken)) {
+        $gracefulProcessesStopped = $true
+        if ($managedProcessIds.Count -gt 0) {
+            $gracefulProcessesStopped = Wait-ForProcessesToExit -ProcessIds $managedProcessIds -TimeoutSeconds 5
+        }
+
+        $gracefulPortOwner = Wait-ForPortState -Port $Port -ShouldBeListening $false -TimeoutSeconds 5
+        $gracefulPortStopped = -not $gracefulPortOwner -or
+            (Test-IsWindowsHost -and [int]$gracefulPortOwner -eq 4)
+
+        if ($gracefulProcessesStopped -and $gracefulPortStopped) {
+            Remove-ServiceMetadata -PidFile $PidFile
+            if (-not $Quiet) {
+                Write-Host "Stopped $DisplayName."
+            }
+            return $true
+        }
+    }
+
     foreach ($processId in $processIds) {
         try {
             Stop-Process -Id $processId -Force -ErrorAction Stop
@@ -750,7 +868,6 @@ function Stop-ManagedService {
         catch { }
     }
 
-    $managedProcessIds = @($processIds | Where-Object { [int]$_ -gt 0 -and [int]$_ -ne 4 })
     $managedProcessesStopped = $true
     if ($managedProcessIds.Count -gt 0) {
         $managedProcessesStopped = Wait-ForProcessesToExit -ProcessIds $managedProcessIds -TimeoutSeconds 10

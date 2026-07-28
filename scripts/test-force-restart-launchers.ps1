@@ -61,7 +61,15 @@ Assert-LauncherContains -RelativePath "scripts/lib/ServerControl.ps1" -ExpectedT
 Assert-LauncherContains -RelativePath "scripts/lib/ServerControl.ps1" -ExpectedText 'instanceToken     = $instanceToken'
 Assert-LauncherContains -RelativePath "Launch SAPHIR.bat" -ExpectedText '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe'
 Assert-LauncherContains -RelativePath "Launch SAPHIR.vbs" -ExpectedText '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe'
+Assert-LauncherContains -RelativePath "SAPHIR Launcher.vbs" -ExpectedText '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe'
+Assert-LauncherContains -RelativePath "SAPHIR Launcher.vbs" -ExpectedText '-STA'
+Assert-LauncherContains -RelativePath "SAPHIR Launcher.vbs" -ExpectedText 'distribution-root.txt'
 Assert-LauncherContains -RelativePath "Install SAPHIR Shortcut.vbs" -ExpectedText 'shortcut.IconLocation = localIconPath & ",0"'
-Assert-LauncherContains -RelativePath "Install SAPHIR Shortcut.vbs" -ExpectedText 'shortcut.Arguments = Chr(34) & launchScriptPath & Chr(34)'
+Assert-LauncherContains -RelativePath "Install SAPHIR Shortcut.vbs" -ExpectedText 'shortcut.Arguments = Chr(34) & localLauncherEntryPath & Chr(34)'
+Assert-LauncherContains -RelativePath "Install SAPHIR Shortcut.vbs" -ExpectedText 'localLauncherRoot = fso.BuildPath(localRoot, "launcher")'
+Assert-LauncherContains -RelativePath "scripts/launch-cached-app.ps1" -ExpectedText '[switch]$NoBrowser'
+Assert-LauncherContains -RelativePath "scripts/launch-cached-app.ps1" -ExpectedText '[switch]$NonInteractive'
+Assert-LauncherContains -RelativePath "scripts/launch-cached-app.ps1" -ExpectedText '[string]$DistributionRoot'
+Assert-LauncherContains -RelativePath "scripts/launch-app.ps1" -ExpectedText '[switch]$NoBrowser'
 
 Write-Host "Smart launcher reuse test passed."

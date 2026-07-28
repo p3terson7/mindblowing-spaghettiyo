@@ -36,12 +36,16 @@ function Invoke-TestBootstrap {
     param(
         [Parameter(Mandatory = $true)][string]$PowerShellPath,
         [Parameter(Mandatory = $true)][string]$BootstrapPath,
-        [switch]$Force
+        [switch]$Force,
+        [switch]$NoBrowser
     )
 
     $bootstrapArguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $BootstrapPath)
     if ($Force) {
         $bootstrapArguments += "-Force"
+    }
+    if ($NoBrowser) {
+        $bootstrapArguments += "-NoBrowser"
     }
     $output = @(& $PowerShellPath @bootstrapArguments 2>&1)
     return [PSCustomObject]@{
@@ -69,6 +73,7 @@ try {
     Ensure-TestDirectory -Path (Join-Path -Path $distributionScripts -ChildPath "lib")
     Ensure-TestDirectory -Path (Join-Path -Path $distributionRoot -ChildPath "deployment")
     Ensure-TestDirectory -Path (Join-Path -Path $previousReleasePath -ChildPath "apps/admin/backend")
+    Ensure-TestDirectory -Path (Join-Path -Path $previousReleasePath -ChildPath "apps/admin/backend/lib")
     Ensure-TestDirectory -Path (Join-Path -Path $previousReleasePath -ChildPath "apps/admin/backend/services")
     Ensure-TestDirectory -Path (Join-Path -Path $previousReleasePath -ChildPath "apps/admin/frontend")
     Ensure-TestDirectory -Path (Join-Path -Path $previousReleasePath -ChildPath "docs")
@@ -91,6 +96,9 @@ function Open-UriInDefaultBrowser {
 
     Set-Content -LiteralPath (Join-Path -Path $previousReleasePath -ChildPath "apps/admin/backend/admin-server.ps1") -Value "# fixture" -Encoding UTF8
     Set-Content -LiteralPath (Join-Path -Path $previousReleasePath -ChildPath "apps/admin/backend/admin-config.psd1") -Value "@{ DataFolderPath = '$($dataFolder.Replace("'", "''"))' }" -Encoding UTF8
+    # This fixture intentionally models a cached release from before graceful
+    # service control existed. New bootstrap code must continue to discover and
+    # launch it when the network release is unavailable or needs rollback.
     Set-Content -LiteralPath (Join-Path -Path $previousReleasePath -ChildPath "apps/admin/backend/services/RouteDispatchService.ps1") -Value "# fixture" -Encoding UTF8
     Set-Content -LiteralPath (Join-Path -Path $previousReleasePath -ChildPath "apps/admin/frontend/index.html") -Value "<html>fixture</html>" -Encoding UTF8
     Set-Content -LiteralPath (Join-Path -Path $previousReleasePath -ChildPath "docs/GC179.pdf") -Value "fixture" -Encoding ASCII
@@ -144,6 +152,11 @@ Set-Content -LiteralPath $env:SAPHIR_BOOTSTRAP_TEST_MARKER -Value ("working-rele
     Assert-True -Condition (($warmResult.Output -join " ") -match "without checking the network release") -Message "a warm launch must report that it skipped the network release check"
 
     Remove-Item -LiteralPath $browserMarkerPath -Force
+    $quietWarmResult = Invoke-TestBootstrap -PowerShellPath $powerShellCommand.Source -BootstrapPath $bootstrapPath -NoBrowser
+    Assert-True -Condition ($quietWarmResult.ExitCode -eq 0) -Message "-NoBrowser must preserve the healthy warm-launch shortcut"
+    Assert-True -Condition (-not (Test-Path -LiteralPath $browserMarkerPath)) -Message "-NoBrowser must not reopen the frontend for a healthy warm instance"
+    Assert-True -Condition (-not (Test-Path -LiteralPath $launchMarkerPath)) -Message "-NoBrowser must not restart a healthy warm instance"
+
     $forcedResult = Invoke-TestBootstrap -PowerShellPath $powerShellCommand.Source -BootstrapPath $bootstrapPath -Force
     Assert-True -Condition ($forcedResult.ExitCode -eq 0) -Message ("-Force must bypass the warm-launch shortcut. Output: {0}" -f ($forcedResult.Output -join " | "))
     Assert-True -Condition (-not (Test-Path -LiteralPath $browserMarkerPath)) -Message "-Force must not use the warm-launch browser shortcut"
@@ -200,12 +213,16 @@ throw "Intentional launch failure for rollback testing."
     $failedLaunch = Get-Content -LiteralPath (Join-Path -Path $cacheRoot -ChildPath "failed.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True -Condition ([string]$failedLaunch.releaseId -eq "launch-failure") -Message "a release that fails during launch must be marked failed"
 
+    Set-Content -LiteralPath (Join-Path -Path $previousReleasePath -ChildPath "scripts/launch-app.ps1") -Value @'
+param([switch]$Force, [switch]$NoBrowser)
+Set-Content -LiteralPath $env:SAPHIR_BOOTSTRAP_TEST_MARKER -Value ("working-release|{0}|{1}" -f [bool]$Force, [bool]$NoBrowser) -Encoding UTF8
+'@ -Encoding UTF8
     Set-Content -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "deployment/current.json") -Value "{" -Encoding UTF8
     Remove-Item -LiteralPath $launchMarkerPath -Force
-    $manifestFailureResult = Invoke-TestBootstrap -PowerShellPath $powerShellCommand.Source -BootstrapPath $bootstrapPath
+    $manifestFailureResult = Invoke-TestBootstrap -PowerShellPath $powerShellCommand.Source -BootstrapPath $bootstrapPath -NoBrowser
     Assert-True -Condition ($manifestFailureResult.ExitCode -eq 0) -Message "a corrupt network manifest must fall back to the active local release"
     Assert-True -Condition (Test-Path -LiteralPath $launchMarkerPath -PathType Leaf) -Message "manifest fallback must launch the active local release"
-    Assert-True -Condition ((Get-Content -LiteralPath $launchMarkerPath -Raw).Trim() -eq "working-release|False") -Message "manifest fallback must reuse a healthy active version without forcing a restart"
+    Assert-True -Condition ((Get-Content -LiteralPath $launchMarkerPath -Raw).Trim() -eq "working-release|False|True") -Message "manifest fallback must reuse the active version without forcing a restart or opening the browser"
 
     Write-Host "Cached bootstrap rollback test passed."
 }

@@ -6,6 +6,7 @@ $script:saphirInstanceToken = [string]$env:SAPHIR_INSTANCE_TOKEN
 # Shared context + helpers + services
 . (Join-Path -Path $scriptDir -ChildPath "lib/AdminContext.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "lib/CommonHelpers.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "lib/ControlService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "lib/FileStore.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "lib/ResponseHelpers.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/AuthService.ps1")
@@ -86,35 +87,80 @@ catch {
 }
 Write-Host "SAPHIR Server running on $listenerPrefix"
 
-while ($true) {
-    $context = $listener.GetContext()
-    $request = $context.Request
-    $response = $context.Response
+$shutdownRequested = $false
+try {
+    while (-not $shutdownRequested) {
+        $context = $listener.GetContext()
+        $request = $context.Request
+        $response = $context.Response
 
-    try {
-        $response.Headers.Add("Access-Control-Allow-Origin", "*")
-        $response.Headers.Add("X-SAPHIR-App", "SAPHIR")
-        if (-not [string]::IsNullOrWhiteSpace($script:saphirInstanceToken)) {
-            $response.Headers.Add("X-SAPHIR-Instance", $script:saphirInstanceToken)
+        try {
+            $response.Headers.Add("X-SAPHIR-App", "SAPHIR")
+            if (-not [string]::IsNullOrWhiteSpace($script:saphirInstanceToken)) {
+                $response.Headers.Add("X-SAPHIR-Instance", $script:saphirInstanceToken)
+            }
+
+            $remoteAddress = if ($null -ne $request.RemoteEndPoint) {
+                $request.RemoteEndPoint.Address
+            }
+            else {
+                $null
+            }
+            $controlDecision = Resolve-SaphirControlRequest `
+                -Method ([string]$request.HttpMethod) `
+                -Path ([string]$request.Url.AbsolutePath) `
+                -RemoteAddress $remoteAddress `
+                -ExpectedToken $script:saphirInstanceToken `
+                -ProvidedToken ([string]$request.Headers[$script:SaphirControlTokenHeader])
+
+            if ($controlDecision.IsControlRequest) {
+                if (-not $controlDecision.ShouldShutdown) {
+                    if ([int]$controlDecision.StatusCode -eq 405) {
+                        $response.Headers["Allow"] = "POST"
+                    }
+                    respondWithError $response ([int]$controlDecision.StatusCode) ([string]$controlDecision.Message)
+                    continue
+                }
+
+                $response.ContentType = "application/json"
+                $response.StatusCode = [int]$controlDecision.StatusCode
+                $response.Headers["Cache-Control"] = "no-store"
+                $responseBytes = [System.Text.Encoding]::UTF8.GetBytes('{ "status": "stopping" }')
+                $response.ContentLength64 = $responseBytes.Length
+                $response.OutputStream.Write($responseBytes, 0, $responseBytes.Length)
+                $response.Close()
+                $shutdownRequested = $true
+                continue
+            }
+
+            $response.Headers.Add("Access-Control-Allow-Origin", "*")
+
+            if ($request.HttpMethod -eq "OPTIONS") {
+                $response.Headers.Add("Access-Control-Allow-Methods", "GET, OPTIONS, PUT, DELETE, POST")
+                $response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                respondWithSuccess $response '{}'
+                continue
+            }
+
+            # Route handlers are compiled once at startup; resolve the one matching
+            # handler instead of evaluating every top-level script on each request.
+            $routeScriptPath = Resolve-AdminTopLevelRouteScript -Method ([string]$request.HttpMethod) -Path ([string]$request.Url.AbsolutePath)
+            if (-not [string]::IsNullOrWhiteSpace($routeScriptPath)) {
+                . $script:RouteScriptBlocks[$routeScriptPath]
+            }
+
+            respondWithError $response 400 "Invalid request"
         }
-
-        if ($request.HttpMethod -eq "OPTIONS") {
-            $response.Headers.Add("Access-Control-Allow-Methods", "GET, OPTIONS, PUT, DELETE, POST")
-            $response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-            respondWithSuccess $response '{}'
-            continue
+        catch {
+            respondWithError $response 500 $_.Exception.Message
         }
-
-        # Route handlers are compiled once at startup; resolve the one matching
-        # handler instead of evaluating every top-level script on each request.
-        $routeScriptPath = Resolve-AdminTopLevelRouteScript -Method ([string]$request.HttpMethod) -Path ([string]$request.Url.AbsolutePath)
-        if (-not [string]::IsNullOrWhiteSpace($routeScriptPath)) {
-            . $script:RouteScriptBlocks[$routeScriptPath]
-        }
-
-        respondWithError $response 400 "Invalid request"
-    }
-    catch {
-        respondWithError $response 500 $_.Exception.Message
     }
 }
+finally {
+    if ($listener.IsListening) {
+        $listener.Stop()
+    }
+    $listener.Close()
+}
+
+Write-Host "SAPHIR Server stopped."

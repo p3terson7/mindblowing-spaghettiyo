@@ -329,13 +329,14 @@ try {
     # until the release ZIP has also been built and validated successfully.
     Ensure-PackageDirectory -Path $bootstrapRoot
     Ensure-PackageDirectory -Path (Join-Path -Path $bootstrapRoot -ChildPath "scripts/lib")
-    foreach ($launcherName in @("Launch SAPHIR.bat", "Launch SAPHIR.vbs", "Stop SAPHIR.bat", "Stop SAPHIR.vbs", "Install SAPHIR Shortcut.vbs", "SAPHIR.ico")) {
+    foreach ($launcherName in @("Launch SAPHIR.bat", "Launch SAPHIR.vbs", "SAPHIR Launcher.vbs", "Stop SAPHIR.bat", "Stop SAPHIR.vbs", "Install SAPHIR Shortcut.vbs", "SAPHIR.ico")) {
         Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath $launcherName) -Destination (Join-Path -Path $bootstrapRoot -ChildPath $launcherName)
     }
     Write-PackagePlainTextGuide -Source (Join-Path -Path $repoRoot -ChildPath "docs/EMPLOYEE-QUICK-START.md") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "GUIDE-DEMARRAGE-SAPHIR.txt")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/launch-cached-app.ps1") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "scripts/launch-cached-app.ps1")
+    Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/saphir-launcher.ps1") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "scripts/saphir-launcher.ps1")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/stop-all.ps1") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "scripts/stop-all.ps1")
-    foreach ($libraryName in @("LocalAppCache.ps1", "RuntimeLayout.ps1", "ServerControl.ps1")) {
+    foreach ($libraryName in @("LauncherControl.ps1", "LocalAppCache.ps1", "RuntimeLayout.ps1", "ServerControl.ps1")) {
         Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath ("scripts/lib/{0}" -f $libraryName)) -Destination (Join-Path -Path $bootstrapRoot -ChildPath ("scripts/lib/{0}" -f $libraryName))
     }
     Convert-PackagePowerShellFilesToUtf8Bom -Root $bootstrapRoot
@@ -373,6 +374,7 @@ try {
 
     foreach ($requiredRuntimeFile in @(
         "apps/admin/backend/admin-server.ps1",
+        "apps/admin/backend/lib/ControlService.ps1",
         "apps/admin/backend/services/RouteDispatchService.ps1",
         "apps/admin/frontend/index.html",
         "docs/GC179.pdf",
@@ -423,10 +425,13 @@ try {
         "scripts/lib/RuntimeLayout.ps1",
         "scripts/lib/ServerControl.ps1",
         "scripts/lib/LocalAppCache.ps1",
+        "scripts/lib/LauncherControl.ps1",
         "scripts/stop-all.ps1",
         "scripts/launch-cached-app.ps1",
+        "scripts/saphir-launcher.ps1",
         "GUIDE-DEMARRAGE-SAPHIR.txt",
         "SAPHIR.ico",
+        "SAPHIR Launcher.vbs",
         "Install SAPHIR Shortcut.vbs",
         "Stop SAPHIR.bat",
         "Stop SAPHIR.vbs",

@@ -85,6 +85,7 @@ function New-FixtureRelease {
     $releaseRoot = Join-Path -Path $fixtureBuild -ChildPath "runtime"
     $releasesRoot = Join-Path -Path $DistributionRoot -ChildPath "deployment/releases"
     New-Item -ItemType Directory -Path (Join-Path -Path $releaseRoot -ChildPath "apps/admin/backend") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path -Path $releaseRoot -ChildPath "apps/admin/backend/lib") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path -Path $releaseRoot -ChildPath "apps/admin/backend/services") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path -Path $releaseRoot -ChildPath "apps/admin/frontend") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path -Path $releaseRoot -ChildPath "docs") -Force | Out-Null
@@ -93,6 +94,7 @@ function New-FixtureRelease {
 
     Set-Content -LiteralPath (Join-Path -Path $releaseRoot -ChildPath "apps/admin/backend/admin-server.ps1") -Value "# $ReleaseId" -Encoding UTF8
     Set-Content -LiteralPath (Join-Path -Path $releaseRoot -ChildPath "apps/admin/backend/admin-config.psd1") -Value "@{ DataFolderPath = '$($DataFolderPath.Replace("'", "''"))' }" -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path -Path $releaseRoot -ChildPath "apps/admin/backend/lib/ControlService.ps1") -Value "# control service" -Encoding UTF8
     Set-Content -LiteralPath (Join-Path -Path $releaseRoot -ChildPath "apps/admin/backend/services/RouteDispatchService.ps1") -Value "# route dispatch" -Encoding UTF8
     Set-Content -LiteralPath (Join-Path -Path $releaseRoot -ChildPath "apps/admin/frontend/index.html") -Value "<html>$ReleaseId</html>" -Encoding UTF8
     if (-not $OmitGc179Template) {

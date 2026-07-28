@@ -190,9 +190,9 @@ Le script `scripts/seed-presentation-data.ps1` permet aussi de créer un jeu de 
 
 Un scénario normal ressemble à ceci :
 
-1. L’utilisateur lance l’application avec un raccourci ou un script.
-2. Le script démarre le backend PowerShell si celui-ci n’est pas déjà disponible.
-3. Le navigateur ouvre `http://localhost:8081/`.
+1. L’utilisateur ouvre le lanceur SAPHIR avec son raccourci.
+2. Le lanceur vérifie séparément le backend local et le dossier de données partagé.
+3. Au besoin, il démarre ou redémarre le backend PowerShell depuis la copie locale validée, puis l’utilisateur ouvre `http://localhost:8081/`.
 4. L’utilisateur se connecte.
 5. Le backend crée une session et retourne un jeton de session.
 6. Le frontend charge les données nécessaires selon le rôle.

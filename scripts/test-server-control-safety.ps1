@@ -19,6 +19,9 @@ $script:testStatusMode = "untracked"
 $script:stoppedProcessIds = @()
 $script:runningPowerShellProcesses = @()
 $script:processCommandLines = @{}
+$script:gracefulShutdownCalls = 0
+$script:lastGracefulShutdownToken = ""
+$script:waitForProcessesCalls = 0
 
 function Get-RunningPowerShellProcesses {
     return @($script:runningPowerShellProcesses)
@@ -86,6 +89,12 @@ function Get-ServiceStatus {
         TrackedProcessId  = 123
         Metadata          = [PSCustomObject]@{
             requestedProcessId = 123
+            instanceToken = if ($script:testStatusMode -match "^tracked-graceful") {
+                "0123456789abcdef0123456789abcdef"
+            }
+            else {
+                ""
+            }
         }
     }
 }
@@ -104,8 +113,21 @@ function Stop-Process {
     $script:stoppedProcessIds += $Id
 }
 
+function Invoke-ManagedServiceGracefulShutdown {
+    param([int]$Port, [string]$InstanceToken, [int]$TimeoutMilliseconds)
+
+    $script:gracefulShutdownCalls += 1
+    $script:lastGracefulShutdownToken = $InstanceToken
+    return ($script:testStatusMode -eq "tracked-graceful" -or $script:testStatusMode -eq "tracked-graceful-timeout")
+}
+
 function Wait-ForProcessesToExit {
     param([int[]]$ProcessIds, [int]$TimeoutSeconds)
+
+    $script:waitForProcessesCalls += 1
+    if ($script:testStatusMode -eq "tracked-graceful-timeout" -and $script:waitForProcessesCalls -eq 1) {
+        return $false
+    }
     return $true
 }
 
@@ -129,10 +151,12 @@ catch {
 }
 Assert-True -Condition ($untrackedError -match "untracked process") -Message "stop must refuse an untracked port owner"
 Assert-True -Condition ($script:stoppedProcessIds.Count -eq 0) -Message "stop must not terminate an untracked process"
+Assert-True -Condition ($script:gracefulShutdownCalls -eq 0) -Message "stop must not send a control request to an untracked listener"
 
 $script:processCommandLines["999"] = $matchingCommandLine
 Stop-ManagedService -Name "app" -DisplayName "SAPHIR" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
 Assert-True -Condition ($script:stoppedProcessIds.Count -eq 1 -and [int]$script:stoppedProcessIds[0] -eq 999) -Message "stop must recover and terminate an untracked instance with the exact managed script path"
+Assert-True -Condition ($script:gracefulShutdownCalls -eq 0) -Message "script-path recovery without current token metadata must use the protected force fallback"
 
 $script:testStatusMode = "tracked"
 $script:stoppedProcessIds = @()
@@ -140,5 +164,25 @@ $script:runningPowerShellProcesses = @()
 Stop-ManagedService -Name "app" -DisplayName "SAPHIR" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
 Assert-True -Condition ($script:stoppedProcessIds.Count -eq 1 -and [int]$script:stoppedProcessIds[0] -eq 123) -Message "stop must terminate only the tracked PowerShell process"
 Assert-True -Condition ($script:stoppedProcessIds -notcontains 999) -Message "stop must never add an unrelated port owner"
+
+$script:testStatusMode = "tracked-graceful"
+$script:stoppedProcessIds = @()
+$script:gracefulShutdownCalls = 0
+$script:lastGracefulShutdownToken = ""
+$script:waitForProcessesCalls = 0
+Stop-ManagedService -Name "app" -DisplayName "SAPHIR" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
+Assert-True -Condition ($script:gracefulShutdownCalls -eq 1) -Message "a tracked current instance must receive one graceful shutdown request"
+Assert-True -Condition ($script:lastGracefulShutdownToken -eq "0123456789abcdef0123456789abcdef") -Message "graceful shutdown must use the tracked instance token"
+Assert-True -Condition ($script:waitForProcessesCalls -eq 1) -Message "stop must wait for the backend to exit after graceful acknowledgement"
+Assert-True -Condition ($script:stoppedProcessIds.Count -eq 0) -Message "a successful graceful shutdown must not force-terminate the backend"
+
+$script:testStatusMode = "tracked-graceful-timeout"
+$script:stoppedProcessIds = @()
+$script:gracefulShutdownCalls = 0
+$script:waitForProcessesCalls = 0
+Stop-ManagedService -Name "app" -DisplayName "SAPHIR" -Port 8081 -PidFile "fixture.json" -ServerScript $fixtureScriptPath -Quiet | Out-Null
+Assert-True -Condition ($script:gracefulShutdownCalls -eq 1) -Message "graceful shutdown must be attempted before fallback"
+Assert-True -Condition ($script:waitForProcessesCalls -eq 2) -Message "a backend that ignores graceful shutdown must be checked again after force fallback"
+Assert-True -Condition ($script:stoppedProcessIds.Count -eq 1 -and [int]$script:stoppedProcessIds[0] -eq 123) -Message "a timed-out graceful shutdown must retain the existing force fallback"
 
 Write-Host "Server control safety tests passed."

@@ -75,10 +75,15 @@ try {
 
     Assert-Equal -Expected $distributionRoot -Actual $result.DistributionFolder -Message "publisher must return the stable distribution folder"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.vbs") -PathType Leaf) -Message "distribution must contain the stable launcher"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "SAPHIR Launcher.vbs") -PathType Leaf) -Message "distribution must contain the graphical launcher entry point"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "Install SAPHIR Shortcut.vbs") -PathType Leaf) -Message "distribution must contain the desktop-shortcut installer"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "SAPHIR.ico") -PathType Leaf) -Message "distribution must contain the SAPHIR Windows icon"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "scripts/saphir-launcher.ps1") -PathType Leaf) -Message "distribution must contain the graphical launcher interface"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "scripts/lib/LauncherControl.ps1") -PathType Leaf) -Message "distribution must contain the launcher controller"
     $packagedBatchLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.bat"))
     $packagedSilentLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.vbs"))
+    $packagedGraphicalLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "SAPHIR Launcher.vbs"))
+    $packagedLauncherInterface = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "scripts/saphir-launcher.ps1"))
     $packagedShortcutInstaller = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Install SAPHIR Shortcut.vbs"))
     Assert-True -Condition ($packagedBatchLauncher.IndexOf('launch-cached-app.ps1"', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged batch launcher must call the cached application bootstrap"
     Assert-True -Condition ($packagedBatchLauncher.IndexOf('launch-cached-app.ps1" -Force', [System.StringComparison]::Ordinal) -lt 0) -Message "packaged batch launcher must allow a healthy current version to remain warm"
@@ -88,8 +93,25 @@ try {
     Assert-True -Condition ($packagedSilentLauncher.IndexOf('GetResponseHeader("X-SAPHIR-Instance")', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged silent launcher must match the running instance token before reopening SAPHIR"
     Assert-True -Condition ($packagedSilentLauncher.IndexOf('StrComp(expectedServerPath, metadataServerPath, vbTextCompare) = 0', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged silent launcher must bind the warm process to the active cached release"
     Assert-True -Condition ($packagedSilentLauncher.IndexOf('%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe', [System.StringComparison]::Ordinal) -ge 0) -Message "packaged launcher must avoid a PATH search on restricted workstations"
+    Assert-True -Condition ($packagedGraphicalLauncher.IndexOf('distribution-root.txt', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "local graphical launcher must remember how to reach the current shared distribution"
+    Assert-True -Condition ($packagedGraphicalLauncher.IndexOf('fso.FileExists(sharedLauncherPath)', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) -Message "local graphical launcher must not synchronously probe the network share before opening its window"
+    Assert-True -Condition ($packagedGraphicalLauncher.IndexOf('-STA', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "graphical launcher must start Windows PowerShell in STA mode for WPF"
+    Assert-True -Condition ($packagedGraphicalLauncher.IndexOf('-DistributionRoot', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "graphical launcher must pass the persisted distribution location to its interface"
+    Assert-True -Condition ($packagedLauncherInterface.IndexOf('LauncherControl.ps1', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "graphical launcher interface must use the testable launcher controller"
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('SAPHIR.lnk', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must create the stable SAPHIR desktop link"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('fso.BuildPath(localRoot, "launcher")', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must keep its launcher bundle in local AppData"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('localLauncherVersionsRoot', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must stage immutable versioned launcher bundles"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('fso.MoveFolder stagingRoot, bundleRoot', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must activate a validated bundle with one same-volume rename"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('distribution-root.txt', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "shortcut installer must persist the shared distribution location"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('CreateTextFile(distributionRootFilePath, True, True)', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must preserve accented distribution paths in a Unicode file"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('shortcut.Arguments = Chr(34) & localLauncherEntryPath & Chr(34)', [System.StringComparison]::Ordinal) -ge 0) -Message "desktop shortcut must target the locally installed launcher"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('sourceLauncherScriptPath, localLauncherScriptPath', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must copy the launcher interface locally"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('sourceLauncherControlPath, localLauncherControlPath', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must copy the launcher controller locally"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('sourceCachedLaunchPath, localCachedLaunchPath', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must copy the cached application starter for network-outage fallback"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('sourceLocalCachePath, localLocalCachePath', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must copy local-cache support for network-outage fallback"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('sourceServerControlPath, localServerControlPath', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must copy service-control support locally"
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('localIconPath & ",0"', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must use the locally cached icon"
+    Assert-True -Condition ([regex]::IsMatch($publisherSource, '"SAPHIR Launcher\.vbs",\s*"Install SAPHIR Shortcut\.vbs"')) -Message "publisher must expose the graphical entry point before the installer that requires it"
     $employeeGuidePath = Join-Path -Path $distributionRoot -ChildPath "GUIDE-DEMARRAGE-SAPHIR.txt"
     Assert-True -Condition (Test-Path -LiteralPath $employeeGuidePath -PathType Leaf) -Message "distribution must contain a guide that opens in Notepad"
     $employeeGuideText = Get-Content -LiteralPath $employeeGuidePath -Raw -Encoding UTF8
@@ -102,17 +124,23 @@ try {
     $releasePath = Join-Path -Path $distributionRoot -ChildPath ([string]$manifest.packagePath)
     $actualHash = (Get-FileHash -LiteralPath $releasePath -Algorithm SHA256).Hash.ToLowerInvariant()
     Assert-Equal -Expected ([string]$manifest.sha256) -Actual $actualHash -Message "manifest checksum must match the release ZIP"
-    Assert-Utf8Bom -Path (Join-Path -Path $distributionRoot -ChildPath "scripts/launch-cached-app.ps1") -Message "shared PowerShell bootstrap must include a UTF-8 BOM for Windows PowerShell 5.1"
-    foreach ($bootstrapLibrary in @("LocalAppCache.ps1", "RuntimeLayout.ps1", "ServerControl.ps1")) {
+    foreach ($bootstrapScript in @("launch-cached-app.ps1", "saphir-launcher.ps1", "stop-all.ps1")) {
+        Assert-Utf8Bom -Path (Join-Path -Path $distributionRoot -ChildPath ("scripts/{0}" -f $bootstrapScript)) -Message ("shared PowerShell bootstrap script must include a UTF-8 BOM for Windows PowerShell 5.1: {0}" -f $bootstrapScript)
+    }
+    foreach ($bootstrapLibrary in @("LauncherControl.ps1", "LocalAppCache.ps1", "RuntimeLayout.ps1", "ServerControl.ps1")) {
         Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath ("scripts/lib/{0}" -f $bootstrapLibrary)) -PathType Leaf) -Message ("distribution must contain bootstrap library {0}" -f $bootstrapLibrary)
+        Assert-Utf8Bom -Path (Join-Path -Path $distributionRoot -ChildPath ("scripts/lib/{0}" -f $bootstrapLibrary)) -Message ("shared PowerShell bootstrap library must include a UTF-8 BOM for Windows PowerShell 5.1: {0}" -f $bootstrapLibrary)
     }
 
     Expand-Archive -LiteralPath $releasePath -DestinationPath $expandedRelease -Force
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/admin/backend/lib/ControlService.ps1") -PathType Leaf) -Message "runtime must include guarded backend service control"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/admin/backend/services/RouteDispatchService.ps1") -PathType Leaf) -Message "runtime must include required untracked application files"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/admin/frontend/assets/saphir-logo.png") -PathType Leaf) -Message "runtime UI must include the optimized SAPHIR logo"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "docs/GC179.pdf") -PathType Leaf) -Message "runtime must include the GC179 template"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "data"))) -Message "runtime ZIP must exclude data"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/employee"))) -Message "runtime ZIP must exclude the legacy employee application"
+    Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "scripts/saphir-launcher.ps1"))) -Message "runtime ZIP must keep the graphical launcher in the stable bootstrap rather than each app release"
+    Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "scripts/lib/LauncherControl.ps1"))) -Message "runtime ZIP must keep launcher control code in the stable bootstrap"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "scripts/test-local-app-cache.ps1"))) -Message "runtime ZIP must exclude tests and maintenance scripts"
     foreach ($powerShellFile in @(Get-ChildItem -LiteralPath $expandedRelease -Recurse -File | Where-Object { $_.Extension -in @(".ps1", ".psd1", ".psm1") })) {
         Assert-Utf8Bom -Path $powerShellFile.FullName -Message ("runtime PowerShell file must include a UTF-8 BOM: {0}" -f $powerShellFile.FullName)
