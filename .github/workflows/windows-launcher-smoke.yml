@@ -27,6 +27,7 @@ jobs:
           .\scripts\test-powershell51-compat.ps1 -FailOnIssues
           .\scripts\test-windows-launcher-static.ps1
           .\scripts\test-windows-launcher-runtime.ps1
+          .\scripts\test-windows-launcher-process-wait.ps1
           .\scripts\test-force-restart-launchers.ps1
           .\scripts\test-saphir-launcher-control.ps1
           .\scripts\test-server-control-safety.ps1

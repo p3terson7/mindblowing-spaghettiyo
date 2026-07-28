@@ -431,11 +431,15 @@ function Invoke-SaphirLauncherScriptProcess {
     param(
         [Parameter(Mandatory = $true)][string]$ScriptPath,
         [string]$DistributionRoot = "",
-        [switch]$Force
+        [switch]$Force,
+        [int]$TimeoutSeconds = 180
     )
 
     if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
         throw "The SAPHIR launch script is unavailable: $ScriptPath"
+    }
+    if ($TimeoutSeconds -lt 5 -or $TimeoutSeconds -gt 600) {
+        throw "The SAPHIR launch timeout must be between 5 and 600 seconds."
     }
 
     $command = Get-Command -Name $ScriptPath -ErrorAction Stop
@@ -475,9 +479,27 @@ function Invoke-SaphirLauncherScriptProcess {
             -FilePath $powerShellExecutable `
             -ArgumentList $arguments `
             -WindowStyle Hidden `
-            -Wait `
             -PassThru
-        $exitCode = [int]$process.ExitCode
+        try {
+            # Start-Process -Wait follows the whole descendant process tree on
+            # Windows. The cached bootstrap starts the long-lived SAPHIR
+            # backend, so -Wait would not return until the server stopped.
+            # Process.WaitForExit waits for this bootstrap process only.
+            $bootstrapExited = $process.WaitForExit($TimeoutSeconds * 1000)
+            if (-not $bootstrapExited) {
+                try {
+                    Stop-Process -Id ([int]$process.Id) -Force -ErrorAction SilentlyContinue
+                }
+                catch {
+                }
+                throw "SAPHIR's startup helper did not finish within $TimeoutSeconds seconds."
+            }
+            $process.Refresh()
+            $exitCode = [int]$process.ExitCode
+        }
+        finally {
+            $process.Dispose()
+        }
     }
     else {
         $powerShellExecutable = Get-PowerShellExecutable

@@ -122,6 +122,7 @@ Assert-True -Condition ($interfaceSource.IndexOf('Start-StatusRefresh -ShowProgr
 Assert-True -Condition ($controlSource.IndexOf('PresentationFramework', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) -Message "launcher controller must remain independent of WPF so its logic can be regression-tested without opening a window"
 Assert-True -Condition ($controlSource.IndexOf('Get-SaphirLauncherAdjacentBootstrapPath', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "launcher controller must be able to start from the locally installed cached bootstrap"
 Assert-True -Condition ($controlSource.IndexOf('-DistributionRoot $DistributionRoot', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "local cached bootstrap must retain the shared distribution location for update checks"
+Assert-True -Condition ($controlSource.IndexOf('$process.WaitForExit($TimeoutSeconds * 1000)', [System.StringComparison]::Ordinal) -ge 0) -Message "launcher actions must wait for the finite bootstrap process rather than its long-lived backend process tree"
 
 $forbiddenCommands = @(
     "Install-Module",
