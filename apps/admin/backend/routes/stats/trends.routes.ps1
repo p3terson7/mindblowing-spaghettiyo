@@ -10,7 +10,8 @@
                 respondWithSuccess $response ($result | ConvertTo-Json -Depth 4)
             }
             catch {
-                respondWithError $response 500 "Error retrieving project trends: $($_.Exception.Message)"
+                Write-Warning ("Unable to retrieve project trends: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to retrieve project trends."
             }
             continue
         }

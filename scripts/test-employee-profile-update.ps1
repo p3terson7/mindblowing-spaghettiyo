@@ -19,6 +19,7 @@ $tempFolder = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("ove
 try {
     New-Item -ItemType Directory -Path $tempFolder | Out-Null
 
+    $script:sharedFolder = $tempFolder
     $script:usersFile = Join-Path -Path $tempFolder -ChildPath "users.json"
     $script:sessionsFile = Join-Path -Path $tempFolder -ChildPath "sessions.json"
     $script:lockFolder = Join-Path -Path $tempFolder -ChildPath ".locks"

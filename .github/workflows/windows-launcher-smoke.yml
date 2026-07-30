@@ -25,10 +25,24 @@ jobs:
           }
 
           .\scripts\test-powershell51-compat.ps1 -FailOnIssues
-          .\scripts\test-windows-launcher-static.ps1
-          .\scripts\test-windows-launcher-runtime.ps1
-          .\scripts\test-windows-launcher-process-wait.ps1
-          .\scripts\test-force-restart-launchers.ps1
-          .\scripts\test-saphir-launcher-control.ps1
-          .\scripts\test-server-control-safety.ps1
-          .\scripts\test-release-package.ps1
+
+          $tests = Get-ChildItem -Path .\scripts -Filter "test-*.ps1" -File |
+              Where-Object { $_.Name -ne "test-powershell51-compat.ps1" } |
+              Sort-Object Name
+          foreach ($test in $tests) {
+              Write-Host "Running $($test.Name)"
+              & $test.FullName
+          }
+
+      - name: Run browser-side contract tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tests = Get-ChildItem -Path .\scripts -Filter "test-*.js" -File | Sort-Object Name
+          foreach ($test in $tests) {
+              Write-Host "Running $($test.Name)"
+              & node $test.FullName
+              if ($LASTEXITCODE -ne 0) {
+                  throw "$($test.Name) failed with exit code $LASTEXITCODE."
+              }
+          }

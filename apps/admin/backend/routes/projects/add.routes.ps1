@@ -40,40 +40,53 @@
 
             $projectMutationCommitted = $false
             $projectMutationError = $null
+            $postCommitWarnings = New-Object System.Collections.ArrayList
             try {
-                $lockHandle = Acquire-ResourceLock -ResourcePath $projectsFile
+                $referenceLockHandle = Acquire-ProjectReferenceLock
                 try {
-                    $projects = @(Get-Projects)
+                    $lockHandle = Acquire-ResourceLock -ResourcePath $projectsFile
+                    try {
+                        $projects = @(Read-ProjectsFromDisk)
 
-                    # Check for duplicate projectCode.
-                    if ($projects | Where-Object { [string]$_.projectCode -ieq $projectCode }) {
-                        respondWithError $response 400 "Project with code $projectCode already exists."
-                        continue
-                    }
+                        # Check for duplicate projectCode.
+                        if ($projects | Where-Object { [string]$_.projectCode -ieq $projectCode }) {
+                            respondWithError $response 400 "Project with code $projectCode already exists."
+                            continue
+                        }
 
-                    # Append the new project.
-                    $projects += [PSCustomObject]@{
-                        projectCode  = $projectCode
-                        projectName  = $projectName
-                        sector       = $sector
-                        admins       = $admins
-                        backupAdmins = $backupAdmins
-                        archived     = $false
+                        # Append the new project.
+                        $projects += [PSCustomObject]@{
+                            projectCode  = $projectCode
+                            projectName  = $projectName
+                            sector       = $sector
+                            admins       = $admins
+                            backupAdmins = $backupAdmins
+                            archived     = $false
+                        }
+                        Write-JsonArrayAtomic -Path $projectsFile -Items $projects -Depth 6
+                        $script:ProjectsCache = $null
+                        $projectMutationCommitted = $true
                     }
-                    Write-JsonAtomic -Path $projectsFile -Value $projects -Depth 6
-                    $projectMutationCommitted = $true
+                    finally {
+                        Release-ResourceLock -LockHandle $lockHandle
+                    }
                 }
                 finally {
-                    Release-ResourceLock -LockHandle $lockHandle
+                    Release-ResourceLock -LockHandle $referenceLockHandle
                 }
 
-                $historyMessage = if ([string]::IsNullOrWhiteSpace($projectName)) {
-                    "Created a project with code <strong>$projectCode</strong>."
+                $historyWarning = Invoke-PostCommitActionSafely -Description "Project saved, but history logging failed" -Action {
+                    $historyMessage = if ([string]::IsNullOrWhiteSpace($projectName)) {
+                        "Created a project with code <strong>$projectCode</strong>."
+                    }
+                    else {
+                        "Created a project named <strong>$projectName</strong> with code <strong>$projectCode</strong>."
+                    }
+                    logHistory "Add" $historyMessage ([string]$currentUser.displayName) -PublishChange:$false
                 }
-                else {
-                    "Created a project named <strong>$projectName</strong> with code <strong>$projectCode</strong>."
+                if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
+                    [void]$postCommitWarnings.Add($historyWarning)
                 }
-                logHistory "Add" $historyMessage ([string]$currentUser.displayName)
             }
             catch {
                 $projectMutationError = $_
@@ -81,19 +94,18 @@
             }
             finally {
                 if ($projectMutationCommitted) {
-                    try {
+                    $syncWarning = Invoke-PostCommitActionSafely -Description "Project saved, but cross-machine refresh publication failed" -Action {
                         Publish-DataChange -Category "project" -Resource $projectCode | Out-Null
                     }
-                    catch {
-                        if ($null -eq $projectMutationError) {
-                            throw
-                        }
-
-                        Write-Warning "Unable to publish project cache invalidation after a failed add operation: $($_.Exception.Message)"
+                    if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                        [void]$postCommitWarnings.Add($syncWarning)
                     }
                 }
             }
 
-            respondWithSuccess $response '{ "message": "Project added successfully." }'
+            respondWithSuccess $response (([PSCustomObject]@{
+                message = "Project added successfully."
+                warnings = @($postCommitWarnings.ToArray())
+            }) | ConvertTo-Json -Depth 4)
             continue
         }

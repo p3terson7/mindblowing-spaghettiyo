@@ -150,6 +150,45 @@ function Invoke-SaphirReleaseLaunch {
     & $LaunchScript @launchParameters
 }
 
+function Test-SaphirCacheRepairMayRetryLaunch {
+    param([Parameter(Mandatory = $true)][string]$ReleasePath)
+
+    try {
+        $runtimeRoot = Get-SaphirActiveRuntimeRoot -ReleasePath $ReleasePath
+        $pidFile = Join-Path -Path $runtimeRoot -ChildPath "pids/app.pid.json"
+        $status = Get-ServiceStatus `
+            -Name "app" `
+            -DisplayName "SAPHIR Backend" `
+            -Port 8081 `
+            -PidFile $pidFile
+
+        $metadataProcessId = if ($status.PSObject.Properties.Name -contains "MetadataProcessId") {
+            $status.MetadataProcessId
+        }
+        else {
+            $null
+        }
+
+        # Repair replaces files in the cached release and its retry uses -Force.
+        # It is safe only after status proves that neither a listener nor a
+        # managed/candidate backend process is still active. An inconclusive
+        # health probe must never be upgraded into permission to replace it.
+        if ([bool]$status.IsRunning -or
+            [bool]$status.TrackedProcessId -or
+            [bool]$metadataProcessId) {
+            return $false
+        }
+
+        $serverScript = Join-Path -Path $ReleasePath -ChildPath "apps/admin/backend/admin-server.ps1"
+        return (@(Find-ServiceProcessesByScriptPath -ScriptPath $serverScript).Count -eq 0)
+    }
+    catch {
+        # Failure to establish an offline state is not permission to mutate the
+        # cache or force-restart a process.
+        return $false
+    }
+}
+
 $mutex = $null
 try {
     if (-not (Test-Path -LiteralPath $localCacheLibrary -PathType Leaf)) {
@@ -235,6 +274,9 @@ try {
                 catch {
                     $cachedLaunchError = $_
                     if (-not [bool]$release.Installed) {
+                        if (-not (Test-SaphirCacheRepairMayRetryLaunch -ReleasePath ([string]$release.ReleasePath))) {
+                            throw "The local SAPHIR process is still active or could not be identified safely. Its readiness check may have timed out while it was busy, so SAPHIR did not repair its files or force-restart it automatically. Wait for the current action to finish and try again. Original launch error: $($cachedLaunchError.Exception.Message)"
+                        }
                         Write-Warning "The local SAPHIR copy failed to start. Repairing it once from the network release."
                         $release = Install-SaphirCachedRelease -Manifest $targetManifest -CacheRoot $cacheRoot -ForceReinstall
                         Invoke-SaphirReleaseLaunch -LaunchScript $release.LaunchScript -ForceRestart $true -SuppressBrowser ([bool]$NoBrowser)

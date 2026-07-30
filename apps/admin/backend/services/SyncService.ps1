@@ -307,6 +307,30 @@ function Get-PublicSyncState {
     }
 }
 
+function Read-SyncStateForPublication {
+    try {
+        return (Read-SyncStateFromDisk -ThrowOnError:$true)
+    }
+    catch {
+        # sync-state.json is derived cache-invalidation metadata, not business
+        # data. Preserve its corrupt bytes before rebuilding it so one damaged
+        # notification file cannot permanently disable every future publish.
+        $recoveryFolder = Join-Path -Path $sharedFolder -ChildPath ".recovery"
+        New-Item -ItemType Directory -Path $recoveryFolder -Force -ErrorAction Stop | Out-Null
+        $recoveryName = "sync-state.corrupt.{0}.{1}.json" -f (
+            (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ"),
+            [Guid]::NewGuid().ToString("N")
+        )
+        $recoveryPath = Join-Path -Path $recoveryFolder -ChildPath $recoveryName
+        if (Test-Path -LiteralPath $syncStateFile -PathType Leaf) {
+            Copy-Item -LiteralPath $syncStateFile -Destination $recoveryPath -ErrorAction Stop
+        }
+
+        Write-Warning "Recovered invalid sync-state metadata. The original was preserved at $recoveryPath"
+        return (New-DefaultSyncState)
+    }
+}
+
 function Publish-DataChange {
     param(
         [string]$Category = "data",
@@ -320,7 +344,7 @@ function Publish-DataChange {
     try {
         # Force a raw read only after acquiring the cross-process lock so a
         # cached state cannot overwrite another process's completed update.
-        $state = Read-SyncStateFromDisk -ThrowOnError:$true
+        $state = Read-SyncStateForPublication
         $currentVersion = 0
         [int]::TryParse([string]$state.version, [ref]$currentVersion) | Out-Null
         $nextVersion = $currentVersion + 1

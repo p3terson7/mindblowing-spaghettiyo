@@ -5,26 +5,12 @@
                 $startDate = $query["startDate"]
                 $endDate = $query["endDate"]
                 $result = @(Get-ProjectSummaryList -StartDate $startDate -EndDate $endDate -CurrentUser $currentUser)
-                if ($result.Count -eq 0) {
-                    $jsonResult = "[]"
-                }
-                else {
-                    $jsonResult = $result | ConvertTo-Json -Depth 3
-                }
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonResult)
-                $response.ContentType = "application/json"
-                $response.StatusCode = 200
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                $jsonResult = ConvertTo-Json -InputObject $result -Depth 3
+                respondWithSuccess $response $jsonResult
             }
             catch {
-                $errMsg = "{ `"error`": `"Error computing project stats: $($_.Exception.Message)`" }"
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes($errMsg)
-                $response.StatusCode = 500
-                $response.ContentType = "application/json"
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
-            }
-            finally {
-                $response.Close()
+                Write-Warning ("Unable to compute project statistics: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to compute project statistics."
             }
             continue
         }

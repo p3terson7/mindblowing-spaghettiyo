@@ -11,9 +11,47 @@ if (-not $script:JsonOptionArrayCache) {
 }
 
 # Helper function to emulate the null-coalescing operator
+function Read-EmployeeNameMapFromDisk {
+    $raw = Read-TextFileCached -Path $mappingFile
+    if ([string]::IsNullOrWhiteSpace($raw) -or $raw.Trim() -eq "null") {
+        return [PSCustomObject]@{}
+    }
+
+    try {
+        $map = $raw | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw (New-Object System.IO.InvalidDataException(
+            ("Persistent JSON file is invalid and was left unchanged: {0}" -f $mappingFile),
+            $_.Exception
+        ))
+    }
+
+    if ($null -eq $map) {
+        return [PSCustomObject]@{}
+    }
+    if (($map -is [System.Collections.IEnumerable]) -and -not ($map -is [string])) {
+        throw [System.IO.InvalidDataException]::new("Employee-name mapping must be a JSON object: $mappingFile")
+    }
+    if (-not ($map.PSObject.TypeNames -contains "System.Management.Automation.PSCustomObject") -and
+        -not ($map -is [System.Collections.IDictionary])) {
+        throw [System.IO.InvalidDataException]::new("Employee-name mapping must be a JSON object: $mappingFile")
+    }
+
+    return $map
+}
+
 function Get-EmployeeNameMap {
     if (!(Test-Path -Path $mappingFile)) {
-        Write-JsonAtomic -Path $mappingFile -Value @{} -Depth 3
+        $mappingLock = Acquire-ResourceLock -ResourcePath $mappingFile
+        try {
+            if (!(Test-Path -Path $mappingFile -PathType Leaf)) {
+                Write-JsonAtomic -Path $mappingFile -Value @{} -Depth 3
+            }
+        }
+        finally {
+            Release-ResourceLock -LockHandle $mappingLock
+        }
     }
 
     $metadata = Get-FileMetadataSnapshot -Path $mappingFile
@@ -22,30 +60,12 @@ function Get-EmployeeNameMap {
         return $script:EmployeeNameMapCache.Value
     }
 
-    try {
-        $map = Read-TextFileCached -Path $mappingFile | ConvertFrom-Json
-        if ($null -eq $map) {
-            $emptyMap = [PSCustomObject]@{}
-            $script:EmployeeNameMapCache = [PSCustomObject]@{
-                Key = $cacheKey
-                Value = $emptyMap
-            }
-            return $emptyMap
-        }
-        $script:EmployeeNameMapCache = [PSCustomObject]@{
-            Key = $cacheKey
-            Value = $map
-        }
-        return $map
+    $map = Read-EmployeeNameMapFromDisk
+    $script:EmployeeNameMapCache = [PSCustomObject]@{
+        Key = $cacheKey
+        Value = $map
     }
-    catch {
-        $emptyMap = [PSCustomObject]@{}
-        $script:EmployeeNameMapCache = [PSCustomObject]@{
-            Key = $cacheKey
-            Value = $emptyMap
-        }
-        return $emptyMap
-    }
+    return $map
 }
 
 function Get-EmployeeName($code) {
@@ -56,9 +76,28 @@ function Get-EmployeeName($code) {
     return $code
 }
 
+function Read-ProjectsFromDisk {
+    $projects = @(Read-JsonArrayFile -Path $projectsFile)
+    $normalizedProjects = New-Object System.Collections.ArrayList
+    foreach ($project in $projects) {
+        if ($null -ne $project) {
+            [void]$normalizedProjects.Add((ConvertTo-NormalizedProjectObject -Project $project))
+        }
+    }
+    return @($normalizedProjects.ToArray())
+}
+
 function Get-Projects {
     if (!(Test-Path -Path $projectsFile)) {
-        Write-JsonAtomic -Path $projectsFile -Value @() -Depth 3
+        $projectsLock = Acquire-ResourceLock -ResourcePath $projectsFile
+        try {
+            if (!(Test-Path -Path $projectsFile -PathType Leaf)) {
+                Write-JsonArrayAtomic -Path $projectsFile -Items @() -Depth 3
+            }
+        }
+        finally {
+            Release-ResourceLock -LockHandle $projectsLock
+        }
     }
 
     $metadata = Get-FileMetadataSnapshot -Path $projectsFile
@@ -67,40 +106,12 @@ function Get-Projects {
         return @($script:ProjectsCache.Value)
     }
 
-    try {
-        $projects = Read-TextFileCached -Path $projectsFile | ConvertFrom-Json
-        if ($null -eq $projects) {
-            $script:ProjectsCache = [PSCustomObject]@{
-                Key   = $cacheKey
-                Value = @()
-            }
-            return @()
-        }
-
-        $normalizedProjects = New-Object System.Collections.ArrayList
-        if (-not ($projects -is [System.Collections.IEnumerable]) -or ($projects -is [string])) {
-            [void]$normalizedProjects.Add((ConvertTo-NormalizedProjectObject -Project $projects))
-        }
-        else {
-            foreach ($project in @($projects)) {
-                [void]$normalizedProjects.Add((ConvertTo-NormalizedProjectObject -Project $project))
-            }
-        }
-
-        $result = @($normalizedProjects.ToArray())
-        $script:ProjectsCache = [PSCustomObject]@{
-            Key   = $cacheKey
-            Value = $result
-        }
-        return $result
+    $result = @(Read-ProjectsFromDisk)
+    $script:ProjectsCache = [PSCustomObject]@{
+        Key   = $cacheKey
+        Value = $result
     }
-    catch {
-        $script:ProjectsCache = [PSCustomObject]@{
-            Key   = $cacheKey
-            Value = @()
-        }
-        return @()
-    }
+    return $result
 }
 
 function ConvertTo-CodeArray {
@@ -228,18 +239,50 @@ function ConvertTo-NormalizedProjectObject {
         $sector = [string]$Project.secteur
     }
 
-    return [PSCustomObject]@{
-        projectCode  = [string]$Project.projectCode
-        projectName  = [string]$Project.projectName
-        sector       = $sector
-        admins       = @(Get-ProjectAdminCodes -Project $Project)
-        backupAdmins = @(Get-ProjectBackupAdminCodes -Project $Project)
-        archived     = Test-ProjectArchived -Project $Project
+    # Preserve fields introduced by newer releases. Older servers may still
+    # normalize the fields they understand, but must not erase unknown data.
+    $normalized = [ordered]@{}
+    foreach ($property in @($Project.PSObject.Properties)) {
+        $normalized[[string]$property.Name] = $property.Value
     }
+    $normalized["projectCode"] = [string]$Project.projectCode
+    $normalized["projectName"] = [string]$Project.projectName
+    $normalized["sector"] = $sector
+    $normalized["admins"] = @(Get-ProjectAdminCodes -Project $Project)
+    $normalized["backupAdmins"] = @(Get-ProjectBackupAdminCodes -Project $Project)
+    $normalized["archived"] = Test-ProjectArchived -Project $Project
+
+    return [PSCustomObject]$normalized
 }
 
 function Get-ActiveProjects {
     return @((Get-Projects) | Where-Object { -not (Test-ProjectArchived -Project $_) })
+}
+
+function Acquire-ProjectReferenceLock {
+    # This logical resource coordinates catalog rename/delete operations with
+    # every transaction that can write a project code into an employee entry.
+    # No physical guard file is required; FileStore hashes the resource path
+    # into the shared .locks directory.
+    $guardResource = Join-Path -Path $sharedFolder -ChildPath ".project-references"
+    return (Acquire-ResourceLock -ResourcePath $guardResource)
+}
+
+function Test-ActiveProjectCodeFromDisk {
+    param([AllowNull()][string]$ProjectCode)
+
+    $candidate = ([string]$ProjectCode).Trim()
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+        return $false
+    }
+
+    foreach ($project in @(Read-ProjectsFromDisk)) {
+        if ([string]$project.projectCode -eq $candidate -and -not (Test-ProjectArchived -Project $project)) {
+            return $true
+        }
+    }
+
+    return $false
 }
 
 function Get-OvertimeCodes {
@@ -250,7 +293,15 @@ function Read-JsonOptionArray {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     if (!(Test-Path -Path $Path)) {
-        Write-JsonAtomic -Path $Path -Value @() -Depth 3
+        $optionLock = Acquire-ResourceLock -ResourcePath $Path
+        try {
+            if (!(Test-Path -Path $Path -PathType Leaf)) {
+                Write-JsonArrayAtomic -Path $Path -Items @() -Depth 3
+            }
+        }
+        finally {
+            Release-ResourceLock -LockHandle $optionLock
+        }
     }
 
     $metadata = Get-FileMetadataSnapshot -Path $Path
@@ -264,33 +315,13 @@ function Read-JsonOptionArray {
         return @($cacheEntry.Items)
     }
 
-    try {
-        $items = Read-TextFileCached -Path $metadata.Path | ConvertFrom-Json
-        if ($null -eq $items) {
-            $script:JsonOptionArrayCache[$cacheKey] = [PSCustomObject]@{
-                LastWriteTicks = $metadata.LastWriteTicks
-                Length         = $metadata.Length
-                Items          = @()
-            }
-            return @()
-        }
-        if (-not ($items -is [System.Collections.IEnumerable]) -or ($items -is [string])) {
-            $items = @($items)
-        }
-        else {
-            $items = @($items)
-        }
-
-        $script:JsonOptionArrayCache[$cacheKey] = [PSCustomObject]@{
-            LastWriteTicks = $metadata.LastWriteTicks
-            Length         = $metadata.Length
-            Items          = $items
-        }
-        return $items
+    $items = @(Read-JsonArrayFile -Path $metadata.Path)
+    $script:JsonOptionArrayCache[$cacheKey] = [PSCustomObject]@{
+        LastWriteTicks = $metadata.LastWriteTicks
+        Length         = $metadata.Length
+        Items          = $items
     }
-    catch {
-        return @()
-    }
+    return $items
 }
 
 function Get-PaymentOptions {
@@ -316,22 +347,100 @@ function Test-OptionCode {
     return [bool](@($Options | Where-Object { [string]$_.code -eq $candidate } | Select-Object -First 1).Count -gt 0)
 }
 
-function Read-JsonRequestBody {
-    param($Request)
+function Invoke-PostCommitActionSafely {
+    param(
+        [Parameter(Mandatory = $true)][string]$Description,
+        [Parameter(Mandatory = $true)][scriptblock]$Action
+    )
 
-    $reader = New-Object IO.StreamReader($Request.InputStream)
     try {
-        $rawBody = $reader.ReadToEnd()
+        & $Action | Out-Null
+        return ""
+    }
+    catch {
+        $warning = "{0}: {1}" -f $Description, $_.Exception.Message
+        Write-Warning $warning
+        return $warning
+    }
+}
+
+function Read-JsonRequestBody {
+    param(
+        $Request,
+        [int]$MaxBytes = 2097152,
+        [int]$TimeoutMs = 15000
+    )
+
+    $declaredLength = -1L
+    if ($null -ne $Request -and $Request.PSObject.Properties.Name -contains "ContentLength64") {
+        $declaredLength = [long]$Request.ContentLength64
+    }
+    if ($declaredLength -gt $MaxBytes) {
+        $bodyTooLargeException = [System.IO.InvalidDataException]::new("Request body exceeds the $MaxBytes byte limit.")
+        $bodyTooLargeException.Data["SaphirHttpStatusCode"] = 413
+        throw $bodyTooLargeException
+    }
+
+    $inputStream = $Request.InputStream
+    $memory = New-Object System.IO.MemoryStream
+    $buffer = New-Object byte[] 8192
+    $deadlineUtc = (Get-Date).ToUniversalTime().AddMilliseconds($TimeoutMs)
+    try {
+        while ($true) {
+            $remainingMs = [int][Math]::Ceiling(($deadlineUtc - (Get-Date).ToUniversalTime()).TotalMilliseconds)
+            if ($remainingMs -le 0) {
+                $bodyTimeoutException = [System.TimeoutException]::new("Timed out while reading the request body.")
+                $bodyTimeoutException.Data["SaphirHttpStatusCode"] = 408
+                throw $bodyTimeoutException
+            }
+
+            $readTask = $inputStream.ReadAsync($buffer, 0, $buffer.Length)
+            if (-not $readTask.Wait($remainingMs)) {
+                $bodyTimeoutException = [System.TimeoutException]::new("Timed out while reading the request body.")
+                $bodyTimeoutException.Data["SaphirHttpStatusCode"] = 408
+                throw $bodyTimeoutException
+            }
+
+            $bytesRead = [int]$readTask.Result
+            if ($bytesRead -le 0) {
+                break
+            }
+
+            $memory.Write($buffer, 0, $bytesRead)
+            if ($memory.Length -gt $MaxBytes) {
+                $bodyTooLargeException = [System.IO.InvalidDataException]::new("Request body exceeds the $MaxBytes byte limit.")
+                $bodyTooLargeException.Data["SaphirHttpStatusCode"] = 413
+                throw $bodyTooLargeException
+            }
+        }
+
+        $utf8Strict = New-Object System.Text.UTF8Encoding($false, $true)
+        try {
+            $rawBody = $utf8Strict.GetString($memory.ToArray())
+        }
+        catch [System.Text.DecoderFallbackException] {
+            $utf8Exception = [System.FormatException]::new("Request body must use valid UTF-8.", $_.Exception)
+            $utf8Exception.Data["SaphirHttpStatusCode"] = 400
+            throw $utf8Exception
+        }
     }
     finally {
-        $reader.Close()
+        $memory.Dispose()
+        try { $inputStream.Close() } catch { }
     }
 
     if ([string]::IsNullOrWhiteSpace($rawBody)) {
         return $null
     }
 
-    return ($rawBody | ConvertFrom-Json)
+    try {
+        return ($rawBody | ConvertFrom-Json -ErrorAction Stop)
+    }
+    catch {
+        $jsonException = [System.FormatException]::new("Request body must contain valid JSON.", $_.Exception)
+        $jsonException.Data["SaphirHttpStatusCode"] = 400
+        throw $jsonException
+    }
 }
 
 # Helper: Format a time string from "HH:mm:ss" to a history-friendly format ("HHhmm")

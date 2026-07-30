@@ -930,6 +930,11 @@ async function refreshSelfView() {
 
 window.refreshSelfView = refreshSelfView;
 
+window.rerenderSelfViewForLanguageChange = function () {
+  initializeSelfView();
+  renderSelfState(selfViewState.entries || []);
+};
+
 async function submitSelfPunch(type) {
   const activeEntry = getSelfActiveEntry(selfViewState.entries);
   const selectedEntryType = type === "out" && activeEntry ? getEntryType(activeEntry) : selfViewState.selectedEntryType;

@@ -40,6 +40,7 @@ $script:PublishCount = 0
 $script:PublishedResource = ""
 $script:HistoryAction = ""
 $script:HistoryMessage = ""
+$script:HistoryPublishChange = $true
 
 . (Join-Path -Path $repoRoot -ChildPath "apps/admin/backend/services/ProjectMutationService.ps1")
 
@@ -53,16 +54,32 @@ function Test-ProjectArchived {
 }
 function Acquire-ResourceLock { param([string]$ResourcePath) return [PSCustomObject]@{} }
 function Release-ResourceLock { param($LockHandle) }
+function Acquire-ProjectReferenceLock { return [PSCustomObject]@{} }
 function Get-Projects { return @($script:Projects) }
+function Read-ProjectsFromDisk { return @($script:Projects) }
 function Write-JsonAtomic {
     param([string]$Path, $Value, [int]$Depth = 6)
     $script:WriteCount++
     $script:Projects = @($Value)
 }
+function Write-JsonArrayAtomic {
+    param([string]$Path, $Items = @(), [int]$Depth = 6)
+    Write-JsonAtomic -Path $Path -Value @($Items) -Depth $Depth
+}
+function Invoke-PostCommitActionSafely {
+    param([string]$Description, [scriptblock]$Action)
+    try { & $Action | Out-Null; return "" } catch { return "$Description`: $($_.Exception.Message)" }
+}
 function logHistory {
-    param([string]$Action, [string]$Message, [string]$EmployeeName)
+    param(
+        [string]$Action,
+        [string]$Message,
+        [string]$EmployeeName,
+        [bool]$PublishChange = $true
+    )
     $script:HistoryAction = $Action
     $script:HistoryMessage = $Message
+    $script:HistoryPublishChange = $PublishChange
 }
 function Publish-DataChange {
     param([string]$Category, [string]$Resource, [string[]]$AffectedEmployeeCodes = @())
@@ -95,6 +112,7 @@ function Reset-ProjectScenario {
     $script:PublishedResource = ""
     $script:HistoryAction = ""
     $script:HistoryMessage = ""
+    $script:HistoryPublishChange = $true
     Get-ChildItem -LiteralPath $tempFolder -Filter "*_data.json" -File -ErrorAction SilentlyContinue | Remove-Item -Force
 }
 
@@ -164,6 +182,7 @@ try {
     Assert-Equal -Expected "" -Actual $script:Projects[1].projectName -Message "An omitted project name should be stored as an empty string."
     Assert-Equal -Expected "P002" -Actual $script:PublishedResource -Message "The nameless project code was not published."
     Assert-Equal -Expected "Created a project with code <strong>P002</strong>." -Actual $script:HistoryMessage -Message "A nameless project used an unclear history message."
+    Assert-Equal -Expected $false -Actual $script:HistoryPublishChange -Message "Project creation duplicated sync publication through history logging."
 
     Reset-ProjectScenario
     $script:RequestPayload = [PSCustomObject]@{ projectCode = "P003"; projectName = "   "; sector = ""; admins = @(); backupAdmins = @() }
@@ -225,6 +244,7 @@ try {
     Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "An unused dossier number rename should succeed."
     Assert-Equal -Expected "P010" -Actual $script:Projects[0].projectCode -Message "The unused dossier number was not updated."
     Assert-Equal -Expected "P010" -Actual $script:PublishedResource -Message "The renamed dossier number was not published."
+    Assert-Equal -Expected $false -Actual $script:HistoryPublishChange -Message "Project update duplicated sync publication through history logging."
 
     Reset-ProjectScenario
     $script:RequestPayload = [PSCustomObject]@{ projectCode = "p001"; projectName = "Case update"; sector = ""; admins = @(); backupAdmins = @(); archived = $false }
@@ -257,12 +277,14 @@ try {
     Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "An unused project should be permanently deletable."
     Assert-Equal -Expected 0 -Actual $script:Projects.Count -Message "The unused project was not removed."
     Assert-Equal -Expected "Delete" -Actual $script:HistoryAction -Message "Permanent deletion used the wrong history action."
+    Assert-Equal -Expected $false -Actual $script:HistoryPublishChange -Message "Project deletion duplicated sync publication through history logging."
 
     Reset-ProjectScenario
     Invoke-ProjectDeleteRoute
     Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "The archive compatibility path should still succeed."
     Assert-True -Condition ([bool]$script:Projects[0].archived) -Message "The archive compatibility path did not archive the project."
     Assert-Equal -Expected "Archive" -Actual $script:HistoryAction -Message "Archive used the wrong history action."
+    Assert-Equal -Expected $false -Actual $script:HistoryPublishChange -Message "Project archive duplicated sync publication through history logging."
 
     Write-Host "Project admin mutation tests passed."
 }

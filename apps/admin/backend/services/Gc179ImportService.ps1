@@ -77,8 +77,9 @@ function Read-Gc179EmployeeDataStrict {
     }
 
     $trimmed = ([string]$raw).Trim()
-    if ([string]::IsNullOrWhiteSpace($trimmed) -or -not $trimmed.StartsWith("[") -or -not $trimmed.EndsWith("]")) {
-        throw "The employee data file is not a valid JSON array. Repair it before importing GC179 entries."
+    if ([string]::IsNullOrWhiteSpace($trimmed) -or
+        (-not $trimmed.StartsWith("[") -and -not $trimmed.StartsWith("{"))) {
+        throw "The employee data file is not a valid JSON entry collection. Repair it before importing GC179 entries."
     }
 
     try {
@@ -91,6 +92,9 @@ function Read-Gc179EmployeeDataStrict {
     if ($null -eq $parsed) {
         return @()
     }
+
+    # v1 stored a single employee entry as a JSON object. Accept that legacy
+    # root and normalize it to the same collection contract used by new data.
     return @($parsed)
 }
 
@@ -935,7 +939,8 @@ function Import-Gc179PreviewEntries {
         [AllowNull()][string]$SourceHash,
         [AllowNull()][string]$ImportedBy,
         [AllowNull()][string]$BatchId,
-        [bool]$SkipDuplicates = $true
+        [bool]$SkipDuplicates = $true,
+        [bool]$PublishChange = $true
     )
 
     if (-not $SkipDuplicates) {
@@ -1027,7 +1032,7 @@ function Import-Gc179PreviewEntries {
         }
 
         if ($imported -gt 0) {
-            Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 10
+            Write-JsonArrayAtomic -Path $dataFile -Items $existingData -Depth 10
         }
     }
     finally {
@@ -1035,7 +1040,7 @@ function Import-Gc179PreviewEntries {
     }
 
     $postCommitWarnings = @()
-    if ($imported -gt 0) {
+    if ($imported -gt 0 -and $PublishChange) {
         try {
             Publish-DataChange -Category "employee" -Resource $EmployeeCode | Out-Null
         }
@@ -1076,7 +1081,8 @@ function Undo-Gc179ImportBatch {
     param(
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
         [Parameter(Mandatory = $true)][string]$BatchId,
-        [Parameter(Mandatory = $true)]$CurrentUser
+        [Parameter(Mandatory = $true)]$CurrentUser,
+        [bool]$PublishChange = $true
     )
 
     $normalizedBatchId = ([string]$BatchId).Trim()
@@ -1132,7 +1138,7 @@ function Undo-Gc179ImportBatch {
         }
 
         if ($removedEntryIds.Count -gt 0) {
-            Write-JsonAtomic -Path $dataFile -Value @($remaining.ToArray()) -Depth 10
+            Write-JsonArrayAtomic -Path $dataFile -Items @($remaining.ToArray()) -Depth 10
         }
     }
     finally {
@@ -1140,7 +1146,7 @@ function Undo-Gc179ImportBatch {
     }
 
     $postCommitWarnings = @()
-    if ($removedEntryIds.Count -gt 0) {
+    if ($removedEntryIds.Count -gt 0 -and $PublishChange) {
         try {
             Publish-DataChange -Category "employee" -Resource $EmployeeCode | Out-Null
         }

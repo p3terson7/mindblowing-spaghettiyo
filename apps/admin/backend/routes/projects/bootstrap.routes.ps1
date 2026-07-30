@@ -9,7 +9,8 @@
                 respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
             }
             catch {
-                respondWithError $response 500 "Unable to build project data: $($_.Exception.Message)"
+                Write-Warning ("Unable to build project data: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to build project data."
             }
             continue
         }

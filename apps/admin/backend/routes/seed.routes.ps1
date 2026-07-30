@@ -64,7 +64,8 @@ if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/seed/dem
             }
         }
 
-        respondWithError $response 500 "Unable to seed demo entries: $($seedOperationError.Exception.Message)"
+        Write-Warning ("Unable to seed demo entries: {0}" -f $seedOperationError.Exception.Message)
+        respondWithError $response 500 "Unable to seed demo entries."
     }
     continue
 }

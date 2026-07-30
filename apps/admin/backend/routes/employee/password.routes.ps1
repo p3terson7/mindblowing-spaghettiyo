@@ -1,5 +1,6 @@
         # POST /employee/password/{employeeCode}: Reset or create an employee account password.
         if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -match "^/employee/password/(\d+)$") {
+            $response.Headers["Cache-Control"] = "no-store"
             if (-not (Test-CurrentUserSuperAdmin -CurrentUser $currentUser)) {
                 respondWithError $response 403 "Super admin access is required."
                 continue
@@ -7,10 +8,23 @@
 
             $employeeCode = $matches[1]
 
-            $authMutationMayHaveCommitted = $false
-            $authMutationError = $null
             try {
-                $payload = Read-JsonRequestBody -Request $request
+                try {
+                    $payload = Read-JsonRequestBody -Request $request
+                }
+                catch [System.FormatException] {
+                    respondWithError $response 400 $_.Exception.Message
+                    continue
+                }
+                catch [System.IO.InvalidDataException] {
+                    respondWithError $response 413 "The request body is too large."
+                    continue
+                }
+                catch [System.TimeoutException] {
+                    respondWithError $response 408 "Timed out while reading the request body."
+                    continue
+                }
+
                 $newPassword = if ($null -ne $payload) { [string]$payload.newPassword } else { "" }
                 if ([string]::IsNullOrWhiteSpace($newPassword)) {
                     respondWithError $response 400 "A new password is required."
@@ -28,24 +42,23 @@
                     continue
                 }
 
-                try {
-                    try {
-                        $passwordUpdateResult = Set-EmployeeUserPassword -EmployeeCode $employeeCode -NewPassword $newPassword -MustChangePassword $mustChangePassword
-                    }
-                    catch {
-                        # Cache clearing can fail after the users file has already been committed.
-                        $authMutationMayHaveCommitted = $true
-                        throw
-                    }
-                    if (-not $passwordUpdateResult.updated) {
-                        $errorMessage = if ($passwordUpdateResult.error) { [string]$passwordUpdateResult.error } else { "Unable to update employee password." }
-                        respondWithError $response 500 $errorMessage
-                        continue
-                    }
+                $passwordUpdateResult = Set-EmployeeUserPassword -EmployeeCode $employeeCode -NewPassword $newPassword -MustChangePassword $mustChangePassword
+                if (-not $passwordUpdateResult.updated) {
+                    $errorMessage = if ($passwordUpdateResult.error) { [string]$passwordUpdateResult.error } else { "Unable to update employee password." }
+                    $failureStatus = if ($passwordUpdateResult.error) { 409 } else { 500 }
+                    respondWithError $response $failureStatus $errorMessage
+                    continue
+                }
 
-                    $authMutationMayHaveCommitted = $true
+                $postCommitWarnings = New-Object System.Collections.ArrayList
+                $revokeWarning = Invoke-PostCommitActionSafely -Description "Password saved, but existing sessions could not be revoked" -Action {
                     Revoke-SessionsForUsername -Username $employeeCode
+                }
+                if (-not [string]::IsNullOrWhiteSpace($revokeWarning)) {
+                    [void]$postCommitWarnings.Add($revokeWarning)
+                }
 
+                $historyWarning = Invoke-PostCommitActionSafely -Description "Password saved, but history logging failed" -Action {
                     $employeeName = [string](Get-EmployeeName $employeeCode)
                     $historyMessage = if ($passwordUpdateResult.created) {
                         "Created a sign-in account and set a password for <strong>$employeeName</strong>."
@@ -57,25 +70,17 @@
                         "Reset the password for <strong>$employeeName</strong>."
                     }
 
-                    logHistory "Update" $historyMessage $employeeName
+                    logHistory "Update" $historyMessage $employeeName -PublishChange:$false
                 }
-                catch {
-                    $authMutationError = $_
-                    throw
+                if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
+                    [void]$postCommitWarnings.Add($historyWarning)
                 }
-                finally {
-                    if ($authMutationMayHaveCommitted) {
-                        try {
-                            Publish-DataChange -Category "auth" -Resource $employeeCode | Out-Null
-                        }
-                        catch {
-                            if ($null -eq $authMutationError) {
-                                throw
-                            }
 
-                            Write-Warning "Unable to publish auth cache invalidation after a failed password operation: $($_.Exception.Message)"
-                        }
-                    }
+                $publishWarning = Invoke-PostCommitActionSafely -Description "Password saved, but cross-machine refresh publication failed" -Action {
+                    Publish-DataChange -Category "auth" -Resource $employeeCode | Out-Null
+                }
+                if (-not [string]::IsNullOrWhiteSpace($publishWarning)) {
+                    [void]$postCommitWarnings.Add($publishWarning)
                 }
 
                 $message = if ($mustChangePassword) {
@@ -90,10 +95,12 @@
                     employeeCode       = $employeeCode
                     mustChangePassword = $mustChangePassword
                     createdAccount     = [bool]$passwordUpdateResult.created
+                    warnings           = @($postCommitWarnings.ToArray())
                 }) | ConvertTo-Json -Depth 4)
             }
             catch {
-                respondWithError $response 500 "Unable to update employee password: $($_.Exception.Message)"
+                Write-Warning ("Unable to update employee password: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to update employee password."
             }
             continue
         }

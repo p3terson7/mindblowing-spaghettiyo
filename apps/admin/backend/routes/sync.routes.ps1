@@ -54,6 +54,11 @@
                 powershell       = [string]$PSVersionTable.PSVersion
                 dataFolder       = [string]$sharedFolder
                 dataFolderWritable = [bool]$dataFolderWritable
+                dataSchema       = [PSCustomObject]@{
+                    version        = [int]$dataSchema.schemaVersion
+                    minimumReader  = [int]$dataSchema.minimumReaderVersion
+                    supported      = [int]$script:SaphirSupportedSchemaVersion
+                }
                 usersCount       = @((Get-Users) | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode "" }).Count
                 projectsCount    = @((Get-Projects) | Where-Object { -not (Test-ProjectArchived -Project $_) }).Count
                 sync             = $syncState

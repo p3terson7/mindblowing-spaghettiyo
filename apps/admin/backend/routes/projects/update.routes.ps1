@@ -43,64 +43,77 @@
 
             $projectMutationCommitted = $false
             $projectMutationError = $null
+            $postCommitWarnings = New-Object System.Collections.ArrayList
             try {
-                $lockHandle = Acquire-ResourceLock -ResourcePath $projectsFile
+                $referenceLockHandle = Acquire-ProjectReferenceLock
                 try {
-                    $projects = Get-Projects
-                    $projectIndex = -1
-                    for ($i = 0; $i -lt $projects.Count; $i++) {
-                        if ([string]$projects[$i].projectCode -eq $projectCode) {
-                            $projectIndex = $i
-                            break
-                        }
-                    }
-
-                    if ($projectIndex -lt 0) {
-                        respondWithError $response 404 "Project with code $projectCode not found."
-                        continue
-                    }
-
-                    if ($projectCodeChanged) {
-                        $duplicateProject = $false
+                    $lockHandle = Acquire-ResourceLock -ResourcePath $projectsFile
+                    try {
+                        $projects = @(Read-ProjectsFromDisk)
+                        $projectIndex = -1
                         for ($i = 0; $i -lt $projects.Count; $i++) {
-                            if ($i -ne $projectIndex -and [string]$projects[$i].projectCode -eq $requestedProjectCode) {
-                                $duplicateProject = $true
+                            if ([string]$projects[$i].projectCode -eq $projectCode) {
+                                $projectIndex = $i
                                 break
                             }
                         }
-                        if ($duplicateProject) {
-                            respondWithError $response 400 "Project with code $requestedProjectCode already exists."
+
+                        if ($projectIndex -lt 0) {
+                            respondWithError $response 404 "Project with code $projectCode not found."
                             continue
                         }
 
-                        $referenceSummary = Get-ProjectEntryReferenceSummary -ProjectCode $projectCode
-                        if ([int]$referenceSummary.referenceCount -gt 0) {
-                            respondWithError $response 409 "File number cannot be changed because this project is used by $([int]$referenceSummary.referenceCount) overtime entries."
-                            continue
+                        if ($projectCodeChanged) {
+                            $duplicateProject = $false
+                            for ($i = 0; $i -lt $projects.Count; $i++) {
+                                if ($i -ne $projectIndex -and [string]$projects[$i].projectCode -eq $requestedProjectCode) {
+                                    $duplicateProject = $true
+                                    break
+                                }
+                            }
+                            if ($duplicateProject) {
+                                respondWithError $response 400 "Project with code $requestedProjectCode already exists."
+                                continue
+                            }
+
+                            $referenceSummary = Get-ProjectEntryReferenceSummary -ProjectCode $projectCode
+                            if ([int]$referenceSummary.referenceCount -gt 0) {
+                                respondWithError $response 409 "File number cannot be changed because this project is used by $([int]$referenceSummary.referenceCount) overtime entries."
+                                continue
+                            }
                         }
+
+                        $projects[$projectIndex].projectCode = $requestedProjectCode
+                        $projects[$projectIndex].projectName = $projectName
+                        $projects[$projectIndex].sector = $sector
+                        $projects[$projectIndex].admins = $admins
+                        $projects[$projectIndex].backupAdmins = $backupAdmins
+                        $projects[$projectIndex].archived = if ($archivedWasProvided) { $archived } else { Test-ProjectArchived -Project $projects[$projectIndex] }
+
+                        Write-JsonArrayAtomic -Path $projectsFile -Items $projects -Depth 6
+                        $script:ProjectsCache = $null
+                        $projectMutationCommitted = $true
                     }
-
-                    $projects[$projectIndex].projectCode = $requestedProjectCode
-                    $projects[$projectIndex].projectName = $projectName
-                    $projects[$projectIndex].sector = $sector
-                    $projects[$projectIndex].admins = $admins
-                    $projects[$projectIndex].backupAdmins = $backupAdmins
-                    $projects[$projectIndex].archived = if ($archivedWasProvided) { $archived } else { Test-ProjectArchived -Project $projects[$projectIndex] }
-
-                    Write-JsonAtomic -Path $projectsFile -Value @($projects) -Depth 6
-                    $projectMutationCommitted = $true
+                    finally {
+                        Release-ResourceLock -LockHandle $lockHandle
+                    }
                 }
                 finally {
-                    Release-ResourceLock -LockHandle $lockHandle
+                    Release-ResourceLock -LockHandle $referenceLockHandle
                 }
 
-                $historyMessage = if ($projectCodeChanged) {
-                    "Updated the project file number from <strong>$projectCode</strong> to <strong>$requestedProjectCode</strong>."
+                $historyWarning = Invoke-PostCommitActionSafely -Description "Project update saved, but history logging failed" -Action {
+                    $historyMessage = if ($projectCodeChanged) {
+                        "Updated the project file number from <strong>$projectCode</strong> to <strong>$requestedProjectCode</strong>."
+                    }
+                    else {
+                        "Updated the project <strong>$projectCode</strong>."
+                    }
+                    logHistory "Update" $historyMessage ([string]$currentUser.displayName) -PublishChange:$false
                 }
-                else {
-                    "Updated the project <strong>$projectCode</strong>."
+                if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
+                    [void]$postCommitWarnings.Add($historyWarning)
                 }
-                logHistory "Update" $historyMessage ([string]$currentUser.displayName)
             }
             catch {
                 $projectMutationError = $_
@@ -108,19 +121,18 @@
             }
             finally {
                 if ($projectMutationCommitted) {
-                    try {
+                    $syncWarning = Invoke-PostCommitActionSafely -Description "Project update saved, but cross-machine refresh publication failed" -Action {
                         Publish-DataChange -Category "project" -Resource $requestedProjectCode | Out-Null
                     }
-                    catch {
-                        if ($null -eq $projectMutationError) {
-                            throw
-                        }
-
-                        Write-Warning "Unable to publish project cache invalidation after a failed update operation: $($_.Exception.Message)"
+                    if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                        [void]$postCommitWarnings.Add($syncWarning)
                     }
                 }
             }
 
-            respondWithSuccess $response '{ "message": "Project updated successfully." }'
+            respondWithSuccess $response (([PSCustomObject]@{
+                message = "Project updated successfully."
+                warnings = @($postCommitWarnings.ToArray())
+            }) | ConvertTo-Json -Depth 4)
             continue
         }

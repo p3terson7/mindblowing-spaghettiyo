@@ -7,59 +7,58 @@
 
             $employeeCode = $matches[1]
 
-            $directoryMutationMayHaveCommitted = $false
-            $directoryMutationError = $null
             try {
-                $existingEmployee = Get-EmployeeDirectoryRecordMetadata -EmployeeCode $employeeCode
+                # Include archived records so retrying a delete can finish
+                # session revocation after a previous secondary failure.
+                $existingEmployee = Get-EmployeeDirectoryRecordMetadata -EmployeeCode $employeeCode -IncludeDisabled:$true
                 if ($null -eq $existingEmployee) {
                     respondWithError $response 404 "Employee not found."
                     continue
                 }
+                $wasAlreadyArchived = [bool]$existingEmployee.archived
 
-                try {
-                    try {
-                        $removeResult = Remove-EmployeeDirectoryRecord -EmployeeCode $employeeCode
-                    }
-                    catch {
-                        # Session revocation can fail after the auth record has already been disabled.
-                        $directoryMutationMayHaveCommitted = $true
-                        throw
-                    }
-                    if (-not $removeResult.updated) {
-                        respondWithError $response 500 "Unable to remove employee."
-                        continue
-                    }
+                $removeResult = Remove-EmployeeDirectoryRecord -EmployeeCode $employeeCode
+                if (-not $removeResult.updated) {
+                    respondWithError $response 500 "Unable to remove employee."
+                    continue
+                }
 
-                    $directoryMutationMayHaveCommitted = $true
+                $postCommitWarnings = New-Object System.Collections.ArrayList
+                if ($removeResult.PSObject.Properties.Name -contains "warnings") {
+                    foreach ($warning in @($removeResult.warnings)) {
+                        if (-not [string]::IsNullOrWhiteSpace([string]$warning)) {
+                            [void]$postCommitWarnings.Add([string]$warning)
+                        }
+                    }
+                }
+
+                if (-not $wasAlreadyArchived) {
                     $historyMessage = "Removed employee access for <strong>$($existingEmployee.name)</strong>."
-                    logHistory "Delete" $historyMessage $existingEmployee.name
-                }
-                catch {
-                    $directoryMutationError = $_
-                    throw
-                }
-                finally {
-                    if ($directoryMutationMayHaveCommitted) {
-                        try {
-                            Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
-                        }
-                        catch {
-                            if ($null -eq $directoryMutationError) {
-                                throw
-                            }
-
-                            Write-Warning "Unable to publish employee-directory cache invalidation after a failed delete operation: $($_.Exception.Message)"
-                        }
+                    $historyWarning = Invoke-PostCommitActionSafely -Description "Employee access disabled, but history logging failed" -Action {
+                        logHistory "Delete" $historyMessage $existingEmployee.name -PublishChange:$false
                     }
+                    if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
+                        [void]$postCommitWarnings.Add($historyWarning)
+                    }
+                }
+
+                $syncWarning = Invoke-PostCommitActionSafely -Description "Employee access disabled, but cross-machine refresh publication failed" -Action {
+                    Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
+                }
+                if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                    [void]$postCommitWarnings.Add($syncWarning)
                 }
 
                 respondWithSuccess $response (([PSCustomObject]@{
-                    message      = "Employee removed successfully."
-                    employeeCode = $employeeCode
-                }) | ConvertTo-Json -Depth 4)
+                    message         = if ($wasAlreadyArchived) { "Employee access was already removed; cleanup was retried." } else { "Employee removed successfully." }
+                    employeeCode    = $employeeCode
+                    alreadyArchived = $wasAlreadyArchived
+                    warnings        = @($postCommitWarnings.ToArray())
+                }) | ConvertTo-Json -Depth 6)
             }
             catch {
-                respondWithError $response 500 "Unable to remove employee: $($_.Exception.Message)"
+                Write-Warning ("Unable to remove employee: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to remove employee."
             }
             continue
         }

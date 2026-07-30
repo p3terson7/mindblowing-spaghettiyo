@@ -3,6 +3,11 @@
             $employeeCode = $matches[1]
             $dataFile = Join-Path -Path $sharedFolder -ChildPath "${employeeCode}_data.json"
 
+            if (Test-CurrentUserMatchesEmployeeCode -CurrentUser $currentUser -EmployeeCode $employeeCode) {
+                respondWithError $response 403 "Administrators cannot approve or reject their own entries."
+                continue
+            }
+
             if (!(Test-Path -Path $dataFile)) {
                 respondWithError $response 404 "Error: Employee not found."
                 continue
@@ -33,10 +38,11 @@
 
             $entryMutationCommitted = $false
             $entryMutationError = $null
+            $postCommitWarnings = New-Object System.Collections.ArrayList
             $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
             try {
                 try {
-                    $existingData = Read-JsonArrayFile -Path $dataFile
+                    $existingData = @(Read-JsonArrayFile -Path $dataFile)
                 $entryIndex = Find-EntryIndex -Entries $existingData -EntryId $entryId -Date $date -PunchIn $punchIn
                 if ($entryIndex -lt 0) {
                     respondWithError $response 404 "Error: Overtime entry not found"
@@ -65,15 +71,22 @@
                     $entry.message = $managerMessage.Trim()
                 }
 
-                    Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 8
+                    Write-JsonArrayAtomic -Path $dataFile -Items $existingData -Depth 8
                     $entryMutationCommitted = $true
+                    Release-ResourceLock -LockHandle $lockHandle
+                    $lockHandle = $null
 
-                    $formattedDate = (Get-Date ([string]$entry.date)).ToString("MMMM dd, yyyy")
-                    $employeeName = Get-EmployeeName $employeeCode
-                    $action = if ($normalizedStatus -eq "approved") { "Approved" } else { "Rejected" }
-                    $historySpan = Get-EntryHistorySpanText -StartTime ([string]$entry.punchIn) -EndTime ([string]$entry.punchOut)
-                    $historyEntry = "$action an entry on $formattedDate $historySpan."
-                    logHistory $action $historyEntry $employeeName
+                    $historyWarning = Invoke-PostCommitActionSafely -Description "Approval saved, but history logging failed" -Action {
+                        $formattedDate = (Get-Date ([string]$entry.date)).ToString("MMMM dd, yyyy")
+                        $employeeName = Get-EmployeeName $employeeCode
+                        $action = if ($normalizedStatus -eq "approved") { "Approved" } else { "Rejected" }
+                        $historySpan = Get-EntryHistorySpanText -StartTime ([string]$entry.punchIn) -EndTime ([string]$entry.punchOut)
+                        $historyEntry = "$action an entry on $formattedDate $historySpan."
+                        logHistory $action $historyEntry $employeeName -PublishChange:$false
+                    }
+                    if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
+                        [void]$postCommitWarnings.Add($historyWarning)
+                    }
                 }
                 catch {
                     $entryMutationError = $_
@@ -81,15 +94,11 @@
                 }
                 finally {
                     if ($entryMutationCommitted) {
-                        try {
+                        $syncWarning = Invoke-PostCommitActionSafely -Description "Approval saved, but cross-machine refresh publication failed" -Action {
                             Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
                         }
-                        catch {
-                            if ($null -eq $entryMutationError) {
-                                throw
-                            }
-
-                            Write-Warning "Unable to publish employee cache invalidation after a failed approval operation: $($_.Exception.Message)"
+                        if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                            [void]$postCommitWarnings.Add($syncWarning)
                         }
                     }
                 }
@@ -97,10 +106,12 @@
                 respondWithSuccess $response (([PSCustomObject]@{
                     message = "Entry updated successfully."
                     entryId = if ($entry.entryId) { [string]$entry.entryId } else { $null }
+                    warnings = @($postCommitWarnings.ToArray())
                 }) | ConvertTo-Json -Depth 4)
             }
             catch {
-                respondWithError $response 500 "Error: '$($_.Exception.Message)'"
+                Write-Warning ("Unable to update entry approval: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to update the entry approval."
             }
             finally {
                 Release-ResourceLock -LockHandle $lockHandle

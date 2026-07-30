@@ -17,11 +17,11 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20260722-button-busy",
-  dashboard: "scripts/Views/DashboardView.js?v=20260722-button-busy",
-  approvals: "scripts/Views/ApprovalsView.js?v=20260722-button-busy",
+  employees: "scripts/Views/EmployeesView.js?v=20260729-operation-reduction",
+  dashboard: "scripts/Views/DashboardView.js?v=20260729-operation-reduction",
+  approvals: "scripts/Views/ApprovalsView.js?v=20260729-operation-reduction",
   history: "scripts/Views/HistoryView.js?v=20260722-button-busy",
-  projects: "scripts/Views/ProjectsView.js?v=20260722-button-busy",
+  projects: "scripts/Views/ProjectsView.js?v=20260729-operation-reduction",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
@@ -342,19 +342,19 @@ function getViewsAffectedBySyncState(syncState) {
 
   if (category === "employee-directory") {
     return isManagerUser(user)
-      ? ["dashboardView", "employeesView"]
+      ? ["dashboardView", "employeesView", "adminView"]
       : [];
   }
 
   if (category === "project") {
     return isManagerUser(user)
-      ? ["dashboardView", "projectsView"]
+      ? ["dashboardView", "projectsView", "adminView"]
       : ["selfView"];
   }
 
   if (category === "auth") {
     if (isManagerUser(user)) {
-      return ["employeesView"];
+      return ["employeesView", "adminView"];
     }
 
     return resource && user.employeeCode === resource
@@ -1138,6 +1138,25 @@ async function refreshActiveView(options) {
   await refreshViewById(activeViewId, options);
 }
 
+async function rerenderActiveViewForLanguageChange(user = getCurrentUser()) {
+  if (!user) {
+    return;
+  }
+
+  const activeViewId = document.querySelector(".view.active")?.id || localStorage.getItem("activeView") || resolvePreferredView(user);
+  const handlerNames = {
+    selfView: "rerenderSelfViewForLanguageChange",
+    dashboardView: "rerenderDashboardViewForLanguageChange",
+    employeesView: "rerenderEmployeesViewForLanguageChange",
+    adminView: "rerenderReviewViewForLanguageChange",
+    projectsView: "rerenderProjectsViewForLanguageChange",
+  };
+  const handler = window[handlerNames[activeViewId]];
+  if (typeof handler === "function") {
+    return handler();
+  }
+}
+
 async function pollSyncState() {
   if (appShellState.syncRequestInFlight) {
     scheduleNextSyncPoll();
@@ -1667,7 +1686,7 @@ window.addEventListener("app:language-changed", event => {
     return;
   }
 
-  refreshActiveView({ force: true }).catch(error => {
-    console.error("Unable to refresh active view after language change:", error);
+  Promise.resolve(rerenderActiveViewForLanguageChange(user)).catch(error => {
+    console.error("Unable to rerender active view after language change:", error);
   });
 });

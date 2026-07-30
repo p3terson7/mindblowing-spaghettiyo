@@ -211,6 +211,44 @@ function applyApprovalFilters() {
   renderApprovalTabsFromFiltered(getFilteredApprovalEntries());
 }
 
+window.rerenderReviewViewForLanguageChange = function () {
+  document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(allApprovalEntries);
+  populateApprovalProjectFilter(approvalScopedProjects, allApprovalEntries);
+  applyApprovalFilters();
+  if (typeof applyHistoryFilters === "function") {
+    applyHistoryFilters();
+  }
+};
+
+function normalizeBatchApprovalResult(result, requestedCountFallback = 0) {
+  const payload = result && typeof result === "object" ? result : {};
+  const fallbackCount = Number.isFinite(Number(requestedCountFallback))
+    ? Math.max(0, Math.trunc(Number(requestedCountFallback)))
+    : 0;
+  const requestedCount = Number.isFinite(Number(payload.requestedCount))
+    ? Math.max(0, Math.trunc(Number(payload.requestedCount)))
+    : fallbackCount;
+  const updatedCount = Number.isFinite(Number(payload.updatedCount))
+    ? Math.max(0, Math.trunc(Number(payload.updatedCount)))
+    : 0;
+  const failedCount = Number.isFinite(Number(payload.failedCount))
+    ? Math.max(0, Math.trunc(Number(payload.failedCount)))
+    : Math.max(0, requestedCount - updatedCount);
+  const declaredOutcome = String(payload.outcome || "").trim().toLowerCase();
+  const outcome = ["success", "partial", "none"].includes(declaredOutcome)
+    ? declaredOutcome
+    : (updatedCount === 0 ? "none" : (updatedCount < requestedCount ? "partial" : "success"));
+
+  return {
+    requestedCount,
+    updatedCount,
+    failedCount,
+    outcome,
+    failures: Array.isArray(payload.failures) ? payload.failures : [],
+    message: String(payload.message || "").trim(),
+  };
+}
+
 async function approveFilteredEntries(button = document.getElementById("approveFilteredBtn")) {
   const filteredPendingEntries = getFilteredApprovalEntries().filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry) && !isEntryForgottenClockOut(entry) && canApproveEntry(entry));
   if (filteredPendingEntries.length === 0) {
@@ -238,7 +276,22 @@ async function approveFilteredEntries(button = document.getElementById("approveF
         }),
       });
       const result = await parseResponse(response);
-      showToast(t("review.batchApproveSuccess", { count: result.updatedCount || filteredPendingEntries.length }), "success");
+      const batchResult = normalizeBatchApprovalResult(result, filteredPendingEntries.length);
+      if (batchResult.outcome === "none" || batchResult.updatedCount === 0) {
+        const error = new Error(batchResult.message || t("review.batchApproveError"));
+        error.batchFailures = batchResult.failures;
+        throw error;
+      }
+
+      if (batchResult.outcome === "partial") {
+        console.warn("Some selected approvals were not updated.", batchResult.failures);
+        showToast(
+          batchResult.message || t("review.batchApproveSuccess", { count: batchResult.updatedCount }),
+          "warning",
+        );
+      } else {
+        showToast(t("review.batchApproveSuccess", { count: batchResult.updatedCount }), "success");
+      }
       if (window.dashboardState) {
         dashboardState.bootstrap = null;
         dashboardState.historyLoaded = false;

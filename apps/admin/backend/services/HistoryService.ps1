@@ -108,7 +108,7 @@ function Add-HistoryEntries {
             [void]$combinedHistory.Add($historyEntry)
         }
 
-        Write-JsonAtomic -Path $targetHistoryFile -Value @($combinedHistory.ToArray()) -Depth 6
+        Write-JsonArrayAtomic -Path $targetHistoryFile -Items @($combinedHistory.ToArray()) -Depth 6
     }
     finally {
         Release-ResourceLock -LockHandle $lockHandle
@@ -126,10 +126,20 @@ function Add-HistoryEntries {
 }
 
 # Backwards-compatible one-entry wrapper used by existing routes and services.
-function logHistory($action, $message, $employeeName) {
+# Mutation routes can defer publication so their authoritative business change
+# (employee, employee-directory, project, or auth) advances sync-state once.
+# Standalone history callers keep the original publish-on-append behavior.
+function logHistory {
+    param(
+        $action,
+        $message,
+        $employeeName,
+        [bool]$PublishChange = $true
+    )
+
     Add-HistoryEntries -Entries @([PSCustomObject]@{
         action       = $action
         message      = $message
         employeeName = $employeeName
-    }) -PublishResource $employeeName | Out-Null
+    }) -PublishChange:$PublishChange -PublishResource $employeeName | Out-Null
 }

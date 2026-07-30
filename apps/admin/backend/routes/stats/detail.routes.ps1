@@ -1,6 +1,6 @@
         # GET /stats/projects/{projectCode}: Return detailed overtime stats for a specific project.
         if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -match "^/stats/projects/([^/]+)/?$") {
-            $projectCode = $matches[1]
+            $projectCode = [System.Uri]::UnescapeDataString([string]$matches[1]).Trim()
             
             $query = [System.Web.HttpUtility]::ParseQueryString($request.Url.Query)
             $startDate = $query["startDate"]
@@ -20,20 +20,11 @@
                 }
                 $result = Get-ProjectDetailModel -ProjectCode $projectCode -StartDate $startDate -EndDate $endDate -CurrentUser $currentUser
                 $jsonResult = $result | ConvertTo-Json -Depth 4
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonResult)
-                $response.ContentType = "application/json"
-                $response.StatusCode = 200
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                respondWithSuccess $response $jsonResult
             }
             catch {
-                $errMsg = "{ `"error`": `"Error computing stats for project $projectCode : $($_.Exception.Message)`" }"
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes($errMsg)
-                $response.StatusCode = 500
-                $response.ContentType = "application/json"
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
-            }
-            finally {
-                $response.Close()
+                Write-Warning ("Unable to compute statistics for project {0}: {1}" -f $projectCode, $_.Exception.Message)
+                respondWithError $response 500 "Unable to compute statistics for project $projectCode."
             }
             continue
         }

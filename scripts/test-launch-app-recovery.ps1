@@ -29,8 +29,11 @@ function Get-ManagedServiceLaunchPlan {
     if ($IsRunning -and -not $HasTrackedProcess -and -not $Force) {
         return [PSCustomObject]@{ Action = "Block"; ForceRestart = $false }
     }
+    if ($IsRunning -and $HasTrackedProcess -and $IsExpectedManagedInstance -and -not $FrontendIsAvailable -and -not $Force) {
+        return [PSCustomObject]@{ Action = "Block"; ForceRestart = $false }
+    }
 
-    $restartTrackedService = $HasTrackedProcess -and (-not $IsExpectedManagedInstance -or -not $FrontendIsAvailable)
+    $restartTrackedService = $HasTrackedProcess -and (-not $IsExpectedManagedInstance -or -not $IsRunning)
     $forceRestart = [bool]($Force -or $restartTrackedService)
     return [PSCustomObject]@{
         Action       = if ($forceRestart) { "Restart" } else { "Start" }
@@ -89,14 +92,22 @@ function Get-PreviousProductServiceConfigs { return @() }
         & (Join-Path -Path $fixtureScripts -ChildPath "launch-app.ps1")
     }
     catch {
-        # The fake URL deliberately stays unavailable after the mocked restart.
+        # A short failed health probe must block automatic process replacement.
     }
 
-    if (-not (Test-Path -LiteralPath $forceMarker -PathType Leaf)) {
-        throw "Assertion failed: an unhealthy tracked service must reach the restart call."
+    if (Test-Path -LiteralPath $forceMarker -PathType Leaf) {
+        throw "Assertion failed: a short health timeout must not reach the force-restart call."
     }
-    if ((Get-Content -LiteralPath $forceMarker -Raw).Trim() -ne "True") {
-        throw "Assertion failed: an unhealthy tracked service must be force-restarted."
+
+    try {
+        & (Join-Path -Path $fixtureScripts -ChildPath "launch-app.ps1") -Force
+    }
+    catch {
+        # The fake URL deliberately stays unavailable after the explicit restart.
+    }
+    if (-not (Test-Path -LiteralPath $forceMarker -PathType Leaf) -or
+        (Get-Content -LiteralPath $forceMarker -Raw).Trim() -ne "True") {
+        throw "Assertion failed: only an explicit -Force request may restart the unhealthy tracked service."
     }
 
     Remove-Item -LiteralPath $forceMarker -Force

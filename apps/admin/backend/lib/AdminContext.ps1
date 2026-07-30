@@ -24,6 +24,16 @@ if ($listenerPrefix[-1] -ne "/") {
 
 $demoSeedEnabled = $config.ContainsKey("EnableDemoSeed") -and [bool]$config.EnableDemoSeed
 $gc179ImportEnabled = $config.ContainsKey("EnableGc179Import") -and [bool]$config.EnableGc179Import
+$corsAllowedOrigins = if ($config.ContainsKey("AllowedOrigins")) {
+    @($config.AllowedOrigins | ForEach-Object {
+        ([string]$_).Trim().TrimEnd("/")
+    } | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_)
+    })
+}
+else {
+    @()
+}
 
 $configuredDataFolder = if ($config.ContainsKey("DataFolderPath") -and -not [string]::IsNullOrWhiteSpace([string]$config.DataFolderPath)) {
     [string]$config.DataFolderPath
@@ -58,8 +68,21 @@ else {
 
 # Ensure shared folder exists
 if (!(Test-Path -Path $sharedFolder)) {
-    New-Item -ItemType Directory -Path $sharedFolder | Out-Null
+    New-Item -ItemType Directory -Path $sharedFolder -Force -ErrorAction Stop | Out-Null
 }
+
+# Initialization is a shared-data mutation too. Load the file-store primitives
+# here so every entry point (server and maintenance scripts alike) uses the
+# same cross-process lock and atomic writer during first startup.
+$fileStorePath = Join-Path -Path $scriptDir -ChildPath "lib/FileStore.ps1"
+. $fileStorePath
+
+# Refuse incompatible future data before initializing any baseline file. Older
+# folders without metadata are adopted as schema 1 without rewriting their
+# existing business records.
+$dataSchemaServicePath = Join-Path -Path $scriptDir -ChildPath "services/DataSchemaService.ps1"
+. $dataSchemaServicePath
+$dataSchema = Ensure-SaphirDataSchema
 
 function Test-JsonFileNeedsInitialization {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -96,12 +119,20 @@ function Initialize-JsonFileIfEmpty {
         [int]$Depth = 6
     )
 
-    if (Test-JsonFileNeedsInitialization -Path $Path) {
-        $json = $Value | ConvertTo-Json -Depth $Depth
-        if ([string]::IsNullOrWhiteSpace([string]$json) -and ($Value -is [System.Collections.IEnumerable]) -and -not ($Value -is [string])) {
-            $json = "[]"
+    if (-not (Test-JsonFileNeedsInitialization -Path $Path)) {
+        return
+    }
+
+    $lockHandle = Acquire-ResourceLock -ResourcePath $Path
+    try {
+        # Another process may have initialized the resource while this process
+        # was waiting for the shared lock.
+        if (Test-JsonFileNeedsInitialization -Path $Path) {
+            Write-JsonAtomic -Path $Path -Value $Value -Depth $Depth
         }
-        Set-Content -Path $Path -Value $json -Encoding UTF8
+    }
+    finally {
+        Release-ResourceLock -LockHandle $lockHandle
     }
 }
 
@@ -111,7 +142,7 @@ Initialize-JsonFileIfEmpty -Path $historyFile -Value ([object[]]@()) -Depth 2
 # Ensure projects.json exists (as an array of project objects) in the shared folder.
 $projectsFile = Join-Path -Path $sharedFolder -ChildPath "projects.json"
 # Define default projects.
-$defaultProjects = @(
+$demoProjects = @(
     @{
         projectCode = "P001"
         projectName = "Project Alpha"
@@ -145,6 +176,10 @@ $defaultProjects = @(
         archived = $false
     }
 )
+$defaultProjects = [object[]]@()
+if ($demoSeedEnabled) {
+    $defaultProjects = @($demoProjects)
+}
 Initialize-JsonFileIfEmpty -Path $projectsFile -Value $defaultProjects -Depth 3
 
 # Ensure overtimeCodes.json exists (as an array of overtime code objects) in the shared folder.
@@ -270,11 +305,12 @@ Initialize-JsonFileIfEmpty -Path $reasonCodesFile -Value $defaultReasonCodes -De
 
 # Ensure employeeNames mapping exists.
 $mappingFile = Join-Path -Path $sharedFolder -ChildPath "employeeNames.json"
-$defaultMapping = @{
+$demoMapping = @{
     "000379070" = "Peter-Nicholas Sarateanu"
     "000123123" = "Jane Smith"
     "000987654" = "Alice Johnson"
     "000456123" = "Kylian Mbappe"
     "000789123" = "Joe Burrow"
 }
+$defaultMapping = if ($demoSeedEnabled) { $demoMapping } else { @{} }
 Initialize-JsonFileIfEmpty -Path $mappingFile -Value $defaultMapping -Depth 3

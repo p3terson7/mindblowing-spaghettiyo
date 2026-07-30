@@ -12,11 +12,12 @@ if ($request.Url.AbsolutePath -eq "/history" -or $request.Url.AbsolutePath -eq "
     # GET /history Endpoint
     if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/history") {
         try {
-            $historyContent = (@(Get-HistoryEntriesSnapshot) | ConvertTo-Json -Depth 6)
+            $historyContent = ConvertTo-Json -InputObject @(Get-HistoryEntriesSnapshot) -Depth 6
             respondWithSuccess $response $historyContent
         }
         catch {
-            respondWithError $response 500 "Error reading history: $($_.Exception.Message)"
+            Write-Warning ("Unable to read history: {0}" -f $_.Exception.Message)
+            respondWithError $response 500 "Unable to read history."
         }
         continue
     }
@@ -32,11 +33,12 @@ if ($request.Url.AbsolutePath -eq "/history" -or $request.Url.AbsolutePath -eq "
                 }
             }
 
-            $historyContent = (@(Get-RecentHistoryEntriesSnapshot -Limit $limit) | ConvertTo-Json -Depth 6)
+            $historyContent = ConvertTo-Json -InputObject @(Get-RecentHistoryEntriesSnapshot -Limit $limit) -Depth 6
             respondWithSuccess $response $historyContent
         }
         catch {
-            respondWithError $response 500 "Error reading recent history: $($_.Exception.Message)"
+            Write-Warning ("Unable to read recent history: {0}" -f $_.Exception.Message)
+            respondWithError $response 500 "Unable to read recent history."
         }
         continue
     }

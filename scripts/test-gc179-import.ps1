@@ -114,6 +114,11 @@ Assert-True -Condition ($fixtureContent.TrimEnd().EndsWith("%%EOF")) -Message "T
 
 . $servicePath
 
+$legacySingleEntryPath = Join-Path -Path $repoRoot -ChildPath "v1_data/data/000321928_data.json"
+Assert-True -Condition (Test-Path -LiteralPath $legacySingleEntryPath -PathType Leaf) -Message "The v1 single-entry compatibility fixture is missing."
+$legacySingleEntries = @(Read-Gc179EmployeeDataStrict -Path $legacySingleEntryPath)
+Assert-Equal -Expected 1 -Actual $legacySingleEntries.Count -Message "GC179 strict reads must accept a v1 one-entry JSON object root."
+
 Assert-Gc179ImportPayload -FdfContent $fixtureContent -FileName "gc179-000100001-2026-05.fdf" -ManagerMessage "Valid note"
 Assert-Throws -Action {
     Assert-Gc179ImportPayload -FdfContent $fixtureContent -FileName "completed-form.pdf" -ManagerMessage ""
@@ -354,6 +359,9 @@ $script:ImportDataFile = Join-Path -Path $importTestFolder -ChildPath "000100001
 $script:ImportWriteCount = 0
 $script:ImportPublishCount = 0
 $script:ImportEntrySequence = 0
+$script:ImportHistoryCount = 0
+$script:ImportHistoryPublishFlags = New-Object System.Collections.ArrayList
+$script:ImportHistoryCountAtPublication = New-Object System.Collections.ArrayList
 
 function Ensure-EmployeeDataFile {
     param([string]$EmployeeCode)
@@ -391,9 +399,15 @@ function Write-JsonAtomic {
     [System.IO.File]::WriteAllText($Path, $json, [System.Text.Encoding]::UTF8)
 }
 
+function Write-JsonArrayAtomic {
+    param([string]$Path, $Items = @(), [int]$Depth = 6)
+    Write-JsonAtomic -Path $Path -Value @($Items) -Depth $Depth
+}
+
 function Publish-DataChange {
     param([string]$Category = "data", [string]$Resource = "shared", [string[]]$AffectedEmployeeCodes = @())
     $script:ImportPublishCount++
+    [void]$script:ImportHistoryCountAtPublication.Add($script:ImportHistoryCount)
 }
 
 function New-EntryIdentifier {
@@ -435,6 +449,20 @@ function Get-ReasonCodes {
 function Test-CurrentUserCanModifyProjectCode {
     param($CurrentUser, [string]$ProjectCode)
     return $true
+}
+
+function Acquire-ProjectReferenceLock {
+    return [PSCustomObject]@{ ResourcePath = ".project-references" }
+}
+
+function Test-ActiveProjectCodeFromDisk {
+    param([string]$ProjectCode)
+    return $ProjectCode -eq "TEST"
+}
+
+function Test-CurrentUserCanModifyActiveProjectCodeFromDisk {
+    param($CurrentUser, [string]$ProjectCode)
+    return $ProjectCode -eq "TEST"
 }
 
 $script:RoutePayload = $null
@@ -497,7 +525,14 @@ function Test-CurrentUserCanApproveEmployeeRole {
 }
 
 function logHistory {
-    param([string]$Action, [string]$Message, [string]$EmployeeName)
+    param(
+        [string]$Action,
+        [string]$Message,
+        [string]$EmployeeName,
+        [bool]$PublishChange = $true
+    )
+    $script:ImportHistoryCount++
+    [void]$script:ImportHistoryPublishFlags.Add($PublishChange)
 }
 
 function Invoke-Gc179ImportRouteForTest {
@@ -662,6 +697,8 @@ try {
     Assert-True -Condition ($batchId -match "^gc179-[0-9a-f]{32}$") -Message "The import route did not return a valid batch identifier."
     Assert-Equal -Expected 1 -Actual $script:ImportWriteCount -Message "The import must write the employee file once."
     Assert-Equal -Expected 1 -Actual $script:ImportPublishCount -Message "The import must publish one employee change."
+    Assert-Equal -Expected 1 -Actual $script:ImportHistoryCountAtPublication[0] -Message "The import published before its history append completed."
+    Assert-Equal -Expected $false -Actual $script:ImportHistoryPublishFlags[0] -Message "The import history append duplicated the employee publication."
 
     $storedEntries = @(Read-JsonArrayFile -Path $script:ImportDataFile)
     Assert-Equal -Expected 1 -Actual $storedEntries.Count -Message "The disposable employee file contains the wrong number of imported rows."
@@ -704,6 +741,8 @@ try {
     Assert-Equal -Expected 0 -Actual @(Read-JsonArrayFile -Path $script:ImportDataFile).Count -Message "Undo left an imported row in the employee file."
     Assert-Equal -Expected 2 -Actual $script:ImportWriteCount -Message "Import and undo should each write once."
     Assert-Equal -Expected 2 -Actual $script:ImportPublishCount -Message "Import and undo should each publish once."
+    Assert-Equal -Expected 2 -Actual $script:ImportHistoryCountAtPublication[1] -Message "The undo published before its history append completed."
+    Assert-Equal -Expected $false -Actual $script:ImportHistoryPublishFlags[1] -Message "The undo history append duplicated the employee publication."
 
     $undoUser = [PSCustomObject]@{ username = "manager" }
     $changedBatchId = "gc179-cccccccccccccccccccccccccccccccc"

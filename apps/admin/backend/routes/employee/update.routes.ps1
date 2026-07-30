@@ -3,6 +3,11 @@
             $employeeCode = $matches[1]
             $dataFile = Join-Path -Path $sharedFolder -ChildPath "${employeeCode}_data.json"
 
+            if (Test-CurrentUserMatchesEmployeeCode -CurrentUser $currentUser -EmployeeCode $employeeCode) {
+                respondWithError $response 403 "Administrators cannot update entries in their own employee profile."
+                continue
+            }
+
             if (!(Test-Path -Path $dataFile)) {
                 respondWithError $response 404 "Employee not found"
                 continue
@@ -21,6 +26,13 @@
                 respondWithError $response 400 "Missing required identifier: date and entryId/originalPunchIn are required."
                 continue
             }
+
+            $normalizedDate = Convert-ToNormalizedDateText -DateText $date
+            if ([string]::IsNullOrWhiteSpace($normalizedDate)) {
+                respondWithError $response 400 "Date must use the yyyy-MM-dd format."
+                continue
+            }
+            $date = $normalizedDate
 
             if ([string]::IsNullOrWhiteSpace($managerMessage)) {
                 respondWithError $response 400 "A manager message is required when updating an entry."
@@ -88,10 +100,25 @@
 
             $entryMutationCommitted = $false
             $entryMutationError = $null
-            $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
+            $postCommitWarnings = New-Object System.Collections.ArrayList
+            $lockHandle = $null
+            $projectReferenceLockHandle = $null
             try {
+                if ($payloadEntryType -ne "diverse" -and $payload.PSObject.Properties.Name -contains "projectCode") {
+                    $projectReferenceLockHandle = Acquire-ProjectReferenceLock
+                    if (-not (Test-ActiveProjectCodeFromDisk -ProjectCode ([string]$payload.projectCode))) {
+                        respondWithError $response 409 "The selected project is no longer active. Refresh and choose another project."
+                        continue
+                    }
+                    if (-not (Test-CurrentUserCanModifyActiveProjectCodeFromDisk -CurrentUser $currentUser -ProjectCode ([string]$payload.projectCode))) {
+                        respondWithError $response 403 "Your permission for the selected project changed. Refresh and try again."
+                        continue
+                    }
+                }
+
+                $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
                 try {
-                    $existingData = Read-JsonArrayFile -Path $dataFile
+                    $existingData = @(Read-JsonArrayFile -Path $dataFile)
                 $foundIndex = Find-EntryIndex -Entries $existingData -EntryId $entryId -Date $date -PunchIn $originalPunchIn
                 if ($foundIndex -eq -1) {
                     respondWithError $response 404 "Entry not found"
@@ -271,19 +298,28 @@
                 $existingEntry.message = $managerMessage.Trim()
                 Update-EntryComputedOvertime -Entry $existingEntry
 
-                    Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 8
+                    Write-JsonArrayAtomic -Path $dataFile -Items $existingData -Depth 8
                     $entryMutationCommitted = $true
+                    Release-ResourceLock -LockHandle $lockHandle
+                    $lockHandle = $null
+                    Release-ResourceLock -LockHandle $projectReferenceLockHandle
+                    $projectReferenceLockHandle = $null
 
-                    $employeeName = Get-EmployeeName $employeeCode
-                    $formattedDate = (Get-Date $date).ToString("MMMM dd, yyyy")
-                    $historySpan = Get-EntryHistorySpanText -StartTime ([string]$existingEntry.punchIn) -EndTime ([string]$existingEntry.punchOut)
-                    if ($messages.Count -eq 0) {
-                        $finalMessage = "Updated an entry on $formattedDate $historySpan."
+                    $historyWarning = Invoke-PostCommitActionSafely -Description "Entry update saved, but history logging failed" -Action {
+                        $employeeName = Get-EmployeeName $employeeCode
+                        $formattedDate = (Get-Date $date).ToString("MMMM dd, yyyy")
+                        $historySpan = Get-EntryHistorySpanText -StartTime ([string]$existingEntry.punchIn) -EndTime ([string]$existingEntry.punchOut)
+                        if ($messages.Count -eq 0) {
+                            $finalMessage = "Updated an entry on $formattedDate $historySpan."
+                        }
+                        else {
+                            $finalMessage = "Updated an entry on $formattedDate $historySpan. " + ($messages -join " ")
+                        }
+                        logHistory "Update" $finalMessage $employeeName -PublishChange:$false
                     }
-                    else {
-                        $finalMessage = "Updated an entry on $formattedDate $historySpan. " + ($messages -join " ")
+                    if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
+                        [void]$postCommitWarnings.Add($historyWarning)
                     }
-                    logHistory "Update" $finalMessage $employeeName
                 }
                 catch {
                     $entryMutationError = $_
@@ -291,15 +327,11 @@
                 }
                 finally {
                     if ($entryMutationCommitted) {
-                        try {
+                        $syncWarning = Invoke-PostCommitActionSafely -Description "Entry update saved, but cross-machine refresh publication failed" -Action {
                             Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
                         }
-                        catch {
-                            if ($null -eq $entryMutationError) {
-                                throw
-                            }
-
-                            Write-Warning "Unable to publish employee cache invalidation after a failed update operation: $($_.Exception.Message)"
+                        if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                            [void]$postCommitWarnings.Add($syncWarning)
                         }
                     }
                 }
@@ -307,13 +339,16 @@
                 respondWithSuccess $response (([PSCustomObject]@{
                     message = ($messages -join "<br>")
                     entryId = [string]$existingEntry.entryId
+                    warnings = @($postCommitWarnings.ToArray())
                 }) | ConvertTo-Json -Depth 4)
             }
             catch {
-                respondWithError $response 500 "Error: '$($_.Exception.Message)'"
+                Write-Warning ("Unable to update employee entry: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to update the employee entry."
             }
             finally {
                 Release-ResourceLock -LockHandle $lockHandle
+                Release-ResourceLock -LockHandle $projectReferenceLockHandle
             }
             continue
         }

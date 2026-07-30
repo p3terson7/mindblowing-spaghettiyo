@@ -179,6 +179,93 @@ function Clear-AllEmployeeEntryCaches {
     $script:EmployeeEntryFileCache = @{}
 }
 
+function Clear-ReadModelFileCache {
+    param([string]$Path)
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$Path)) {
+        Clear-CachedFileContent -Path ([string]$Path)
+    }
+}
+
+function Clear-AllReadModelCoreFileCaches {
+    foreach ($corePath in @(
+        $projectsFile,
+        $mappingFile,
+        $usersFile,
+        $sessionsFile,
+        $historyFile,
+        $overtimeCodesFile,
+        $paymentOptionsFile,
+        $reasonCodesFile
+    )) {
+        Clear-ReadModelFileCache -Path ([string]$corePath)
+    }
+
+    $script:ProjectsCache = $null
+    $script:EmployeeNameMapCache = $null
+    $script:JsonOptionArrayCache = @{}
+    if (Get-Command -Name Clear-AuthRuntimeCaches -ErrorAction SilentlyContinue) {
+        Clear-AuthRuntimeCaches
+    }
+}
+
+function Clear-ReadModelCoreCachesForChange {
+    param(
+        [string]$Category,
+        [bool]$CanUseTargetedInvalidation
+    )
+
+    if (-not $CanUseTargetedInvalidation) {
+        Clear-AllReadModelCoreFileCaches
+        return
+    }
+
+    switch (([string]$Category).Trim().ToLowerInvariant()) {
+        "history" {
+            Clear-ReadModelFileCache -Path $historyFile
+        }
+        "employee" {
+            # Entry mutations normally append audit history before publishing
+            # their single employee revision. Some employee changes do not add
+            # history, but clearing one small core cache is safer than retaining
+            # an audit projection after a coalesced mutation.
+            Clear-ReadModelFileCache -Path $historyFile
+        }
+        "project" {
+            Clear-ReadModelFileCache -Path $projectsFile
+            Clear-ReadModelFileCache -Path $historyFile
+            $script:ProjectsCache = $null
+            if (Get-Command -Name Clear-ProjectAccessRuntimeCaches -ErrorAction SilentlyContinue) {
+                Clear-ProjectAccessRuntimeCaches
+            }
+            elseif (Get-Command -Name Clear-AuthRuntimeCaches -ErrorAction SilentlyContinue) {
+                Clear-AuthRuntimeCaches
+            }
+        }
+        "auth" {
+            Clear-ReadModelFileCache -Path $usersFile
+            Clear-ReadModelFileCache -Path $sessionsFile
+            Clear-ReadModelFileCache -Path $historyFile
+            if (Get-Command -Name Clear-AuthRuntimeCaches -ErrorAction SilentlyContinue) {
+                Clear-AuthRuntimeCaches
+            }
+        }
+        "employee-directory" {
+            Clear-ReadModelFileCache -Path $usersFile
+            Clear-ReadModelFileCache -Path $sessionsFile
+            Clear-ReadModelFileCache -Path $mappingFile
+            Clear-ReadModelFileCache -Path $historyFile
+            $script:EmployeeNameMapCache = $null
+            if (Get-Command -Name Clear-AuthRuntimeCaches -ErrorAction SilentlyContinue) {
+                Clear-AuthRuntimeCaches
+            }
+        }
+        default {
+            Clear-AllReadModelCoreFileCaches
+        }
+    }
+}
+
 function Sync-ReadModelCaches {
     $state = Get-SyncState
     $stateKey = Get-ReadModelSyncStateKey -State $state
@@ -188,6 +275,17 @@ function Sync-ReadModelCaches {
 
     $previousState = $script:ReadModelSyncState
     $script:ReadModelCache = @{}
+    $previousVersion = -1
+    $currentVersion = -1
+    $hasPreviousVersion = $null -ne $previousState -and
+        ($previousState.PSObject.Properties.Name -contains "version") -and
+        [int]::TryParse([string]$previousState.version, [ref]$previousVersion)
+    $hasCurrentVersion = $null -ne $state -and
+        ($state.PSObject.Properties.Name -contains "version") -and
+        [int]::TryParse([string]$state.version, [ref]$currentVersion)
+    $isSequentialChange = $hasPreviousVersion -and
+        $hasCurrentVersion -and
+        $currentVersion -eq ($previousVersion + 1)
 
     $canTargetEmployeeCaches = (Test-ReadModelSyncStateRevisionSchema -State $previousState) -and
         (Test-ReadModelSyncStateRevisionSchema -State $state) -and
@@ -220,9 +318,9 @@ function Sync-ReadModelCaches {
         }
     }
 
-    if (Get-Command -Name Clear-FileMetadataValidationCache -ErrorAction SilentlyContinue) {
-        Clear-FileMetadataValidationCache
-    }
+    Clear-ReadModelCoreCachesForChange `
+        -Category ([string]$state.category) `
+        -CanUseTargetedInvalidation:$isSequentialChange
     $script:ReadModelSyncState = $state
     $script:ReadModelCacheVersion = $stateKey
 }

@@ -265,13 +265,21 @@ function Get-SaphirLauncherStatus {
         }
     }
 
-    $isManaged = [bool]($serviceStatus.TrackedProcessId -and
+    $metadataProcessId = if ($serviceStatus.TrackedProcessId) {
+        [int]$serviceStatus.TrackedProcessId
+    }
+    elseif ($serviceStatus.PSObject.Properties.Name -contains "MetadataProcessId" -and $serviceStatus.MetadataProcessId) {
+        [int]$serviceStatus.MetadataProcessId
+    }
+    else {
+        0
+    }
+    $metadataTargetsExpectedInstance = $metadataProcessId -gt 0 -and
         $null -ne $serviceStatus.Metadata -and
-        -not [string]::IsNullOrWhiteSpace($trackedScriptPath))
-    $isExpectedInstance = $isManaged -and
+        -not [string]::IsNullOrWhiteSpace($trackedScriptPath) -and
         (Test-SaphirLauncherPathsEqual -FirstPath $trackedScriptPath -SecondPath ([string]$context.ServerScript))
     $isHealthy = $false
-    if ($isExpectedInstance) {
+    if ($metadataTargetsExpectedInstance) {
         $isHealthy = Test-ManagedServiceHealthyForScript `
             -Name "app" `
             -DisplayName "SAPHIR Backend" `
@@ -281,11 +289,14 @@ function Get-SaphirLauncherStatus {
             -FrontendUrl $frontendUrl `
             -TimeoutMilliseconds $ProbeTimeoutMilliseconds
     }
+    $isManaged = [bool]($serviceStatus.TrackedProcessId -or
+        ($metadataTargetsExpectedInstance -and $isHealthy))
+    $isExpectedInstance = $isManaged -and $metadataTargetsExpectedInstance
 
     $portOwnedByManagedInstance = $false
     if ($isManaged -and [bool]$serviceStatus.IsRunning) {
         $portOwnerId = if ($serviceStatus.PortOwnerId) { [int]$serviceStatus.PortOwnerId } else { 0 }
-        $trackedProcessId = if ($serviceStatus.TrackedProcessId) { [int]$serviceStatus.TrackedProcessId } else { 0 }
+        $trackedProcessId = $metadataProcessId
         $portOwnedByManagedInstance = $portOwnerId -gt 0 -and
             ($portOwnerId -eq $trackedProcessId -or (Test-IsWindowsHost -and $portOwnerId -eq 4))
     }
@@ -340,7 +351,12 @@ function Get-SaphirLauncherStatus {
     $launchAvailable = $distributionAvailable -or $localLaunchAvailable
     $canStart = $state -eq "Offline" -and $launchAvailable
     $canOpen = $state -eq "Online"
-    $canRestart = ($state -eq "Online" -or $state -eq "Unresponsive") -and $launchAvailable
+    # A short probe timeout against the serialized backend can mean "busy", not
+    # "dead". Only a healthy instance or a verified different release may expose
+    # Restart; an expected-but-unresponsive instance remains stoppable explicitly.
+    $canRestart = ($state -eq "Online" -or
+        ($state -eq "Unresponsive" -and -not $isExpectedInstance)) -and
+        $launchAvailable
     $canStop = $isManaged -and ($state -eq "Online" -or $state -eq "Unresponsive")
 
     $stdoutLog = Join-Path -Path $logsPath -ChildPath "app.stdout.log"
@@ -374,7 +390,7 @@ function Get-SaphirLauncherStatus {
         LogsPath            = $logsPath
         StdOutLog           = $stdoutLog
         StdErrLog           = $stderrLog
-        ProcessId           = $serviceStatus.TrackedProcessId
+        ProcessId           = if ($serviceStatus.TrackedProcessId) { $serviceStatus.TrackedProcessId } else { $metadataProcessId }
         PortOwnerProcessId  = $serviceStatus.PortOwnerId
         Managed             = [bool]$isManaged
         ExpectedInstance    = [bool]$isExpectedInstance

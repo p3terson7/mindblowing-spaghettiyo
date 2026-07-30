@@ -375,6 +375,7 @@ try {
     foreach ($requiredRuntimeFile in @(
         "apps/admin/backend/admin-server.ps1",
         "apps/admin/backend/lib/ControlService.ps1",
+        "apps/admin/backend/services/DataSchemaService.ps1",
         "apps/admin/backend/services/RouteDispatchService.ps1",
         "apps/admin/frontend/index.html",
         "docs/GC179.pdf",

@@ -172,7 +172,9 @@ Assert-True -Condition ($null -eq $missingMetadata) -Message "Unknown employee c
 $routeExpectations = @(
     [PSCustomObject]@{ Path = "apps/admin/backend/routes/employee/create-record.routes.ps1"; IncludeDisabled = $false },
     [PSCustomObject]@{ Path = "apps/admin/backend/routes/employee/update-record.routes.ps1"; IncludeDisabled = $false },
-    [PSCustomObject]@{ Path = "apps/admin/backend/routes/employee/delete-record.routes.ps1"; IncludeDisabled = $false },
+    # Delete intentionally sees archived records so a retry can finish session
+    # revocation without duplicating the history entry.
+    [PSCustomObject]@{ Path = "apps/admin/backend/routes/employee/delete-record.routes.ps1"; IncludeDisabled = $true },
     [PSCustomObject]@{ Path = "apps/admin/backend/routes/employee/restore-record.routes.ps1"; IncludeDisabled = $true }
 )
 

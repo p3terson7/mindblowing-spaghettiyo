@@ -7,8 +7,6 @@
 
             $employeeCode = $matches[1]
 
-            $directoryMutationMayHaveCommitted = $false
-            $directoryMutationError = $null
             try {
                 $existingEmployee = Get-EmployeeDirectoryRecordMetadata -EmployeeCode $employeeCode -IncludeDisabled:$true
                 if ($null -eq $existingEmployee) {
@@ -16,55 +14,52 @@
                     continue
                 }
 
-                if (-not [bool]$existingEmployee.archived) {
-                    respondWithError $response 400 "Employee is already active."
+                # An already-active account can be a retry after its data-file
+                # repair failed. Re-running restore is safe and lets the
+                # secondary initialization complete without duplicate history.
+                $wasAlreadyActive = -not [bool]$existingEmployee.archived
+                $restoreResult = Restore-EmployeeDirectoryRecord -EmployeeCode $employeeCode
+                if (-not $restoreResult.updated) {
+                    respondWithError $response 500 "Unable to reinstate employee."
                     continue
                 }
 
-                try {
-                    try {
-                        $restoreResult = Restore-EmployeeDirectoryRecord -EmployeeCode $employeeCode
+                $postCommitWarnings = New-Object System.Collections.ArrayList
+                if ($restoreResult.PSObject.Properties.Name -contains "warnings") {
+                    foreach ($warning in @($restoreResult.warnings)) {
+                        if (-not [string]::IsNullOrWhiteSpace([string]$warning)) {
+                            [void]$postCommitWarnings.Add([string]$warning)
+                        }
                     }
-                    catch {
-                        # Entry-file initialization can fail after the auth record has already been restored.
-                        $directoryMutationMayHaveCommitted = $true
-                        throw
-                    }
-                    if (-not $restoreResult.updated) {
-                        respondWithError $response 500 "Unable to reinstate employee."
-                        continue
-                    }
+                }
 
-                    $directoryMutationMayHaveCommitted = $true
+                if (-not $wasAlreadyActive) {
                     $historyMessage = "Reinstated employee access for <strong>$($existingEmployee.name)</strong>."
-                    logHistory "Update" $historyMessage $existingEmployee.name
-                }
-                catch {
-                    $directoryMutationError = $_
-                    throw
-                }
-                finally {
-                    if ($directoryMutationMayHaveCommitted) {
-                        try {
-                            Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
-                        }
-                        catch {
-                            if ($null -eq $directoryMutationError) {
-                                throw
-                            }
-
-                            Write-Warning "Unable to publish employee-directory cache invalidation after a failed restore operation: $($_.Exception.Message)"
-                        }
+                    $historyWarning = Invoke-PostCommitActionSafely -Description "Employee access restored, but history logging failed" -Action {
+                        logHistory "Update" $historyMessage $existingEmployee.name -PublishChange:$false
                     }
+                    if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
+                        [void]$postCommitWarnings.Add($historyWarning)
+                    }
+                }
+
+                $syncWarning = Invoke-PostCommitActionSafely -Description "Employee access restored, but cross-machine refresh publication failed" -Action {
+                    Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
+                }
+                if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                    [void]$postCommitWarnings.Add($syncWarning)
                 }
 
                 respondWithSuccess $response (([PSCustomObject]@{
-                    message      = "Employee reinstated successfully."
-                    employeeCode = $employeeCode
-                }) | ConvertTo-Json -Depth 4)
+                    message       = if ($wasAlreadyActive) { "Employee access was already active; initialization was retried." } else { "Employee reinstated successfully." }
+                    employeeCode  = $employeeCode
+                    alreadyActive = $wasAlreadyActive
+                    warnings      = @($postCommitWarnings.ToArray())
+                }) | ConvertTo-Json -Depth 6)
             }
             catch {
-                respondWithError $response 500 "Unable to reinstate employee: $($_.Exception.Message)"
+                Write-Warning ("Unable to reinstate employee: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to reinstate employee."
             }
             continue
         }

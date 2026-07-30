@@ -64,6 +64,15 @@ function Get-ActiveProjects {
     return @([PSCustomObject]@{ projectCode = "P001" })
 }
 
+function Acquire-ProjectReferenceLock {
+    return (Acquire-ResourceLock -ResourcePath (Join-Path -Path $sharedFolder -ChildPath ".project-references"))
+}
+
+function Test-ActiveProjectCodeFromDisk {
+    param([string]$ProjectCode)
+    return $ProjectCode -eq "P001"
+}
+
 function Get-OvertimeCodes { return @() }
 function Get-PaymentOptions { return @([PSCustomObject]@{ code = "cash" }) }
 function Get-ReasonCodes { return @() }
@@ -76,6 +85,20 @@ function Test-OptionCode {
 function Get-EmployeeName {
     param([string]$EmployeeCode)
     return "Employee $EmployeeCode"
+}
+
+function Invoke-PostCommitActionSafely {
+    param([string]$Description, [scriptblock]$Action)
+    try { & $Action | Out-Null; return "" } catch { return "$Description`: $($_.Exception.Message)" }
+}
+
+function Ensure-EmployeeDataFile {
+    param([string]$EmployeeCode)
+    $path = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $EmployeeCode)
+    if (-not (Test-Path -Path $path -PathType Leaf)) {
+        Write-JsonArrayAtomic -Path $path -Items @()
+    }
+    return $path
 }
 
 function Publish-DataChange {

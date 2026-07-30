@@ -1,4 +1,4 @@
-        # POST /employee/{employeeCode}/gc179-open: Prepare monthly GC179 files locally and launch Acrobat/FDF opening.
+﻿        # POST /employee/{employeeCode}/gc179-open: Prepare monthly GC179 files locally and launch Acrobat/FDF opening.
         if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -match "^/employee/(\d+)/gc179-open$") {
             $employeeCode = $matches[1]
             $employeeUser = Get-EmployeeUserByCode -EmployeeCode $employeeCode
@@ -32,7 +32,10 @@
 
             $employeeName = if ($employeeUser.displayName) { [string]$employeeUser.displayName } else { [string](Get-EmployeeName $employeeCode) }
             $employeeRole = Get-EffectiveUserRole -UserRecord $employeeUser
-            $dataFile = Ensure-EmployeeDataFile -EmployeeCode $employeeCode
+            # GET is read-only. A missing employee file already projects as an
+            # empty collection, so do not probe it once here and again in the
+            # read model—or create a shared lock/file as a side effect.
+            $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
             $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
             $isSuperAdmin = Test-CurrentUserSuperAdmin -CurrentUser $currentUser
             $modifyAccessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $currentUser
@@ -50,7 +53,7 @@
                 $projectedEntries += (New-EmployeeEntryProjectionForAccessModel -EmployeeCode $employeeCode -EmployeeName $employeeName -Entry $entry -ModifyProjectCodeSet $modifyAccessModel.ProjectCodeSet -EmployeeRole $employeeRole -IsSuperAdmin:$isSuperAdmin -CanApproveEmployeeRole:$canApproveEmployeeRole)
             }
             $entriesJson = if ($projectedEntries.Count -gt 0) {
-                $projectedEntries | ConvertTo-Json -Depth 6
+                ConvertTo-Json -InputObject @($projectedEntries) -Depth 6
             }
             else {
                 "[]"

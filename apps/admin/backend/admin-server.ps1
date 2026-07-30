@@ -1,4 +1,5 @@
 # admin-server.ps1
+$ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 $script:saphirInstanceToken = [string]$env:SAPHIR_INSTANCE_TOKEN
@@ -78,6 +79,15 @@ $script:RouteScriptBlocks = @{}
 
 # Initialize HTTP listener
 $listener = New-Object System.Net.HttpListener
+$listener.IgnoreWriteExceptions = $true
+try {
+    $listener.TimeoutManager.EntityBody = [TimeSpan]::FromSeconds(15)
+    $listener.TimeoutManager.IdleConnection = [TimeSpan]::FromSeconds(30)
+}
+catch {
+    # TimeoutManager is not implemented by every HttpListener runtime. The
+    # bounded request-body reader remains the portable enforcement layer.
+}
 $listener.Prefixes.Add($listenerPrefix)
 try {
     $listener.Start()
@@ -122,18 +132,17 @@ try {
                     continue
                 }
 
-                $response.ContentType = "application/json"
-                $response.StatusCode = [int]$controlDecision.StatusCode
                 $response.Headers["Cache-Control"] = "no-store"
                 $responseBytes = [System.Text.Encoding]::UTF8.GetBytes('{ "status": "stopping" }')
-                $response.ContentLength64 = $responseBytes.Length
-                $response.OutputStream.Write($responseBytes, 0, $responseBytes.Length)
-                $response.Close()
+                Write-HttpResponseSafely -Response $response -StatusCode ([int]$controlDecision.StatusCode) -Bytes $responseBytes
                 $shutdownRequested = $true
                 continue
             }
 
-            $response.Headers.Add("Access-Control-Allow-Origin", "*")
+            if (-not (Set-CorsHeadersForRequest -Request $request -Response $response -AllowedOrigins $corsAllowedOrigins)) {
+                respondWithError $response 403 "This request origin is not allowed."
+                continue
+            }
 
             if ($request.HttpMethod -eq "OPTIONS") {
                 $response.Headers.Add("Access-Control-Allow-Methods", "GET, OPTIONS, PUT, DELETE, POST")
@@ -142,17 +151,48 @@ try {
                 continue
             }
 
+            # Observe cross-workstation change notifications before any
+            # authorization or validation reads for this request.
+            Sync-ReadModelCaches
+
             # Route handlers are compiled once at startup; resolve the one matching
             # handler instead of evaluating every top-level script on each request.
             $routeScriptPath = Resolve-AdminTopLevelRouteScript -Method ([string]$request.HttpMethod) -Path ([string]$request.Url.AbsolutePath)
+            $passwordChangeExempt = $routeScriptPath -eq "routes/frontend.routes.ps1" -or
+                $routeScriptPath -eq "routes/auth.routes.ps1" -or
+                $request.Url.AbsolutePath -eq "/health"
+            if (-not $passwordChangeExempt) {
+                $passwordGateUser = Get-AuthenticatedUserFromRequest -Request $request
+                if ($null -ne $passwordGateUser -and [bool]$passwordGateUser.mustChangePassword) {
+                    respondWithError $response 403 "You must change your temporary password before using the application."
+                    continue
+                }
+            }
+
             if (-not [string]::IsNullOrWhiteSpace($routeScriptPath)) {
                 . $script:RouteScriptBlocks[$routeScriptPath]
             }
 
-            respondWithError $response 400 "Invalid request"
+            respondWithError $response 404 "Route not found."
         }
         catch {
-            respondWithError $response 500 $_.Exception.Message
+            $requestFailureStatus = 0
+            if ($null -ne $_.Exception -and
+                $null -ne $_.Exception.Data -and
+                $_.Exception.Data.Contains("SaphirHttpStatusCode")) {
+                [int]::TryParse([string]$_.Exception.Data["SaphirHttpStatusCode"], [ref]$requestFailureStatus) | Out-Null
+            }
+
+            if (@(400, 408, 413) -contains $requestFailureStatus) {
+                # Only request-reader validation errors carry this marker; its
+                # message is safe for the client. Persistent-data exceptions
+                # remain generic 500 responses below.
+                respondWithError $response $requestFailureStatus ([string]$_.Exception.Message)
+            }
+            else {
+                Write-Warning ("Unhandled HTTP request failure: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "The server could not complete this request."
+            }
         }
     }
 }

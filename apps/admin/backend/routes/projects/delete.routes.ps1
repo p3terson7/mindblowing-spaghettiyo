@@ -14,48 +14,61 @@
 
             $projectMutationCommitted = $false
             $projectMutationError = $null
+            $postCommitWarnings = New-Object System.Collections.ArrayList
             try {
-                $lockHandle = Acquire-ResourceLock -ResourcePath $projectsFile
+                $referenceLockHandle = Acquire-ProjectReferenceLock
                 try {
-                    $projects = Get-Projects
-                    $projectIndex = -1
-                    for ($i = 0; $i -lt $projects.Count; $i++) {
-                        if ([string]$projects[$i].projectCode -eq $projectCode) {
-                            $projectIndex = $i
-                            break
+                    $lockHandle = Acquire-ResourceLock -ResourcePath $projectsFile
+                    try {
+                        $projects = @(Read-ProjectsFromDisk)
+                        $projectIndex = -1
+                        for ($i = 0; $i -lt $projects.Count; $i++) {
+                            if ([string]$projects[$i].projectCode -eq $projectCode) {
+                                $projectIndex = $i
+                                break
+                            }
                         }
-                    }
 
-                    if ($projectIndex -lt 0) {
-                        respondWithError $response 404 "Project with code $projectCode not found."
-                        continue
-                    }
-
-                    if ($permanentDelete) {
-                        $referenceSummary = Get-ProjectEntryReferenceSummary -ProjectCode $projectCode
-                        if ([int]$referenceSummary.referenceCount -gt 0) {
-                            respondWithError $response 409 "Project cannot be deleted because it is used by $([int]$referenceSummary.referenceCount) overtime entries. Archive it instead."
+                        if ($projectIndex -lt 0) {
+                            respondWithError $response 404 "Project with code $projectCode not found."
                             continue
                         }
 
-                        $projects = @($projects | Where-Object { [string]$_.projectCode -ne $projectCode })
-                    }
-                    else {
-                        $projects[$projectIndex].archived = $true
-                    }
+                        if ($permanentDelete) {
+                            $referenceSummary = Get-ProjectEntryReferenceSummary -ProjectCode $projectCode
+                            if ([int]$referenceSummary.referenceCount -gt 0) {
+                                respondWithError $response 409 "Project cannot be deleted because it is used by $([int]$referenceSummary.referenceCount) overtime entries. Archive it instead."
+                                continue
+                            }
 
-                    Write-JsonAtomic -Path $projectsFile -Value @($projects) -Depth 6
-                    $projectMutationCommitted = $true
+                            $projects = @($projects | Where-Object { [string]$_.projectCode -ne $projectCode })
+                        }
+                        else {
+                            $projects[$projectIndex].archived = $true
+                        }
+
+                        Write-JsonArrayAtomic -Path $projectsFile -Items $projects -Depth 6
+                        $script:ProjectsCache = $null
+                        $projectMutationCommitted = $true
+                    }
+                    finally {
+                        Release-ResourceLock -LockHandle $lockHandle
+                    }
                 }
                 finally {
-                    Release-ResourceLock -LockHandle $lockHandle
+                    Release-ResourceLock -LockHandle $referenceLockHandle
                 }
 
-                if ($permanentDelete) {
-                    logHistory "Delete" "Permanently deleted the project <strong>$projectCode</strong>." ([string]$currentUser.displayName)
+                $historyWarning = Invoke-PostCommitActionSafely -Description "Project removal saved, but history logging failed" -Action {
+                    if ($permanentDelete) {
+                        logHistory "Delete" "Permanently deleted the project <strong>$projectCode</strong>." ([string]$currentUser.displayName) -PublishChange:$false
+                    }
+                    else {
+                        logHistory "Archive" "Archived the project <strong>$projectCode</strong>." ([string]$currentUser.displayName) -PublishChange:$false
+                    }
                 }
-                else {
-                    logHistory "Archive" "Archived the project <strong>$projectCode</strong>." ([string]$currentUser.displayName)
+                if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
+                    [void]$postCommitWarnings.Add($historyWarning)
                 }
             }
             catch {
@@ -64,20 +77,19 @@
             }
             finally {
                 if ($projectMutationCommitted) {
-                    try {
+                    $syncWarning = Invoke-PostCommitActionSafely -Description "Project removal saved, but cross-machine refresh publication failed" -Action {
                         Publish-DataChange -Category "project" -Resource $projectCode | Out-Null
                     }
-                    catch {
-                        if ($null -eq $projectMutationError) {
-                            throw
-                        }
-
-                        Write-Warning "Unable to publish project cache invalidation after a failed project removal operation: $($_.Exception.Message)"
+                    if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                        [void]$postCommitWarnings.Add($syncWarning)
                     }
                 }
             }
 
-            $successMessage = if ($permanentDelete) { '{ "message": "Project deleted permanently." }' } else { '{ "message": "Project archived successfully." }' }
-            respondWithSuccess $response $successMessage
+            $successMessage = if ($permanentDelete) { "Project deleted permanently." } else { "Project archived successfully." }
+            respondWithSuccess $response (([PSCustomObject]@{
+                message = $successMessage
+                warnings = @($postCommitWarnings.ToArray())
+            }) | ConvertTo-Json -Depth 4)
             continue
         }

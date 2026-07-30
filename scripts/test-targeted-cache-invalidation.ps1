@@ -55,11 +55,41 @@ try {
     $script:sharedFolder = $tempFolder
     $script:lockFolder = Join-Path -Path $tempFolder -ChildPath ".locks"
     $script:syncStateFile = Join-Path -Path $tempFolder -ChildPath "sync-state.json"
+    $script:projectsFile = Join-Path -Path $tempFolder -ChildPath "projects.json"
+    $script:mappingFile = Join-Path -Path $tempFolder -ChildPath "employeeNames.json"
+    $script:usersFile = Join-Path -Path $tempFolder -ChildPath "users.json"
+    $script:sessionsFile = Join-Path -Path $tempFolder -ChildPath "sessions.json"
+    $script:historyFile = Join-Path -Path $tempFolder -ChildPath "history.json"
+    $script:overtimeCodesFile = Join-Path -Path $tempFolder -ChildPath "overtimeCodes.json"
+    $script:paymentOptionsFile = Join-Path -Path $tempFolder -ChildPath "paymentOptions.json"
+    $script:reasonCodesFile = Join-Path -Path $tempFolder -ChildPath "reasonCodes.json"
     $script:SyncStateWatcherInitialized = $true
     $script:SyncStateValidationIntervalMs = 1
 
     . (Join-Path -Path $repoRoot -ChildPath "apps/admin/backend/lib/FileStore.ps1")
     . (Join-Path -Path $repoRoot -ChildPath "apps/admin/backend/services/SyncService.ps1")
+
+    foreach ($coreArrayFile in @(
+        $script:projectsFile,
+        $script:usersFile,
+        $script:sessionsFile,
+        $script:historyFile,
+        $script:overtimeCodesFile,
+        $script:paymentOptionsFile,
+        $script:reasonCodesFile
+    )) {
+        [System.IO.File]::WriteAllText($coreArrayFile, "[]", (New-Object System.Text.UTF8Encoding($false)))
+    }
+    [System.IO.File]::WriteAllText($script:mappingFile, "{}", (New-Object System.Text.UTF8Encoding($false)))
+
+    $script:AuthRuntimeClearCount = 0
+    $script:ProjectAccessClearCount = 0
+    function Clear-AuthRuntimeCaches {
+        $script:AuthRuntimeClearCount++
+    }
+    function Clear-ProjectAccessRuntimeCaches {
+        $script:ProjectAccessClearCount++
+    }
 
     function Convert-ToNormalizedEntryObject {
         param($Entry)
@@ -121,14 +151,95 @@ try {
     Assert-Equal -Expected "bravo" -Actual (Get-EmployeeMarker -Path $employeeFiles[$employeeCodes[0]]) -Message "Targeted reconciliation retained stale equal-metadata content."
     Assert-Equal -Expected ($beforeTargetedReadCount + 1) -Actual $script:EmployeeJsonReadCount -Message "A single employee change should reparse exactly one file."
 
-    # Non-employee publications invalidate derived models but preserve parsed
-    # employee objects.
+    function Prime-CoreFileCaches {
+        foreach ($corePath in @(
+            $script:projectsFile,
+            $script:mappingFile,
+            $script:usersFile,
+            $script:sessionsFile,
+            $script:historyFile,
+            $script:overtimeCodesFile,
+            $script:paymentOptionsFile,
+            $script:reasonCodesFile
+        )) {
+            Read-TextFileCached -Path $corePath | Out-Null
+        }
+    }
+
+    function Assert-CoreFileCached {
+        param(
+            [Parameter(Mandatory = $true)][string]$Path,
+            [Parameter(Mandatory = $true)][bool]$Expected,
+            [Parameter(Mandatory = $true)][string]$Message
+        )
+
+        Assert-Equal -Expected $Expected -Actual ([bool]$script:TextFileCache.ContainsKey($Path)) -Message $Message
+    }
+
+    # A sequential history publication invalidates history-derived models but
+    # keeps unrelated shared-file and authentication caches warm.
+    Prime-CoreFileCaches
+    $script:AuthRuntimeClearCount = 0
+    $script:ProjectAccessClearCount = 0
     $beforeHistoryReadCount = $script:EmployeeJsonReadCount
     Publish-DataChange -Category "history" -Resource "audit" | Out-Null
     foreach ($employeeCode in $employeeCodes) {
         Get-EmployeeMarker -Path $employeeFiles[$employeeCode] | Out-Null
     }
     Assert-Equal -Expected $beforeHistoryReadCount -Actual $script:EmployeeJsonReadCount -Message "History changes should not reparse employee files."
+    Assert-CoreFileCached -Path $script:historyFile -Expected:$false -Message "History changes should invalidate history content."
+    Assert-CoreFileCached -Path $script:projectsFile -Expected:$true -Message "History changes should preserve the project file cache."
+    Assert-CoreFileCached -Path $script:usersFile -Expected:$true -Message "History changes should preserve the users file cache."
+    Assert-Equal -Expected 0 -Actual $script:AuthRuntimeClearCount -Message "History changes should preserve authentication runtime caches."
+    Assert-Equal -Expected 0 -Actual $script:ProjectAccessClearCount -Message "History changes should preserve project access caches."
+
+    # Project changes clear project/history dependencies but keep users,
+    # sessions, employee data and unrelated lookup files warm.
+    Prime-CoreFileCaches
+    $script:AuthRuntimeClearCount = 0
+    $script:ProjectAccessClearCount = 0
+    Publish-DataChange -Category "project" -Resource "P001" | Out-Null
+    Get-EmployeeMarker -Path $employeeFiles[$employeeCodes[0]] | Out-Null
+    Assert-CoreFileCached -Path $script:projectsFile -Expected:$false -Message "Project changes should invalidate project content."
+    Assert-CoreFileCached -Path $script:historyFile -Expected:$false -Message "Coalesced project changes should invalidate audit history."
+    Assert-CoreFileCached -Path $script:usersFile -Expected:$true -Message "Project changes should preserve users content."
+    Assert-CoreFileCached -Path $script:sessionsFile -Expected:$true -Message "Project changes should preserve sessions content."
+    Assert-Equal -Expected 0 -Actual $script:AuthRuntimeClearCount -Message "Project changes should not clear users/session authentication caches."
+    Assert-Equal -Expected 1 -Actual $script:ProjectAccessClearCount -Message "Project changes should clear only project access projections."
+
+    # Authentication changes invalidate authentication/history dependencies
+    # without throwing away project or employee-file caches.
+    Prime-CoreFileCaches
+    $script:AuthRuntimeClearCount = 0
+    $script:ProjectAccessClearCount = 0
+    Publish-DataChange -Category "auth" -Resource $employeeCodes[0] | Out-Null
+    Get-EmployeeMarker -Path $employeeFiles[$employeeCodes[0]] | Out-Null
+    Assert-CoreFileCached -Path $script:usersFile -Expected:$false -Message "Auth changes should invalidate users content."
+    Assert-CoreFileCached -Path $script:sessionsFile -Expected:$false -Message "Auth changes should invalidate sessions content."
+    Assert-CoreFileCached -Path $script:historyFile -Expected:$false -Message "Coalesced auth changes should invalidate audit history."
+    Assert-CoreFileCached -Path $script:projectsFile -Expected:$true -Message "Auth changes should preserve project content."
+    Assert-Equal -Expected 1 -Actual $script:AuthRuntimeClearCount -Message "Auth changes should clear authentication runtime caches once."
+
+    # If this process misses one or more publications, the last category cannot
+    # describe every changed core file. Fall back to a complete core reset.
+    Prime-CoreFileCaches
+    $script:AuthRuntimeClearCount = 0
+    Publish-DataChange -Category "history" -Resource "gap-history" | Out-Null
+    Publish-DataChange -Category "project" -Resource "gap-project" | Out-Null
+    Get-EmployeeMarker -Path $employeeFiles[$employeeCodes[0]] | Out-Null
+    foreach ($corePath in @(
+        $script:projectsFile,
+        $script:mappingFile,
+        $script:usersFile,
+        $script:sessionsFile,
+        $script:historyFile,
+        $script:overtimeCodesFile,
+        $script:paymentOptionsFile,
+        $script:reasonCodesFile
+    )) {
+        Assert-CoreFileCached -Path $corePath -Expected:$false -Message "A skipped sync revision should conservatively clear every core file cache."
+    }
+    Assert-Equal -Expected 1 -Actual $script:AuthRuntimeClearCount -Message "A skipped sync revision should conservatively clear authentication caches."
 
     # Cumulative revisions must retain multiple employee changes even when this
     # process skips intermediate employee/history versions.
@@ -271,15 +382,27 @@ try {
     }
     Assert-Equal -Expected ($beforeMalformedReadCount + 3) -Actual $script:EmployeeJsonReadCount -Message "Malformed sync state should force a full clear."
 
-    $malformedPublishFailed = $false
-    try {
-        Publish-DataChange -Category "history" -Resource "must-not-overwrite" | Out-Null
+    # This file is derived invalidation metadata rather than business data. A
+    # publisher should preserve the damaged bytes, rebuild a conservative
+    # state, and continue so one corrupt notification file cannot disable all
+    # later cross-machine refreshes.
+    $syncRecoveryFolder = Join-Path -Path $tempFolder -ChildPath ".recovery"
+    $recoveryFilesBefore = if (Test-Path -LiteralPath $syncRecoveryFolder -PathType Container) {
+        @(Get-ChildItem -LiteralPath $syncRecoveryFolder -Filter "sync-state.corrupt.*.json" -File)
     }
-    catch {
-        $malformedPublishFailed = $true
+    else {
+        @()
     }
-    Assert-True -Condition $malformedPublishFailed -Message "A publisher must fail instead of overwriting malformed state with version one."
-    Assert-Equal -Expected "{malformed" -Actual ([System.IO.File]::ReadAllText($script:syncStateFile)) -Message "A failed strict publisher overwrote malformed state."
+    $recoveryPathsBefore = @($recoveryFilesBefore | ForEach-Object { $_.FullName })
+    $recoveredPublishState = Publish-DataChange -Category "history" -Resource "recover-malformed" -WarningAction SilentlyContinue
+    Assert-Equal -Expected "history" -Actual ([string]$recoveredPublishState.category) -Message "Publishing did not recover from malformed derived sync state."
+    Assert-Equal -Expected "recover-malformed" -Actual ([string]$recoveredPublishState.resource) -Message "The recovered publication lost its requested resource."
+    Assert-True -Condition (Test-SyncStateRevisionSchema -State $recoveredPublishState) -Message "Malformed-state recovery did not rebuild the revision schema."
+    $recoveryFilesAfter = @(Get-ChildItem -LiteralPath $syncRecoveryFolder -Filter "sync-state.corrupt.*.json" -File)
+    $newRecoveryFiles = @($recoveryFilesAfter | Where-Object { $recoveryPathsBefore -notcontains $_.FullName })
+    Assert-Equal -Expected 1 -Actual $newRecoveryFiles.Count -Message "Malformed sync-state recovery should preserve exactly one new backup."
+    Assert-Equal -Expected "{malformed" -Actual ([System.IO.File]::ReadAllText($newRecoveryFiles[0].FullName)) -Message "Malformed sync-state recovery did not preserve the original bytes."
+    Assert-True -Condition (([System.IO.File]::ReadAllText($script:syncStateFile) | ConvertFrom-Json) -ne $null) -Message "Malformed sync-state recovery did not replace the derived metadata with valid JSON."
 
     [System.IO.File]::WriteAllText(
         $script:syncStateFile,

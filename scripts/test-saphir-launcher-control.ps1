@@ -190,12 +190,17 @@ try {
     $script:testStatusMode = "Unresponsive"
     $unresponsive = Get-SaphirLauncherStatus -DistributionRoot $sourceRoot -RuntimeRoot $runtimeRoot
     Assert-Equal -Expected "Unresponsive" -Actual $unresponsive.State -Message "a tracked expected process that fails health must be unresponsive"
-    Assert-True -Condition (-not $unresponsive.CanStart -and -not $unresponsive.CanOpen -and $unresponsive.CanRestart -and $unresponsive.CanStop) -Message "an unresponsive managed process must expose Restart and Stop"
+    Assert-True -Condition (-not $unresponsive.CanStart -and -not $unresponsive.CanOpen -and -not $unresponsive.CanRestart -and $unresponsive.CanStop) -Message "a short failed health probe must not expose force Restart, while explicit Stop remains available"
+    Assert-Throws -Action {
+        Invoke-SaphirLauncherAction -Action Restart -DistributionRoot $sourceRoot -RuntimeRoot $runtimeRoot | Out-Null
+    } -MessagePattern "cannot be restarted" -Message "the launcher action layer must also reject restart after only a short health timeout"
+    Assert-Equal -Expected 0 -Actual $script:stopCallCount -Message "a refused busy-instance restart must not call the process terminator"
 
     $script:testStatusMode = "OtherVersion"
     $otherVersion = Get-SaphirLauncherStatus -DistributionRoot $sourceRoot -RuntimeRoot $runtimeRoot
     Assert-Equal -Expected "Unresponsive" -Actual $otherVersion.State -Message "a tracked SAPHIR process from another version must not be treated as a port conflict"
     Assert-True -Condition ($otherVersion.Managed -and -not $otherVersion.ExpectedInstance) -Message "another tracked version must remain managed but unexpected"
+    Assert-True -Condition $otherVersion.CanRestart -Message "a verified different release may still be replaced during an update"
 
     $script:testStatusMode = "PortConflict"
     $portConflict = Get-SaphirLauncherStatus -DistributionRoot $sourceRoot -RuntimeRoot $runtimeRoot

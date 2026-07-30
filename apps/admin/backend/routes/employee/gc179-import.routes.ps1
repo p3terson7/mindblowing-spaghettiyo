@@ -158,7 +158,20 @@ if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/employee
         $selectedPreview = [PSCustomObject]@{ entries = @($selectedEntries) }
         $sourceHash = Get-Gc179ImportSha256 -Value $fdfContent
         $importedBy = if ($currentUser.PSObject.Properties.Name -contains "username") { [string]$currentUser.username } else { "" }
-        $result = Import-Gc179PreviewEntries -Preview $selectedPreview -EmployeeCode $employeeCode -EmployeeName ([string]$routeContext.employeeName) -SourceFile $fileName -SourceHash $sourceHash -ImportedBy $importedBy -SkipDuplicates:$true
+        $projectReferenceLockHandle = Acquire-ProjectReferenceLock
+        try {
+            if (-not (Test-ActiveProjectCodeFromDisk -ProjectCode $projectCode)) {
+                throw "The selected project is no longer active. Refresh the preview and choose another project."
+            }
+            if (-not (Test-CurrentUserCanModifyActiveProjectCodeFromDisk -CurrentUser $currentUser -ProjectCode $projectCode)) {
+                throw "Your permission for the selected project changed. Refresh the preview and try again."
+            }
+
+            $result = Import-Gc179PreviewEntries -Preview $selectedPreview -EmployeeCode $employeeCode -EmployeeName ([string]$routeContext.employeeName) -SourceFile $fileName -SourceHash $sourceHash -ImportedBy $importedBy -SkipDuplicates:$true -PublishChange:$false
+        }
+        finally {
+            Release-ResourceLock -LockHandle $projectReferenceLockHandle
+        }
 
         $responseWarnings = @($result.warnings)
         if ($result.importedCount -gt 0) {
@@ -167,10 +180,17 @@ if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/employee
                 $historyMessage += " Skipped <strong>$($result.skippedDuplicateCount)</strong> duplicate entr$(if ($result.skippedDuplicateCount -eq 1) { "y" } else { "ies" })."
             }
             try {
-                logHistory "Import" $historyMessage ([string]$routeContext.employeeName)
+                logHistory "Import" $historyMessage ([string]$routeContext.employeeName) -PublishChange:$false
             }
             catch {
                 $responseWarnings += "Entries were saved, but the history log could not be updated."
+            }
+
+            try {
+                Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
+            }
+            catch {
+                $responseWarnings += "Entries were saved, but other open SAPHIR windows may need a manual refresh."
             }
         }
 
@@ -211,13 +231,19 @@ if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/employee
             continue
         }
 
-        $result = Undo-Gc179ImportBatch -EmployeeCode $employeeCode -BatchId $batchId -CurrentUser $currentUser
+        $result = Undo-Gc179ImportBatch -EmployeeCode $employeeCode -BatchId $batchId -CurrentUser $currentUser -PublishChange:$false
         $responseWarnings = @($result.warnings)
         try {
-            logHistory "Undo import" "Undid GC179 import batch <strong>$batchId</strong> and removed <strong>$($result.undoneCount)</strong> entr$(if ($result.undoneCount -eq 1) { "y" } else { "ies" })." ([string]$routeContext.employeeName)
+            logHistory "Undo import" "Undid GC179 import batch <strong>$batchId</strong> and removed <strong>$($result.undoneCount)</strong> entr$(if ($result.undoneCount -eq 1) { "y" } else { "ies" })." ([string]$routeContext.employeeName) -PublishChange:$false
         }
         catch {
             $responseWarnings += "The undo was saved, but the history log could not be updated."
+        }
+        try {
+            Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
+        }
+        catch {
+            $responseWarnings += "The undo was saved, but other open SAPHIR windows may need a manual refresh."
         }
 
         $responsePayload = [PSCustomObject]@{

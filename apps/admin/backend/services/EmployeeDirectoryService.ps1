@@ -31,6 +31,41 @@ function Write-EmployeeNameDictionary {
     }
 
     Write-JsonAtomic -Path $mappingFile -Value ([PSCustomObject]$ordered) -Depth 6
+    $script:EmployeeNameMapCache = $null
+}
+
+function Set-EmployeeDirectoryNameMapping {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)][string]$DisplayName
+    )
+
+    $mappingLock = Acquire-ResourceLock -ResourcePath $mappingFile
+    try {
+        $employeeNames = ConvertTo-EmployeeNameDictionary -NameMap (Read-EmployeeNameMapFromDisk)
+        $employeeNames[$EmployeeCode] = [string]$DisplayName
+        Write-EmployeeNameDictionary -EmployeeNames $employeeNames
+    }
+    finally {
+        Release-ResourceLock -LockHandle $mappingLock
+    }
+}
+
+function Invoke-EmployeeDirectorySecondaryActionSafely {
+    param(
+        [Parameter(Mandatory = $true)][string]$Description,
+        [Parameter(Mandatory = $true)][scriptblock]$Action
+    )
+
+    try {
+        & $Action | Out-Null
+        return ""
+    }
+    catch {
+        $warning = "{0}: {1}" -f $Description, $_.Exception.Message
+        Write-Warning $warning
+        return $warning
+    }
 }
 
 function Get-EmployeeDataFilePath {
@@ -38,7 +73,12 @@ function Get-EmployeeDataFilePath {
         [Parameter(Mandatory = $true)][string]$EmployeeCode
     )
 
-    return (Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $EmployeeCode))
+    $normalizedEmployeeCode = $EmployeeCode.Trim()
+    if ($normalizedEmployeeCode -notmatch "^\d+$") {
+        throw [System.ArgumentException]::new("Employee code must contain digits only.", "EmployeeCode")
+    }
+
+    return (Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $normalizedEmployeeCode))
 }
 
 function Ensure-EmployeeDataFile {
@@ -47,8 +87,24 @@ function Ensure-EmployeeDataFile {
     )
 
     $dataFile = Get-EmployeeDataFilePath -EmployeeCode $EmployeeCode
-    if (!(Test-Path -Path $dataFile)) {
-        Write-JsonAtomic -Path $dataFile -Value @()
+
+    # Existing employee files are the overwhelmingly common case. A read-only
+    # request must not create and delete a shared .lock file merely to confirm
+    # that the data file is already present.
+    if ([System.IO.File]::Exists($dataFile)) {
+        return $dataFile
+    }
+
+    # Creation remains serialized and repeats the existence check after the
+    # lock is acquired so concurrent first access cannot race.
+    $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
+    try {
+        if (-not [System.IO.File]::Exists($dataFile)) {
+            Write-JsonArrayAtomic -Path $dataFile -Items @()
+        }
+    }
+    finally {
+        Release-ResourceLock -LockHandle $lockHandle
     }
 
     return $dataFile
@@ -318,7 +374,7 @@ function Update-EmployeeEntryDisplayName {
     $updatedCount = 0
     $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
     try {
-        $entries = Read-JsonArrayFile -Path $dataFile
+        $entries = @(Read-JsonArrayFile -Path $dataFile)
         foreach ($entry in $entries) {
             if ([string]$entry.name -ne $DisplayName) {
                 $entry.name = [string]$DisplayName
@@ -327,7 +383,7 @@ function Update-EmployeeEntryDisplayName {
         }
 
         if ($updatedCount -gt 0) {
-            Write-JsonAtomic -Path $dataFile -Value $entries -Depth 6
+            Write-JsonArrayAtomic -Path $dataFile -Items $entries -Depth 6
         }
     }
     finally {
@@ -496,19 +552,39 @@ function Add-EmployeeDirectoryRecord {
         return $userResult
     }
 
-    $mappingLock = Acquire-ResourceLock -ResourcePath $mappingFile
-    try {
-        $employeeNames = ConvertTo-EmployeeNameDictionary -NameMap (Get-EmployeeNameMap)
-        $employeeNames[$EmployeeCode] = [string]$DisplayName
-        Write-EmployeeNameDictionary -EmployeeNames $employeeNames
+    # users.json is the canonical employee-directory record. Everything below
+    # is repairable derived/secondary state and must not make a committed
+    # account creation look like a failed request.
+    $warnings = New-Object System.Collections.ArrayList
+    $mappingWarning = Invoke-EmployeeDirectorySecondaryActionSafely -Description "Employee account saved, but the employee-name mapping could not be updated" -Action {
+        Set-EmployeeDirectoryNameMapping -EmployeeCode $EmployeeCode -DisplayName $DisplayName
     }
-    finally {
-        Release-ResourceLock -LockHandle $mappingLock
+    if (-not [string]::IsNullOrWhiteSpace($mappingWarning)) {
+        [void]$warnings.Add($mappingWarning)
     }
 
-    Ensure-EmployeeDataFile -EmployeeCode $EmployeeCode | Out-Null
-    Update-EmployeeEntryDisplayName -EmployeeCode $EmployeeCode -DisplayName $DisplayName | Out-Null
-    return $userResult
+    $dataFileWarning = Invoke-EmployeeDirectorySecondaryActionSafely -Description "Employee account saved, but the employee data file could not be initialized" -Action {
+        Ensure-EmployeeDataFile -EmployeeCode $EmployeeCode | Out-Null
+    }
+    if (-not [string]::IsNullOrWhiteSpace($dataFileWarning)) {
+        [void]$warnings.Add($dataFileWarning)
+    }
+
+    $entryNameWarning = Invoke-EmployeeDirectorySecondaryActionSafely -Description "Employee account saved, but existing entry names could not be updated" -Action {
+        Update-EmployeeEntryDisplayName -EmployeeCode $EmployeeCode -DisplayName $DisplayName | Out-Null
+    }
+    if (-not [string]::IsNullOrWhiteSpace($entryNameWarning)) {
+        [void]$warnings.Add($entryNameWarning)
+    }
+
+    return [PSCustomObject]@{
+        updated           = [bool]$userResult.updated
+        created           = [bool]$userResult.created
+        reactivated       = [bool]$userResult.reactivated
+        error             = $userResult.error
+        temporaryPassword = [string]$userResult.temporaryPassword
+        warnings          = @($warnings.ToArray())
+    }
 }
 
 function Update-EmployeeDirectoryRecord {
@@ -519,16 +595,6 @@ function Update-EmployeeDirectoryRecord {
         $TimeEntryTypes = $null,
         $Gc179Profile = $null
     )
-
-    $mappingLock = Acquire-ResourceLock -ResourcePath $mappingFile
-    try {
-        $employeeNames = ConvertTo-EmployeeNameDictionary -NameMap (Get-EmployeeNameMap)
-        $employeeNames[$EmployeeCode] = [string]$DisplayName
-        Write-EmployeeNameDictionary -EmployeeNames $employeeNames
-    }
-    finally {
-        Release-ResourceLock -LockHandle $mappingLock
-    }
 
     $profileUpdateParameters = @{
         EmployeeCode = $EmployeeCode
@@ -544,11 +610,33 @@ function Update-EmployeeDirectoryRecord {
         $profileUpdateParameters["Gc179Profile"] = $Gc179Profile
     }
     $userUpdated = Set-EmployeeUserProfile @profileUpdateParameters
-    Update-EmployeeEntryDisplayName -EmployeeCode $EmployeeCode -DisplayName $DisplayName | Out-Null
+    if (-not $userUpdated) {
+        return [PSCustomObject]@{
+            updated  = $false
+            error    = "Employee account was not found."
+            warnings = @()
+        }
+    }
+
+    $warnings = New-Object System.Collections.ArrayList
+    $mappingWarning = Invoke-EmployeeDirectorySecondaryActionSafely -Description "Employee profile saved, but the employee-name mapping could not be updated" -Action {
+        Set-EmployeeDirectoryNameMapping -EmployeeCode $EmployeeCode -DisplayName $DisplayName
+    }
+    if (-not [string]::IsNullOrWhiteSpace($mappingWarning)) {
+        [void]$warnings.Add($mappingWarning)
+    }
+
+    $entryNameWarning = Invoke-EmployeeDirectorySecondaryActionSafely -Description "Employee profile saved, but existing entry names could not be updated" -Action {
+        Update-EmployeeEntryDisplayName -EmployeeCode $EmployeeCode -DisplayName $DisplayName | Out-Null
+    }
+    if (-not [string]::IsNullOrWhiteSpace($entryNameWarning)) {
+        [void]$warnings.Add($entryNameWarning)
+    }
 
     return [PSCustomObject]@{
-        updated = $userUpdated
-        error   = $null
+        updated  = $true
+        error    = $null
+        warnings = @($warnings.ToArray())
     }
 }
 
@@ -558,13 +646,20 @@ function Remove-EmployeeDirectoryRecord {
     )
 
     $updated = Disable-EmployeeUser -EmployeeCode $EmployeeCode
+    $warnings = New-Object System.Collections.ArrayList
     if ($updated) {
-        Revoke-SessionsForUsername -Username $EmployeeCode
+        $sessionWarning = Invoke-EmployeeDirectorySecondaryActionSafely -Description "Employee access was disabled, but existing sessions could not be revoked" -Action {
+            Revoke-SessionsForUsername -Username $EmployeeCode
+        }
+        if (-not [string]::IsNullOrWhiteSpace($sessionWarning)) {
+            [void]$warnings.Add($sessionWarning)
+        }
     }
 
     return [PSCustomObject]@{
-        updated = $updated
-        error   = $null
+        updated  = $updated
+        error    = $null
+        warnings = @($warnings.ToArray())
     }
 }
 
@@ -574,12 +669,19 @@ function Restore-EmployeeDirectoryRecord {
     )
 
     $updated = Restore-EmployeeUser -EmployeeCode $EmployeeCode
+    $warnings = New-Object System.Collections.ArrayList
     if ($updated) {
-        Ensure-EmployeeDataFile -EmployeeCode $EmployeeCode | Out-Null
+        $dataFileWarning = Invoke-EmployeeDirectorySecondaryActionSafely -Description "Employee access was restored, but the employee data file could not be initialized" -Action {
+            Ensure-EmployeeDataFile -EmployeeCode $EmployeeCode | Out-Null
+        }
+        if (-not [string]::IsNullOrWhiteSpace($dataFileWarning)) {
+            [void]$warnings.Add($dataFileWarning)
+        }
     }
 
     return [PSCustomObject]@{
-        updated = $updated
-        error   = $null
+        updated  = $updated
+        error    = $null
+        warnings = @($warnings.ToArray())
     }
 }

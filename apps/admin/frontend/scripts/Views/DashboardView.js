@@ -748,7 +748,7 @@ function renderEmployeeEntries(employeeCode, entries) {
   `;
 }
 
-async function fetchEmployeeData() {
+async function fetchEmployeeData(options = {}) {
   const employeeCode = document.getElementById("employeeSelect").value;
   const selectedStartDate = document.getElementById("startDateFilter").value;
   const selectedEndDate = document.getElementById("endDateFilter").value;
@@ -774,9 +774,12 @@ async function fetchEmployeeData() {
   title.textContent = employeeName;
 
   try {
-    setLoadingState("punchClockEntries", "entries", 3);
     let entries = dashboardState.entriesByEmployee[employeeCode];
     if (!entries) {
+      if (options.allowFetch === false) {
+        return false;
+      }
+      setLoadingState("punchClockEntries", "entries", 3);
       entries = await fetchEmployeeEntries(employeeCode);
       dashboardState.entriesByEmployee[employeeCode] = entries;
     }
@@ -796,9 +799,11 @@ async function fetchEmployeeData() {
     filteredEntries = sortEntriesByDateTime(filteredEntries, latestFirst);
     hint.textContent = buildInspectorMeta(filteredEntries.length, selectedStartDate, selectedEndDate, selectedProjectCode);
     renderEmployeeEntries(employeeCode, filteredEntries);
+    return true;
   } catch (error) {
     console.error("Error fetching employee data:", error);
     showToast(t("dashboard.timelineLoadError"), "error");
+    return false;
   }
 }
 
@@ -814,6 +819,20 @@ async function refreshDashboardView() {
 }
 
 window.refreshDashboardView = refreshDashboardView;
+
+window.rerenderDashboardViewForLanguageChange = async function () {
+  const employeeSelect = document.getElementById("employeeSelect");
+  const selectedEmployeeCode = employeeSelect ? employeeSelect.value : "";
+  populateDashboardEmployeeControls(dashboardState.employees || []);
+  if (employeeSelect && selectedEmployeeCode) {
+    employeeSelect.value = selectedEmployeeCode;
+  }
+  syncDashboardEmployeeSearchInput(selectedEmployeeCode);
+  populateDashboardProjectFilter(dashboardState.projects || []);
+  renderDashboardResponsibleProjects();
+  renderDashboardOverview(dashboardState.bootstrap || {});
+  await fetchEmployeeData({ allowFetch: false });
+};
 
 async function refreshAfterEntryMutation(employeeCode, refreshPeopleEmployeeCode = "") {
   const affectedViews = ["dashboardView", "employeesView", "adminView", "projectsView"];

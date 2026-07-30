@@ -7,8 +7,6 @@
 
             $employeeCode = $matches[1]
 
-            $directoryMutationMayHaveCommitted = $false
-            $directoryMutationError = $null
             try {
                 $payload = Read-JsonRequestBody -Request $request
                 $displayName = if ($null -ne $payload) { [string]$payload.name } else { "" }
@@ -27,45 +25,46 @@
                     continue
                 }
 
-                try {
-                    # This call writes the name mapping before the auth profile, so even a false result can follow a commit.
-                    $directoryMutationMayHaveCommitted = $true
-                    $updateResult = Update-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -Role $role -TimeEntryTypes $timeEntryTypes -Gc179Profile $gc179Profile
-                    if (-not $updateResult.updated) {
-                        $directoryMutationError = [InvalidOperationException]::new("Unable to update employee.")
-                        respondWithError $response 500 "Unable to update employee."
-                        continue
-                    }
-
-                    $historyMessage = "Updated the employee profile for <strong>$displayName</strong>."
-                    logHistory "Update" $historyMessage $displayName
+                $updateResult = Update-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -Role $role -TimeEntryTypes $timeEntryTypes -Gc179Profile $gc179Profile
+                if (-not $updateResult.updated) {
+                    $errorMessage = if ($updateResult.error) { [string]$updateResult.error } else { "Unable to update employee." }
+                    respondWithError $response 500 $errorMessage
+                    continue
                 }
-                catch {
-                    $directoryMutationError = $_
-                    throw
-                }
-                finally {
-                    if ($directoryMutationMayHaveCommitted) {
-                        try {
-                            Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
-                        }
-                        catch {
-                            if ($null -eq $directoryMutationError) {
-                                throw
-                            }
 
-                            Write-Warning "Unable to publish employee-directory cache invalidation after a failed update operation: $($_.Exception.Message)"
+                $postCommitWarnings = New-Object System.Collections.ArrayList
+                if ($updateResult.PSObject.Properties.Name -contains "warnings") {
+                    foreach ($warning in @($updateResult.warnings)) {
+                        if (-not [string]::IsNullOrWhiteSpace([string]$warning)) {
+                            [void]$postCommitWarnings.Add([string]$warning)
                         }
                     }
+                }
+
+                $historyMessage = "Updated the employee profile for <strong>$displayName</strong>."
+                $historyWarning = Invoke-PostCommitActionSafely -Description "Employee profile saved, but history logging failed" -Action {
+                    logHistory "Update" $historyMessage $displayName -PublishChange:$false
+                }
+                if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
+                    [void]$postCommitWarnings.Add($historyWarning)
+                }
+
+                $syncWarning = Invoke-PostCommitActionSafely -Description "Employee profile saved, but cross-machine refresh publication failed" -Action {
+                    Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
+                }
+                if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                    [void]$postCommitWarnings.Add($syncWarning)
                 }
 
                 respondWithSuccess $response (([PSCustomObject]@{
                     message      = "Employee updated successfully."
                     employeeCode = $employeeCode
-                }) | ConvertTo-Json -Depth 4)
+                    warnings     = @($postCommitWarnings.ToArray())
+                }) | ConvertTo-Json -Depth 6)
             }
             catch {
-                respondWithError $response 500 "Unable to update employee: $($_.Exception.Message)"
+                Write-Warning ("Unable to update employee: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to update employee."
             }
             continue
         }

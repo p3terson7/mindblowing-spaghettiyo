@@ -48,7 +48,8 @@
                 }) | ConvertTo-Json -Depth 6)
             }
             catch {
-                respondWithError $response 500 "Unable to update GC179 profile: $($_.Exception.Message)"
+                Write-Warning ("Unable to update GC179 profile: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to update GC179 profile."
             }
             continue
         }
@@ -71,12 +72,7 @@
             }
 
             $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
-            $entriesJson = if ($entries.Count -gt 0) {
-                $entries | ConvertTo-Json -Depth 6
-            }
-            else {
-                "[]"
-            }
+            $entriesJson = ConvertTo-Json -InputObject @($entries) -Depth 6
             respondWithSuccess $response $entriesJson
             continue
         }
@@ -231,98 +227,115 @@
                     }
                 }
 
-                $dataFile = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $employeeCode)
-                if (!(Test-Path -Path $dataFile)) {
-                    Write-JsonAtomic -Path $dataFile -Value @()
-                }
-
-                $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
+                $dataFile = Ensure-EmployeeDataFile -EmployeeCode $employeeCode
+                $projectReferenceLockHandle = $null
+                $lockHandle = $null
                 try {
-                    $existingData = @(Read-JsonArrayFile -Path $dataFile)
-                    $activeEntry = Get-LatestActiveEntry -Entries $existingData
+                    if ($payload.type -eq "in" -and $entryType -eq "overtime") {
+                        $projectReferenceLockHandle = Acquire-ProjectReferenceLock
+                        if (-not (Test-ActiveProjectCodeFromDisk -ProjectCode $projectCode)) {
+                            respondWithError $response 409 "The selected project is no longer active. Refresh and choose another project."
+                            continue
+                        }
+                    }
 
-                    $now = Get-Date
-                    $exactNow = Get-Date -Year $now.Year -Month $now.Month -Day $now.Day -Hour $now.Hour -Minute $now.Minute -Second 0
-                    $todayText = $exactNow.ToString("yyyy-MM-dd")
-                    $exactNowText = $exactNow.ToString("HH:mm:ss")
-                    $roundedNowText = Convert-ToNearestQuarterHourText -Date $todayText -TimeText $exactNowText
-                    $requiresClockOutReview = $false
-                    $reviewEntryDate = ""
-                    $punchResultMessage = "Punch updated successfully."
+                    $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
+                    try {
+                        $existingData = @(Read-JsonArrayFile -Path $dataFile)
+                        $activeEntry = Get-LatestActiveEntry -Entries $existingData
 
-                    if ($payload.type -eq "in") {
-                        if ($activeEntry) {
-                            if ([string]$activeEntry.date -eq $todayText) {
-                                respondWithError $response 400 "You must punch out before punching in again."
+                        $now = Get-Date
+                        $exactNow = Get-Date -Year $now.Year -Month $now.Month -Day $now.Day -Hour $now.Hour -Minute $now.Minute -Second 0
+                        $todayText = $exactNow.ToString("yyyy-MM-dd")
+                        $exactNowText = $exactNow.ToString("HH:mm:ss")
+                        $roundedNowText = Convert-ToNearestQuarterHourText -Date $todayText -TimeText $exactNowText
+                        $requiresClockOutReview = $false
+                        $reviewEntryDate = ""
+                        $punchResultMessage = "Punch updated successfully."
+
+                        if ($payload.type -eq "in") {
+                            if ($activeEntry) {
+                                if ([string]$activeEntry.date -eq $todayText) {
+                                    respondWithError $response 400 "You must punch out before punching in again."
+                                    continue
+                                }
+
+                                Set-EntryForgottenClockOutReview -Entry $activeEntry -AttemptDate $todayText -AttemptTime $exactNowText
+                                $requiresClockOutReview = $true
+                                $reviewEntryDate = [string]$activeEntry.date
+                            }
+
+                            $existingData += [PSCustomObject]@{
+                                entryId      = New-EntryIdentifier
+                                entryType    = $entryType
+                                name        = Get-EmployeeName $employeeCode
+                                date        = $todayText
+                                punchIn     = $roundedNowText
+                                exactPunchIn = $exactNowText
+                                punchOut    = $null
+                                exactPunchOut = $null
+                                overtime    = $null
+                                status      = "pending"
+                                message     = ""
+                                projectCode = if ($entryType -eq "overtime") { $projectCode } else { "" }
+                                overtimeCode = if ($entryType -eq "overtime") { $overtimeCode } else { "" }
+                                paymentOption = if ($entryType -eq "overtime") { $paymentOption } else { "" }
+                                reasonCode = if ($entryType -eq "overtime") { $reasonCode } else { "" }
+                                diverseReason = if ($entryType -eq "diverse") { $diverseReason } else { "" }
+                                diverseSummary = ""
+                            }
+                        }
+                        else {
+                            if (-not $activeEntry) {
+                                respondWithError $response 400 "No active punch-in record found."
                                 continue
                             }
 
-                            Set-EntryForgottenClockOutReview -Entry $activeEntry -AttemptDate $todayText -AttemptTime $exactNowText
-                            $requiresClockOutReview = $true
-                            $reviewEntryDate = [string]$activeEntry.date
-                        }
+                            $activeEntryType = if ($activeEntry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$activeEntry.entryType)) { ([string]$activeEntry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
 
-                        $existingData += [PSCustomObject]@{
-                            entryId      = New-EntryIdentifier
-                            entryType    = $entryType
-                            name        = Get-EmployeeName $employeeCode
-                            date        = $todayText
-                            punchIn     = $roundedNowText
-                            exactPunchIn = $exactNowText
-                            punchOut    = $null
-                            exactPunchOut = $null
-                            overtime    = $null
-                            status      = "pending"
-                            message     = ""
-                            projectCode = if ($entryType -eq "overtime") { $projectCode } else { "" }
-                            overtimeCode = if ($entryType -eq "overtime") { $overtimeCode } else { "" }
-                            paymentOption = if ($entryType -eq "overtime") { $paymentOption } else { "" }
-                            reasonCode = if ($entryType -eq "overtime") { $reasonCode } else { "" }
-                            diverseReason = if ($entryType -eq "diverse") { $diverseReason } else { "" }
-                            diverseSummary = ""
-                        }
-                    }
-                    else {
-                        if (-not $activeEntry) {
-                            respondWithError $response 400 "No active punch-in record found."
-                            continue
-                        }
-
-                        $activeEntryType = if ($activeEntry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$activeEntry.entryType)) { ([string]$activeEntry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
-
-                        if ($activeEntryType -eq "diverse" -and [string]::IsNullOrWhiteSpace($diverseSummary)) {
-                            respondWithError $response 400 "A work summary is required before ending diverse time."
-                            continue
-                        }
-
-                        if ([string]$activeEntry.date -ne $todayText) {
-                            if ($activeEntryType -eq "diverse") {
-                                Set-EntryPropertyValue -Entry $activeEntry -Name "diverseSummary" -Value $diverseSummary
+                            if ($activeEntryType -eq "diverse" -and [string]::IsNullOrWhiteSpace($diverseSummary)) {
+                                respondWithError $response 400 "A work summary is required before ending diverse time."
+                                continue
                             }
-                            Set-EntryForgottenClockOutReview -Entry $activeEntry -AttemptDate $todayText -AttemptTime $exactNowText
-                            $requiresClockOutReview = $true
-                            $reviewEntryDate = [string]$activeEntry.date
-                            $punchResultMessage = "Previous-day clock-out requires supervisor review."
-                        }
-                        else {
-                            $activeEntry.exactPunchOut = $exactNowText
-                            $activeEntry.punchOut = $roundedNowText
-                            $punchInTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchIn)", "yyyy-MM-dd HH:mm:ss", $null)
-                            $punchOutTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchOut)", "yyyy-MM-dd HH:mm:ss", $null)
-                            $activeEntry.overtime = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
-                            if ($activeEntryType -eq "diverse") {
-                                Set-EntryPropertyValue -Entry $activeEntry -Name "diverseSummary" -Value $diverseSummary
+
+                            if ([string]$activeEntry.date -ne $todayText) {
+                                if ($activeEntryType -eq "diverse") {
+                                    Set-EntryPropertyValue -Entry $activeEntry -Name "diverseSummary" -Value $diverseSummary
+                                }
+                                Set-EntryForgottenClockOutReview -Entry $activeEntry -AttemptDate $todayText -AttemptTime $exactNowText
+                                $requiresClockOutReview = $true
+                                $reviewEntryDate = [string]$activeEntry.date
+                                $punchResultMessage = "Previous-day clock-out requires supervisor review."
+                            }
+                            else {
+                                $activeEntry.exactPunchOut = $exactNowText
+                                $activeEntry.punchOut = $roundedNowText
+                                $punchInTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchIn)", "yyyy-MM-dd HH:mm:ss", $null)
+                                $punchOutTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchOut)", "yyyy-MM-dd HH:mm:ss", $null)
+                                $activeEntry.overtime = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
+                                if ($activeEntryType -eq "diverse") {
+                                    Set-EntryPropertyValue -Entry $activeEntry -Name "diverseSummary" -Value $diverseSummary
+                                }
                             }
                         }
-                    }
 
-                    Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 6
+                        Write-JsonArrayAtomic -Path $dataFile -Items $existingData -Depth 6
+                    }
+                    finally {
+                        Release-ResourceLock -LockHandle $lockHandle
+                    }
                 }
                 finally {
-                    Release-ResourceLock -LockHandle $lockHandle
+                    Release-ResourceLock -LockHandle $projectReferenceLockHandle
                 }
 
-                Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
+                $postCommitWarnings = New-Object System.Collections.ArrayList
+                $syncWarning = Invoke-PostCommitActionSafely -Description "Punch saved, but cross-machine refresh publication failed" -Action {
+                    Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
+                }
+                if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                    [void]$postCommitWarnings.Add($syncWarning)
+                }
 
                 $result = [PSCustomObject]@{
                     message = $punchResultMessage
@@ -330,11 +343,13 @@
                     requiresClockOutReview = $requiresClockOutReview
                     reviewEntryDate = $reviewEntryDate
                     entryType = $entryType
+                    warnings = @($postCommitWarnings.ToArray())
                 }
                 respondWithSuccess $response ($result | ConvertTo-Json -Depth 6)
             }
             catch {
-                respondWithError $response 500 "Unable to process punch: $($_.Exception.Message)"
+                Write-Warning ("Unable to process punch: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to process punch."
             }
             continue
         }

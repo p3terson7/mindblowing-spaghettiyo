@@ -1,23 +1,32 @@
         # POST /employee/add/{employeeCode}: Add an entry for an employee.
         if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -match "^/employee/add/(\d+)$") {
             $employeeCode = $matches[1]
-            $dataFile = Join-Path -Path $sharedFolder -ChildPath "${employeeCode}_data.json"
 
             if (Test-CurrentUserMatchesEmployeeCode -CurrentUser $currentUser -EmployeeCode $employeeCode) {
                 respondWithError $response 403 "Administrators cannot add overtime entries to their own employee profile."
                 continue
             }
 
-            # If the employee data file doesn't exist, initialize it as an empty array.
-            if (!(Test-Path -Path $dataFile)) {
-                Write-JsonAtomic -Path $dataFile -Value @()
+            $targetEmployee = Get-EmployeeUserByCode -EmployeeCode $employeeCode
+            if ($null -eq $targetEmployee -or
+                -not (Test-EmployeeUserRecord -UserRecord $targetEmployee -EmployeeCode $employeeCode) -or
+                [bool]$targetEmployee.disabled) {
+                respondWithError $response 404 "Active employee not found."
+                continue
             }
 
+            $dataFile = Ensure-EmployeeDataFile -EmployeeCode $employeeCode
             $payload = Read-JsonRequestBody -Request $request
 
             # Require payload to include date, punchIn, and punchOut.
             if (-not ($payload.date -and $payload.punchIn -and $payload.punchOut)) {
                 respondWithError $response 400 "Missing required fields: date, punchIn, and punchOut are required."
+                continue
+            }
+
+            $normalizedDate = Convert-ToNormalizedDateText -DateText ([string]$payload.date)
+            if ([string]::IsNullOrWhiteSpace($normalizedDate)) {
+                respondWithError $response 400 "Date must use the yyyy-MM-dd format."
                 continue
             }
 
@@ -78,12 +87,12 @@
                 continue
             }
 
-            $punchInRounded = Convert-ToNearestQuarterHourText -Date ([string]$payload.date) -TimeText $exactPunchIn
-            $punchOutRounded = Convert-ToNearestQuarterHourText -Date ([string]$payload.date) -TimeText $exactPunchOut
+            $punchInRounded = Convert-ToNearestQuarterHourText -Date $normalizedDate -TimeText $exactPunchIn
+            $punchOutRounded = Convert-ToNearestQuarterHourText -Date $normalizedDate -TimeText $exactPunchOut
 
             # Validate that punchOut is after punchIn.
-            $punchInTime = [DateTime]::ParseExact("$($payload.date) $punchInRounded", "yyyy-MM-dd HH:mm:ss", $null)
-            $punchOutTime = [DateTime]::ParseExact("$($payload.date) $punchOutRounded", "yyyy-MM-dd HH:mm:ss", $null)
+            $punchInTime = [DateTime]::ParseExact("$normalizedDate $punchInRounded", "yyyy-MM-dd HH:mm:ss", $null)
+            $punchOutTime = [DateTime]::ParseExact("$normalizedDate $punchOutRounded", "yyyy-MM-dd HH:mm:ss", $null)
             if ($punchOutTime -le $punchInTime) {
                 respondWithError $response 400 "Punch Out must be after Punch In."
                 continue
@@ -91,41 +100,70 @@
 
             $entryMutationCommitted = $false
             $entryMutationError = $null
+            $postCommitWarnings = New-Object System.Collections.ArrayList
             try {
-                $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
+                $projectReferenceLockHandle = Acquire-ProjectReferenceLock
                 try {
-                    $existingData = Read-JsonArrayFile -Path $dataFile
-
-                    # Create the new entry with an empty message and the projectCode.
-                    $newEntry = [PSCustomObject]@{
-                        entryId      = New-EntryIdentifier
-                        name        = Get-EmployeeName $employeeCode
-                        date        = $payload.date
-                        punchIn     = $punchInRounded
-                        exactPunchIn = $exactPunchIn
-                        punchOut    = $punchOutRounded
-                        exactPunchOut = $exactPunchOut
-                        overtime    = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
-                        status      = "pending"
-                        message     = ""
-                        projectCode = $payload.projectCode
-                        overtimeCode = $payload.overtimeCode
-                        paymentOption = $payload.paymentOption
-                        reasonCode = $payload.reasonCode
+                    # Revalidate from disk while holding the same guard used by
+                    # project rename/delete. The earlier cached validation is
+                    # only for fast feedback and cannot authorize the commit.
+                    if (-not (Test-ActiveProjectCodeFromDisk -ProjectCode ([string]$payload.projectCode))) {
+                        respondWithError $response 409 "The selected project is no longer active. Refresh and choose another project."
+                        continue
                     }
-                    $existingData += $newEntry
-                    Write-JsonAtomic -Path $dataFile -Value $existingData -Depth 6
-                    $entryMutationCommitted = $true
+                    if (-not (Test-CurrentUserCanModifyActiveProjectCodeFromDisk -CurrentUser $currentUser -ProjectCode ([string]$payload.projectCode))) {
+                        respondWithError $response 403 "Your permission for the selected project changed. Refresh and try again."
+                        continue
+                    }
+
+                    $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
+                    try {
+                        # Build the collection explicitly. PowerShell 5.1 can
+                        # unwrap a one-item function result into a PSCustomObject;
+                        # using += on that value raises the op_Addition error.
+                        $updatedEntries = New-Object System.Collections.ArrayList
+                        foreach ($existingEntry in @(Read-JsonArrayFile -Path $dataFile)) {
+                            [void]$updatedEntries.Add($existingEntry)
+                        }
+
+                        # Create the new entry with an empty message and the projectCode.
+                        $newEntry = [PSCustomObject]@{
+                            entryId      = New-EntryIdentifier
+                            name        = Get-EmployeeName $employeeCode
+                            date        = $normalizedDate
+                            punchIn     = $punchInRounded
+                            exactPunchIn = $exactPunchIn
+                            punchOut    = $punchOutRounded
+                            exactPunchOut = $exactPunchOut
+                            overtime    = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
+                            status      = "pending"
+                            message     = ""
+                            projectCode = $payload.projectCode
+                            overtimeCode = $payload.overtimeCode
+                            paymentOption = $payload.paymentOption
+                            reasonCode = $payload.reasonCode
+                        }
+                        [void]$updatedEntries.Add($newEntry)
+                        Write-JsonArrayAtomic -Path $dataFile -Items @($updatedEntries.ToArray()) -Depth 6
+                        $entryMutationCommitted = $true
+                    }
+                    finally {
+                        Release-ResourceLock -LockHandle $lockHandle
+                    }
                 }
                 finally {
-                    Release-ResourceLock -LockHandle $lockHandle
+                    Release-ResourceLock -LockHandle $projectReferenceLockHandle
                 }
 
-                # Log history for adding.
-                $employeeName = Get-EmployeeName $employeeCode
-                $formattedDate = (Get-Date $payload.date).ToString("MMMM dd, yyyy")
-                $historyMessage = "Added an entry on $formattedDate, starting at <strong>$(Format-TimeForHistory $punchInRounded)</strong> and finishing at <strong>$(Format-TimeForHistory $punchOutRounded)</strong> for project <strong>$($payload.projectCode)</strong>, overtime code <strong>$($payload.overtimeCode)</strong>, payment <strong>$($payload.paymentOption)</strong>, and reason <strong>$($payload.reasonCode)</strong>."
-                logHistory "Add" $historyMessage $employeeName
+                $historyWarning = Invoke-PostCommitActionSafely -Description "Entry saved, but history logging failed" -Action {
+                    $employeeName = Get-EmployeeName $employeeCode
+                    $formattedDate = (Get-Date $normalizedDate).ToString("MMMM dd, yyyy")
+                    $historyMessage = "Added an entry on $formattedDate, starting at <strong>$(Format-TimeForHistory $punchInRounded)</strong> and finishing at <strong>$(Format-TimeForHistory $punchOutRounded)</strong> for project <strong>$($payload.projectCode)</strong>, overtime code <strong>$($payload.overtimeCode)</strong>, payment <strong>$($payload.paymentOption)</strong>, and reason <strong>$($payload.reasonCode)</strong>."
+                    logHistory "Add" $historyMessage $employeeName -PublishChange:$false
+                }
+                if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
+                    [void]$postCommitWarnings.Add($historyWarning)
+                }
             }
             catch {
                 $entryMutationError = $_
@@ -133,27 +171,20 @@
             }
             finally {
                 if ($entryMutationCommitted) {
-                    try {
+                    $syncWarning = Invoke-PostCommitActionSafely -Description "Entry saved, but cross-machine refresh publication failed" -Action {
                         Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
                     }
-                    catch {
-                        if ($null -eq $entryMutationError) {
-                            throw
-                        }
-
-                        Write-Warning "Unable to publish employee cache invalidation after a failed add operation: $($_.Exception.Message)"
+                    if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                        [void]$postCommitWarnings.Add($syncWarning)
                     }
                 }
             }
 
-            $responseMessage = @{
+            $responseMessage = [PSCustomObject]@{
                 message = "Entry added successfully."
                 time    = $exactPunchIn
+                warnings = @($postCommitWarnings.ToArray())
             }
-            $responseString = $responseMessage | ConvertTo-Json -Depth 3
-            $response.ContentType = "application/json"
-            $response.StatusCode = 200
-            $response.OutputStream.Write([System.Text.Encoding]::UTF8.GetBytes($responseString), 0, ([System.Text.Encoding]::UTF8.GetBytes($responseString)).Length)
-            $response.Close()
+            respondWithSuccess $response ($responseMessage | ConvertTo-Json -Depth 3)
             continue
         }

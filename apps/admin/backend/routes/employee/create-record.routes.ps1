@@ -5,8 +5,6 @@
                 continue
             }
 
-            $directoryMutationMayHaveCommitted = $false
-            $directoryMutationError = $null
             try {
                 $payload = Read-JsonRequestBody -Request $request
                 $employeeCode = if ($null -ne $payload) { [string]$payload.code } else { "" }
@@ -36,42 +34,35 @@
                     continue
                 }
 
-                try {
-                    try {
-                        $createResult = Add-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -InitialPassword $initialPassword -MustChangePassword $mustChangePassword -Role $role -TimeEntryTypes $timeEntryTypes -Gc179Profile $gc179Profile
-                    }
-                    catch {
-                        # The directory service spans auth, mapping, and entry files, so an exception can follow a partial commit.
-                        $directoryMutationMayHaveCommitted = $true
-                        throw
-                    }
-                    if (-not $createResult.updated) {
-                        $errorMessage = if ($createResult.error) { [string]$createResult.error } else { "Unable to create employee." }
-                        respondWithError $response 400 $errorMessage
-                        continue
-                    }
-
-                    $directoryMutationMayHaveCommitted = $true
-                    $historyMessage = "Created an employee profile for <strong>$displayName</strong> with code <strong>$employeeCode</strong>."
-                    logHistory "Add" $historyMessage $displayName
+                $createResult = Add-EmployeeDirectoryRecord -EmployeeCode $employeeCode -DisplayName $displayName -InitialPassword $initialPassword -MustChangePassword $mustChangePassword -Role $role -TimeEntryTypes $timeEntryTypes -Gc179Profile $gc179Profile
+                if (-not $createResult.updated) {
+                    $errorMessage = if ($createResult.error) { [string]$createResult.error } else { "Unable to create employee." }
+                    respondWithError $response 400 $errorMessage
+                    continue
                 }
-                catch {
-                    $directoryMutationError = $_
-                    throw
-                }
-                finally {
-                    if ($directoryMutationMayHaveCommitted) {
-                        try {
-                            Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
-                        }
-                        catch {
-                            if ($null -eq $directoryMutationError) {
-                                throw
-                            }
 
-                            Write-Warning "Unable to publish employee-directory cache invalidation after a failed create operation: $($_.Exception.Message)"
+                $postCommitWarnings = New-Object System.Collections.ArrayList
+                if ($createResult.PSObject.Properties.Name -contains "warnings") {
+                    foreach ($warning in @($createResult.warnings)) {
+                        if (-not [string]::IsNullOrWhiteSpace([string]$warning)) {
+                            [void]$postCommitWarnings.Add([string]$warning)
                         }
                     }
+                }
+
+                $historyMessage = "Created an employee profile for <strong>$displayName</strong> with code <strong>$employeeCode</strong>."
+                $historyWarning = Invoke-PostCommitActionSafely -Description "Employee created, but history logging failed" -Action {
+                    logHistory "Add" $historyMessage $displayName -PublishChange:$false
+                }
+                if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
+                    [void]$postCommitWarnings.Add($historyWarning)
+                }
+
+                $syncWarning = Invoke-PostCommitActionSafely -Description "Employee created, but cross-machine refresh publication failed" -Action {
+                    Publish-DataChange -Category "employee-directory" -Resource $employeeCode | Out-Null
+                }
+                if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                    [void]$postCommitWarnings.Add($syncWarning)
                 }
 
                 respondWithSuccess $response (([PSCustomObject]@{
@@ -81,10 +72,12 @@
                     mustChangePassword = $mustChangePassword
                     createdAccount     = [bool]$createResult.created
                     reactivatedAccount = [bool]$createResult.reactivated
-                }) | ConvertTo-Json -Depth 4)
+                    warnings           = @($postCommitWarnings.ToArray())
+                }) | ConvertTo-Json -Depth 6)
             }
             catch {
-                respondWithError $response 500 "Unable to create employee: $($_.Exception.Message)"
+                Write-Warning ("Unable to create employee: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to create employee."
             }
             continue
         }

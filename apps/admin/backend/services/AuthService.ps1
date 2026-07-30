@@ -14,6 +14,22 @@ if (-not $script:AuthenticatedUserRequestCache) {
     $script:AuthenticatedUserRequestCache = @{}
 }
 
+if ($null -eq $script:LoginThrottleState) {
+    $script:LoginThrottleState = @{}
+}
+
+if (-not $script:LoginThrottleWindowSeconds) {
+    $script:LoginThrottleWindowSeconds = 300
+}
+
+if (-not $script:LoginThrottlePrincipalLimit) {
+    $script:LoginThrottlePrincipalLimit = 5
+}
+
+if (-not $script:LoginThrottleClientLimit) {
+    $script:LoginThrottleClientLimit = 25
+}
+
 if (-not $script:AuthenticatedUserRequestCacheTtlMs) {
     $configuredAuthCacheMs = 0
     $configuredAuthCacheValue = [string]$env:SAPHIR_AUTH_CACHE_MS
@@ -24,7 +40,7 @@ if (-not $script:AuthenticatedUserRequestCacheTtlMs) {
         [int]::TryParse($configuredAuthCacheValue, [ref]$configuredAuthCacheMs) | Out-Null
     }
 
-    $script:AuthenticatedUserRequestCacheTtlMs = if ($configuredAuthCacheMs -gt 0) { $configuredAuthCacheMs } else { 300000 }
+    $script:AuthenticatedUserRequestCacheTtlMs = if ($configuredAuthCacheMs -gt 0) { $configuredAuthCacheMs } else { 10000 }
 }
 
 if (-not $script:UserLookupCache) {
@@ -35,6 +51,14 @@ function Clear-AuthRuntimeCaches {
     $script:AuthenticatedUserRequestCache = @{}
     $script:UserLookupCache = $null
     $script:AuthArrayFileCache = @{}
+    $script:ProjectAccessModelCache = @{}
+}
+
+function Clear-ProjectAccessRuntimeCaches {
+    # Project changes affect authorization projections, but they do not change
+    # users.json, sessions.json, or an already authenticated request. Keep those
+    # caches warm and discard only the project-derived access models.
+    $script:ProjectAccessModelCache = @{}
 }
 
 function New-PasswordCredential {
@@ -93,6 +117,130 @@ function New-RandomToken {
     return ($token.TrimEnd("=") -replace "\+", "-" -replace "/", "_")
 }
 
+function New-TemporaryPassword {
+    # The fixed prefix guarantees the password-policy character classes while
+    # the random suffix contributes 144 bits of per-account entropy.
+    return ("Sa1!{0}" -f (New-RandomToken -ByteCount 18))
+}
+
+function Get-LoginThrottleKeys {
+    param(
+        $Request,
+        [AllowNull()][string]$Username
+    )
+
+    $clientAddress = "unknown"
+    try {
+        if ($null -ne $Request -and $null -ne $Request.RemoteEndPoint -and $null -ne $Request.RemoteEndPoint.Address) {
+            $clientAddress = [string]$Request.RemoteEndPoint.Address
+        }
+    }
+    catch {
+        # Requests without a usable endpoint share a conservative fallback
+        # bucket instead of bypassing throttling.
+    }
+
+    $normalizedUsername = ([string]$Username).Trim().ToLowerInvariant()
+    return [PSCustomObject]@{
+        Principal = "principal|$clientAddress|$normalizedUsername"
+        Client    = "client|$clientAddress"
+    }
+}
+
+function Remove-ExpiredLoginThrottleRecords {
+    param([DateTime]$NowUtc = [DateTime]::UtcNow)
+
+    foreach ($key in @($script:LoginThrottleState.Keys)) {
+        $record = $script:LoginThrottleState[$key]
+        if ($null -eq $record -or
+            $null -eq $record.WindowStartedUtc -or
+            ([DateTime]$record.WindowStartedUtc).AddSeconds($script:LoginThrottleWindowSeconds) -le $NowUtc) {
+            $script:LoginThrottleState.Remove($key)
+        }
+    }
+
+    # This should never be reached during normal use, but it places an absolute
+    # bound on memory if a hostile client continuously invents usernames.
+    if ($script:LoginThrottleState.Count -gt 4096) {
+        $script:LoginThrottleState = @{}
+    }
+}
+
+function Get-LoginThrottleDecision {
+    param(
+        $Request,
+        [AllowNull()][string]$Username,
+        [DateTime]$NowUtc = [DateTime]::UtcNow
+    )
+
+    Remove-ExpiredLoginThrottleRecords -NowUtc $NowUtc
+    $keys = Get-LoginThrottleKeys -Request $Request -Username $Username
+    $retryAfterSeconds = 0
+    foreach ($rule in @(
+        [PSCustomObject]@{ Key = [string]$keys.Principal; Limit = [int]$script:LoginThrottlePrincipalLimit },
+        [PSCustomObject]@{ Key = [string]$keys.Client; Limit = [int]$script:LoginThrottleClientLimit }
+    )) {
+        $record = $script:LoginThrottleState[$rule.Key]
+        if ($null -eq $record -or [int]$record.Failures -lt [int]$rule.Limit) {
+            continue
+        }
+
+        $secondsRemaining = [int][Math]::Ceiling(
+            (([DateTime]$record.WindowStartedUtc).AddSeconds($script:LoginThrottleWindowSeconds) - $NowUtc).TotalSeconds
+        )
+        if ($secondsRemaining -gt $retryAfterSeconds) {
+            $retryAfterSeconds = $secondsRemaining
+        }
+    }
+
+    return [PSCustomObject]@{
+        Allowed           = $retryAfterSeconds -le 0
+        RetryAfterSeconds = [Math]::Max(1, $retryAfterSeconds)
+    }
+}
+
+function Register-FailedLoginAttempt {
+    param(
+        $Request,
+        [AllowNull()][string]$Username,
+        [DateTime]$NowUtc = [DateTime]::UtcNow
+    )
+
+    Remove-ExpiredLoginThrottleRecords -NowUtc $NowUtc
+    $keys = Get-LoginThrottleKeys -Request $Request -Username $Username
+    foreach ($key in @([string]$keys.Principal, [string]$keys.Client)) {
+        $record = $script:LoginThrottleState[$key]
+        if ($null -eq $record) {
+            $script:LoginThrottleState[$key] = [PSCustomObject]@{
+                WindowStartedUtc = $NowUtc
+                Failures         = 1
+            }
+        }
+        else {
+            $record.Failures = [int]$record.Failures + 1
+        }
+    }
+}
+
+function Clear-LoginThrottleForPrincipal {
+    param(
+        $Request,
+        [AllowNull()][string]$Username
+    )
+
+    $keys = Get-LoginThrottleKeys -Request $Request -Username $Username
+    if ($script:LoginThrottleState.ContainsKey([string]$keys.Principal)) {
+        $script:LoginThrottleState.Remove([string]$keys.Principal)
+    }
+}
+
+function Get-DummyLoginCredential {
+    if ($null -eq $script:DummyLoginCredential) {
+        $script:DummyLoginCredential = New-PasswordCredential -Password (New-TemporaryPassword)
+    }
+    return $script:DummyLoginCredential
+}
+
 function Get-NormalizedRoleName {
     param([string]$Role)
 
@@ -137,6 +285,21 @@ function Get-ObjectStringProperty {
     }
 
     return ""
+}
+
+function Set-AuthRecordProperty {
+    param(
+        [Parameter(Mandatory = $true)]$Record,
+        [Parameter(Mandatory = $true)][string]$Name,
+        $Value
+    )
+
+    if ($Record.PSObject.Properties.Name -contains $Name) {
+        $Record.PSObject.Properties[$Name].Value = $Value
+    }
+    else {
+        $Record | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
+    }
 }
 
 function Get-ObjectPropertyValue {
@@ -483,10 +646,9 @@ function Get-EffectiveUserRole {
     $role = Get-NormalizedRoleName -Role ([string]$UserRecord.role)
     $employeeCode = Get-UserEmployeeCodeValue -UserRecord $UserRecord
 
-    if ($role -eq "admin" -and [string]::IsNullOrWhiteSpace($employeeCode)) {
-        return "superAdmin"
-    }
-
+    # Older data may contain the named bootstrap account with the legacy
+    # "admin" role. Keep that one explicit compatibility case, but never turn
+    # an arbitrary incomplete admin record into a super administrator.
     if ($role -eq "admin" -and [string]$UserRecord.username -eq $bootstrapAdminUsername) {
         return "superAdmin"
     }
@@ -745,6 +907,44 @@ function Test-CurrentUserCanModifyProjectCode {
     return $accessModel.ProjectCodeSet.ContainsKey([string]$ProjectCode)
 }
 
+function Test-CurrentUserCanModifyActiveProjectCodeFromDisk {
+    param(
+        $CurrentUser,
+        [string]$ProjectCode
+    )
+
+    $candidate = ([string]$ProjectCode).Trim()
+    if ($null -eq $CurrentUser -or [string]::IsNullOrWhiteSpace($candidate)) {
+        return $false
+    }
+
+    $role = Get-NormalizedRoleName -Role ([string]$CurrentUser.role)
+    $employeeCode = if ($CurrentUser.PSObject.Properties.Name -contains "employeeCode") {
+        ([string]$CurrentUser.employeeCode).Trim()
+    }
+    else {
+        ""
+    }
+
+    foreach ($project in @(Read-ProjectsFromDisk)) {
+        if ([string]$project.projectCode -ne $candidate -or (Test-ProjectArchived -Project $project)) {
+            continue
+        }
+
+        if ($role -eq "superAdmin") {
+            return $true
+        }
+        if ($role -ne "admin" -or [string]::IsNullOrWhiteSpace($employeeCode)) {
+            return $false
+        }
+
+        return (@(Get-ProjectAdminCodes -Project $project) -contains $employeeCode -or
+            @(Get-ProjectBackupAdminCodes -Project $project) -contains $employeeCode)
+    }
+
+    return $false
+}
+
 function Test-CurrentUserCanManageEntry {
     param(
         $CurrentUser,
@@ -890,7 +1090,7 @@ function Ensure-AuthStorage {
     $sessionsLock = Acquire-ResourceLock -ResourcePath $sessionsFile
     try {
         if (Test-AuthJsonArrayNeedsInitialization -Path $sessionsFile) {
-            Write-JsonAtomic -Path $sessionsFile -Value @()
+            Write-JsonArrayAtomic -Path $sessionsFile -Items @()
             Clear-AuthRuntimeCaches
         }
     }
@@ -935,7 +1135,7 @@ function Ensure-AuthStorage {
                 }
             }
 
-            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Write-JsonArrayAtomic -Path $usersFile -Items $users -Depth 8
             Clear-AuthRuntimeCaches
         }
     }
@@ -963,38 +1163,13 @@ function Read-AuthArrayFileCached {
         return $cacheEntry.Items
     }
 
-    try {
-        $raw = Read-TextFileCached -Path $metadata.Path
-        if ([string]::IsNullOrWhiteSpace($raw) -or $raw.Trim() -eq "null") {
-            return @()
-        }
-
-        $parsed = $raw | ConvertFrom-Json
-        if ($null -eq $parsed) {
-            return @()
-        }
-
-        if (-not ($parsed -is [System.Collections.IEnumerable]) -or ($parsed -is [string])) {
-            $items = @($parsed)
-            $script:AuthArrayFileCache[$cacheKey] = [PSCustomObject]@{
-                LastWriteTicks = $metadata.LastWriteTicks
-                Length         = $metadata.Length
-                Items          = $items
-            }
-            return $items
-        }
-
-        $items = @($parsed)
-        $script:AuthArrayFileCache[$cacheKey] = [PSCustomObject]@{
-            LastWriteTicks = $metadata.LastWriteTicks
-            Length         = $metadata.Length
-            Items          = $items
-        }
-        return $items
+    $items = @(Read-JsonArrayFile -Path $metadata.Path)
+    $script:AuthArrayFileCache[$cacheKey] = [PSCustomObject]@{
+        LastWriteTicks = $metadata.LastWriteTicks
+        Length         = $metadata.Length
+        Items          = $items
     }
-    catch {
-        return @()
-    }
+    return $items
 }
 
 function Get-Users {
@@ -1127,6 +1302,53 @@ function Get-SessionTokenFromCookieHeader {
     return $null
 }
 
+function Get-AuthSyncVersion {
+    # Authentication depends on users.json and sessions.json, not on the
+    # global business-data revision. Keying this cache to sync-state.version
+    # made every entry/history/project change reread both auth files over SMB.
+    # FileStore metadata is itself bounded and is explicitly cleared whenever
+    # an auth/directory change is observed, so this key remains current without
+    # coupling authentication to unrelated mutations.
+    if (Get-Command -Name Get-FileMetadataSnapshot -ErrorAction SilentlyContinue) {
+        try {
+            $usersMetadata = Get-FileMetadataSnapshot -Path $usersFile
+            $sessionsMetadata = Get-FileMetadataSnapshot -Path $sessionsFile
+            $usersKey = if ($null -eq $usersMetadata) {
+                "missing"
+            }
+            else {
+                "{0}:{1}" -f [string]$usersMetadata.LastWriteTicks, [string]$usersMetadata.Length
+            }
+            $sessionsKey = if ($null -eq $sessionsMetadata) {
+                "missing"
+            }
+            else {
+                "{0}:{1}" -f [string]$sessionsMetadata.LastWriteTicks, [string]$sessionsMetadata.Length
+            }
+            return "files|$usersKey|$sessionsKey"
+        }
+        catch {
+            # A transient metadata failure falls back to the existing sync
+            # identity. The short authenticated-request TTL still bounds reuse.
+        }
+    }
+
+    if (Get-Command -Name Get-SyncState -ErrorAction SilentlyContinue) {
+        try {
+            $state = Get-SyncState
+            if ($null -ne $state -and $state.PSObject.Properties.Name -contains "version") {
+                return "sync|$([string]$state.version)"
+            }
+        }
+        catch {
+            # Fall back to the short local TTL when metadata and sync state are
+            # both unavailable.
+        }
+    }
+
+    return ""
+}
+
 function Get-AuthenticatedUserFromRequest {
     param($Request)
 
@@ -1137,11 +1359,26 @@ function Get-AuthenticatedUserFromRequest {
 
     $tokenHash = Get-TokenHash -Token $token
     $nowUtc = (Get-Date).ToUniversalTime()
+    $authSyncVersion = Get-AuthSyncVersion
     $cachedAuth = $script:AuthenticatedUserRequestCache[$tokenHash]
     if ($cachedAuth -and $cachedAuth.CachedAtUtc -and $cachedAuth.ExpiresAtUtc) {
         $cacheAgeMs = ($nowUtc - $cachedAuth.CachedAtUtc).TotalMilliseconds
-        if ($cacheAgeMs -lt $script:AuthenticatedUserRequestCacheTtlMs -and $cachedAuth.ExpiresAtUtc -gt $nowUtc) {
+        $syncVersionMatches = [string]::IsNullOrWhiteSpace($authSyncVersion) -or
+            ([string]$cachedAuth.SyncVersion -eq $authSyncVersion)
+        if ($cacheAgeMs -lt $script:AuthenticatedUserRequestCacheTtlMs -and
+            $cachedAuth.ExpiresAtUtc -gt $nowUtc -and
+            $syncVersionMatches) {
             return $cachedAuth.User
+        }
+
+        if (-not $syncVersionMatches) {
+            # Another backend published an auth change. Force the next lookup
+            # through current sessions/users data instead of 30-second metadata.
+            Clear-CachedFileContent -Path $sessionsFile
+            Clear-CachedFileContent -Path $usersFile
+            $script:AuthArrayFileCache = @{}
+            $script:UserLookupCache = $null
+            $script:ProjectAccessModelCache = @{}
         }
     }
 
@@ -1185,6 +1422,7 @@ function Get-AuthenticatedUserFromRequest {
     $script:AuthenticatedUserRequestCache[$tokenHash] = [PSCustomObject]@{
         CachedAtUtc  = $nowUtc
         ExpiresAtUtc = [DateTime]::Parse([string]$session.expiresAtUtc).ToUniversalTime()
+        SyncVersion  = $authSyncVersion
         User         = $projection
     }
 
@@ -1232,7 +1470,7 @@ function New-SessionForUser {
             issuedAtUtc  = $nowUtc.ToString("o")
             expiresAtUtc = $expiresUtc.ToString("o")
         }
-        Write-JsonAtomic -Path $sessionsFile -Value $sessions -Depth 8
+        Write-JsonArrayAtomic -Path $sessionsFile -Items $sessions -Depth 8
         Clear-AuthRuntimeCaches
     }
     finally {
@@ -1252,9 +1490,9 @@ function Revoke-SessionToken {
     $tokenHash = Get-TokenHash -Token $Token
     $lockHandle = Acquire-ResourceLock -ResourcePath $sessionsFile
     try {
-        $sessions = Read-JsonArrayFile -Path $sessionsFile
-        $sessions = $sessions | Where-Object { $_.tokenHash -ne $tokenHash }
-        Write-JsonAtomic -Path $sessionsFile -Value $sessions -Depth 8
+        $sessions = @(Read-JsonArrayFile -Path $sessionsFile)
+        $sessions = @($sessions | Where-Object { $_.tokenHash -ne $tokenHash })
+        Write-JsonArrayAtomic -Path $sessionsFile -Items $sessions -Depth 8
         Clear-AuthRuntimeCaches
     }
     finally {
@@ -1275,7 +1513,7 @@ function Revoke-SessionsForUsername {
 
     $lockHandle = Acquire-ResourceLock -ResourcePath $sessionsFile
     try {
-        $sessions = Read-JsonArrayFile -Path $sessionsFile
+        $sessions = @(Read-JsonArrayFile -Path $sessionsFile)
         $sessions = @($sessions | Where-Object {
             if ($_.username -ne $Username) {
                 return $true
@@ -1287,7 +1525,7 @@ function Revoke-SessionsForUsername {
 
             return $false
         })
-        Write-JsonAtomic -Path $sessionsFile -Value $sessions -Depth 8
+        Write-JsonArrayAtomic -Path $sessionsFile -Items $sessions -Depth 8
         Clear-AuthRuntimeCaches
     }
     finally {
@@ -1307,20 +1545,20 @@ function Set-UserPassword {
 
     $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
     try {
-        $users = Read-JsonArrayFile -Path $usersFile
+        $users = @(Read-JsonArrayFile -Path $usersFile)
         foreach ($user in $users) {
             if ($user.username -eq $Username) {
-                $user.passwordSalt = $secret.passwordSalt
-                $user.passwordHash = $secret.passwordHash
-                $user.passwordIterations = $secret.passwordIterations
-                $user.passwordAlgorithm = $secret.passwordAlgorithm
-                $user.mustChangePassword = $MustChangePassword
+                Set-AuthRecordProperty -Record $user -Name "passwordSalt" -Value $secret.passwordSalt
+                Set-AuthRecordProperty -Record $user -Name "passwordHash" -Value $secret.passwordHash
+                Set-AuthRecordProperty -Record $user -Name "passwordIterations" -Value $secret.passwordIterations
+                Set-AuthRecordProperty -Record $user -Name "passwordAlgorithm" -Value $secret.passwordAlgorithm
+                Set-AuthRecordProperty -Record $user -Name "mustChangePassword" -Value $MustChangePassword
                 $updated = $true
                 break
             }
         }
         if ($updated) {
-            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Write-JsonArrayAtomic -Path $usersFile -Items $users -Depth 8
             Clear-AuthRuntimeCaches
         }
     }
@@ -1344,7 +1582,7 @@ function Set-EmployeeUserPassword {
 
     $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
     try {
-        $users = Read-JsonArrayFile -Path $usersFile
+        $users = @(Read-JsonArrayFile -Path $usersFile)
         $targetUser = $users | Where-Object { $_.username -eq $EmployeeCode } | Select-Object -First 1
 
         if ($null -eq $targetUser) {
@@ -1374,19 +1612,18 @@ function Set-EmployeeUserPassword {
             }
         }
         else {
-            $targetUser.displayName = [string](Get-EmployeeName $EmployeeCode)
-            $targetUser.employeeCode = $EmployeeCode
-            $targetUser.disabled = $false
-            $targetUser.passwordSalt = $secret.passwordSalt
-            $targetUser.passwordHash = $secret.passwordHash
-            $targetUser.passwordIterations = $secret.passwordIterations
-            $targetUser.passwordAlgorithm = $secret.passwordAlgorithm
-            $targetUser.mustChangePassword = $MustChangePassword
+            Set-AuthRecordProperty -Record $targetUser -Name "displayName" -Value ([string](Get-EmployeeName $EmployeeCode))
+            Set-AuthRecordProperty -Record $targetUser -Name "employeeCode" -Value $EmployeeCode
+            Set-AuthRecordProperty -Record $targetUser -Name "passwordSalt" -Value $secret.passwordSalt
+            Set-AuthRecordProperty -Record $targetUser -Name "passwordHash" -Value $secret.passwordHash
+            Set-AuthRecordProperty -Record $targetUser -Name "passwordIterations" -Value $secret.passwordIterations
+            Set-AuthRecordProperty -Record $targetUser -Name "passwordAlgorithm" -Value $secret.passwordAlgorithm
+            Set-AuthRecordProperty -Record $targetUser -Name "mustChangePassword" -Value $MustChangePassword
             $updated = $true
         }
 
         if ($updated) {
-            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Write-JsonArrayAtomic -Path $usersFile -Items $users -Depth 8
             Clear-AuthRuntimeCaches
         }
     }
@@ -1413,7 +1650,7 @@ function Ensure-EmployeeUser {
     )
 
     $effectivePassword = if ([string]::IsNullOrWhiteSpace($InitialPassword)) {
-        "Temp!$EmployeeCode"
+        New-TemporaryPassword
     }
     else {
         $InitialPassword
@@ -1440,7 +1677,7 @@ function Ensure-EmployeeUser {
 
     $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
     try {
-        $users = Read-JsonArrayFile -Path $usersFile
+        $users = @(Read-JsonArrayFile -Path $usersFile)
         $targetUser = $users | Where-Object { $_.username -eq $EmployeeCode } | Select-Object -First 1
 
         if ($null -eq $targetUser) {
@@ -1481,33 +1718,33 @@ function Ensure-EmployeeUser {
             }
         }
         else {
-            $targetUser.displayName = [string]$DisplayName
-            $targetUser.employeeCode = $EmployeeCode
-            $targetUser.role = $effectiveRole
+            Set-AuthRecordProperty -Record $targetUser -Name "displayName" -Value ([string]$DisplayName)
+            Set-AuthRecordProperty -Record $targetUser -Name "employeeCode" -Value $EmployeeCode
+            Set-AuthRecordProperty -Record $targetUser -Name "role" -Value $effectiveRole
             if ($targetUser.PSObject.Properties.Name -contains "timeEntryTypes") {
                 $targetUser.timeEntryTypes = $effectiveTimeEntryTypes
             }
             else {
                 $targetUser | Add-Member -NotePropertyName "timeEntryTypes" -NotePropertyValue $effectiveTimeEntryTypes -Force
             }
-            $targetUser.disabled = $false
+            Set-AuthRecordProperty -Record $targetUser -Name "disabled" -Value $false
             if ($targetUser.PSObject.Properties.Name -contains "gc179Profile") {
                 $targetUser.gc179Profile = $effectiveGc179Profile
             }
             else {
                 $targetUser | Add-Member -NotePropertyName "gc179Profile" -NotePropertyValue $effectiveGc179Profile -Force
             }
-            $targetUser.passwordSalt = $secret.passwordSalt
-            $targetUser.passwordHash = $secret.passwordHash
-            $targetUser.passwordIterations = $secret.passwordIterations
-            $targetUser.passwordAlgorithm = $secret.passwordAlgorithm
-            $targetUser.mustChangePassword = $MustChangePassword
+            Set-AuthRecordProperty -Record $targetUser -Name "passwordSalt" -Value $secret.passwordSalt
+            Set-AuthRecordProperty -Record $targetUser -Name "passwordHash" -Value $secret.passwordHash
+            Set-AuthRecordProperty -Record $targetUser -Name "passwordIterations" -Value $secret.passwordIterations
+            Set-AuthRecordProperty -Record $targetUser -Name "passwordAlgorithm" -Value $secret.passwordAlgorithm
+            Set-AuthRecordProperty -Record $targetUser -Name "mustChangePassword" -Value $MustChangePassword
             $updated = $true
             $reactivated = $true
         }
 
         if ($updated) {
-            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Write-JsonArrayAtomic -Path $usersFile -Items $users -Depth 8
             Clear-AuthRuntimeCaches
         }
     }
@@ -1554,16 +1791,16 @@ function Set-EmployeeUserProfile {
         # The resource lock coordinates writers, but another process may have
         # committed while this process still had an older metadata snapshot.
         Clear-CachedFileContent -Path $usersFile
-        $users = Read-JsonArrayFile -Path $usersFile
+        $users = @(Read-JsonArrayFile -Path $usersFile)
         foreach ($user in $users) {
             if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
                 if ($updateDisplayName) {
-                    $user.displayName = [string]$DisplayName
-                    $user.employeeCode = $EmployeeCode
+                    Set-AuthRecordProperty -Record $user -Name "displayName" -Value ([string]$DisplayName)
+                    Set-AuthRecordProperty -Record $user -Name "employeeCode" -Value $EmployeeCode
                 }
                 if ($updateRole) {
-                    $user.role = $effectiveRole
-                    $user.employeeCode = $EmployeeCode
+                    Set-AuthRecordProperty -Record $user -Name "role" -Value $effectiveRole
+                    Set-AuthRecordProperty -Record $user -Name "employeeCode" -Value $EmployeeCode
                 }
                 if ($updateTimeEntryTypes) {
                     if ($user.PSObject.Properties.Name -contains "timeEntryTypes") {
@@ -1598,7 +1835,7 @@ function Set-EmployeeUserProfile {
         }
 
         if ($updated) {
-            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Write-JsonArrayAtomic -Path $usersFile -Items $users -Depth 8
             Clear-AuthRuntimeCaches
         }
     }
@@ -1654,17 +1891,17 @@ function Disable-EmployeeUser {
 
     $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
     try {
-        $users = Read-JsonArrayFile -Path $usersFile
+        $users = @(Read-JsonArrayFile -Path $usersFile)
         foreach ($user in $users) {
             if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
-                $user.disabled = $true
+                Set-AuthRecordProperty -Record $user -Name "disabled" -Value $true
                 $updated = $true
                 break
             }
         }
 
         if ($updated) {
-            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Write-JsonArrayAtomic -Path $usersFile -Items $users -Depth 8
             Clear-AuthRuntimeCaches
         }
     }
@@ -1684,17 +1921,17 @@ function Restore-EmployeeUser {
 
     $lockHandle = Acquire-ResourceLock -ResourcePath $usersFile
     try {
-        $users = Read-JsonArrayFile -Path $usersFile
+        $users = @(Read-JsonArrayFile -Path $usersFile)
         foreach ($user in $users) {
             if ($user.username -eq $EmployeeCode -and (Test-EmployeeUserRecord -UserRecord $user -EmployeeCode $EmployeeCode)) {
-                $user.disabled = $false
+                Set-AuthRecordProperty -Record $user -Name "disabled" -Value $false
                 $updated = $true
                 break
             }
         }
 
         if ($updated) {
-            Write-JsonAtomic -Path $usersFile -Value $users -Depth 8
+            Write-JsonArrayAtomic -Path $usersFile -Items $users -Depth 8
             Clear-AuthRuntimeCaches
         }
     }

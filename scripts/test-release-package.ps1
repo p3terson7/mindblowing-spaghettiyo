@@ -135,6 +135,7 @@ try {
     Expand-Archive -LiteralPath $releasePath -DestinationPath $expandedRelease -Force
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/admin/backend/lib/ControlService.ps1") -PathType Leaf) -Message "runtime must include guarded backend service control"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/admin/backend/services/RouteDispatchService.ps1") -PathType Leaf) -Message "runtime must include required untracked application files"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/admin/backend/services/DataSchemaService.ps1") -PathType Leaf) -Message "runtime must include the data schema guard"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/admin/frontend/assets/saphir-logo.png") -PathType Leaf) -Message "runtime UI must include the optimized SAPHIR logo"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "docs/GC179.pdf") -PathType Leaf) -Message "runtime must include the GC179 template"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "data"))) -Message "runtime ZIP must exclude data"

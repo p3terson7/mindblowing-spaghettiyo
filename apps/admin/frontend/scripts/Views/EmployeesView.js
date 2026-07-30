@@ -3152,6 +3152,15 @@ function getEmployeeByCode(employeeCode) {
   return employeesViewState.employees.find(employee => employee.code === employeeCode) || null;
 }
 
+window.rerenderEmployeesViewForLanguageChange = function () {
+  const projects = Array.isArray(employeesViewState.entryLookups && employeesViewState.entryLookups.projects)
+    ? employeesViewState.entryLookups.projects
+    : [];
+  populateEmployeesProjectFilter(projects);
+  employeesViewState.employeeAnalyticsSignature = "";
+  applyEmployeeSearchFilter();
+};
+
 async function openPeopleProjectFilter(employeeCode, projectCode) {
   if (typeof showView === "function") {
     showView("employeesView");

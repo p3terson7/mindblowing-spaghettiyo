@@ -3,6 +3,12 @@ let currentProjectFilter = "6M";
 let currentProjectCode = null;
 let pendingProjectChartFrameId = null;
 let pendingProjectInsightFrameId = null;
+let pendingProjectDetailTimerId = null;
+let pendingProjectDetailRequest = null;
+let projectDetailRequestVersion = 0;
+let projectPortfolioSearchTimerId = null;
+const PROJECT_DETAIL_REQUEST_DELAY_MS = 90;
+const PROJECT_PORTFOLIO_SEARCH_DEBOUNCE_MS = 140;
 const projectInsightChartInstances = {};
 const projectPalette = ["#0868d7", "#16865a", "#7558d8", "#008994", "#c27a00", "#c43840", "#c94f8a", "#4f72d8", "#7f6b52"];
 const projectsViewState = {
@@ -710,9 +716,48 @@ function renderProjectInsights(projects) {
 }
 
 function clearProjectDetailCache() {
+  supersedeProjectDetailRequests();
   Object.keys(projectDetailCache).forEach(cacheKey => {
     delete projectDetailCache[cacheKey];
   });
+}
+
+function supersedeProjectDetailRequests() {
+  projectDetailRequestVersion += 1;
+
+  if (pendingProjectDetailTimerId !== null) {
+    window.clearTimeout(pendingProjectDetailTimerId);
+    pendingProjectDetailTimerId = null;
+  }
+
+  if (pendingProjectDetailRequest && pendingProjectDetailRequest.controller) {
+    pendingProjectDetailRequest.controller.abort();
+  }
+  pendingProjectDetailRequest = null;
+  return projectDetailRequestVersion;
+}
+
+function isCurrentProjectDetailRequest(requestVersion, projectCode, filterPeriod) {
+  return requestVersion === projectDetailRequestVersion
+    && String(projectCode || "") === String(currentProjectCode || "")
+    && String(filterPeriod || "") === String(currentProjectFilter || "");
+}
+
+function scheduleProjectDetailStats(projectCode, filterPeriod = "all") {
+  const requestVersion = supersedeProjectDetailRequests();
+  pendingProjectDetailTimerId = window.setTimeout(() => {
+    pendingProjectDetailTimerId = null;
+    loadProjectDetailStats(projectCode, filterPeriod, { requestVersion });
+  }, PROJECT_DETAIL_REQUEST_DELAY_MS);
+}
+
+function invalidateProjectLookupCaches() {
+  if (typeof clearOvertimeEntryLookupCache === "function") {
+    clearOvertimeEntryLookupCache();
+  }
+  if (typeof clearScopedProjectLookupCache === "function") {
+    clearScopedProjectLookupCache();
+  }
 }
 
 function getProjectDetailCacheKey(projectCode, filterPeriod) {
@@ -825,22 +870,45 @@ function buildProjectStatsUrl(projectCode, filterPeriod) {
   return `${apiUrl}stats/projects/${projectCode}${query ? `?${query}` : ""}`;
 }
 
-async function loadProjectDetailStats(projectCode, filterPeriod = "all") {
+async function loadProjectDetailStats(projectCode, filterPeriod = "all", options = {}) {
+  const requestVersion = Number.isInteger(options.requestVersion)
+    ? options.requestVersion
+    : supersedeProjectDetailRequests();
   const cacheKey = getProjectDetailCacheKey(projectCode, filterPeriod);
   if (projectDetailCache[cacheKey]) {
-    renderProjectDetail(projectDetailCache[cacheKey]);
-    return;
+    if (isCurrentProjectDetailRequest(requestVersion, projectCode, filterPeriod)) {
+      renderProjectDetail(projectDetailCache[cacheKey]);
+    }
+    return projectDetailCache[cacheKey];
   }
+
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  pendingProjectDetailRequest = {
+    controller,
+    requestVersion,
+  };
 
   try {
     setLoadingState("projectDetailContainer", "detail", 1);
-    const response = await fetch(buildProjectStatsUrl(projectCode, filterPeriod));
+    const response = await fetch(buildProjectStatsUrl(projectCode, filterPeriod), controller ? { signal: controller.signal } : undefined);
     const data = await parseResponse(response);
+    if (!isCurrentProjectDetailRequest(requestVersion, projectCode, filterPeriod)) {
+      return null;
+    }
     projectDetailCache[cacheKey] = data;
     renderProjectDetail(data);
+    return data;
   } catch (error) {
+    if ((error && error.name === "AbortError") || !isCurrentProjectDetailRequest(requestVersion, projectCode, filterPeriod)) {
+      return null;
+    }
     console.error("Error loading project detail stats:", error);
     document.getElementById("projectDetailContainer").innerHTML = createEmptyState(t("projects.statsUnavailable"));
+    return null;
+  } finally {
+    if (pendingProjectDetailRequest && pendingProjectDetailRequest.requestVersion === requestVersion) {
+      pendingProjectDetailRequest = null;
+    }
   }
 }
 
@@ -942,6 +1010,15 @@ function renderProjectSummaryCards(projectDetails) {
   }).join("");
 }
 
+function updateActiveProjectSummaryCard() {
+  document.querySelectorAll("#projectsSummaryContainer .project-summary-card").forEach(card => {
+    card.classList.toggle(
+      "is-active",
+      String(card.getAttribute("data-project-code") || "") === String(currentProjectCode || "")
+    );
+  });
+}
+
 function renderProjectSummaryCard(detail) {
   const total = secondsToDurationLabel(timeStringToSeconds(detail.totalOvertime || "00:00:00"));
   const minValue = secondsToDurationLabel(timeStringToSeconds(detail.minOvertime || "00:00:00"));
@@ -990,8 +1067,9 @@ function applyProjectPortfolioSearch(options = {}) {
     currentProjectCode = visibleProjectOrder.length > 0 ? visibleProjectOrder[0].projectCode : null;
     if (options.updateDetail) {
       if (currentProjectCode) {
-        loadProjectDetailStats(currentProjectCode, currentProjectFilter);
+        scheduleProjectDetailStats(currentProjectCode, currentProjectFilter);
       } else {
+        supersedeProjectDetailRequests();
         document.getElementById("projectDetailContainer").innerHTML = createEmptyState(t("projects.noMatchingProjects"));
       }
     }
@@ -1176,12 +1254,7 @@ async function submitProjectEditor() {
       throw new Error(t("projects.renameInUse"));
     }
     await parseResponse(response);
-    if (typeof fetchOvertimeEntryLookups === "function") {
-      await fetchOvertimeEntryLookups(true);
-    }
-    if (typeof fetchScopedProjects === "function") {
-      await fetchScopedProjects(true);
-    }
+    invalidateProjectLookupCaches();
     const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
     if (modal) {
       modal.hide();
@@ -1217,12 +1290,7 @@ async function archiveProject(project) {
       method: "DELETE",
     });
     await parseResponse(response);
-    if (typeof fetchOvertimeEntryLookups === "function") {
-      await fetchOvertimeEntryLookups(true);
-    }
-    if (typeof fetchScopedProjects === "function") {
-      await fetchScopedProjects(true);
-    }
+    invalidateProjectLookupCaches();
     if (currentProjectCode === project.projectCode) {
       currentProjectCode = null;
     }
@@ -1258,12 +1326,7 @@ async function deleteProject(project) {
       throw new Error(t("projects.deleteInUse"));
     }
     await parseResponse(response);
-    if (typeof fetchOvertimeEntryLookups === "function") {
-      await fetchOvertimeEntryLookups(true);
-    }
-    if (typeof fetchScopedProjects === "function") {
-      await fetchScopedProjects(true);
-    }
+    invalidateProjectLookupCaches();
     if (currentProjectCode === project.projectCode) {
       currentProjectCode = null;
     }
@@ -1419,13 +1482,19 @@ document.getElementById("projectsSummaryContainer").addEventListener("click", ev
   const projectCode = projectCard.getAttribute("data-project-code");
   if (projectCode) {
     currentProjectCode = projectCode;
-    renderProjectSummaryCards(projectsViewState.projects);
-    loadProjectDetailStats(projectCode, currentProjectFilter);
+    updateActiveProjectSummaryCard();
+    scheduleProjectDetailStats(projectCode, currentProjectFilter);
   }
 });
 
 document.getElementById("projectPortfolioSearchInput").addEventListener("input", () => {
-  applyProjectPortfolioSearch({ updateDetail: true });
+  if (projectPortfolioSearchTimerId !== null) {
+    window.clearTimeout(projectPortfolioSearchTimerId);
+  }
+  projectPortfolioSearchTimerId = window.setTimeout(() => {
+    projectPortfolioSearchTimerId = null;
+    applyProjectPortfolioSearch({ updateDetail: true });
+  }, PROJECT_PORTFOLIO_SEARCH_DEBOUNCE_MS);
 });
 
 document.getElementById("projectDetailContainer").addEventListener("click", event => {
@@ -1598,3 +1667,21 @@ window.addEventListener("app:theme-changed", () => {
   renderProjectMultiLineChart(projectsViewState.trends || {});
   renderProjectInsights(projectsViewState.projects || []);
 });
+
+window.rerenderProjectsViewForLanguageChange = function () {
+  projectsViewState.portfolioSearch = getProjectPortfolioSearchValue();
+  syncProjectRangeButtons();
+  syncProjectCustomRangeInputs();
+  renderProjectSummaryCards(projectsViewState.projects || []);
+  renderProjectMultiLineChart(projectsViewState.trends || {});
+  renderProjectInsights(projectsViewState.projects || []);
+
+  const cacheKey = currentProjectCode
+    ? getProjectDetailCacheKey(currentProjectCode, currentProjectFilter)
+    : "";
+  if (cacheKey && projectDetailCache[cacheKey]) {
+    renderProjectDetail(projectDetailCache[cacheKey]);
+  } else if (!currentProjectCode) {
+    document.getElementById("projectDetailContainer").innerHTML = createEmptyState(t("projects.selectToInspect"));
+  }
+};

@@ -17,7 +17,8 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/dashboard
         respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
     }
     catch {
-        respondWithError $response 500 "Unable to build dashboard data: $($_.Exception.Message)"
+        Write-Warning ("Unable to build dashboard data: {0}" -f $_.Exception.Message)
+        respondWithError $response 500 "Unable to build dashboard data."
     }
     continue
 }
@@ -36,10 +37,11 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/approvals
 
     try {
         $payload = @(Get-ApprovalsEntriesModel -CurrentUser $currentUser)
-        respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
+        respondWithSuccess $response (ConvertTo-Json -InputObject $payload -Depth 8)
     }
     catch {
-        respondWithError $response 500 "Unable to build approvals data: $($_.Exception.Message)"
+        Write-Warning ("Unable to build approvals data: {0}" -f $_.Exception.Message)
+        respondWithError $response 500 "Unable to build approvals data."
     }
     continue
 }
@@ -65,7 +67,8 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/review/bo
         respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
     }
     catch {
-        respondWithError $response 500 "Unable to build review data: $($_.Exception.Message)"
+        Write-Warning ("Unable to build review data: {0}" -f $_.Exception.Message)
+        respondWithError $response 500 "Unable to build review data."
     }
     continue
 }

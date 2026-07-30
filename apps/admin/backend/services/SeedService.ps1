@@ -323,7 +323,7 @@ function New-DemoOvertimeEntries {
             foreach ($entry in $entriesToAdd) {
                 $existingEntries += $entry
             }
-            Write-JsonAtomic -Path $dataFile -Value $existingEntries -Depth 8
+            Write-JsonArrayAtomic -Path $dataFile -Items $existingEntries -Depth 8
         }
         finally {
             Release-ResourceLock -LockHandle $lockHandle
@@ -340,7 +340,7 @@ function New-DemoOvertimeEntries {
 
     if ($entryCount -gt 0) {
         $historyMessage = "Generated <strong>$entryCount</strong> demo overtime entries for <strong>$($writtenEmployees.Count)</strong> employees across <strong>$($usedProjectCodes.Keys.Count)</strong> projects."
-        $null = logHistory "Seed" $historyMessage "Demo data"
+        $null = logHistory "Seed" $historyMessage "Demo data" -PublishChange:$false
         $null = Publish-DataChange -Category "seed" -Resource $batchId
     }
 
