@@ -1073,6 +1073,13 @@ function Get-Gc179ImportEntryFingerprint {
         [void]$values.Add(("{0}={1}" -f $propertyName, $propertyValue.Replace("|", "%7C")))
     }
 
+    # Preserve fingerprints written by older releases, while treating a comment
+    # added later through entry editing as a material change that blocks undo.
+    if ($Entry.PSObject.Properties.Name -contains "workComment") {
+        $workComment = [string]$Entry.workComment
+        [void]$values.Add(("workComment={0}" -f $workComment.Replace("|", "%7C")))
+    }
+
     [void]$values.Add(("components={0}" -f (Get-Gc179ImportDurationSignature -Entry $Entry)))
     return Get-Gc179ImportSha256 -Value ([string]::Join("|", @($values.ToArray())))
 }

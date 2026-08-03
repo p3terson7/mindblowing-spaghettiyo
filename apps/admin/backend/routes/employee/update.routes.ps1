@@ -21,6 +21,10 @@
             $statusProvided = ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "status"))
             $requestedStatus = ""
             $payloadEntryType = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "entryType")) { ([string]$payload.entryType).Trim().ToLowerInvariant() } else { "" }
+            $workCommentProvided = ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "workComment"))
+            $payloadWorkComment = if ($workCommentProvided) { ([string]$payload.workComment).Trim() } else { "" }
+            $diverseSummaryProvided = ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "diverseSummary"))
+            $payloadDiverseSummary = if ($diverseSummaryProvided) { ([string]$payload.diverseSummary).Trim() } else { "" }
 
             if ([string]::IsNullOrWhiteSpace($date) -or ([string]::IsNullOrWhiteSpace($entryId) -and [string]::IsNullOrWhiteSpace($originalPunchIn))) {
                 respondWithError $response 400 "Missing required identifier: date and entryId/originalPunchIn are required."
@@ -141,10 +145,12 @@
                 $originalOvertimeCode = if ($existingEntry.overtimeCode) { [string]$existingEntry.overtimeCode } else { "" }
                 $originalPaymentOption = if ($existingEntry.paymentOption) { [string]$existingEntry.paymentOption } else { "cash" }
                 $originalReasonCode = if ($existingEntry.reasonCode) { [string]$existingEntry.reasonCode } else { "" }
+                $workCommentExists = ($existingEntry.PSObject.Properties.Name -contains "workComment")
+                $originalWorkComment = if ($workCommentExists) { ([string]$existingEntry.workComment).Trim() } else { "" }
                 $originalStatus = if ($existingEntry.status) { ([string]$existingEntry.status).ToLowerInvariant() } else { "pending" }
                 $existingEntryType = if ($existingEntry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$existingEntry.entryType)) { ([string]$existingEntry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
                 $originalDiverseReason = if ($existingEntry.PSObject.Properties.Name -contains "diverseReason") { [string]$existingEntry.diverseReason } else { "" }
-                $originalDiverseSummary = if ($existingEntry.PSObject.Properties.Name -contains "diverseSummary") { [string]$existingEntry.diverseSummary } else { "" }
+                $originalDiverseSummary = if ($existingEntry.PSObject.Properties.Name -contains "diverseSummary") { ([string]$existingEntry.diverseSummary).Trim() } else { "" }
 
                 if (-not [string]::IsNullOrWhiteSpace($payloadEntryType) -and $payloadEntryType -ne $existingEntryType) {
                     respondWithError $response 400 "Entry type cannot be changed after creation."
@@ -153,6 +159,14 @@
 
                 if ($existingEntryType -eq "diverse" -and $payload.PSObject.Properties.Name -contains "diverseReason" -and [string]::IsNullOrWhiteSpace([string]$payload.diverseReason)) {
                     respondWithError $response 400 "Diverse entries require a reason."
+                    continue
+                }
+
+                $submittedComment = if ($existingEntryType -eq "diverse") { $payloadDiverseSummary } else { $payloadWorkComment }
+                $originalComment = if ($existingEntryType -eq "diverse") { $originalDiverseSummary } else { $originalWorkComment }
+                $commentProvided = if ($existingEntryType -eq "diverse") { $diverseSummaryProvided } else { $workCommentProvided }
+                if ($commentProvided -and $submittedComment.Length -gt 1000 -and $submittedComment -ne $originalComment) {
+                    respondWithError $response 400 "Work comments cannot exceed 1000 characters."
                     continue
                 }
 
@@ -211,11 +225,16 @@
                 }
 
                 if ($existingEntryType -eq "diverse" -and $newRoundedPunchOut) {
-                    $nextDiverseSummary = if ($payload.PSObject.Properties.Name -contains "diverseSummary") { [string]$payload.diverseSummary } else { $originalDiverseSummary }
+                    $nextDiverseSummary = if ($diverseSummaryProvided) { $payloadDiverseSummary } else { $originalDiverseSummary }
                     if ([string]::IsNullOrWhiteSpace($nextDiverseSummary)) {
                         respondWithError $response 400 "Completed diverse entries require a work summary."
                         continue
                     }
+                }
+                if ($existingEntryType -ne "diverse" -and $newRoundedPunchOut -and $workCommentProvided -and
+                    -not [string]::IsNullOrWhiteSpace($originalWorkComment) -and [string]::IsNullOrWhiteSpace($payloadWorkComment)) {
+                    respondWithError $response 400 "An existing work comment cannot be cleared from a completed overtime entry."
+                    continue
                 }
 
                 $messages = @()
@@ -248,11 +267,15 @@
                     $messages += "Reason code updated."
                 }
 
+                if ($existingEntryType -ne "diverse" -and $workCommentProvided -and $originalWorkComment -ne $payloadWorkComment) {
+                    $messages += "Work comment updated."
+                }
+
                 if ($existingEntryType -eq "diverse" -and $payload.PSObject.Properties.Name -contains "diverseReason" -and $originalDiverseReason -ne [string]$payload.diverseReason) {
                     $messages += "Diverse reason updated."
                 }
 
-                if ($existingEntryType -eq "diverse" -and $payload.PSObject.Properties.Name -contains "diverseSummary" -and $originalDiverseSummary -ne [string]$payload.diverseSummary) {
+                if ($existingEntryType -eq "diverse" -and $diverseSummaryProvided -and $originalDiverseSummary -ne $payloadDiverseSummary) {
                     $messages += "Diverse summary updated."
                 }
 
@@ -279,6 +302,10 @@
                 if ($existingEntryType -ne "diverse" -and $payload.PSObject.Properties.Name -contains "reasonCode") {
                     Set-EntryPropertyValue -Entry $existingEntry -Name "reasonCode" -Value ([string]$payload.reasonCode)
                 }
+                if ($existingEntryType -ne "diverse" -and $workCommentProvided -and
+                    ($workCommentExists -or -not [string]::IsNullOrWhiteSpace($payloadWorkComment))) {
+                    Set-EntryPropertyValue -Entry $existingEntry -Name "workComment" -Value $payloadWorkComment
+                }
                 if ($existingEntryType -eq "diverse") {
                     Set-EntryPropertyValue -Entry $existingEntry -Name "entryType" -Value "diverse"
                     Set-EntryPropertyValue -Entry $existingEntry -Name "projectCode" -Value ""
@@ -288,8 +315,8 @@
                     if ($payload.PSObject.Properties.Name -contains "diverseReason") {
                         Set-EntryPropertyValue -Entry $existingEntry -Name "diverseReason" -Value ([string]$payload.diverseReason)
                     }
-                    if ($payload.PSObject.Properties.Name -contains "diverseSummary") {
-                        Set-EntryPropertyValue -Entry $existingEntry -Name "diverseSummary" -Value ([string]$payload.diverseSummary)
+                    if ($diverseSummaryProvided) {
+                        Set-EntryPropertyValue -Entry $existingEntry -Name "diverseSummary" -Value $payloadDiverseSummary
                     }
                 }
                 if ($statusProvided) {

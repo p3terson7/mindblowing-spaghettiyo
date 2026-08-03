@@ -17,11 +17,11 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20260729-operation-reduction",
-  dashboard: "scripts/Views/DashboardView.js?v=20260729-operation-reduction",
-  approvals: "scripts/Views/ApprovalsView.js?v=20260729-operation-reduction",
+  employees: "scripts/Views/EmployeesView.js?v=20260803-gc179-codes",
+  dashboard: "scripts/Views/DashboardView.js?v=20260803-work-comments",
+  approvals: "scripts/Views/ApprovalsView.js?v=20260803-work-comments",
   history: "scripts/Views/HistoryView.js?v=20260722-button-busy",
-  projects: "scripts/Views/ProjectsView.js?v=20260729-operation-reduction",
+  projects: "scripts/Views/ProjectsView.js?v=20260803-work-comments",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
@@ -858,6 +858,21 @@ function setSelfGc179ProfileForm(profile, displayName) {
   document.getElementById("selfGc179PositionSelect").value = normalized.position;
   document.getElementById("selfGc179LevelInput").value = normalized.level;
   document.getElementById("selfGc179CompressedWorkWeekInput").checked = Boolean(normalized.compressedWorkWeek);
+  updateSelfGc179MappingPreview();
+}
+
+function updateSelfGc179MappingPreview() {
+  const groupInput = document.getElementById("selfGc179PositionSelect");
+  const subGroupInput = document.getElementById("selfGc179LevelInput");
+  const groupPreview = document.getElementById("selfGc179GroupPreview");
+  const subGroupPreview = document.getElementById("selfGc179SubGroupPreview");
+
+  if (groupPreview) {
+    groupPreview.textContent = normalizeGc179Position(groupInput ? groupInput.value : "");
+  }
+  if (subGroupPreview) {
+    subGroupPreview.textContent = normalizeGc179Echelon(subGroupInput ? subGroupInput.value : "");
+  }
 }
 
 function getSelfGc179ProfileForm(displayName) {
@@ -1613,6 +1628,11 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("selfGc179ProfileSaveButton").addEventListener("click", event => submitSelfGc179Profile(event.currentTarget));
   bindGc179PriFormatter(document.getElementById("selfGc179PriInput"));
   bindGc179PriFormatter(document.getElementById("employeeEditorGc179PriInput"));
+  bindGc179CodeFormatter(document.getElementById("selfGc179PositionSelect"), updateSelfGc179MappingPreview);
+  bindGc179CodeFormatter(document.getElementById("selfGc179LevelInput"), updateSelfGc179MappingPreview);
+  bindGc179CodeFormatter(document.getElementById("employeeEditorGc179PositionSelect"));
+  bindGc179CodeFormatter(document.getElementById("employeeEditorGc179LevelInput"));
+  updateSelfGc179MappingPreview();
   document.getElementById("appLogoutButton").addEventListener("click", event => submitLogout(event.currentTarget));
   document.querySelectorAll("[data-settings-theme]").forEach(button => {
     button.addEventListener("click", () => applyAppTheme(button.getAttribute("data-settings-theme")));

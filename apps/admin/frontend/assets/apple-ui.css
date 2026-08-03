@@ -867,6 +867,68 @@ code {
   height: auto;
 }
 
+.self-work-comment-fields {
+  display: grid;
+  gap: 6px;
+}
+
+.self-work-comment-label {
+  color: var(--label-secondary);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.entry-work-comment {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--separator));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--surface));
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+.entry-work-comment.is-compact {
+  gap: 3px;
+  padding: 6px 7px;
+}
+
+.entry-work-comment-label {
+  color: var(--accent-strong);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.045em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.entry-work-comment-label .fa-comment {
+  margin-right: 3px;
+}
+
+.entry-work-comment-text {
+  color: var(--label-secondary);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.entry-work-comment.is-compact .entry-work-comment-text {
+  font-size: 0.74rem;
+}
+
+.dashboard-entry-col-note,
+.dashboard-supervisor-note {
+  display: grid;
+  gap: 7px;
+}
+
+.people-project-entry-row {
+  align-items: start;
+}
+
 .action-strip.is-live {
   border-color: color-mix(in srgb, var(--live) 34%, var(--separator));
   background:

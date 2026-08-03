@@ -172,8 +172,13 @@ function buildApprovalCard(entry, showActions) {
         <span class="meta-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
         <span class="meta-pill">EMP ${escapeHtml(entry.employeeCode)}</span>
       </div>
-      ${isDiverseEntry(entry) && entry.diverseSummary ? `<div class="review-card-message">${escapeHtml(entry.diverseSummary)}</div>` : ""}
-      ${entry.message ? `<div class="review-card-message">${escapeHtml(entry.message)}</div>` : `<div class="panel-note">${escapeHtml(t("shared.noManagerNote"))}</div>`}
+      ${renderEntryWorkComment(entry)}
+      ${entry.message ? `
+        <div class="review-card-message">
+          <div class="entry-work-comment-label">${escapeHtml(t("shared.managerMessage"))}</div>
+          <div>${escapeHtml(entry.message)}</div>
+        </div>
+      ` : `<div class="panel-note">${escapeHtml(t("shared.noManagerNote"))}</div>`}
       <div class="review-card-actions">
         ${canReview ? `
           <button class="btn btn-success btn-sm approvals-approve-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}</button>

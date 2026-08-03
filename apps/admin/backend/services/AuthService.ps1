@@ -419,32 +419,40 @@ function ConvertTo-Gc179PriText {
     return [string]::Join(" ", @($groups.ToArray()))
 }
 
+function ConvertTo-Gc179HeaderCodeText {
+    param(
+        [AllowNull()][string]$Value,
+        [Parameter(Mandatory = $true)][int]$MaximumLength
+    )
+
+    if ($MaximumLength -lt 1) {
+        return ""
+    }
+
+    $normalized = ([string]$Value).Trim().ToUpperInvariant()
+    $normalized = [System.Text.RegularExpressions.Regex]::Replace($normalized, "\s+", "")
+    $normalized = [System.Text.RegularExpressions.Regex]::Replace($normalized, "[^0-9A-Z._/-]", "")
+    if ($normalized.Length -gt $MaximumLength) {
+        $normalized = $normalized.Substring(0, $MaximumLength)
+    }
+
+    return $normalized
+}
+
 function ConvertTo-Gc179PositionText {
     param([AllowNull()][string]$Value)
 
-    $normalized = (([string]$Value).Trim().ToUpperInvariant() -replace "[\s_-]", "")
-    if ($normalized -eq "CR04" -or $normalized -eq "CR4") {
-        return "CR4"
-    }
-    if ($normalized -eq "AS03" -or $normalized -eq "AS3") {
-        return "AS03"
-    }
-    if ($normalized -eq "AS04" -or $normalized -eq "AS4") {
-        return "AS04"
-    }
-
-    return ""
+    # The GC179 Group field accepts up to six characters. Position codes vary
+    # by employee (for example CR4, AS-03, or STS), so do not use an allowlist.
+    return (ConvertTo-Gc179HeaderCodeText -Value $Value -MaximumLength 6)
 }
 
 function ConvertTo-Gc179EchelonText {
     param([AllowNull()][string]$Value)
 
-    $normalized = ([string]$Value).Trim()
-    if ($normalized -eq "1" -or $normalized -eq "2" -or $normalized -eq "3" -or $normalized -eq "4") {
-        return $normalized
-    }
-
-    return ""
+    # The GC179 Sub-Group field accepts up to ten characters. Student and
+    # indeterminate classifications use different formats, such as SUF-00.
+    return (ConvertTo-Gc179HeaderCodeText -Value $Value -MaximumLength 10)
 }
 
 function ConvertTo-Gc179ProfileObject {
@@ -521,13 +529,23 @@ function ConvertTo-Gc179ProfileObject {
     }
     $compressedWorkWeek = ConvertTo-Gc179BooleanValue -Value $compressedWorkWeekValue -DefaultValue $false
 
+    $normalizedPosition = ConvertTo-Gc179PositionText -Value $position
+    if ([string]::IsNullOrWhiteSpace($normalizedPosition)) {
+        $normalizedPosition = "STS"
+    }
+
+    $normalizedLevel = ConvertTo-Gc179EchelonText -Value $level
+    if ([string]::IsNullOrWhiteSpace($normalizedLevel)) {
+        $normalizedLevel = "SUF-00"
+    }
+
     return [PSCustomObject]@{
         surname            = ConvertTo-Gc179UpperText -Value $surname
         givenName          = ConvertTo-Gc179UpperText -Value $givenName
         initials           = ConvertTo-Gc179UpperText -Value $initials
         pri                = ConvertTo-Gc179PriText -Value $pri
-        position           = ConvertTo-Gc179PositionText -Value $position
-        level              = ConvertTo-Gc179EchelonText -Value $level
+        position           = $normalizedPosition
+        level              = $normalizedLevel
         compressedWorkWeek = [bool]$compressedWorkWeek
     }
 }

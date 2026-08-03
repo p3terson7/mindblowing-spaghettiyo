@@ -31,7 +31,7 @@
   <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260603-empty-timeline" />
   <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260603-empty-timeline" />
   <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260722-button-busy">
-  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20260717-refine">
+  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20260803-work-comments">
 </head>
 <body>
   <div class="app-root">
@@ -157,8 +157,9 @@
                   <input type="text" id="selfDiverseReasonInput" class="form-control form-control-sm" data-i18n-placeholder="self.diverseReasonPlaceholder" placeholder="Reason">
                 </div>
               </div>
-              <div id="selfDiverseEndFields" class="self-diverse-fields self-diverse-summary-fields d-none">
-                <textarea id="selfDiverseSummaryInput" class="form-control form-control-sm" rows="1" data-i18n-placeholder="self.diverseSummaryPlaceholder" placeholder="Summary of work completed"></textarea>
+              <div id="selfWorkCommentFields" class="self-diverse-fields self-diverse-summary-fields self-work-comment-fields d-none">
+                <label for="selfWorkCommentInput" class="self-work-comment-label" data-i18n="self.workCommentLabel">What did you work on?</label>
+                <textarea id="selfWorkCommentInput" class="form-control form-control-sm" rows="2" maxlength="1000" required aria-required="true" data-i18n-placeholder="self.workCommentPlaceholder" placeholder="Briefly describe the work completed"></textarea>
               </div>
             </div>
           </section>
@@ -776,6 +777,11 @@
                 <option value="" data-i18n="shared.loadingReasonCodes">Loading reason codes...</option>
               </select>
             </div>
+            <div class="field-block update-overtime-field">
+              <label for="updateWorkComment" class="form-label" data-i18n="shared.employeeWorkComment">Employee comment</label>
+              <input type="hidden" id="originalWorkComment" />
+              <textarea id="updateWorkComment" class="form-control" rows="4" maxlength="1000"></textarea>
+            </div>
             <div class="field-block">
               <label for="updateEntryStatus" class="form-label" data-i18n="dashboard.tableStatus">Status</label>
               <input type="hidden" id="originalEntryStatus" />
@@ -793,7 +799,7 @@
             <div class="field-block update-diverse-field d-none">
               <label for="updateDiverseSummary" class="form-label" data-i18n="shared.diverseSummary">Work Summary</label>
               <input type="hidden" id="originalDiverseSummary" />
-              <textarea id="updateDiverseSummary" class="form-control" rows="4"></textarea>
+              <textarea id="updateDiverseSummary" class="form-control" rows="4" maxlength="1000"></textarea>
             </div>
             <input type="hidden" id="updateEntryId" />
             <div class="field-block">
@@ -1057,23 +1063,25 @@
                   <input type="text" class="form-control" id="selfGc179PriInput" inputmode="numeric" maxlength="11" placeholder="123 123 123" autocomplete="off">
                 </div>
                 <div class="field-block">
-                  <label for="selfGc179PositionSelect" class="form-label" data-i18n="employees.gc179Position">Position</label>
-                  <select class="form-select" id="selfGc179PositionSelect">
-                    <option value="" data-i18n="employees.gc179PositionPlaceholder">Select position</option>
-                    <option value="CR4">CR4</option>
-                    <option value="AS03">AS03</option>
-                    <option value="AS04">AS04</option>
-                  </select>
+                  <label for="selfGc179PositionSelect" class="form-label" data-i18n="employees.gc179Position">Position (GC179 Group)</label>
+                  <input type="text" class="form-control" id="selfGc179PositionSelect" list="gc179PositionSuggestions" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" data-i18n-placeholder="employees.gc179PositionPlaceholder" placeholder="e.g. STS, AS03">
+                  <datalist id="gc179PositionSuggestions">
+                    <option value="STS"></option>
+                    <option value="CR4"></option>
+                    <option value="AS03"></option>
+                    <option value="AS04"></option>
+                  </datalist>
                 </div>
                 <div class="field-block">
-                  <label for="selfGc179LevelInput" class="form-label" data-i18n="employees.gc179Level">Step</label>
-                  <select class="form-select" id="selfGc179LevelInput">
-                    <option value="" data-i18n="employees.gc179LevelPlaceholder">Select step</option>
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                  </select>
+                  <label for="selfGc179LevelInput" class="form-label" data-i18n="employees.gc179Level">Step (GC179 Sub-Group)</label>
+                  <input type="text" class="form-control" id="selfGc179LevelInput" list="gc179LevelSuggestions" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" data-i18n-placeholder="employees.gc179LevelPlaceholder" placeholder="e.g. SUF-00, 1">
+                  <datalist id="gc179LevelSuggestions">
+                    <option value="SUF-00"></option>
+                    <option value="1"></option>
+                    <option value="2"></option>
+                    <option value="3"></option>
+                    <option value="4"></option>
+                  </datalist>
                 </div>
               </div>
               <div class="gc179-workweek-options">
@@ -1088,10 +1096,10 @@
               <span><strong data-i18n="employees.gc179Department">Department</strong> GRC-RCMP</span>
               <span><strong data-i18n="employees.gc179Branch">Branch</strong> CDIV-PTSO-GEEM</span>
               <span><strong data-i18n="employees.gc179Paylist">Pay List</strong> 0337</span>
-              <span><strong data-i18n="employees.gc179Group">Group</strong> STS</span>
-              <span><strong data-i18n="employees.gc179SubGroup">Sub-Group</strong> SUF-00</span>
+              <span><strong data-i18n="employees.gc179Group">Group</strong> <output id="selfGc179GroupPreview">STS</output></span>
+              <span><strong data-i18n="employees.gc179SubGroup">Sub-Group</strong> <output id="selfGc179SubGroupPreview">SUF-00</output></span>
             </div>
-            <p class="panel-note mb-0" data-i18n="self.gc179ProfileHint">These values are used when generating your GC179 form. Organization fields are filled automatically.</p>
+            <p class="panel-note mb-0" data-i18n="self.gc179ProfileHint">These values are used when generating your GC179 form. Department, branch, and pay list are filled automatically.</p>
           </form>
         </div>
         <div class="modal-footer">
@@ -1163,23 +1171,12 @@
                   <input type="text" class="form-control" id="employeeEditorGc179PriInput" inputmode="numeric" maxlength="11" placeholder="123 123 123" autocomplete="off">
                 </div>
                 <div class="field-block">
-                  <label for="employeeEditorGc179PositionSelect" class="form-label" data-i18n="employees.gc179Position">Position</label>
-                  <select class="form-select" id="employeeEditorGc179PositionSelect">
-                    <option value="" data-i18n="employees.gc179PositionPlaceholder">Select position</option>
-                    <option value="CR4">CR4</option>
-                    <option value="AS03">AS03</option>
-                    <option value="AS04">AS04</option>
-                  </select>
+                  <label for="employeeEditorGc179PositionSelect" class="form-label" data-i18n="employees.gc179Position">Position (GC179 Group)</label>
+                  <input type="text" class="form-control" id="employeeEditorGc179PositionSelect" list="gc179PositionSuggestions" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" data-i18n-placeholder="employees.gc179PositionPlaceholder" placeholder="e.g. STS, AS03">
                 </div>
                 <div class="field-block">
-                  <label for="employeeEditorGc179LevelInput" class="form-label" data-i18n="employees.gc179Level">Step</label>
-                  <select class="form-select" id="employeeEditorGc179LevelInput">
-                    <option value="" data-i18n="employees.gc179LevelPlaceholder">Select step</option>
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                  </select>
+                  <label for="employeeEditorGc179LevelInput" class="form-label" data-i18n="employees.gc179Level">Step (GC179 Sub-Group)</label>
+                  <input type="text" class="form-control" id="employeeEditorGc179LevelInput" list="gc179LevelSuggestions" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" data-i18n-placeholder="employees.gc179LevelPlaceholder" placeholder="e.g. SUF-00, 1">
                 </div>
               </div>
               <div class="gc179-workweek-options">
@@ -1277,10 +1274,10 @@
       ? window.location.origin + "/"
       : "http://localhost:8081/";
   </script>
-  <script src="scripts/I18n.js?v=20260720-project-labels"></script>
-  <script src="scripts/Utilities.js?v=20260722-button-busy"></script>
-  <script src="scripts/AppShell.js?v=20260729-operation-reduction"></script>
+  <script src="scripts/I18n.js?v=20260803-gc179-codes"></script>
+  <script src="scripts/Utilities.js?v=20260803-gc179-codes"></script>
+  <script src="scripts/AppShell.js?v=20260803-gc179-codes"></script>
   <script src="scripts/Views/ViewSwitching.js?v=20260722-button-busy"></script>
-  <script src="scripts/Views/SelfView.js?v=20260729-operation-reduction"></script>
+  <script src="scripts/Views/SelfView.js?v=20260803-work-comments"></script>
 </body>
 </html>

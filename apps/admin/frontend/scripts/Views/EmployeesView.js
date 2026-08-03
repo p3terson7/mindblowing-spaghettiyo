@@ -2233,6 +2233,7 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
       const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
       const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
       const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
+      const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
       const statusAttribute = ` data-status="${escapeHtml(entry.status || "pending")}"`;
       const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
       const employeeCodeAttribute = ` data-employee-code="${escapeHtml(normalizedEmployeeCode)}"`;
@@ -2248,7 +2249,7 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
         : "";
       const manageButtons = canModify
         ? `
-          <button type="button" class="btn btn-outline-secondary btn-sm action-btn people-project-entry-action people-calendar-edit"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
+          <button type="button" class="btn btn-outline-secondary btn-sm action-btn people-project-entry-action people-calendar-edit"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
             <i class="fa-solid fa-pen"></i>
           </button>
           <button type="button" class="btn btn-outline-secondary btn-sm action-btn people-project-entry-action people-calendar-delete"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
@@ -2266,6 +2267,7 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
             <div class="people-project-entry-time mono">${getEntryRoundedTimeRangeMarkup(entry)}</div>
             ${exactTimeLabel ? `<div class="panel-note">${escapeHtml(exactTimeLabel)}</div>` : ""}
             <div class="people-project-entry-context">${escapeHtml(getPeopleProjectEntryContext(entry))}</div>
+            ${renderEntryWorkComment(entry, { compact: true })}
           </div>
           <div class="people-project-entry-side">
             <span class="inline-code-pill">${escapeHtml(duration)}</span>
@@ -2840,6 +2842,7 @@ function renderEmployeeDetail(employee) {
       const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
       const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
       const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
+      const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
       const statusAttribute = ` data-status="${escapeHtml(entry.status || "pending")}"`;
       const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
       const reviewButtons = String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry) && !isEntryForgottenClockOut(entry) && canApprove
@@ -2860,11 +2863,12 @@ function renderEmployeeDetail(employee) {
             <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
           </div>
           <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
+          ${renderEntryWorkComment(entry, { compact: true })}
           ${noteMarkup}
           ${reviewButtons ? `<div class="calendar-entry-actions calendar-entry-actions-review">${reviewButtons}</div>` : ""}
           <div class="calendar-entry-actions calendar-entry-actions-manage">
             ${canModify ? `
-              <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
+              <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
                 <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
               </button>
               <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
@@ -2906,6 +2910,7 @@ function renderEmployeeDetail(employee) {
           const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
           const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
           const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
+          const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
           const statusAttribute = ` data-status="${escapeHtml(entry.status || "pending")}"`;
           const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
           const canModify = canModifyEntry(entry);
@@ -2919,7 +2924,7 @@ function renderEmployeeDetail(employee) {
               <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
               <div class="calendar-entry-actions calendar-entry-actions-manage">
                 ${canModify ? `
-                  <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
+                  <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
                     <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
                   </button>
                   <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">

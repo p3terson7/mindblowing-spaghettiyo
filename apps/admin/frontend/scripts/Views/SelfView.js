@@ -108,13 +108,8 @@ function updateSelfPunchAvailability() {
   const punchType = primaryButton.getAttribute("data-punch-type") || "in";
 
   if (punchType === "out") {
-    const activeEntry = getSelfActiveEntry(selfViewState.entries);
-    if (activeEntry && isDiverseEntry(activeEntry)) {
-      const summaryInput = document.getElementById("selfDiverseSummaryInput");
-      primaryButton.disabled = !summaryInput || !String(summaryInput.value || "").trim();
-      return;
-    }
-    primaryButton.disabled = false;
+    const workCommentInput = document.getElementById("selfWorkCommentInput");
+    primaryButton.disabled = !workCommentInput || !String(workCommentInput.value || "").trim();
     return;
   }
 
@@ -138,7 +133,7 @@ function syncSelfEntryTypeControls() {
   const typeShell = document.getElementById("selfEntryTypeShell");
   const overtimeSelectors = document.getElementById("selfOvertimeSelectors");
   const diverseStartFields = document.getElementById("selfDiverseStartFields");
-  const diverseEndFields = document.getElementById("selfDiverseEndFields");
+  const workCommentFields = document.getElementById("selfWorkCommentFields");
   const allowedTypes = getAllowedSelfEntryTypes();
   const shouldShowTypeSelect = allowedTypes.length > 1;
 
@@ -168,8 +163,8 @@ function syncSelfEntryTypeControls() {
   if (diverseStartFields) {
     diverseStartFields.classList.toggle("d-none", selfViewState.selectedEntryType !== "diverse");
   }
-  if (diverseEndFields) {
-    diverseEndFields.classList.add("d-none");
+  if (workCommentFields) {
+    workCommentFields.classList.add("d-none");
   }
 
   persistSelfSelections();
@@ -649,7 +644,7 @@ function updateSelfStatus(entries) {
   const heroText = document.getElementById("selfHeroText");
   const selectionSummary = document.getElementById("selfSelectionSummary");
   const punchSelectors = document.getElementById("selfPunchSelectors");
-  const diverseEndFields = document.getElementById("selfDiverseEndFields");
+  const workCommentFields = document.getElementById("selfWorkCommentFields");
   const latestEntry = getLatestEntry(entries);
   const activeEntry = getSelfActiveEntry(entries);
 
@@ -684,8 +679,8 @@ function updateSelfStatus(entries) {
       selectionSummary.textContent = getEntryContextLabel(activeEntry);
     }
     punchSelectors.classList.add("d-none");
-    if (diverseEndFields) {
-      diverseEndFields.classList.toggle("d-none", !isDiverseEntry(activeEntry));
+    if (workCommentFields) {
+      workCommentFields.classList.remove("d-none");
     }
     if (heroText) {
       heroText.textContent = t("self.hero.live");
@@ -697,8 +692,8 @@ function updateSelfStatus(entries) {
   primaryButton.textContent = selfViewState.selectedEntryType === "diverse" ? t("self.startDiverse") : t("self.startOvertime");
   primaryButton.dataset.punchType = "in";
   punchSelectors.classList.remove("d-none");
-  if (diverseEndFields) {
-    diverseEndFields.classList.add("d-none");
+  if (workCommentFields) {
+    workCommentFields.classList.add("d-none");
   }
   syncSelfEntryTypeControls();
   if (selectionSummary) {
@@ -824,6 +819,7 @@ function renderSelfEntries(entries) {
           </div>
           <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
           ${exactTimeLabel ? `<div class="calendar-entry-meta">${escapeHtml(exactTimeLabel)}</div>` : ""}
+          ${renderEntryWorkComment(entry, { compact: true })}
           ${note ? `
             <div class="calendar-entry-note${isExpanded ? " is-expanded" : ""}">
               <div class="calendar-entry-note-label">${escapeHtml(t("employees.managerNoteLabel"))}</div>
@@ -948,21 +944,30 @@ async function submitSelfPunch(type) {
   const paymentOption = selfViewState.selectedPaymentOption;
   const reasonCode = selfViewState.selectedReasonCode;
   const diverseReason = String(document.getElementById("selfDiverseReasonInput")?.value || "").trim();
-  const diverseSummary = String(document.getElementById("selfDiverseSummaryInput")?.value || "").trim();
+  const workComment = String(document.getElementById("selfWorkCommentInput")?.value || "").trim();
 
   if (type === "in" && selectedEntryType === "diverse" && !diverseReason) {
     showToast(t("self.diverseReasonRequired"), "info");
     return;
   }
 
-  if (type === "out" && selectedEntryType === "diverse" && !diverseSummary) {
-    showToast(t("self.diverseSummaryRequired"), "info");
+  if (type === "out" && !workComment) {
+    showToast(t(selectedEntryType === "diverse" ? "self.diverseSummaryRequired" : "self.workCommentRequired"), "info");
     return;
   }
 
   if (type === "in" && selectedEntryType !== "diverse" && (!projectCode || !paymentOption)) {
     showToast(t("self.selectionRequired"), "info");
     return;
+  }
+
+  const punchPayload = { type, entryType: selectedEntryType, projectCode, overtimeCode, paymentOption, reasonCode, diverseReason };
+  if (type === "out") {
+    if (selectedEntryType === "diverse") {
+      punchPayload.diverseSummary = workComment;
+    } else {
+      punchPayload.workComment = workComment;
+    }
   }
 
   const confirmationMessage = type === "in" && selectedEntryType === "diverse"
@@ -979,8 +984,8 @@ async function submitSelfPunch(type) {
       reason: escapeHtml(reasonCode || t("shared.reasonCode")),
     })
     : selectedEntryType === "diverse"
-      ? t("self.endDiverseConfirm", { time: escapeHtml(promptTime) })
-      : t("self.endConfirm", { time: escapeHtml(promptTime) });
+      ? t("self.endDiverseConfirm", { time: escapeHtml(promptTime), comment: escapeHtml(workComment) })
+      : t("self.endConfirm", { time: escapeHtml(promptTime), comment: escapeHtml(workComment) });
 
   showSelfConfirmationModal(
     actionLabel,
@@ -990,7 +995,7 @@ async function submitSelfPunch(type) {
         const response = await fetch(apiUrl + "self/punch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type, entryType: selectedEntryType, projectCode, overtimeCode, paymentOption, reasonCode, diverseReason, diverseSummary }),
+          body: JSON.stringify(punchPayload),
         });
         const result = await parseResponse(response);
         const formattedTime = formatTimeString(result.time);
@@ -1003,8 +1008,8 @@ async function submitSelfPunch(type) {
           statusMessageElement.textContent = statusMessage;
         }
         showToast(statusMessage, result && result.requiresClockOutReview ? "warning" : "success");
-        if (selectedEntryType === "diverse" && type === "out") {
-          document.getElementById("selfDiverseSummaryInput").value = "";
+        if (type === "out") {
+          document.getElementById("selfWorkCommentInput").value = "";
         }
         await refreshSelfView();
       } catch (error) {
@@ -1037,7 +1042,7 @@ document.getElementById("selfDiverseReasonInput").addEventListener("input", () =
   updateSelfStatus(selfViewState.entries);
 });
 
-document.getElementById("selfDiverseSummaryInput").addEventListener("input", updateSelfPunchAvailability);
+document.getElementById("selfWorkCommentInput").addEventListener("input", updateSelfPunchAvailability);
 
 document.getElementById("selfOvertimeCodeSelect").addEventListener("change", event => {
   selfViewState.selectedOvertimeCode = event.target.value;

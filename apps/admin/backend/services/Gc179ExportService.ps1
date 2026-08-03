@@ -40,6 +40,16 @@ function Get-Gc179HeaderValues {
         ConvertTo-Gc179ProfileObject -Value $null -DisplayName $displayName
     }
 
+    $group = ConvertTo-Gc179PositionText -Value ([string]$profile.position)
+    if ([string]::IsNullOrWhiteSpace($group)) {
+        $group = "STS"
+    }
+
+    $subGroup = ConvertTo-Gc179EchelonText -Value ([string]$profile.level)
+    if ([string]::IsNullOrWhiteSpace($subGroup)) {
+        $subGroup = "SUF-00"
+    }
+
     return [PSCustomObject]@{
         Month     = [string]$MonthParts.Month
         Year      = [string]$MonthParts.Year
@@ -47,13 +57,15 @@ function Get-Gc179HeaderValues {
         # Official GC179 organizational branch code; this is form data, not the application name.
         Branch    = "CDIV-PTSO-GEEM"
         Paylist   = "0337"
-        Group     = "STS"
-        SubGroup  = "SUF-00"
+        Group     = $group
+        SubGroup  = $subGroup
         Surname   = [string]$profile.surname
         Given     = [string]$profile.givenName
         Initials  = [string]$profile.initials
         PRI       = ConvertTo-Gc179PriText -Value ([string]$profile.pri)
-        Level     = [string]$profile.level
+        # Level/Niveau is a separate GC179 field. SAPHIR currently collects
+        # Poste and Echelon only, which map to Group and Sub-Group respectively.
+        Level     = ""
         WorkWeek  = if ($profile.compressedWorkWeek) { "2" } else { "1" }
     }
 }

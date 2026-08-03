@@ -216,12 +216,37 @@ function filterEntries(entries, searchTerm) {
       entry.entryType,
       entry.diverseReason,
       entry.diverseSummary,
+      entry.workComment,
       getEntryStatusLabel(entry),
       entry.message,
     ].join(" ").toLowerCase();
 
     return tokens.every(token => combinedText.includes(token));
   });
+}
+
+function getEntryWorkComment(entry) {
+  if (!entry || typeof entry !== "object") {
+    return "";
+  }
+
+  const workComment = String(entry.workComment || "").trim();
+  return workComment || String(entry.diverseSummary || "").trim();
+}
+
+function renderEntryWorkComment(entry, options = {}) {
+  const comment = getEntryWorkComment(entry);
+  if (!comment) {
+    return "";
+  }
+
+  const compactClass = options.compact === true ? " is-compact" : "";
+  return `
+    <div class="entry-work-comment${compactClass}" role="note" aria-label="${escapeHtml(t("shared.employeeWorkComment"))}">
+      <div class="entry-work-comment-label"><i class="fa-regular fa-comment" aria-hidden="true"></i> ${escapeHtml(t("shared.employeeWorkComment"))}</div>
+      <div class="entry-work-comment-text">${escapeHtml(comment)}</div>
+    </div>
+  `;
 }
 
 function formatTimeString(timeStr) {
@@ -270,24 +295,44 @@ function getFirstDefinedPropertyValue(source, names) {
   return undefined;
 }
 
-function normalizeGc179Position(value) {
-  const normalized = String(value || "").trim().toUpperCase().replace(/[\s_-]/g, "");
-  if (normalized === "CR04" || normalized === "CR4") {
-    return "CR4";
-  }
-  if (normalized === "AS03" || normalized === "AS3") {
-    return "AS03";
-  }
-  if (normalized === "AS04" || normalized === "AS4") {
-    return "AS04";
-  }
+function normalizeGc179ProfileCode(value, fallback, maxLength) {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9._\/-]/g, "")
+    .slice(0, maxLength)
+    .trim();
+  return normalized || String(fallback || "").trim().toUpperCase();
+}
 
-  return "";
+function normalizeGc179Position(value) {
+  return normalizeGc179ProfileCode(value, "STS", 6);
 }
 
 function normalizeGc179Echelon(value) {
-  const normalized = String(value || "").trim();
-  return ["1", "2", "3", "4"].includes(normalized) ? normalized : "";
+  return normalizeGc179ProfileCode(value, "SUF-00", 10);
+}
+
+function bindGc179CodeFormatter(input, onChange) {
+  if (!input) {
+    return;
+  }
+
+  input.addEventListener("input", () => {
+    const selectionStart = input.selectionStart;
+    const selectionEnd = input.selectionEnd;
+    const uppercaseValue = String(input.value || "").toUpperCase();
+    if (input.value !== uppercaseValue) {
+      input.value = uppercaseValue;
+      if (typeof input.setSelectionRange === "function" && selectionStart != null && selectionEnd != null) {
+        input.setSelectionRange(selectionStart, selectionEnd);
+      }
+    }
+    if (typeof onChange === "function") {
+      onChange(input.value);
+    }
+  });
 }
 
 function formatGc179Pri(value) {

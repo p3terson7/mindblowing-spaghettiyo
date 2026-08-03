@@ -227,19 +227,19 @@ async function main() {
   }
   for (const asset of [
     "assets/styles.css?v=20260722-button-busy",
-    "scripts/Utilities.js?v=20260722-button-busy",
-    "scripts/AppShell.js?v=20260729-operation-reduction",
+    "scripts/Utilities.js?v=20260803-gc179-codes",
+    "scripts/AppShell.js?v=20260803-gc179-codes",
     "scripts/Views/ViewSwitching.js?v=20260722-button-busy",
-    "scripts/Views/SelfView.js?v=20260729-operation-reduction",
+    "scripts/Views/SelfView.js?v=20260803-work-comments",
   ]) {
     assert(indexSource.includes(asset), `The busy-state asset cache key was not updated: ${asset}`);
   }
   const managerViewCacheVersions = {
-    DashboardView: "20260729-operation-reduction",
-    EmployeesView: "20260729-operation-reduction",
-    ApprovalsView: "20260729-operation-reduction",
+    DashboardView: "20260803-work-comments",
+    EmployeesView: "20260803-gc179-codes",
+    ApprovalsView: "20260803-work-comments",
     HistoryView: "20260722-button-busy",
-    ProjectsView: "20260729-operation-reduction",
+    ProjectsView: "20260803-work-comments",
   };
   for (const managerView of Object.keys(managerViewSources)) {
     assert(

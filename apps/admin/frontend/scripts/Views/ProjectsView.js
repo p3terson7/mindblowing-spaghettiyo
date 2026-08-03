@@ -1095,10 +1095,11 @@ function renderProjectEmployeeEntries(entries) {
         return `
           <div class="project-entry-row">
             <span class="project-entry-date">${escapeHtml(formatDateLabel(entry.date))}</span>
-            <span class="project-entry-time mono">
+            <div class="project-entry-time mono">
               ${getEntryRoundedTimeRangeMarkup(entry)}
               ${exactTimeLabel ? `<span class="panel-note d-block">${escapeHtml(exactTimeLabel)}</span>` : ""}
-            </span>
+              ${renderEntryWorkComment(entry, { compact: true })}
+            </div>
             <span class="project-entry-overtime mono">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(entry.overtime)))}</span>
           </div>
         `;

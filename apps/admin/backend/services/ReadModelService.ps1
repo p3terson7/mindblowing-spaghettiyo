@@ -426,6 +426,7 @@ function New-EmployeeEntryProjection {
         overtimeCode  = if ($null -ne $Entry.overtimeCode) { [string]$Entry.overtimeCode } else { "" }
         paymentOption = if ($null -ne $Entry.paymentOption -and -not [string]::IsNullOrWhiteSpace([string]$Entry.paymentOption)) { [string]$Entry.paymentOption } elseif ($entryType -eq "diverse") { "" } else { "cash" }
         reasonCode    = if ($null -ne $Entry.reasonCode) { [string]$Entry.reasonCode } else { "" }
+        workComment   = if ($Entry.PSObject.Properties.Name -contains "workComment") { [string]$Entry.workComment } else { "" }
         diverseReason = if ($Entry.PSObject.Properties.Name -contains "diverseReason") { [string]$Entry.diverseReason } else { "" }
         diverseSummary = if ($Entry.PSObject.Properties.Name -contains "diverseSummary") { [string]$Entry.diverseSummary } else { "" }
         forgottenClockOut = Test-EntryForgottenClockOut -Entry $Entry
@@ -922,6 +923,8 @@ function Get-ProjectStatisticsOverview {
                 punchOut      = $entry.punchOut
                 exactPunchOut = $entry.exactPunchOut
                 overtime      = if ($entry.overtime) { [string]$entry.overtime } else { "00:00:00" }
+                workComment   = if ($entry.PSObject.Properties.Name -contains "workComment") { [string]$entry.workComment } else { "" }
+                diverseSummary = if ($entry.PSObject.Properties.Name -contains "diverseSummary") { [string]$entry.diverseSummary } else { "" }
             })
         }
 

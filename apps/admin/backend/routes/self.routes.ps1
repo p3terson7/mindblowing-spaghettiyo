@@ -155,6 +155,7 @@
 
                 $employeeCode = [string]$currentUser.employeeCode
                 $entryType = "overtime"
+                $workComment = ""
                 $diverseReason = ""
                 $diverseSummary = ""
 
@@ -222,8 +223,15 @@
                     }
                 }
                 elseif ($payload.type -eq "out") {
+                    if ($payload.PSObject.Properties.Name -contains "workComment") {
+                        $workComment = ([string]$payload.workComment).Trim()
+                    }
                     if ($payload.PSObject.Properties.Name -contains "diverseSummary") {
                         $diverseSummary = ([string]$payload.diverseSummary).Trim()
+                    }
+                    if ($workComment.Length -gt 1000 -or $diverseSummary.Length -gt 1000) {
+                        respondWithError $response 400 "Work comments cannot exceed 1000 characters."
+                        continue
                     }
                 }
 
@@ -281,6 +289,7 @@
                                 overtimeCode = if ($entryType -eq "overtime") { $overtimeCode } else { "" }
                                 paymentOption = if ($entryType -eq "overtime") { $paymentOption } else { "" }
                                 reasonCode = if ($entryType -eq "overtime") { $reasonCode } else { "" }
+                                workComment = ""
                                 diverseReason = if ($entryType -eq "diverse") { $diverseReason } else { "" }
                                 diverseSummary = ""
                             }
@@ -297,10 +306,17 @@
                                 respondWithError $response 400 "A work summary is required before ending diverse time."
                                 continue
                             }
+                            if ($activeEntryType -ne "diverse" -and [string]::IsNullOrWhiteSpace($workComment)) {
+                                respondWithError $response 400 "A work comment is required before ending overtime."
+                                continue
+                            }
 
                             if ([string]$activeEntry.date -ne $todayText) {
                                 if ($activeEntryType -eq "diverse") {
                                     Set-EntryPropertyValue -Entry $activeEntry -Name "diverseSummary" -Value $diverseSummary
+                                }
+                                else {
+                                    Set-EntryPropertyValue -Entry $activeEntry -Name "workComment" -Value $workComment
                                 }
                                 Set-EntryForgottenClockOutReview -Entry $activeEntry -AttemptDate $todayText -AttemptTime $exactNowText
                                 $requiresClockOutReview = $true
@@ -308,13 +324,16 @@
                                 $punchResultMessage = "Previous-day clock-out requires supervisor review."
                             }
                             else {
-                                $activeEntry.exactPunchOut = $exactNowText
-                                $activeEntry.punchOut = $roundedNowText
+                                Set-EntryPropertyValue -Entry $activeEntry -Name "exactPunchOut" -Value $exactNowText
+                                Set-EntryPropertyValue -Entry $activeEntry -Name "punchOut" -Value $roundedNowText
                                 $punchInTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchIn)", "yyyy-MM-dd HH:mm:ss", $null)
                                 $punchOutTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchOut)", "yyyy-MM-dd HH:mm:ss", $null)
-                                $activeEntry.overtime = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
+                                Set-EntryPropertyValue -Entry $activeEntry -Name "overtime" -Value (($punchOutTime - $punchInTime).ToString("hh\:mm\:ss"))
                                 if ($activeEntryType -eq "diverse") {
                                     Set-EntryPropertyValue -Entry $activeEntry -Name "diverseSummary" -Value $diverseSummary
+                                }
+                                else {
+                                    Set-EntryPropertyValue -Entry $activeEntry -Name "workComment" -Value $workComment
                                 }
                             }
                         }

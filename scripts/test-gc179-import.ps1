@@ -260,7 +260,8 @@ $script:RoundTripEmployee = [PSCustomObject]@{
         givenName          = "JANE"
         initials           = "JS"
         pri                = "000123456"
-        level              = "2"
+        position           = "STS"
+        level              = "SUF-00"
         compressedWorkWeek = $false
     }
 }
@@ -283,6 +284,18 @@ function Get-Gc179ProfileFromUserRecord {
 function ConvertTo-Gc179ProfileObject {
     param($Value, [string]$DisplayName)
     return $script:RoundTripEmployee.gc179Profile
+}
+
+function ConvertTo-Gc179PositionText {
+    param([string]$Value)
+    $normalized = [System.Text.RegularExpressions.Regex]::Replace(([string]$Value).Trim().ToUpperInvariant(), "[^0-9A-Z._/-]", "")
+    return $normalized.Substring(0, [math]::Min(6, $normalized.Length))
+}
+
+function ConvertTo-Gc179EchelonText {
+    param([string]$Value)
+    $normalized = [System.Text.RegularExpressions.Regex]::Replace(([string]$Value).Trim().ToUpperInvariant(), "[^0-9A-Z._/-]", "")
+    return $normalized.Substring(0, [math]::Min(10, $normalized.Length))
 }
 
 function ConvertTo-Gc179PriText {
@@ -340,6 +353,9 @@ $roundTripPreview = New-Gc179ImportPreview `
 
 Assert-Equal -Expected 1 -Actual $roundTripPreview.entryCount -Message "The import service could not read current export output."
 Assert-Equal -Expected "000 123 456" -Actual $roundTripPreview.header.pri -Message "The GC179 PRI header did not survive export/import."
+Assert-Equal -Expected "STS" -Actual $roundTripPreview.header.group -Message "The employee's position was not exported into the GC179 Group field."
+Assert-Equal -Expected "SUF-00" -Actual $roundTripPreview.header.subGroup -Message "The employee's echelon was not exported into the GC179 Sub-Group field."
+Assert-Equal -Expected "" -Actual $roundTripPreview.header.level -Message "SAPHIR must not duplicate the echelon into the distinct GC179 Level field."
 $roundTripImportedEntry = @($roundTripPreview.entries)[0]
 Assert-Equal -Expected "2026-07-05" -Actual $roundTripImportedEntry.date -Message "The round-trip entry date changed."
 Assert-Equal -Expected "09:15:00" -Actual $roundTripImportedEntry.punchIn -Message "The round-trip start time changed."
@@ -350,6 +366,34 @@ Assert-Equal -Expected "2.0" -Actual $roundTripImportedEntry.gc179Rate -Message 
 Assert-Equal -Expected "262" -Actual $roundTripImportedEntry.overtimeCode -Message "The round-trip overtime code changed."
 Assert-Equal -Expected "leave" -Actual $roundTripImportedEntry.paymentOption -Message "The round-trip payment choice changed."
 Assert-Equal -Expected "B" -Actual $roundTripImportedEntry.reasonCode -Message "The round-trip reason code changed."
+
+$script:RoundTripEmployee.gc179Profile.position = "CR4"
+$script:RoundTripEmployee.gc179Profile.level = "2"
+$nonStudentHeader = Get-Gc179HeaderValues -EmployeeCode "000123456" -MonthParts $roundTripMonth
+Assert-Equal -Expected "CR4" -Actual $nonStudentHeader.Group -Message "A non-student position was not mapped to the GC179 Group field."
+Assert-Equal -Expected "2" -Actual $nonStudentHeader.SubGroup -Message "A non-student echelon was not mapped to the GC179 Sub-Group field."
+Assert-Equal -Expected "" -Actual $nonStudentHeader.Level -Message "The separate GC179 Level field must remain blank."
+
+$script:RoundTripEmployee.gc179Profile = [PSCustomObject]@{
+    surname            = "SMITH"
+    givenName          = "JANE"
+    initials           = "JS"
+    pri                = "000123456"
+    compressedWorkWeek = $false
+}
+$legacyHeader = Get-Gc179HeaderValues -EmployeeCode "000123456" -MonthParts $roundTripMonth
+Assert-Equal -Expected "STS" -Actual $legacyHeader.Group -Message "Legacy profiles should keep the former GC179 Group default."
+Assert-Equal -Expected "SUF-00" -Actual $legacyHeader.SubGroup -Message "Legacy profiles should keep the former GC179 Sub-Group default."
+
+$script:RoundTripEmployee.gc179Profile = [PSCustomObject]@{
+    surname            = "SMITH"
+    givenName          = "JANE"
+    initials           = "JS"
+    pri                = "000123456"
+    position           = "STS"
+    level              = "SUF-00"
+    compressedWorkWeek = $false
+}
 
 # Exercise the validated preview, duplicate detection, durable batch metadata,
 # and undo logic against a disposable employee file. These stubs reproduce the
@@ -755,6 +799,15 @@ try {
         Undo-Gc179ImportBatch -EmployeeCode "000100001" -BatchId $changedBatchId -CurrentUser $undoUser | Out-Null
     } -MessagePattern "changed after import" -Message "Undo must not delete a GC179 entry that someone edited after import."
     Assert-Equal -Expected 1 -Actual @(Read-JsonArrayFile -Path $script:ImportDataFile).Count -Message "A refused undo must preserve the changed employee entry."
+
+    $commentChangedEntries = @(Read-JsonArrayFile -Path $script:ImportDataFile)
+    $commentChangedEntries[0].message = "Validated fixture"
+    $commentChangedEntries[0] | Add-Member -NotePropertyName "workComment" -NotePropertyValue "Added after import" -Force
+    Write-JsonAtomic -Path $script:ImportDataFile -Value $commentChangedEntries -Depth 10
+    Assert-Throws -Action {
+        Undo-Gc179ImportBatch -EmployeeCode "000100001" -BatchId $changedBatchId -CurrentUser $undoUser | Out-Null
+    } -MessagePattern "changed after import" -Message "Undo must not delete a GC179 entry whose work comment was added after import."
+    Assert-Equal -Expected 1 -Actual @(Read-JsonArrayFile -Path $script:ImportDataFile).Count -Message "A refused undo must preserve an imported entry with an edited work comment."
 }
 finally {
     if (Test-Path -LiteralPath $importTestFolder) {

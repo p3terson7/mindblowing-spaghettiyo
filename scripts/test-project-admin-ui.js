@@ -43,11 +43,11 @@ for (const translationKey of [
   assert.strictEqual(occurrences, 2, `${translationKey} must have both English and French translations.`);
 }
 
-assert(appShellSource.includes("EmployeesView.js?v=20260729-operation-reduction"), "EmployeesView cache version was not bumped.");
-assert(appShellSource.includes("DashboardView.js?v=20260729-operation-reduction"), "DashboardView cache version was not bumped.");
-assert(appShellSource.includes("ApprovalsView.js?v=20260729-operation-reduction"), "ApprovalsView cache version was not bumped.");
+assert(appShellSource.includes("EmployeesView.js?v=20260803-gc179-codes"), "EmployeesView cache version was not bumped.");
+assert(appShellSource.includes("DashboardView.js?v=20260803-work-comments"), "DashboardView cache version was not bumped.");
+assert(appShellSource.includes("ApprovalsView.js?v=20260803-work-comments"), "ApprovalsView cache version was not bumped.");
 assert(appShellSource.includes("HistoryView.js?v=20260722-button-busy"), "HistoryView cache version was not bumped.");
-assert(appShellSource.includes("ProjectsView.js?v=20260729-operation-reduction"), "ProjectsView cache version was not bumped.");
+assert(appShellSource.includes("ProjectsView.js?v=20260803-work-comments"), "ProjectsView cache version was not bumped.");
 
 for (const expectedLabel of ['"employees.employeeCode": "HRMIS"', '"employees.employeeCode": "SIGRH"']) {
   assert(i18nSource.includes(expectedLabel), `Missing localized employee identifier label: ${expectedLabel}`);
