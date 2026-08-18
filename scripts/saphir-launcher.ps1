@@ -70,7 +70,9 @@ try {
             Checking          = "Vérification en cours…"
             AppLabel          = "Application"
             DataLabel         = "Données partagées"
+            DistributionLabel = "Réseau de distribution"
             ReleaseLabel      = "Version installée"
+            TargetReleaseLabel = "Version disponible"
             Start             = "_Démarrer SAPHIR"
             Open              = "_Ouvrir SAPHIR"
             Restart           = "_Redémarrer"
@@ -87,9 +89,15 @@ try {
             ConflictDetail    = "Un autre programme utilise le port local de SAPHIR. Il ne sera pas arrêté."
             Available         = "Accessible"
             Unavailable       = "Indisponible"
+            NeedsAttention    = "À vérifier"
             NotConfigured     = "Non configuré"
             NotInstalled      = "Pas encore installée"
             Development       = "Développement"
+            CurrentRelease    = "À jour"
+            UpdateAvailable   = "mise à jour"
+            PreviousFailure   = "échec précédent"
+            UpdateOnStart     = "La version {0} est disponible. Démarrez SAPHIR pour l’installer."
+            UpdateOnRestart   = "La version {0} est disponible. Redémarrez SAPHIR pour l’installer."
             Starting          = "Démarrage de SAPHIR…"
             Restarting        = "Redémarrage de SAPHIR…"
             Stopping          = "Arrêt de SAPHIR…"
@@ -98,6 +106,18 @@ try {
             OpenError         = "Le navigateur n’a pas pu être ouvert."
             LogsError         = "Le dossier des journaux n’a pas pu être ouvert."
             NeedsNetwork      = "Connectez-vous au réseau interne pour installer SAPHIR."
+            DistributionUnavailable = "Le dossier de distribution est inaccessible : {0}. Connectez-vous au réseau interne ou corrigez distribution-root.txt."
+            ManifestMissing   = "Aucune version publiée n’est détectable : {0} est absent. Le ZIP seul ne suffit pas; republiez l’application pour mettre current.json à jour."
+            ManifestUnavailable = "Le pointeur de version ne peut pas être lu : {0}. Vérifiez l’accès au réseau, puis republiez au besoin."
+            ManifestUnreadable = "Le fichier current.json est illisible ou incomplet. Republiez l’application au lieu de modifier ce fichier manuellement."
+            ManifestUnsupported = "Le format de current.json n’est pas pris en charge. Republiez avec le script de packaging actuel."
+            ReleaseIdInvalid  = "Le ReleaseId de current.json est invalide. Republiez avec un nouvel identifiant compatible Windows."
+            ChecksumInvalid   = "La somme de contrôle de la version {0} est invalide. Republiez la version."
+            PackagePathInvalid = "Le chemin du ZIP de la version {0} est invalide. Republiez l’application."
+            DataPathInvalid   = "Le chemin DATA de la version {0} est invalide. Republiez avec le bon DataFolderPath."
+            PackageUnavailable = "current.json annonce la version {0}, mais son ZIP est introuvable : {1}. Republiez cette version ou restaurez le ZIP correspondant."
+            TargetDataUnavailable = "La version {0} pointe vers un dossier DATA inaccessible : {1}. Rétablissez l’accès réseau ou republiez avec le bon chemin."
+            TargetPreviouslyFailed = "La version {0} est publiée, mais ce même paquet a déjà échoué sur ce poste. Relancez Install SAPHIR Shortcut.vbs depuis la distribution pour débloquer une version rejetée par l’ancien lanceur. Si l’échec persiste, consultez bootstrap.log et publiez une version corrigée."
         }
     }
     else {
@@ -107,7 +127,9 @@ try {
             Checking          = "Checking status…"
             AppLabel          = "Application"
             DataLabel         = "Shared data"
+            DistributionLabel = "Distribution network"
             ReleaseLabel      = "Installed version"
+            TargetReleaseLabel = "Available version"
             Start             = "_Start SAPHIR"
             Open              = "_Open SAPHIR"
             Restart           = "_Restart"
@@ -124,9 +146,15 @@ try {
             ConflictDetail    = "Another program is using SAPHIR's local port. It will not be stopped."
             Available         = "Reachable"
             Unavailable       = "Unavailable"
+            NeedsAttention    = "Needs attention"
             NotConfigured     = "Not configured"
             NotInstalled      = "Not installed yet"
             Development       = "Development"
+            CurrentRelease    = "Up to date"
+            UpdateAvailable   = "update available"
+            PreviousFailure   = "previous failure"
+            UpdateOnStart     = "Release {0} is available. Start SAPHIR to install it."
+            UpdateOnRestart   = "Release {0} is available. Restart SAPHIR to install it."
             Starting          = "Starting SAPHIR…"
             Restarting        = "Restarting SAPHIR…"
             Stopping          = "Stopping SAPHIR…"
@@ -135,6 +163,18 @@ try {
             OpenError         = "The browser could not be opened."
             LogsError         = "The logs folder could not be opened."
             NeedsNetwork      = "Connect to the internal network to install SAPHIR."
+            DistributionUnavailable = "The distribution folder is unavailable: {0}. Connect to the internal network or correct distribution-root.txt."
+            ManifestMissing   = "No published release can be detected because {0} is missing. The ZIP alone is not enough; publish the application so current.json is updated."
+            ManifestUnavailable = "The release pointer cannot be read: {0}. Check network access, then republish if needed."
+            ManifestUnreadable = "current.json is unreadable or incomplete. Republish the application instead of editing this file manually."
+            ManifestUnsupported = "The current.json format is unsupported. Republish with the current packaging script."
+            ReleaseIdInvalid  = "The ReleaseId in current.json is invalid. Republish with a new Windows-safe identifier."
+            ChecksumInvalid   = "The checksum for release {0} is invalid. Republish the release."
+            PackagePathInvalid = "The ZIP path for release {0} is invalid. Republish the application."
+            DataPathInvalid   = "The DATA path for release {0} is invalid. Republish with the correct DataFolderPath."
+            PackageUnavailable = "current.json announces release {0}, but its ZIP is missing: {1}. Republish this release or restore the matching ZIP."
+            TargetDataUnavailable = "Release {0} points to an unavailable DATA folder: {1}. Restore network access or republish with the correct path."
+            TargetPreviouslyFailed = "Release {0} is published, but the same package previously failed on this computer. Run Install SAPHIR Shortcut.vbs again from the distribution to unlock a release rejected by the former launcher. If it still fails, review bootstrap.log and publish a corrected release."
         }
     }
 
@@ -143,9 +183,9 @@ try {
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Name="LauncherWindow"
         Width="540"
-        Height="570"
+        Height="675"
         MinWidth="540"
-        MinHeight="570"
+        MinHeight="675"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
         Background="#F5F5F7"
@@ -254,6 +294,10 @@ try {
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="14"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="14"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="14"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="20"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -294,18 +338,42 @@ try {
                         <ColumnDefinition Width="155"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="DistributionLabel" Foreground="#6E6E73"/>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock x:Name="DistributionValue" FontWeight="SemiBold" Foreground="#1D1D1F"
+                                   TextAlignment="Right"/>
+                        <TextBlock x:Name="DistributionPathText" Margin="0,3,0,0" FontSize="11"
+                                   Foreground="#8E8E93" TextAlignment="Right"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                </Grid>
+                <Grid Grid.Row="11">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="155"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
                     <TextBlock x:Name="ReleaseLabel" Foreground="#6E6E73"/>
                     <TextBlock Grid.Column="1" x:Name="ReleaseValue" FontWeight="SemiBold"
                                Foreground="#1D1D1F" TextAlignment="Right"
                                TextTrimming="CharacterEllipsis"/>
                 </Grid>
+                <Grid Grid.Row="13">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="155"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="TargetReleaseLabel" Foreground="#6E6E73"/>
+                    <TextBlock Grid.Column="1" x:Name="TargetReleaseValue" FontWeight="SemiBold"
+                               Foreground="#1D1D1F" TextAlignment="Right"
+                               TextTrimming="CharacterEllipsis"/>
+                </Grid>
 
-                <ProgressBar Grid.Row="11" x:Name="BusyProgress" Height="4"
+                <ProgressBar Grid.Row="15" x:Name="BusyProgress" Height="4"
                              IsIndeterminate="True" Visibility="Collapsed"
                              Foreground="#0071E3" Background="#E5E5EA"/>
-                <TextBlock Grid.Row="12" x:Name="BusyText" Margin="0,8,0,0"
+                <TextBlock Grid.Row="16" x:Name="BusyText" Margin="0,8,0,0"
                            Foreground="#6E6E73" Visibility="Collapsed"/>
-                <Border Grid.Row="13" x:Name="ErrorBanner" Margin="0,12,0,0"
+                <Border Grid.Row="17" x:Name="ErrorBanner" Margin="0,12,0,0"
                         Padding="12,9" CornerRadius="9" Background="#FFF1F0"
                         BorderBrush="#FFD0CC" BorderThickness="1" Visibility="Collapsed">
                     <TextBlock x:Name="ErrorText" Foreground="#A51C14" TextWrapping="Wrap"/>
@@ -345,7 +413,9 @@ try {
     $names = @(
         "SubtitleText", "StatusBadge", "StatusDot", "StatusBadgeText", "MainCard",
         "StateTitle", "StateDetail", "ApplicationLabel", "ApplicationValue",
-        "DataLabel", "DataValue", "DataPathText", "ReleaseLabel", "ReleaseValue",
+        "DataLabel", "DataValue", "DataPathText", "DistributionLabel",
+        "DistributionValue", "DistributionPathText", "ReleaseLabel", "ReleaseValue",
+        "TargetReleaseLabel", "TargetReleaseValue",
         "BusyProgress", "BusyText", "ErrorBanner", "ErrorText", "StartButton",
         "OpenButton", "RestartButton", "StopButton", "LogsButton", "RefreshButton"
     )
@@ -357,7 +427,9 @@ try {
     $script:SubtitleText.Text = $text.Subtitle
     $script:ApplicationLabel.Text = $text.AppLabel
     $script:DataLabel.Text = $text.DataLabel
+    $script:DistributionLabel.Text = $text.DistributionLabel
     $script:ReleaseLabel.Text = $text.ReleaseLabel
+    $script:TargetReleaseLabel.Text = $text.TargetReleaseLabel
     $script:StartButton.Content = $text.Start
     $script:OpenButton.Content = $text.Open
     $script:RestartButton.Content = $text.Restart
@@ -438,7 +510,56 @@ try {
         }
         $script:ErrorText.Text = $Message
         $script:errorKind = $Kind
+        if ($Kind -eq "Status") {
+            $script:ErrorBanner.Background = New-Brush -Color "#FFF6E5"
+            $script:ErrorBanner.BorderBrush = New-Brush -Color "#FFD59A"
+            $script:ErrorText.Foreground = New-Brush -Color "#8A4B00"
+        }
+        else {
+            $script:ErrorBanner.Background = New-Brush -Color "#FFF1F0"
+            $script:ErrorBanner.BorderBrush = New-Brush -Color "#FFD0CC"
+            $script:ErrorText.Foreground = New-Brush -Color "#A51C14"
+        }
         Set-Visible -Element $script:ErrorBanner -Visible $true
+    }
+
+    function Get-DeploymentIssueMessage {
+        param([Parameter(Mandatory = $true)]$Status)
+
+        $issue = [string]$Status.DeploymentIssue
+        switch ($issue) {
+            "DistributionUnavailable" {
+                return ($text.DistributionUnavailable -f [string]$Status.DistributionRoot)
+            }
+            "ManifestUnavailable" {
+                return ($text.ManifestUnavailable -f [string]$Status.ManifestPath)
+            }
+            "ManifestMissing" {
+                return ($text.ManifestMissing -f [string]$Status.ManifestPath)
+            }
+            "ManifestUnreadable" { return $text.ManifestUnreadable }
+            "ManifestFormatUnsupported" { return $text.ManifestUnsupported }
+            "ReleaseIdInvalid" { return $text.ReleaseIdInvalid }
+            "ChecksumInvalid" {
+                return ($text.ChecksumInvalid -f [string]$Status.TargetReleaseId)
+            }
+            "PackagePathInvalid" {
+                return ($text.PackagePathInvalid -f [string]$Status.TargetReleaseId)
+            }
+            "DataPathInvalid" {
+                return ($text.DataPathInvalid -f [string]$Status.TargetReleaseId)
+            }
+            "PackageUnavailable" {
+                return ($text.PackageUnavailable -f [string]$Status.TargetReleaseId, [string]$Status.TargetPackagePath)
+            }
+            "TargetDataUnavailable" {
+                return ($text.TargetDataUnavailable -f [string]$Status.TargetReleaseId, [string]$Status.TargetDataFolderPath)
+            }
+            "TargetPreviouslyFailed" {
+                return ($text.TargetPreviouslyFailed -f [string]$Status.TargetReleaseId)
+            }
+            default { return [string]$Status.DeploymentError }
+        }
     }
 
     function Set-BusyState {
@@ -478,7 +599,10 @@ try {
         $script:ApplicationValue.Text = "—"
         $script:DataValue.Text = "—"
         $script:DataPathText.Text = ""
+        $script:DistributionValue.Text = "—"
+        $script:DistributionPathText.Text = ""
         $script:ReleaseValue.Text = "—"
+        $script:TargetReleaseValue.Text = "—"
         foreach ($button in @($script:StartButton, $script:OpenButton, $script:RestartButton, $script:StopButton)) {
             Set-Visible -Element $button -Visible $false
         }
@@ -525,6 +649,16 @@ try {
             }
         }
 
+        if ([bool]$Status.UpdateAvailable -and -not [bool]$Status.TargetPreviouslyFailed) {
+            $updateDetail = if ([bool]$Status.CanStart) {
+                $text.UpdateOnStart -f [string]$Status.TargetReleaseId
+            }
+            else {
+                $text.UpdateOnRestart -f [string]$Status.TargetReleaseId
+            }
+            $detail = "$detail $updateDetail"
+        }
+
         $script:StatusBadge.Background = New-Brush -Color $badgeBackground
         $script:StatusDot.Fill = New-Brush -Color $dotColor
         $script:StatusBadgeText.Foreground = New-Brush -Color $badgeForeground
@@ -553,6 +687,26 @@ try {
             $script:DataPathText.ToolTip = $dataPath
         }
 
+        $distributionPath = [string]$Status.DistributionRoot
+        $script:DistributionPathText.Text = $distributionPath
+        $script:DistributionPathText.ToolTip = $distributionPath
+        if ([string]$Status.DeploymentState -eq "Development") {
+            $script:DistributionValue.Text = $text.Development
+            $script:DistributionValue.Foreground = New-Brush -Color "#8E8E93"
+        }
+        elseif ([string]$Status.DeploymentState -eq "Ready") {
+            $script:DistributionValue.Text = $text.Available
+            $script:DistributionValue.Foreground = New-Brush -Color "#248A3D"
+        }
+        elseif ([bool]$Status.DistributionReachable) {
+            $script:DistributionValue.Text = $text.NeedsAttention
+            $script:DistributionValue.Foreground = New-Brush -Color "#B25000"
+        }
+        else {
+            $script:DistributionValue.Text = $text.Unavailable
+            $script:DistributionValue.Foreground = New-Brush -Color "#B25000"
+        }
+
         $releaseId = [string]$Status.ReleaseId
         if ([string]::IsNullOrWhiteSpace($releaseId)) {
             $releaseId = $text.NotInstalled
@@ -562,6 +716,41 @@ try {
         }
         $script:ReleaseValue.Text = $releaseId
         $script:ReleaseValue.ToolTip = $releaseId
+
+        $targetReleaseId = [string]$Status.TargetReleaseId
+        if ([string]::IsNullOrWhiteSpace($targetReleaseId)) {
+            $script:TargetReleaseValue.Text = "—"
+            $script:TargetReleaseValue.ToolTip = $null
+            $script:TargetReleaseValue.Foreground = New-Brush -Color "#8E8E93"
+        }
+        elseif ([bool]$Status.TargetPreviouslyFailed) {
+            $targetDisplay = "{0} · {1}" -f $targetReleaseId, $text.PreviousFailure
+            $script:TargetReleaseValue.Text = $targetDisplay
+            $script:TargetReleaseValue.ToolTip = $targetDisplay
+            $script:TargetReleaseValue.Foreground = New-Brush -Color "#B25000"
+        }
+        elseif ([bool]$Status.UpdateAvailable) {
+            $targetDisplay = "{0} · {1}" -f $targetReleaseId, $text.UpdateAvailable
+            $script:TargetReleaseValue.Text = $targetDisplay
+            $script:TargetReleaseValue.ToolTip = $targetDisplay
+            $script:TargetReleaseValue.Foreground = New-Brush -Color "#0071E3"
+        }
+        else {
+            $targetDisplay = "{0} · {1}" -f $targetReleaseId, $text.CurrentRelease
+            $script:TargetReleaseValue.Text = $targetDisplay
+            $script:TargetReleaseValue.ToolTip = $targetDisplay
+            $script:TargetReleaseValue.Foreground = New-Brush -Color "#248A3D"
+        }
+
+        $deploymentMessage = Get-DeploymentIssueMessage -Status $Status
+        if (-not [string]::IsNullOrWhiteSpace($deploymentMessage)) {
+            if ($script:errorKind -ne "Action" -and $script:errorKind -ne "User") {
+                Show-Error -Message $deploymentMessage -Kind "Status"
+            }
+        }
+        elseif ($script:errorKind -eq "Status") {
+            Hide-Error
+        }
 
         Set-Visible -Element $script:StartButton -Visible ($state -eq "Offline")
         Set-Visible -Element $script:OpenButton -Visible ($state -eq "Online")
@@ -679,9 +868,6 @@ Invoke-SaphirLauncherAction -Action $Action -DistributionRoot $DistributionRoot
                 $status = Get-WorkerStatusResult -Worker $completedWorker -Handle $completedHandle
                 if (-not $script:discardStatusResult) {
                     Apply-Status -Status $status
-                    if (-not $script:actionBusy -and $script:errorKind -eq "Status") {
-                        Hide-Error
-                    }
                 }
             }
             catch {
@@ -709,8 +895,8 @@ Invoke-SaphirLauncherAction -Action $Action -DistributionRoot $DistributionRoot
             $script:actionHandle = $null
             try {
                 $status = Get-WorkerStatusResult -Worker $completedWorker -Handle $completedHandle
-                Apply-Status -Status $status
                 Hide-Error
+                Apply-Status -Status $status
             }
             catch {
                 $message = [string]$_.Exception.Message

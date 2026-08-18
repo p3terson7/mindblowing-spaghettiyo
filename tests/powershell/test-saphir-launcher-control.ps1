@@ -175,6 +175,60 @@ try {
         -Value "@{ DataFolderPath = '../../data' }" `
         -Encoding UTF8
 
+    $deploymentFixtureRoot = Join-Path -Path $testRoot -ChildPath "published distribution"
+    $deploymentFixtureData = Join-Path -Path $testRoot -ChildPath "shared data"
+    $deploymentFixturePackage = Join-Path -Path $deploymentFixtureRoot -ChildPath "deployment/releases/SAPHIR-release-new.zip"
+    $deploymentFixtureManifest = Join-Path -Path $deploymentFixtureRoot -ChildPath "deployment/current.json"
+    $deploymentFixtureCache = Join-Path -Path $testRoot -ChildPath "deployment cache"
+    New-Item -ItemType Directory -Path (Split-Path -Path $deploymentFixturePackage -Parent) -Force | Out-Null
+    New-Item -ItemType Directory -Path $deploymentFixtureData -Force | Out-Null
+    New-Item -ItemType Directory -Path $deploymentFixtureCache -Force | Out-Null
+    Set-Content -LiteralPath $deploymentFixturePackage -Value "fixture" -Encoding ASCII
+    $deploymentFixtureHash = "a" * 64
+    [ordered]@{
+        schemaVersion  = 1
+        releaseId      = "release-new"
+        packagePath    = "deployment/releases/SAPHIR-release-new.zip"
+        sha256         = $deploymentFixtureHash
+        dataFolderPath = $deploymentFixtureData
+    } | ConvertTo-Json | Set-Content -LiteralPath $deploymentFixtureManifest -Encoding UTF8
+
+    $deploymentReady = Get-SaphirLauncherDeploymentSnapshot `
+        -DistributionRoot $deploymentFixtureRoot `
+        -InstalledReleaseId "release-old" `
+        -CacheRoot $deploymentFixtureCache
+    Assert-Equal -Expected "Ready" -Actual $deploymentReady.State -Message "a complete network release must be reported as ready without installing it"
+    Assert-Equal -Expected "release-new" -Actual $deploymentReady.TargetReleaseId -Message "status must expose the release targeted by current.json"
+    Assert-True -Condition $deploymentReady.UpdateAvailable -Message "status must distinguish the installed release from the network target"
+    Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $deploymentFixtureCache -ChildPath "versions/release-new"))) -Message "a read-only status check must never install the target release"
+
+    Remove-Item -LiteralPath $deploymentFixtureManifest -Force
+    $missingManifest = Get-SaphirLauncherDeploymentSnapshot `
+        -DistributionRoot $deploymentFixtureRoot `
+        -InstalledReleaseId "release-old" `
+        -CacheRoot $deploymentFixtureCache
+    Assert-Equal -Expected "ManifestMissing" -Actual $missingManifest.State -Message "a ZIP without current.json must not be mistaken for a published release"
+    Assert-True -Condition ([string]$missingManifest.Error -match "ZIP.*not enough") -Message "a missing pointer must explain that copying the ZIP alone does not publish it"
+    [ordered]@{
+        schemaVersion  = 1
+        releaseId      = "release-new"
+        packagePath    = "deployment/releases/SAPHIR-release-new.zip"
+        sha256         = $deploymentFixtureHash
+        dataFolderPath = $deploymentFixtureData
+    } | ConvertTo-Json | Set-Content -LiteralPath $deploymentFixtureManifest -Encoding UTF8
+
+    [ordered]@{
+        schemaVersion = 1
+        releaseId     = "release-new"
+        sha256        = $deploymentFixtureHash
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path -Path $deploymentFixtureCache -ChildPath "failed.json") -Encoding UTF8
+    $previousFailure = Get-SaphirLauncherDeploymentSnapshot `
+        -DistributionRoot $deploymentFixtureRoot `
+        -InstalledReleaseId "release-old" `
+        -CacheRoot $deploymentFixtureCache
+    Assert-Equal -Expected "PreviouslyFailed" -Actual $previousFailure.State -Message "a target package already marked failed on this workstation must be visible"
+    Assert-True -Condition ($previousFailure.UpdateAvailable -and $previousFailure.TargetPreviouslyFailed) -Message "a failed update must remain visible instead of looking current"
+
     $script:testStatusMode = "Online"
     $script:testHealthy = $true
     $online = Get-SaphirLauncherStatus -DistributionRoot $sourceRoot -RuntimeRoot $runtimeRoot

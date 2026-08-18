@@ -372,6 +372,10 @@ try {
             Publish-PackageFileAtomic -Source (Join-Path -Path $bootstrapRoot -ChildPath $relativePath) -Destination (Join-Path -Path $distributionRoot -ChildPath $relativePath)
         }
 
+        Write-Host "SAPHIR launcher bootstrap published successfully."
+        Write-Host "No application ZIP, current.json pointer, or DATA file was changed."
+        Write-Host "Next step: run 'Install SAPHIR Shortcut.vbs' from SAPHIR-Distribution on each existing workstation, then close and reopen the launcher."
+
         [PSCustomObject]@{
             DistributionFolder = $distributionRoot
             BootstrapOnly      = $true

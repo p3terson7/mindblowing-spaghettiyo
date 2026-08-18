@@ -111,6 +111,12 @@ try {
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('sourceCachedLaunchPath, localCachedLaunchPath', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must copy the cached application starter for network-outage fallback"
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('sourceLocalCachePath, localLocalCachePath', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must copy local-cache support for network-outage fallback"
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('sourceServerControlPath, localServerControlPath', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must copy service-control support locally"
+    $shortcutSavePosition = $packagedShortcutInstaller.IndexOf('shortcut.Save', [System.StringComparison]::Ordinal)
+    $failedReleaseResetPosition = $packagedShortcutInstaller.IndexOf('failedReleasePath = fso.BuildPath(localRoot, "failed.json")', [System.StringComparison]::Ordinal)
+    Assert-True -Condition ($failedReleaseResetPosition -gt $shortcutSavePosition) -Message "shortcut installer must only unlock a failed release after the new local bundle and shortcut are active"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('If fso.FileExists(localApplicationLayoutPath) And fso.FileExists(failedReleasePath) Then', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must only unlock a failed release when its installed bundle contains the canonical/legacy resolver"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('fso.DeleteFile markerPath, True', [System.StringComparison]::Ordinal) -ge 0) -Message "reinstalling the compatible launcher must allow the current manifest release to be retried"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('"Version du lanceur : " & bundleId', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer confirmation must identify the installed launcher bundle"
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('localIconPath & ",0"', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must use the locally cached icon"
     Assert-True -Condition ([regex]::IsMatch($publisherSource, '"SAPHIR Launcher\.vbs",\s*"Install SAPHIR Shortcut\.vbs"')) -Message "publisher must expose the graphical entry point before the installer that requires it"
     $employeeGuidePath = Join-Path -Path $distributionRoot -ChildPath "GUIDE-DEMARRAGE-SAPHIR.txt"
@@ -121,8 +127,10 @@ try {
 
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     Assert-Equal -Expected "package-test-a" -Actual $manifest.releaseId -Message "manifest must point to the published release"
+    Assert-Equal -Expected "deployment/releases/SAPHIR-package-test-a.zip" -Actual ([string]$manifest.packagePath) -Message "manifest must target the exact immutable release ZIP rather than relying on releases-folder discovery"
     Assert-Equal -Expected $dataFolder -Actual $manifest.dataFolderPath -Message "manifest must preserve the explicit data path"
     $releasePath = Join-Path -Path $distributionRoot -ChildPath ([string]$manifest.packagePath)
+    Assert-Equal -Expected $releasePath -Actual ([string]$result.ReleasePackage) -Message "publisher result and current.json must identify the same release ZIP"
     $actualHash = (Get-FileHash -LiteralPath $releasePath -Algorithm SHA256).Hash.ToLowerInvariant()
     Assert-Equal -Expected ([string]$manifest.sha256) -Actual $actualHash -Message "manifest checksum must match the release ZIP"
     foreach ($bootstrapScript in @("launch-cached-app.ps1", "saphir-launcher.ps1", "stop-all.ps1")) {
@@ -166,11 +174,30 @@ try {
     Assert-True -Condition (-not [bool]$runtimeConfig.EnableDemoSeed) -Message "employee releases must disable demo-data generation"
     Assert-True -Condition ([bool]$runtimeConfig.EnableGc179Import) -Message "employee releases must expose the GC179 import UI"
 
+    . (Join-Path -Path $expandedRelease -ChildPath "scripts/lib/ApplicationLayout.ps1")
+    $expandedApplicationLayout = Resolve-SaphirApplicationLayout -ApplicationRoot $expandedRelease
+    Assert-True -Condition ($null -ne $expandedApplicationLayout) -Message "the packaged canonical runtime must be discoverable by the transition-capable application-layout resolver"
+    Assert-Equal -Expected "Canonical" -Actual ([string]$expandedApplicationLayout.Kind) -Message "the packaged runtime must resolve to the canonical app layout"
+
+    # Model the real one-time transition: the share can still expose an old
+    # installer/bootstrap while current.json continues to identify the working
+    # pre-transition release. BootstrapOnly must replace those launcher files
+    # without altering either the release pointer or any immutable ZIP.
+    $distributionInstallerPath = Join-Path -Path $distributionRoot -ChildPath "Install SAPHIR Shortcut.vbs"
+    $distributionLayoutResolverPath = Join-Path -Path $distributionRoot -ChildPath "scripts/lib/ApplicationLayout.ps1"
+    Set-Content -LiteralPath $distributionInstallerPath -Value "' legacy transition fixture" -Encoding ASCII
+    Remove-Item -LiteralPath $distributionLayoutResolverPath -Force
+
     $manifestBeforeBootstrapOnly = [System.IO.File]::ReadAllBytes($manifestPath)
     $releaseNamesBeforeBootstrapOnly = @(
         Get-ChildItem -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "deployment/releases") -File |
             Sort-Object Name |
             ForEach-Object { $_.Name }
+    )
+    $releaseHashesBeforeBootstrapOnly = @(
+        Get-ChildItem -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "deployment/releases") -File |
+            Sort-Object Name |
+            ForEach-Object { "{0}={1}" -f $_.Name, ((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()) }
     )
     $bootstrapOnlyResult = & $publisherPath -OutputRoot $outputRoot -BootstrapOnly -NoZip
     Assert-True -Condition ([bool]$bootstrapOnlyResult.BootstrapOnly) -Message "bootstrap-only publication must identify its non-release result"
@@ -187,11 +214,27 @@ try {
         -Expected ($releaseNamesBeforeBootstrapOnly -join "|") `
         -Actual ($releaseNamesAfterBootstrapOnly -join "|") `
         -Message "bootstrap-only publication must not add, remove, or replace release ZIPs"
-    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "scripts/lib/ApplicationLayout.ps1") -PathType Leaf) -Message "bootstrap-only publication must publish the topology compatibility resolver"
+    $releaseHashesAfterBootstrapOnly = @(
+        Get-ChildItem -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "deployment/releases") -File |
+            Sort-Object Name |
+            ForEach-Object { "{0}={1}" -f $_.Name, ((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()) }
+    )
+    Assert-Equal `
+        -Expected ($releaseHashesBeforeBootstrapOnly -join "|") `
+        -Actual ($releaseHashesAfterBootstrapOnly -join "|") `
+        -Message "bootstrap-only publication must leave every existing release ZIP byte-for-byte unchanged"
+    Assert-True -Condition (Test-Path -LiteralPath $distributionLayoutResolverPath -PathType Leaf) -Message "bootstrap-only publication must publish the topology compatibility resolver"
+    $bootstrapOnlyInstaller = [System.IO.File]::ReadAllText($distributionInstallerPath)
+    Assert-True -Condition ($bootstrapOnlyInstaller.IndexOf('sourceApplicationLayoutPath', [System.StringComparison]::Ordinal) -ge 0) -Message "bootstrap-only publication must replace the historical installer with the canonical/legacy transition installer"
+    Assert-True -Condition ($bootstrapOnlyInstaller.IndexOf('fso.DeleteFile markerPath, True', [System.StringComparison]::Ordinal) -ge 0) -Message "bootstrap-only publication must expose the installer retry contract that clears a stale failed-release marker"
 
     & $publisherPath -OutputRoot $outputRoot -DataFolderPath $dataFolder -ReleaseId "package-test-b" -NoZip -AllowLocalDataPath | Out-Null
     $updatedManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     Assert-Equal -Expected "package-test-b" -Actual $updatedManifest.releaseId -Message "a later publish must update current.json last"
+    Assert-Equal -Expected "deployment/releases/SAPHIR-package-test-b.zip" -Actual ([string]$updatedManifest.packagePath) -Message "the updated manifest must target the newly published canonical ZIP"
+    $updatedReleasePath = Join-Path -Path $distributionRoot -ChildPath ([string]$updatedManifest.packagePath)
+    Assert-True -Condition (Test-Path -LiteralPath $updatedReleasePath -PathType Leaf) -Message "current.json must never point to a release ZIP that is absent from the distribution"
+    Assert-Equal -Expected ([string]$updatedManifest.sha256) -Actual ((Get-FileHash -LiteralPath $updatedReleasePath -Algorithm SHA256).Hash.ToLowerInvariant()) -Message "the updated manifest checksum must match its targeted canonical ZIP"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "deployment/releases/SAPHIR-package-test-a.zip") -PathType Leaf) -Message "the previous share release must remain available"
 
     Assert-Throws -Action { & $publisherPath -OutputRoot $outputRoot -DataFolderPath $dataFolder -ReleaseId "CON" -NoZip -AllowLocalDataPath | Out-Null } -MessagePattern "Windows-safe" -Message "publisher must reject Windows reserved release IDs"

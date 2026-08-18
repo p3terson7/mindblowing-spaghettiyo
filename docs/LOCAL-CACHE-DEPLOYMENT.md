@@ -70,12 +70,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 `
 
 This updates only the stable launcher, installer, icon and launcher-side
 PowerShell libraries in `SAPHIR-Distribution`. It does not publish an
-application release, does not update `current.json`, and does not touch DATA.
+application release, does not update `current.json`, does not touch DATA, and
+cannot modify launchers that are already installed in another user's AppData.
 
 Ask every employee to open `SAPHIR-Distribution` and run
 `Install SAPHIR Shortcut.vbs` again. Confirm on a pilot workstation that the
-local files under `%LOCALAPPDATA%\SAPHIR\launcher` were refreshed and that the
-currently deployed application still opens.
+success message shows a new launcher bundle identifier, close any launcher
+window that was already open, then reopen SAPHIR from the refreshed Desktop
+shortcut. The installer refreshes `%LOCALAPPDATA%\SAPHIR\launcher` and safely
+unlocks a release that the former launcher rejected before it understood the
+canonical layout. That release is retried on the next **Start** or **Restart**.
+
+If the canonical release was accidentally published before this step, it does
+not need to be copied manually or assigned another identifier: publish the
+fixed bootstrap, rerun the installer, close the old launcher window, and use
+**Start** or **Restart** once. **Open** and **Refresh** do not install releases.
 
 ### Step 2 — publish the first canonical release
 

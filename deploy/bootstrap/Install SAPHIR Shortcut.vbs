@@ -32,11 +32,14 @@ Dim localLocalCachePath
 Dim localServerControlPath
 Dim distributionRootFilePath
 Dim distributionRootFile
+Dim failedReleasePath
+Dim failedReleaseReset
 Dim desktopPath
 Dim shortcutPath
 Dim shortcut
 Dim copyError
 Dim copyErrorDescription
+Dim confirmationMessage
 
 Sub EnsureFolder(folderPath)
     If Not fso.FolderExists(folderPath) Then
@@ -57,6 +60,36 @@ Sub EnsureFolder(folderPath)
         End If
     End If
 End Sub
+
+Function InvalidateFailedReleaseMarker(markerPath)
+    Dim attempt
+
+    InvalidateFailedReleaseMarker = True
+    If Not fso.FileExists(markerPath) Then
+        Exit Function
+    End If
+
+    ' A failed release is normally skipped until its package hash changes. A
+    ' freshly installed launcher bundle may contain the compatibility fix that
+    ' makes that exact release usable, so an explicit reinstall is also an
+    ' explicit request to retry it. Wait briefly in case another launcher has
+    ' just finished reading the marker.
+    For attempt = 1 To 5
+        On Error Resume Next
+        fso.DeleteFile markerPath, True
+        copyError = Err.Number
+        copyErrorDescription = Err.Description
+        Err.Clear
+        On Error GoTo 0
+
+        If Not fso.FileExists(markerPath) Then
+            Exit Function
+        End If
+        WScript.Sleep 200
+    Next
+
+    InvalidateFailedReleaseMarker = False
+End Function
 
 Sub CopyLauncherFile(sourcePath, destinationPath, displayName)
     On Error Resume Next
@@ -234,6 +267,7 @@ If copyError <> 0 Then
 End If
 
 localLauncherEntryPath = fso.BuildPath(bundleRoot, "SAPHIR Launcher.vbs")
+localApplicationLayoutPath = fso.BuildPath(bundleRoot, "scripts\lib\ApplicationLayout.ps1")
 CopyLauncherFile sourceIconPath, localIconPath, "the SAPHIR icon"
 
 desktopPath = shell.SpecialFolders("Desktop")
@@ -256,4 +290,24 @@ If copyError <> 0 Then
     WScript.Quit 1
 End If
 
-shell.Popup "Le lanceur SAPHIR a ete installe et son raccourci a ete cree sur le Bureau." & vbCrLf & "The SAPHIR launcher and desktop shortcut were installed.", 0, "SAPHIR", 64
+failedReleasePath = fso.BuildPath(localRoot, "failed.json")
+failedReleaseReset = False
+If fso.FileExists(localApplicationLayoutPath) And fso.FileExists(failedReleasePath) Then
+    If Not InvalidateFailedReleaseMarker(failedReleasePath) Then
+        shell.Popup "Le nouveau lanceur SAPHIR est installe, mais la version en echec n'a pas pu etre debloquee." & vbCrLf & _
+            "Fermez SAPHIR et relancez cet installateur." & vbCrLf & vbCrLf & _
+            "The new launcher is installed, but the failed release could not be unlocked." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 48
+        WScript.Quit 1
+    End If
+    failedReleaseReset = True
+End If
+
+confirmationMessage = "Le lanceur SAPHIR a ete mis a niveau et son raccourci a ete actualise." & vbCrLf & _
+    "Version du lanceur : " & bundleId
+If failedReleaseReset Then
+    confirmationMessage = confirmationMessage & vbCrLf & _
+        "La version actuelle a ete debloquee et sera retentee au prochain Demarrer ou Redemarrer."
+End If
+confirmationMessage = confirmationMessage & vbCrLf & vbCrLf & _
+    "The SAPHIR launcher was upgraded and its Desktop shortcut was refreshed."
+shell.Popup confirmationMessage, 0, "SAPHIR", 64

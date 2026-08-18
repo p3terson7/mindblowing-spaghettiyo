@@ -240,6 +240,175 @@ function Get-SaphirLauncherConfiguredDataFolder {
     return (Get-SaphirLauncherManifestDataFolder -DistributionRoot $DistributionRoot)
 }
 
+function Get-SaphirLauncherDeploymentSnapshot {
+    param(
+        [Parameter(Mandatory = $true)][string]$DistributionRoot,
+        [string]$InstalledReleaseId = "",
+        [string]$CacheRoot = "",
+        [switch]$DevelopmentContext
+    )
+
+    $resolvedDistributionRoot = [System.IO.Path]::GetFullPath($DistributionRoot)
+    $manifestPath = Join-Path -Path $resolvedDistributionRoot -ChildPath "deployment/current.json"
+    $snapshot = [ordered]@{
+        State                  = "Unavailable"
+        DistributionRoot       = $resolvedDistributionRoot
+        DistributionReachable  = $false
+        ManifestPath           = $manifestPath
+        ManifestAvailable      = $false
+        ManifestValid          = $false
+        TargetReleaseId        = ""
+        TargetSha256           = ""
+        PackagePath            = ""
+        PackageAvailable       = $false
+        TargetDataFolderPath   = ""
+        TargetDataAvailable    = $false
+        UpdateAvailable        = $false
+        TargetPreviouslyFailed = $false
+        Issue                  = "DistributionUnavailable"
+        Error                  = "The configured SAPHIR distribution folder is unavailable: $resolvedDistributionRoot"
+    }
+
+    if ($DevelopmentContext) {
+        $snapshot.State = "Development"
+        $snapshot.DistributionReachable = $true
+        $snapshot.Issue = ""
+        $snapshot.Error = ""
+        return [PSCustomObject]$snapshot
+    }
+
+    try {
+        $snapshot.DistributionReachable = Test-Path -LiteralPath $resolvedDistributionRoot -PathType Container -ErrorAction Stop
+    }
+    catch {
+        $snapshot.Error = "The configured SAPHIR distribution folder could not be checked: $resolvedDistributionRoot. $($_.Exception.Message)"
+        return [PSCustomObject]$snapshot
+    }
+    if (-not $snapshot.DistributionReachable) {
+        return [PSCustomObject]$snapshot
+    }
+
+    try {
+        $snapshot.ManifestAvailable = Test-Path -LiteralPath $manifestPath -PathType Leaf -ErrorAction Stop
+    }
+    catch {
+        $snapshot.State = "ManifestUnavailable"
+        $snapshot.Issue = "ManifestUnavailable"
+        $snapshot.Error = "The SAPHIR release pointer could not be checked: $manifestPath. $($_.Exception.Message)"
+        return [PSCustomObject]$snapshot
+    }
+    if (-not $snapshot.ManifestAvailable) {
+        $snapshot.State = "ManifestMissing"
+        $snapshot.Issue = "ManifestMissing"
+        $snapshot.Error = "No SAPHIR release is published because the release pointer is missing: $manifestPath. A ZIP in deployment/releases is not enough; publish the application release so current.json is updated."
+        return [PSCustomObject]$snapshot
+    }
+
+    try {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        $snapshot.State = "InvalidManifest"
+        $snapshot.Issue = "ManifestUnreadable"
+        $snapshot.Error = "The SAPHIR release pointer is unreadable or incomplete: $manifestPath. Republish the application release. $($_.Exception.Message)"
+        return [PSCustomObject]$snapshot
+    }
+
+    if ($null -eq $manifest -or [int]$manifest.schemaVersion -ne 1) {
+        $snapshot.State = "InvalidManifest"
+        $snapshot.Issue = "ManifestFormatUnsupported"
+        $snapshot.Error = "The SAPHIR release pointer uses an unsupported format: $manifestPath. Republish it with the current packaging script."
+        return [PSCustomObject]$snapshot
+    }
+
+    $snapshot.TargetReleaseId = [string]$manifest.releaseId
+    if (-not (Test-SaphirReleaseId -ReleaseId $snapshot.TargetReleaseId)) {
+        $snapshot.State = "InvalidManifest"
+        $snapshot.Issue = "ReleaseIdInvalid"
+        $snapshot.Error = "The SAPHIR release identifier in current.json is invalid. Publish the release again with a new Windows-safe ReleaseId."
+        return [PSCustomObject]$snapshot
+    }
+
+    $snapshot.TargetSha256 = ([string]$manifest.sha256).Trim().ToLowerInvariant()
+    if ($snapshot.TargetSha256 -notmatch "^[a-f0-9]{64}$") {
+        $snapshot.State = "InvalidManifest"
+        $snapshot.Issue = "ChecksumInvalid"
+        $snapshot.Error = "The checksum for release '$($snapshot.TargetReleaseId)' is invalid. Republish the release instead of editing current.json manually."
+        return [PSCustomObject]$snapshot
+    }
+
+    try {
+        $snapshot.PackagePath = Resolve-SaphirPackagePath `
+            -DistributionRoot $resolvedDistributionRoot `
+            -RelativePackagePath ([string]$manifest.packagePath)
+    }
+    catch {
+        $snapshot.State = "InvalidManifest"
+        $snapshot.Issue = "PackagePathInvalid"
+        $snapshot.Error = "The package path for release '$($snapshot.TargetReleaseId)' is invalid. Republish the application release. $($_.Exception.Message)"
+        return [PSCustomObject]$snapshot
+    }
+
+    $snapshot.TargetDataFolderPath = [string]$manifest.dataFolderPath
+    if ([string]::IsNullOrWhiteSpace($snapshot.TargetDataFolderPath) -or
+        -not [System.IO.Path]::IsPathRooted($snapshot.TargetDataFolderPath)) {
+        $snapshot.State = "InvalidManifest"
+        $snapshot.Issue = "DataPathInvalid"
+        $snapshot.Error = "Release '$($snapshot.TargetReleaseId)' does not contain an absolute shared-data path. Republish it with the correct DataFolderPath."
+        return [PSCustomObject]$snapshot
+    }
+    $snapshot.ManifestValid = $true
+
+    try {
+        $snapshot.PackageAvailable = Test-Path -LiteralPath $snapshot.PackagePath -PathType Leaf -ErrorAction Stop
+    }
+    catch {
+        $snapshot.PackageAvailable = $false
+    }
+    if (-not $snapshot.PackageAvailable) {
+        $snapshot.State = "PackageUnavailable"
+        $snapshot.Issue = "PackageUnavailable"
+        $snapshot.Error = "current.json targets release '$($snapshot.TargetReleaseId)', but its ZIP is unavailable: $($snapshot.PackagePath). Republish that release or restore its matching ZIP."
+        return [PSCustomObject]$snapshot
+    }
+
+    try {
+        $snapshot.TargetDataAvailable = Test-Path -LiteralPath $snapshot.TargetDataFolderPath -PathType Container -ErrorAction Stop
+    }
+    catch {
+        $snapshot.TargetDataAvailable = $false
+    }
+    if (-not $snapshot.TargetDataAvailable) {
+        $snapshot.State = "DataUnavailable"
+        $snapshot.Issue = "TargetDataUnavailable"
+        $snapshot.Error = "Release '$($snapshot.TargetReleaseId)' points to an unavailable shared-data folder: $($snapshot.TargetDataFolderPath). Restore network access or republish with the correct path."
+        return [PSCustomObject]$snapshot
+    }
+
+    $snapshot.UpdateAvailable = [string]::IsNullOrWhiteSpace($InstalledReleaseId) -or
+        -not ([string]$snapshot.TargetReleaseId).Equals([string]$InstalledReleaseId, [System.StringComparison]::OrdinalIgnoreCase)
+    if ([string]::IsNullOrWhiteSpace($CacheRoot)) {
+        $CacheRoot = Get-SaphirLocalAppRoot
+    }
+    $failedRelease = Get-SaphirFailedRelease -CacheRoot $CacheRoot
+    $snapshot.TargetPreviouslyFailed = $null -ne $failedRelease -and
+        [string]$failedRelease.ReleaseId -eq [string]$snapshot.TargetReleaseId -and
+        [string]$failedRelease.Sha256 -eq [string]$snapshot.TargetSha256
+
+    if ($snapshot.TargetPreviouslyFailed -and $snapshot.UpdateAvailable) {
+        $bootstrapLogPath = Join-Path -Path $CacheRoot -ChildPath "runtime/logs/bootstrap.log"
+        $snapshot.State = "PreviouslyFailed"
+        $snapshot.Issue = "TargetPreviouslyFailed"
+        $snapshot.Error = "Release '$($snapshot.TargetReleaseId)' is published, but the same package previously failed on this computer. Reinstall the current SAPHIR launcher from the distribution to unlock a release rejected by an older launcher. If it still fails, review $bootstrapLogPath and publish a corrected package with a new ReleaseId."
+        return [PSCustomObject]$snapshot
+    }
+
+    $snapshot.State = "Ready"
+    $snapshot.Issue = ""
+    $snapshot.Error = ""
+    return [PSCustomObject]$snapshot
+}
+
 function Get-SaphirLauncherStatus {
     param(
         [Parameter(Mandatory = $true)][string]$DistributionRoot,
@@ -259,7 +428,15 @@ function Get-SaphirLauncherStatus {
     $pidFile = Join-Path -Path $resolvedRuntimeRoot -ChildPath "pids/app.pid.json"
     $logsPath = Join-Path -Path $resolvedRuntimeRoot -ChildPath "logs"
     $frontendUrl = "http://localhost:8081/"
+    if ([string]::IsNullOrWhiteSpace($CacheRoot)) {
+        $CacheRoot = Get-SaphirLocalAppRoot
+    }
     $context = Get-SaphirLauncherApplicationContext -DistributionRoot $DistributionRoot -CacheRoot $CacheRoot
+    $deployment = Get-SaphirLauncherDeploymentSnapshot `
+        -DistributionRoot $DistributionRoot `
+        -InstalledReleaseId ([string]$context.ReleaseId) `
+        -CacheRoot $CacheRoot `
+        -DevelopmentContext:([string]$context.Kind -eq "Source")
     $serviceStatus = Get-ServiceStatus -Name "app" -DisplayName "SAPHIR Backend" -Port 8081 -PidFile $pidFile
     $effectivePidFile = $pidFile
     $usingPreviousProductMetadata = $false
@@ -369,10 +546,10 @@ function Get-SaphirLauncherStatus {
     }
 
     $bootstrapScript = Join-Path -Path $DistributionRoot -ChildPath "scripts/launch-cached-app.ps1"
-    $manifestPath = Join-Path -Path $DistributionRoot -ChildPath "deployment/current.json"
     $adjacentBootstrapScript = Get-SaphirLauncherAdjacentBootstrapPath
-    $distributionAvailable = (Test-Path -LiteralPath $bootstrapScript -PathType Leaf) -and
-        (Test-Path -LiteralPath $manifestPath -PathType Leaf)
+    $distributionAvailable = [string]$deployment.State -eq "Ready" -or
+        [string]$deployment.State -eq "PreviouslyFailed" -or
+        [string]$deployment.State -eq "Development"
     $adjacentBootstrapAvailable = Test-Path -LiteralPath $adjacentBootstrapScript -PathType Leaf
     $localLaunchAvailable = -not [string]::IsNullOrWhiteSpace([string]$context.LaunchScript) -and
         (Test-Path -LiteralPath ([string]$context.LaunchScript) -PathType Leaf)
@@ -427,6 +604,22 @@ function Get-SaphirLauncherStatus {
         Healthy             = [bool]$isHealthy
         PortOwnedByManagedInstance = [bool]$portOwnedByManagedInstance
         DistributionAvailable = [bool]$distributionAvailable
+        DistributionRoot    = [string]$deployment.DistributionRoot
+        DistributionReachable = [bool]$deployment.DistributionReachable
+        DeploymentState     = [string]$deployment.State
+        DeploymentIssue     = [string]$deployment.Issue
+        DeploymentError     = [string]$deployment.Error
+        ManifestPath        = [string]$deployment.ManifestPath
+        ManifestAvailable   = [bool]$deployment.ManifestAvailable
+        ManifestValid       = [bool]$deployment.ManifestValid
+        TargetReleaseId     = [string]$deployment.TargetReleaseId
+        TargetSha256        = [string]$deployment.TargetSha256
+        TargetPackagePath   = [string]$deployment.PackagePath
+        TargetPackageAvailable = [bool]$deployment.PackageAvailable
+        TargetDataFolderPath = [string]$deployment.TargetDataFolderPath
+        TargetDataAvailable = [bool]$deployment.TargetDataAvailable
+        UpdateAvailable     = [bool]$deployment.UpdateAvailable
+        TargetPreviouslyFailed = [bool]$deployment.TargetPreviouslyFailed
         BootstrapScript     = if ($adjacentBootstrapAvailable) { $adjacentBootstrapScript } else { $bootstrapScript }
         PreviousProductInstance = [bool]$usingPreviousProductMetadata
         RuntimeRoot         = $resolvedRuntimeRoot
