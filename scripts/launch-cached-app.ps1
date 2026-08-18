@@ -23,15 +23,20 @@ else {
     $resolvedDistributionRoot = [System.IO.Path]::GetFullPath($DistributionRoot)
 }
 $manifestPath = Join-Path -Path $resolvedDistributionRoot -ChildPath "deployment/current.json"
+$applicationLayoutLibrary = Join-Path -Path $scriptDir -ChildPath "lib/ApplicationLayout.ps1"
 $localCacheLibrary = Join-Path -Path $scriptDir -ChildPath "lib/LocalAppCache.ps1"
 $serverControlLibrary = Join-Path -Path $scriptDir -ChildPath "lib/ServerControl.ps1"
 $developmentLaunchScript = Join-Path -Path $scriptDir -ChildPath "launch-app.ps1"
-$developmentServerScript = Join-Path -Path $resolvedDistributionRoot -ChildPath "apps/admin/backend/admin-server.ps1"
+if (-not (Test-Path -LiteralPath $applicationLayoutLibrary -PathType Leaf)) {
+    throw "The SAPHIR application-layout library is missing from the shared distribution."
+}
+. $applicationLayoutLibrary
+$developmentLayout = Resolve-SaphirApplicationLayout -ApplicationRoot $resolvedDistributionRoot
 
 # A source checkout has no published manifest. Preserve the existing developer
 # workflow while employee distributions always use the versioned local cache.
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf) -and
-    (Test-Path -LiteralPath $developmentServerScript -PathType Leaf) -and
+    $null -ne $developmentLayout -and
     (Test-Path -LiteralPath $developmentLaunchScript -PathType Leaf)) {
     # Source checkouts follow the same warm-launch rule as installed releases.
     # Developers can still request a restart explicitly after editing code.
@@ -179,8 +184,11 @@ function Test-SaphirCacheRepairMayRetryLaunch {
             return $false
         }
 
-        $serverScript = Join-Path -Path $ReleasePath -ChildPath "apps/admin/backend/admin-server.ps1"
-        return (@(Find-ServiceProcessesByScriptPath -ScriptPath $serverScript).Count -eq 0)
+        $applicationLayout = Resolve-SaphirApplicationLayout -ApplicationRoot $ReleasePath
+        if ($null -eq $applicationLayout) {
+            return $false
+        }
+        return (@(Find-ServiceProcessesByScriptPath -ScriptPath ([string]$applicationLayout.ServerScript)).Count -eq 0)
     }
     catch {
         # Failure to establish an offline state is not permission to mutate the
@@ -207,14 +215,17 @@ try {
             $warmFrontendUrl = "http://localhost:8081/"
             $warmRuntimeRoot = Get-SaphirActiveRuntimeRoot -ReleasePath ([string]$warmRelease.ReleasePath)
             $warmPidFile = Join-Path -Path $warmRuntimeRoot -ChildPath "pids/app.pid.json"
-            $warmServerScript = Join-Path -Path ([string]$warmRelease.ReleasePath) -ChildPath "apps/admin/backend/admin-server.ps1"
-            $warmBackendHealthy = Test-ManagedServiceHealthyForScript `
-                -Name "app" `
-                -DisplayName "SAPHIR Backend" `
-                -ServerScript $warmServerScript `
-                -Port 8081 `
-                -PidFile $warmPidFile `
-                -FrontendUrl $warmFrontendUrl
+            $warmLayout = Resolve-SaphirApplicationLayout -ApplicationRoot ([string]$warmRelease.ReleasePath)
+            $warmBackendHealthy = $false
+            if ($null -ne $warmLayout) {
+                $warmBackendHealthy = Test-ManagedServiceHealthyForScript `
+                    -Name "app" `
+                    -DisplayName "SAPHIR Backend" `
+                    -ServerScript ([string]$warmLayout.ServerScript) `
+                    -Port 8081 `
+                    -PidFile $warmPidFile `
+                    -FrontendUrl $warmFrontendUrl
+            }
             if ($warmBackendHealthy) {
                 Open-SaphirWarmFrontend -FrontendUrl $warmFrontendUrl
                 return

@@ -3,6 +3,11 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 $scriptsRoot = Split-Path -Path $scriptDir -Parent
 $repoRoot = (Resolve-Path (Join-Path $scriptsRoot "..")).Path
+$applicationLayoutLibrary = Join-Path -Path $scriptDir -ChildPath "ApplicationLayout.ps1"
+if (-not (Test-Path -LiteralPath $applicationLayoutLibrary -PathType Leaf)) {
+    throw "The SAPHIR application-layout library is unavailable."
+}
+. $applicationLayoutLibrary
 
 $configuredRuntimeRoot = [string]$env:SAPHIR_RUNTIME_ROOT
 if ([string]::IsNullOrWhiteSpace($configuredRuntimeRoot)) {
@@ -33,17 +38,19 @@ Ensure-Directory -Path $logRoot
 function Get-ManagedServiceConfig {
     param([Parameter(Mandatory = $true)][ValidateSet("app")] [string]$Name)
 
+    $applicationLayout = Resolve-SaphirApplicationLayout -ApplicationRoot $repoRoot -Required
+
     return [PSCustomObject]@{
         Name             = "app"
         DisplayName      = "SAPHIR Backend"
         Port             = 8081
-        ServerScript     = Join-Path -Path $repoRoot -ChildPath "apps/admin/backend/admin-server.ps1"
+        ServerScript     = [string]$applicationLayout.ServerScript
         PidFile          = Join-Path -Path $pidRoot -ChildPath "app.pid.json"
         StdOutLog        = Join-Path -Path $logRoot -ChildPath "app.stdout.log"
         StdErrLog        = Join-Path -Path $logRoot -ChildPath "app.stderr.log"
         WorkingDirectory = $repoRoot
         FrontendUrl      = "http://localhost:8081/"
-        FrontendPath     = Join-Path -Path $repoRoot -ChildPath "apps/admin/frontend/index.html"
+        FrontendPath     = [string]$applicationLayout.FrontendIndexPath
     }
 }
 

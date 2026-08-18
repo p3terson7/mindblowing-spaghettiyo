@@ -1,0 +1,17 @@
+[
+  {
+    "code": "B",
+    "labelEn": "Cost Effectiveness",
+    "labelFr": "Coût-efficacité"
+  },
+  {
+    "code": "C",
+    "labelEn": "Exceptional Circumstances",
+    "labelFr": "Circonstances exceptionnelles"
+  },
+  {
+    "code": "D",
+    "labelEn": "Significant Workload Increases",
+    "labelFr": "Augmentation significative de charge de travail"
+  }
+]

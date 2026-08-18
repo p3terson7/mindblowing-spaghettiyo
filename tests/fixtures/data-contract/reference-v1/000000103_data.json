@@ -1,0 +1,19 @@
+[
+  {
+    "entryId": "fixture-active-001",
+    "entryType": "overtime",
+    "name": "Employé avec entrée active",
+    "date": "2026-01-09",
+    "punchIn": "17:15:00",
+    "exactPunchIn": "17:13:00",
+    "punchOut": null,
+    "exactPunchOut": null,
+    "overtime": null,
+    "status": "pending",
+    "message": "",
+    "projectCode": "P-ACT",
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": "D"
+  }
+]

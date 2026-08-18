@@ -2,6 +2,15 @@ $ErrorActionPreference = "Stop"
 
 $script:saphirLauncherControlDirectory = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 
+$applicationLayoutCommand = Get-Command -Name "Resolve-SaphirApplicationLayout" -CommandType Function -ErrorAction SilentlyContinue
+if ($null -eq $applicationLayoutCommand) {
+    $applicationLayoutLibrary = Join-Path -Path $script:saphirLauncherControlDirectory -ChildPath "ApplicationLayout.ps1"
+    if (-not (Test-Path -LiteralPath $applicationLayoutLibrary -PathType Leaf)) {
+        throw "The SAPHIR application-layout library is unavailable."
+    }
+    . $applicationLayoutLibrary
+}
+
 $localCacheCommand = Get-Command -Name "Get-SaphirLocalAppRoot" -CommandType Function -ErrorAction SilentlyContinue
 if ($null -eq $localCacheCommand) {
     $localCacheLibrary = Join-Path -Path $script:saphirLauncherControlDirectory -ChildPath "LocalAppCache.ps1"
@@ -84,16 +93,18 @@ function Get-SaphirLauncherApplicationContext {
     $scriptsDirectory = Split-Path -Path $script:saphirLauncherControlDirectory -Parent
     $controllerRoot = Split-Path -Path $scriptsDirectory -Parent
     $preferSourceContext = Test-SaphirLauncherPathsEqual -FirstPath $DistributionRoot -SecondPath $controllerRoot
-    $sourceServerScript = Join-Path -Path $DistributionRoot -ChildPath "apps/admin/backend/admin-server.ps1"
+    $sourceLayout = Resolve-SaphirApplicationLayout -ApplicationRoot $DistributionRoot
     $sourceLaunchScript = Join-Path -Path $DistributionRoot -ChildPath "scripts/launch-app.ps1"
     if ($preferSourceContext -and
-        (Test-Path -LiteralPath $sourceServerScript -PathType Leaf) -and
+        $null -ne $sourceLayout -and
         (Test-Path -LiteralPath $sourceLaunchScript -PathType Leaf)) {
         return [PSCustomObject]@{
             Kind            = "Source"
             ReleaseId       = "development"
             ApplicationRoot = [System.IO.Path]::GetFullPath($DistributionRoot)
-            ServerScript    = [System.IO.Path]::GetFullPath($sourceServerScript)
+            LayoutKind      = [string]$sourceLayout.Kind
+            ServerScript    = [string]$sourceLayout.ServerScript
+            ConfigPath      = [string]$sourceLayout.ConfigPath
             LaunchScript    = [System.IO.Path]::GetFullPath($sourceLaunchScript)
         }
     }
@@ -106,25 +117,32 @@ function Get-SaphirLauncherApplicationContext {
 
     $activeRelease = Get-SaphirActiveRelease -CacheRoot $CacheRoot
     if ($null -ne $activeRelease) {
-        return [PSCustomObject]@{
-            Kind            = "CachedRelease"
-            ReleaseId       = [string]$activeRelease.ReleaseId
-            ApplicationRoot = [string]$activeRelease.ReleasePath
-            ServerScript    = Join-Path -Path ([string]$activeRelease.ReleasePath) -ChildPath "apps/admin/backend/admin-server.ps1"
-            LaunchScript    = [string]$activeRelease.LaunchScript
+        $cachedLayout = Resolve-SaphirApplicationLayout -ApplicationRoot ([string]$activeRelease.ReleasePath)
+        if ($null -ne $cachedLayout) {
+            return [PSCustomObject]@{
+                Kind            = "CachedRelease"
+                ReleaseId       = [string]$activeRelease.ReleaseId
+                ApplicationRoot = [string]$activeRelease.ReleasePath
+                LayoutKind      = [string]$cachedLayout.Kind
+                ServerScript    = [string]$cachedLayout.ServerScript
+                ConfigPath      = [string]$cachedLayout.ConfigPath
+                LaunchScript    = [string]$activeRelease.LaunchScript
+            }
         }
     }
 
     # A source checkout may be passed explicitly to a controller loaded from a
     # test or another local location. Retain that development workflow after the
     # normal cached-release lookup.
-    if ((Test-Path -LiteralPath $sourceServerScript -PathType Leaf) -and
+    if ($null -ne $sourceLayout -and
         (Test-Path -LiteralPath $sourceLaunchScript -PathType Leaf)) {
         return [PSCustomObject]@{
             Kind            = "Source"
             ReleaseId       = "development"
             ApplicationRoot = [System.IO.Path]::GetFullPath($DistributionRoot)
-            ServerScript    = [System.IO.Path]::GetFullPath($sourceServerScript)
+            LayoutKind      = [string]$sourceLayout.Kind
+            ServerScript    = [string]$sourceLayout.ServerScript
+            ConfigPath      = [string]$sourceLayout.ConfigPath
             LaunchScript    = [System.IO.Path]::GetFullPath($sourceLaunchScript)
         }
     }
@@ -133,7 +151,9 @@ function Get-SaphirLauncherApplicationContext {
         Kind            = "None"
         ReleaseId       = ""
         ApplicationRoot = ""
+        LayoutKind      = ""
         ServerScript    = ""
+        ConfigPath      = ""
         LaunchScript    = ""
     }
 }
@@ -188,8 +208,18 @@ function Get-SaphirLauncherConfiguredDataFolder {
     )
 
     if (-not [string]::IsNullOrWhiteSpace([string]$Context.ApplicationRoot)) {
-        $configPath = Join-Path -Path ([string]$Context.ApplicationRoot) -ChildPath "apps/admin/backend/admin-config.psd1"
-        if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+        $configPath = ""
+        if ($Context.PSObject.Properties.Name -contains "ConfigPath") {
+            $configPath = [string]$Context.ConfigPath
+        }
+        if ([string]::IsNullOrWhiteSpace($configPath)) {
+            $contextLayout = Resolve-SaphirApplicationLayout -ApplicationRoot ([string]$Context.ApplicationRoot)
+            if ($null -ne $contextLayout) {
+                $configPath = [string]$contextLayout.ConfigPath
+            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($configPath) -and
+            (Test-Path -LiteralPath $configPath -PathType Leaf)) {
             try {
                 $config = Import-PowerShellDataFile -LiteralPath $configPath -ErrorAction Stop
                 $configuredPath = [string]$config.DataFolderPath

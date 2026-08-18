@@ -166,23 +166,9 @@ Les actions importantes sont conservées dans `data/history.json`. L’historiqu
 
 L’application distingue maintenant mieux l’auteur de l’action et l’employé concerné. Par exemple, dans une activité récente, le titre peut être l’auteur et le message peut préciser l’employé touché.
 
-### Rapports mensuels HTML
-
-L’application peut ouvrir un rapport mensuel dans un nouvel onglet. Le rapport contient un tableau avec :
-
-- Jour;
-- Raison;
-- Heure de début;
-- Heure de fin;
-- Code de temps supplémentaire;
-- Paiement;
-- Temps total.
-
-Le style est volontairement simple, avec peu de bordures, pour être lisible et proche d’un tableau propre. Ce rapport ne remplace pas encore un PDF officiel rempli automatiquement, mais il aide à rassembler les informations au même endroit.
-
 ### Données de démonstration
 
-Pour les présentations, il existe un bouton dans l’interface permettant de générer des entrées de démonstration. La logique backend est dans `apps/admin/backend/services/SeedService.ps1` et la route utilisée est `POST /seed/demo-entries`.
+Pour les présentations, il existe un bouton dans l’interface permettant de générer des entrées de démonstration. La logique backend est dans `app/backend/services/SeedService.ps1` et la route utilisée est `POST /seed/demo-entries`.
 
 Le script `scripts/seed-presentation-data.ps1` permet aussi de créer un jeu de données plus complet avec environ 30 employés, plusieurs projets et des entrées réparties sur plusieurs mois.
 
@@ -208,22 +194,25 @@ Le projet est organisé autour d’une seule application :
 
 ```text
 SAPHIR/
-  apps/admin/backend/      backend PowerShell
-  apps/admin/frontend/     interface web
+  app/backend/             backend PowerShell
+  app/frontend/            interface web
+  assets/branding/         sources visuelles
   data/                    fichiers JSON de données
+  deploy/bootstrap/        sources des lanceurs distribués
+  docs/prototypes/         maquettes et prototypes hors production
   scripts/                 lancement, arrêt, tests et outils
   runtime/                 PID, logs et fichiers temporaires
   docs/                    notes techniques supplémentaires
 ```
 
-Les anciens dossiers `apps/employee/` peuvent encore exister comme compatibilité, mais le vrai point d’entrée est maintenant l’application unifiée sous `apps/admin/`.
+Il n’existe plus d’application employé séparée : tous les rôles utilisent la même interface et le même backend sous `app/`. Le dépôt ne contient donc plus de second arbre `apps/employee`. Seul le nettoyage des anciens PID et du port 8080 est conservé temporairement pour les postes ayant exécuté une ancienne version.
 
 ### Backend PowerShell
 
 Le backend principal est :
 
 ```text
-apps/admin/backend/admin-server.ps1
+app/backend/saphir-server.ps1
 ```
 
 Il utilise `System.Net.HttpListener`. Par défaut, il écoute sur :
@@ -235,7 +224,7 @@ http://localhost:8081/
 Le fichier de configuration principal est :
 
 ```text
-apps/admin/backend/admin-config.psd1
+app/backend/saphir-config.psd1
 ```
 
 Exemple actuel :
@@ -243,7 +232,7 @@ Exemple actuel :
 ```powershell
 @{
     ListenerPrefix = "http://localhost:8081/"
-    DataFolderPath = "../../../data"
+    DataFolderPath = "../../data"
 }
 ```
 
@@ -266,7 +255,7 @@ Les services importants sont :
 
 ### Routes backend
 
-Les routes sont séparées dans `apps/admin/backend/routes/`. Quelques routes importantes :
+Les routes sont séparées dans `app/backend/routes/`. Quelques routes importantes :
 
 | Route | Utilité |
 | --- | --- |
@@ -298,13 +287,13 @@ Les routes sont séparées dans `apps/admin/backend/routes/`. Quelques routes im
 Le frontend principal est :
 
 ```text
-apps/admin/frontend/index.html
+app/frontend/index.html
 ```
 
 Les scripts JavaScript sont dans :
 
 ```text
-apps/admin/frontend/scripts/
+app/frontend/scripts/
 ```
 
 Les fichiers les plus importants sont :
@@ -325,10 +314,10 @@ Les fichiers les plus importants sont :
 Le style principal est dans :
 
 ```text
-apps/admin/frontend/assets/styles.css
+app/frontend/assets/styles.css
 ```
 
-Les bibliothèques frontend sont locales dans `apps/admin/frontend/assets/vendor/`. Cela évite de dépendre d’un CDN externe, ce qui est important sur un réseau de travail restreint.
+Les bibliothèques frontend sont locales dans `app/frontend/assets/vendor/`. Cela évite de dépendre d’un CDN externe, ce qui est important sur un réseau de travail restreint.
 
 ## 7. Stockage des données
 
@@ -402,7 +391,7 @@ Le backend valide les permissions côté serveur. Le frontend masque aussi les b
 
 ## 9. Concurrence, intégrité et synchronisation
 
-Comme le projet n’utilise pas de base de données, il faut être prudent avec les écritures simultanées. Le fichier `apps/admin/backend/lib/FileStore.ps1` contient la logique utilisée pour réduire les risques :
+Comme le projet n’utilise pas de base de données, il faut être prudent avec les écritures simultanées. Le fichier `app/backend/lib/FileStore.ps1` contient la logique utilisée pour réduire les risques :
 
 - verrous par ressource avec fichiers `.lock`;
 - écritures atomiques avec fichiers temporaires;
@@ -465,16 +454,28 @@ Sur macOS :
 
 ### Lancement sur Windows
 
-La façon la plus simple est d’utiliser les lanceurs :
+Dans une copie du dépôt source, les lanceurs Windows se trouvent sous
+`deploy/bootstrap/` :
 
 ```text
-Launch SAPHIR.bat
-Launch SAPHIR.vbs
+deploy/bootstrap/Launch SAPHIR.bat
+deploy/bootstrap/Launch SAPHIR.vbs
 ```
 
-Dans une distribution d'équipe, ces lanceurs consultent un petit manifeste réseau au démarrage à froid, installent automatiquement la version courante dans `%LOCALAPPDATA%\SAPHIR\versions`, puis exécutent l'application localement. Si la version locale active est déjà en cours d'exécution et répond normalement, un nouveau clic rouvre seulement le navigateur sans relire le manifeste réseau. Les mises à jour sont donc détectées au prochain démarrage à froid (après **Stop SAPHIR**, un redémarrage du poste ou l'arrêt du serveur local); une version différente ou un serveur qui ne répond plus déclenche alors automatiquement un redémarrage. Il faut créer un **raccourci** vers le lanceur réseau, et non copier le fichier VBS sur le bureau. Voir [le guide de déploiement avec cache local](docs/LOCAL-CACHE-DEPLOYMENT.md) et [le guide de démarrage des employés](docs/EMPLOYEE-QUICK-START.md).
+Le script de paquetage les publie néanmoins directement à la racine du dossier
+`SAPHIR-Distribution`, afin de conserver le parcours employé et les raccourcis
+existants. Dans une distribution d'équipe, ces lanceurs consultent un petit manifeste réseau au démarrage à froid, installent automatiquement la version courante dans `%LOCALAPPDATA%\SAPHIR\versions`, puis exécutent l'application localement. Si la version locale active est déjà en cours d'exécution et répond normalement, un nouveau clic rouvre seulement le navigateur sans relire le manifeste réseau. Les mises à jour sont donc détectées au prochain démarrage à froid (après **Stop SAPHIR**, un redémarrage du poste ou l'arrêt du serveur local); une version différente ou un serveur qui ne répond plus déclenche alors automatiquement un redémarrage. Il faut créer un **raccourci** vers le lanceur réseau, et non copier le fichier VBS sur le bureau. Voir [le guide de déploiement avec cache local](docs/LOCAL-CACHE-DEPLOYMENT.md) et [le guide de démarrage des employés](docs/EMPLOYEE-QUICK-START.md).
 
 Dans le dossier distribué, l’employé double-clique une fois sur `Install SAPHIR Shortcut.vbs`. Ce script crée `SAPHIR.lnk` sur le Bureau, copie `SAPHIR.ico` dans `%LOCALAPPDATA%\SAPHIR\assets` pour éviter les lectures répétées du lecteur réseau, puis configure le raccourci pour appeler le lanceur VBS réseau. Aucun exécutable compilé ni droit administrateur n’est nécessaire.
+
+Lors du passage d’une distribution historique à la topologie canonique `app/`,
+le déploiement se fait obligatoirement en deux publications : d’abord
+`scripts/package-app.ps1 -BootstrapOnly`, puis une réinstallation du raccourci
+par les utilisateurs; ensuite seulement, la première release canonique est
+publiée normalement. Le lanceur ainsi mis à jour sait démarrer aussi bien une
+release canonique qu’une ancienne release locale utilisée pour le retour
+arrière. La procédure complète est décrite dans
+[`docs/LOCAL-CACHE-DEPLOYMENT.md`](docs/LOCAL-CACHE-DEPLOYMENT.md).
 
 Pour arrêter l’application :
 
@@ -506,7 +507,7 @@ pwsh ./scripts/launch-app.ps1
 ou :
 
 ```bash
-./Launch\ SAPHIR.command
+./scripts/dev/Launch\ SAPHIR.command
 ```
 
 Après avoir modifié le code source en développement, on peut forcer un redémarrage avec `pwsh ./scripts/launch-app.ps1 -Force`.
@@ -538,7 +539,7 @@ pwsh ./scripts/stop-all.ps1
 Le chemin des données se configure dans :
 
 ```text
-apps/admin/backend/admin-config.psd1
+app/backend/saphir-config.psd1
 ```
 
 Exemple avec un dossier réseau :
@@ -605,29 +606,34 @@ En plus des actions d’un admin, un super admin peut :
 ```text
 SAPHIR/
   README.md
-  DOCUMENTATION_PROJET.md
-  Launch SAPHIR.bat
-  Launch SAPHIR.command
-  Launch SAPHIR.vbs
-  Install SAPHIR Shortcut.vbs
-  SAPHIR.ico
-  icon_cropped_final.png
-  Stop SAPHIR.bat
-  Stop SAPHIR.command
-  Stop SAPHIR.vbs
 
-  apps/
-    admin/
-      backend/
-        admin-server.ps1
-        admin-config.psd1
-        lib/
-        routes/
-        services/
-      frontend/
-        index.html
-        assets/
-        scripts/
+  assets/
+    branding/
+      icon_cropped_final.png
+
+  deploy/
+    bootstrap/
+      Launch SAPHIR.bat
+      Launch SAPHIR.vbs
+      Install SAPHIR Shortcut.vbs
+      SAPHIR Launcher.vbs
+      SAPHIR.ico
+      Stop SAPHIR.bat
+      Stop SAPHIR.vbs
+
+  app/
+    backend/
+      saphir-server.ps1
+      saphir-config.psd1
+      lib/
+        AppContext.ps1
+      modules/
+      routes/
+      services/
+    frontend/
+      index.html
+      assets/
+      scripts/
 
   data/
     users.json
@@ -643,6 +649,9 @@ SAPHIR/
     .locks/
 
   scripts/
+    dev/
+      Launch SAPHIR.command
+      Stop SAPHIR.command
     launch-app.ps1
     start-all.ps1
     stop-all.ps1
@@ -650,7 +659,13 @@ SAPHIR/
     restart-all.ps1
     seed-demo-entries.ps1
     seed-presentation-data.ps1
-    test-powershell51-compat.ps1
+    test-all.ps1
+    lib/
+
+  tests/
+    powershell/
+    frontend/
+    fixtures/
     lib/
 
   runtime/
@@ -659,6 +674,17 @@ SAPHIR/
 ```
 
 ## 15. Validation et compatibilité
+
+La suite complète se lance maintenant avec une seule commande :
+
+```powershell
+./scripts/test-all.ps1
+```
+
+Elle exécute l'audit PowerShell 5.1, tous les tests PowerShell, puis tous les
+tests JavaScript, dans le même ordre que la CI Windows. Les options de filtrage,
+les rapports JSON, les fixtures isolées et la baseline de performance sont
+documentés dans [`docs/TESTING.md`](docs/TESTING.md).
 
 Le projet doit rester compatible avec Windows PowerShell 5.1. Cela veut dire qu’il faut éviter certaines syntaxes modernes de PowerShell 7, par exemple :
 
@@ -669,20 +695,21 @@ Le projet doit rester compatible avec Windows PowerShell 5.1. Cela veut dire qu�
 Un script de vérification existe :
 
 ```powershell
-./scripts/test-powershell51-compat.ps1 -FailOnIssues
+./tests/powershell/test-powershell51-compat.ps1 -FailOnIssues
 ```
 
 Pour valider les fichiers JavaScript modifiés, on peut aussi utiliser Node si disponible :
 
 ```bash
-node --check apps/admin/frontend/scripts/AppShell.js
-node --check apps/admin/frontend/scripts/Views/SelfView.js
-node --check apps/admin/frontend/scripts/Views/EmployeesView.js
-node --check apps/admin/frontend/scripts/Views/DashboardView.js
-node --check apps/admin/frontend/scripts/Views/ProjectsView.js
+node --check app/frontend/scripts/AppShell.js
+node --check app/frontend/scripts/Views/SelfView.js
+node --check app/frontend/scripts/Views/EmployeesView.js
+node --check app/frontend/scripts/Views/DashboardView.js
+node --check app/frontend/scripts/Views/ProjectsView.js
 ```
 
-Ce n’est pas une suite de tests complète, mais ça aide à attraper les erreurs de syntaxe avant une démonstration ou une livraison.
+Ces commandes ciblées restent utiles pendant le développement, mais
+`scripts/test-all.ps1` est la validation de référence avant une livraison.
 
 ## 16. Erreurs fréquentes et points importants
 
@@ -751,9 +778,8 @@ Les limites principales sont :
 - la performance dépend beaucoup du poste et du lecteur réseau;
 - les verrous de fichiers réduisent les conflits, mais ne remplacent pas des transactions de base de données;
 - il n’y a pas encore d’intégration Active Directory ou SSO;
-- le rapport mensuel est en HTML, pas encore un PDF officiel rempli automatiquement;
 - les sauvegardes doivent être gérées séparément;
-- il n’y a pas encore une suite complète de tests automatisés.
+- les scénarios de perte réseau sur un vrai partage SMB restent à valider sur Windows avant chaque déploiement important.
 
 Ces limites ne bloquent pas l’utilisation interne, mais elles sont importantes à connaître avant de déployer plus largement.
 

@@ -16,7 +16,7 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v7
 
-      - name: Validate launcher with Windows PowerShell 5.1
+      - name: Run the complete Phase 0 safety suite
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -24,25 +24,4 @@ jobs:
               throw "This smoke must run under Windows PowerShell 5.1."
           }
 
-          .\scripts\test-powershell51-compat.ps1 -FailOnIssues
-
-          $tests = Get-ChildItem -Path .\scripts -Filter "test-*.ps1" -File |
-              Where-Object { $_.Name -ne "test-powershell51-compat.ps1" } |
-              Sort-Object Name
-          foreach ($test in $tests) {
-              Write-Host "Running $($test.Name)"
-              & $test.FullName
-          }
-
-      - name: Run browser-side contract tests
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $tests = Get-ChildItem -Path .\scripts -Filter "test-*.js" -File | Sort-Object Name
-          foreach ($test in $tests) {
-              Write-Host "Running $($test.Name)"
-              & node $test.FullName
-              if ($LASTEXITCODE -ne 0) {
-                  throw "$($test.Name) failed with exit code $LASTEXITCODE."
-              }
-          }
+          .\scripts\test-all.ps1 -ReportPath .\output\test-reports\phase0-windows-ci.json

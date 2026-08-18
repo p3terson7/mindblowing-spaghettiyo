@@ -2,7 +2,14 @@
 
 This deployment keeps only a small graphical launcher, `current.json`, and versioned release ZIPs on the shared network folder. Each employee automatically runs the application from `%LOCALAPPDATA%\SAPHIR\versions` while continuing to use the same shared data folder. The launcher itself is also copied to `%LOCALAPPDATA%\SAPHIR\launcher`, so its status window can still open when the deployment share is temporarily unavailable.
 
-## One-time preparation
+New releases use the single canonical application tree, `app/backend` and
+`app/frontend`. The versioned runtime starts at
+`app/backend/saphir-server.ps1`, with configuration in
+`app/backend/saphir-config.psd1`. Launcher source files live under
+`deploy/bootstrap` in the repository, although packaging still places them at
+the root of `SAPHIR-Distribution` for employees.
+
+## Preparing a new distribution
 
 1. Choose a stable application parent folder, for example `\\server\department\Applications`.
 2. Choose the existing shared SAPHIR data folder. A UNC path such as `\\server\department\SAPHIR-Data` is preferred, but a mapped network drive such as R:\SAPHIR-Data is also supported.
@@ -36,7 +43,7 @@ Use simple folder permissions:
 
 These permissions do not add runtime encryption or expensive security checks. They mainly prevent accidental deletion or replacement of the launcher and release files.
 
-## One-time SAPHIR cutover
+## First shortcut installation
 
 `SAPHIR-Distribution` is a new stable folder. Existing Desktop shortcuts do not retarget themselves, so send employees the exact new network path and ask them to run `Install SAPHIR Shortcut.vbs` once. This installs a zero-admin launcher under `%LOCALAPPDATA%\SAPHIR\launcher` and creates the **SAPHIR** Desktop shortcut. The local window opens without synchronously touching the share; network, update and data checks happen in the background. Keep the previous distribution available during the pilot, then archive it according to your normal retention process after everyone has confirmed the new shortcut. Rerun the installer only when the launcher itself changes; ordinary SAPHIR application updates remain automatic.
 
@@ -44,9 +51,60 @@ The launcher uses Windows Script Host, Windows PowerShell 5.1 and WPF already in
 
 SAPHIR deliberately does not delete the previous local cache during this cutover, so a pilot can still be rolled back safely. That inactive cache consumes disk space only; it does not run and does not slow SAPHIR. It can be removed later through your normal managed workstation cleanup after the rollout is confirmed.
 
+## Required two-step transition from an existing deployment
+
+Do not publish the first canonical release directly over a distribution whose
+employees still have an older locally installed launcher. The transition is
+intentionally split so every workstation learns both application layouts before
+`current.json` points to the canonical one.
+
+### Step 1 — publish only the bootstrap
+
+From the updated repository, run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 `
+  -OutputRoot "\\server\department\Applications" `
+  -BootstrapOnly
+```
+
+This updates only the stable launcher, installer, icon and launcher-side
+PowerShell libraries in `SAPHIR-Distribution`. It does not publish an
+application release, does not update `current.json`, and does not touch DATA.
+
+Ask every employee to open `SAPHIR-Distribution` and run
+`Install SAPHIR Shortcut.vbs` again. Confirm on a pilot workstation that the
+local files under `%LOCALAPPDATA%\SAPHIR\launcher` were refreshed and that the
+currently deployed application still opens.
+
+### Step 2 — publish the first canonical release
+
+Only after the shortcut reinstall has been confirmed, publish normally:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 `
+  -OutputRoot "\\server\department\Applications" `
+  -DataFolderPath "\\server\department\SAPHIR-Data" `
+  -NoZip
+```
+
+Then stop and start SAPHIR on the pilot workstation. Confirm that its new cache
+contains `app/backend/saphir-server.ps1` and `app/frontend/index.html`, and run
+the shared-DATA checks below before wider rollout.
+
+### Legacy rollback compatibility
+
+The updated launcher recognizes both the canonical layout and the historical
+`apps/admin` layout. This exception exists only so an already cached previous
+release can be used for automatic rollback; it is not a supported source layout
+for new development or packaging. Keep the previous release ZIP and local cache
+throughout the pilot. Do not remove them merely because the canonical release
+started once.
+
 ## Publishing an update
 
-Run the same command again from the updated repository. The publisher:
+After the two-step transition has been completed once, ordinary updates require
+only the normal packaging command. The publisher:
 
 1. creates a new immutable runtime ZIP;
 2. computes its SHA-256 checksum;
@@ -59,7 +117,13 @@ Employees receive the update when they choose **Start SAPHIR** while it is stopp
 
 For the first deployment and important updates, publish first to a separate pilot parent folder and give that shortcut to one or two employees. After they confirm that sign-in, loading, saving and stopping work from the real Windows shared-drive environment, run the normal production publish command above.
 
-If a production release is bad, restore the last working source-code version or Git commit and run the production publish command again. This publishes the working code under a new release ID and moves everyone forward safely. Do not edit `current.json` by hand. Employees who already have a working local version fall back automatically, but a first-time user needs the corrected release to be published.
+If the first canonical production release cannot start, the updated launcher can
+fall back to the previous cached release even when that release uses the legacy
+layout. Keep the updated bootstrap in place and publish a corrected canonical
+release under a new release ID. Do not republish an old bootstrap, edit
+`current.json` by hand or delete the previous cache during the incident. A
+first-time user who has no previous local release needs the corrected canonical
+release to be published.
 
 ## Initial validation
 

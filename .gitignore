@@ -13,5 +13,10 @@ legacy/git-metadata/
 runtime/
 dist/
 
+# Generated build, inspection and exported-report artifacts
+build/
+tmp/
+output/
+
 # Local data snapshots must never be published
 v1_data/
