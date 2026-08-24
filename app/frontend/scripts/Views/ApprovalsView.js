@@ -41,7 +41,7 @@ function buildApprovalProjectOptions(projects, entries) {
     .concat(Object.keys(projectMap).sort((left, right) => left.localeCompare(right)).map(projectCode => {
       const selected = currentValue === projectCode ? " selected" : "";
       const project = projectMap[projectCode];
-      return `<option value="${escapeHtml(projectCode)}" data-project-color-key="${escapeHtml(getProjectColorKey(project))}"${selected}>${escapeHtml(formatProjectCodeAndName(project))}</option>`;
+      return `<option value="${escapeHtml(projectCode)}" data-project-color-key="${escapeHtml(getProjectColorKey(project))}" data-project-marker-key="${escapeHtml(getProjectMarkerKey(project))}"${selected}>${escapeHtml(formatProjectCodeAndName(project))}</option>`;
     }));
 
   return options.join("");
@@ -94,6 +94,7 @@ function getFilteredApprovalEntries() {
 async function loadApprovalsView() {
   try {
     setLoadingState("pendingContainer", "queue", 3);
+    setLoadingState("attentionContainer", "queue", 2);
     setLoadingState("rejectedContainer", "queue", 2);
     setLoadingState("approvedContainer", "queue", 2);
     const entries = await fetch(apiUrl + "approvals/entries").then(parseResponse);
@@ -112,6 +113,7 @@ async function loadApprovalsView() {
 async function loadReviewView() {
   try {
     setLoadingState("pendingContainer", "queue", 3);
+    setLoadingState("attentionContainer", "queue", 2);
     setLoadingState("rejectedContainer", "queue", 2);
     setLoadingState("approvedContainer", "queue", 2);
     setLoadingState("allHistoryContainer", "activity", 4);
@@ -145,16 +147,76 @@ async function loadReviewView() {
 
 window.loadReviewView = loadReviewView;
 
-function updateApprovalTabLabels(pendingEntries, rejectedEntries, approvedEntries) {
+function updateApprovalTabLabels(pendingEntries, attentionEntries, rejectedEntries, approvedEntries) {
   document.getElementById("pending-tab").textContent = t("review.pending", { count: pendingEntries.length });
+  document.getElementById("attention-tab").textContent = t("review.attentionTab", { count: attentionEntries.length });
   document.getElementById("rejected-tab").textContent = t("review.rejected", { count: rejectedEntries.length });
   document.getElementById("approved-tab").textContent = t("review.approved", { count: approvedEntries.length });
+}
+
+const REVIEW_ISSUE_I18N_KEYS = Object.freeze({
+  shortovertime: "review.issue.shortOvertime",
+  clockoutmissing: "review.issue.clockOutMissing",
+  invalidpunchtimes: "review.issue.invalidPunchTimes",
+});
+
+function normalizeReviewIssueCode(issue) {
+  const rawCode = typeof issue === "string"
+    ? issue
+    : (issue && typeof issue === "object" ? (issue.code || issue.issueCode || issue.type || "") : "");
+  return String(rawCode || "").trim().toLowerCase();
+}
+
+function getReviewIssueCodes(entry) {
+  const issues = entry && Array.isArray(entry.reviewIssues) ? entry.reviewIssues : [];
+  return Array.from(new Set(issues
+    .map(normalizeReviewIssueCode)
+    .filter(code => Object.prototype.hasOwnProperty.call(REVIEW_ISSUE_I18N_KEYS, code))));
+}
+
+function hasReviewIssues(entry) {
+  if (!entry || typeof entry !== "object") {
+    return false;
+  }
+
+  if (entry.hasReviewIssues === true) {
+    return true;
+  }
+
+  if (Array.isArray(entry.reviewIssues)) {
+    return entry.reviewIssues.length > 0;
+  }
+
+  return Boolean(String(entry.reviewIssues || "").trim());
+}
+
+function getReviewAttentionEntries(entries) {
+  return (Array.isArray(entries) ? entries : []).filter(hasReviewIssues);
+}
+
+function renderReviewIssues(entry) {
+  if (!hasReviewIssues(entry)) {
+    return "";
+  }
+
+  const issueCodes = getReviewIssueCodes(entry);
+  const issueItems = issueCodes.length > 0
+    ? issueCodes.map(code => `<li class="review-card-attention-item">${escapeHtml(t(REVIEW_ISSUE_I18N_KEYS[code]))}</li>`).join("")
+    : `<li class="review-card-attention-item">${escapeHtml(t("review.issue.generic"))}</li>`;
+
+  return `
+    <section class="review-card-attention" aria-label="${escapeHtml(t("review.attention"))}">
+      <div class="review-card-attention-title"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${escapeHtml(t("review.attention"))}</span></div>
+      <ul class="review-card-attention-list">${issueItems}</ul>
+    </section>
+  `;
 }
 
 function buildApprovalCard(entry, showActions) {
   const exactTimeLabel = getEntryExactTimeLabel(entry);
   const permissionBadge = getEntryPermissionBadgeMarkup(entry);
-  const canReview = showActions && !isEntryForgottenClockOut(entry) && canApproveEntry(entry);
+  const isPending = String(entry && entry.status || "pending").toLowerCase() === "pending";
+  const canReview = showActions && isPending && !isEntryForgottenClockOut(entry) && canApproveEntry(entry);
   const canManage = canModifyEntry(entry);
   const projectCode = String(entry && entry.projectCode || "").trim();
   const projectRecord = findProjectByCode(approvalScopedProjects, projectCode) || projectCode;
@@ -201,10 +263,11 @@ function buildApprovalCard(entry, showActions) {
         <span class="meta-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
         <span class="meta-pill">EMP ${escapeHtml(entry.employeeCode)}</span>
       </div>
+      ${renderReviewIssues(entry)}
       ${renderEntryWorkComment(entry)}
       ${entry.message ? `
         <div class="review-card-message">
-          <div class="entry-work-comment-label">${escapeHtml(t("shared.managerMessage"))}</div>
+          <div class="entry-work-comment-label">${escapeHtml(getEntrySupervisorNoteLabel(entry))}</div>
           <div>${escapeHtml(entry.message)}</div>
         </div>
       ` : `<div class="panel-note">${escapeHtml(t("shared.noManagerNote"))}</div>`}
@@ -224,10 +287,10 @@ function buildApprovalCard(entry, showActions) {
   `;
 }
 
-function renderApprovalsList(containerId, entries, showActions) {
+function renderApprovalsList(containerId, entries, showActions, emptyMessage = "") {
   const container = document.getElementById(containerId);
   if (!entries || entries.length === 0) {
-    container.innerHTML = createEmptyState(showActions ? t("review.nonePending") : t("review.noneForState"));
+    container.innerHTML = createEmptyState(emptyMessage || (showActions ? t("review.nonePending") : t("review.noneForState")));
     return;
   }
 
@@ -236,11 +299,13 @@ function renderApprovalsList(containerId, entries, showActions) {
 
 function renderApprovalTabsFromFiltered(entries) {
   const pendingEntries = entries.filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry));
+  const attentionEntries = getReviewAttentionEntries(entries);
   const rejectedEntries = entries.filter(entry => String(entry.status || "").toLowerCase() === "rejected");
   const approvedEntries = entries.filter(entry => String(entry.status || "").toLowerCase() === "approved");
 
-  updateApprovalTabLabels(pendingEntries, rejectedEntries, approvedEntries);
+  updateApprovalTabLabels(pendingEntries, attentionEntries, rejectedEntries, approvedEntries);
   renderApprovalsList("pendingContainer", pendingEntries, true);
+  renderApprovalsList("attentionContainer", attentionEntries, true, t("review.noneAttention"));
   renderApprovalsList("rejectedContainer", rejectedEntries, false);
   renderApprovalsList("approvedContainer", approvedEntries, false);
   updateApproveFilteredButtonState(entries);
@@ -449,5 +514,5 @@ document.getElementById("approvalsSection").addEventListener("click", event => {
   }
 });
 
-updateApprovalTabLabels([], [], []);
+updateApprovalTabLabels([], [], [], []);
 updateApproveFilteredButtonState([]);

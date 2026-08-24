@@ -274,8 +274,9 @@ $script:RoundTripEmployee = [PSCustomObject]@{
         givenName          = "JANE"
         initials           = "JS"
         pri                = "000123456"
-        position           = "STS"
-        level              = "SUF-00"
+        group              = "STS"
+        subGroup           = "SUF-00"
+        level              = "01"
         compressedWorkWeek = $false
     }
 }
@@ -300,13 +301,19 @@ function ConvertTo-Gc179ProfileObject {
     return $script:RoundTripEmployee.gc179Profile
 }
 
-function ConvertTo-Gc179PositionText {
+function ConvertTo-Gc179GroupText {
     param([string]$Value)
     $normalized = [System.Text.RegularExpressions.Regex]::Replace(([string]$Value).Trim().ToUpperInvariant(), "[^0-9A-Z._/-]", "")
     return $normalized.Substring(0, [math]::Min(6, $normalized.Length))
 }
 
-function ConvertTo-Gc179EchelonText {
+function ConvertTo-Gc179SubGroupText {
+    param([string]$Value)
+    $normalized = [System.Text.RegularExpressions.Regex]::Replace(([string]$Value).Trim().ToUpperInvariant(), "[^0-9A-Z._/-]", "")
+    return $normalized.Substring(0, [math]::Min(10, $normalized.Length))
+}
+
+function ConvertTo-Gc179LevelText {
     param([string]$Value)
     $normalized = [System.Text.RegularExpressions.Regex]::Replace(([string]$Value).Trim().ToUpperInvariant(), "[^0-9A-Z._/-]", "")
     return $normalized.Substring(0, [math]::Min(10, $normalized.Length))
@@ -354,8 +361,49 @@ $roundTripExport = New-Gc179FdfExportPart `
     -Entries @($roundTripEntry) `
     -WorkedDateSet $roundTripWorkedDates
 
-Assert-Equal -Expected "000123456_SMITH_JANE_GC179_2026_07.fdf" -Actual $roundTripExport.FileName -Message "The current GC179 export filename contract changed."
+Assert-Equal -Expected "000123456_SMITH_J_GC179_2026-07_TEMPS.fdf" -Actual $roundTripExport.FileName -Message "A time-compensation GC179 does not follow the HRMIS_NAME_INITIAL_GC179_YYYY-MM_TEMPS contract."
+Assert-Equal -Expected "000123456" -Actual (Get-Gc179ImportFileEmployeeCode -FileName $roundTripExport.FileName) -Message "The GC179 importer no longer recognizes the employee code in the new TEMPS filename."
 Assert-True -Condition ([string]$roundTripExport.Content).StartsWith("%FDF-1.2") -Message "The export service must still produce FDF 1.2 content."
+
+$cashEntry = [PSCustomObject]@{
+    entryType     = "overtime"
+    date          = "2026-07-06"
+    punchIn       = "17:00:00"
+    punchOut      = "18:00:00"
+    overtime      = "01:00:00"
+    status        = "approved"
+    overtimeCode  = "262"
+    paymentOption = "cash"
+    reasonCode    = "B"
+}
+$cashExport = New-Gc179FdfExportPart `
+    -EmployeeCode "000123456" `
+    -MonthParts $roundTripMonth `
+    -Entries @($cashEntry) `
+    -WorkedDateSet $roundTripWorkedDates
+Assert-Equal -Expected "000123456_SMITH_J_GC179_2026-07.fdf" -Actual $cashExport.FileName -Message "A cash GC179 incorrectly received the TEMPS suffix or lost the requested naming format."
+
+$mixedPaymentExport = New-Gc179FdfExportPart `
+    -EmployeeCode "000123456" `
+    -MonthParts $roundTripMonth `
+    -Entries @($cashEntry, $roundTripEntry) `
+    -WorkedDateSet $roundTripWorkedDates
+Assert-Equal -Expected "000123456_SMITH_J_GC179_2026-07_TEMPS.fdf" -Actual $mixedPaymentExport.FileName -Message "A mixed GC179 containing a time-compensation request must receive the TEMPS suffix."
+
+$accentedBaseName = Get-Gc179ExportBaseFileName `
+    -EmployeeCode "000987654" `
+    -HeaderValues ([PSCustomObject]@{ Surname = " GAGNÉ-LÉVESQUE "; Given = " Élodie Marie " }) `
+    -MonthParts $roundTripMonth
+Assert-Equal -Expected "000987654_GAGNE_LEVESQUE_E_GC179_2026-07" -Actual $accentedBaseName -Message "GC179 filenames must safely normalize accents and use only the given-name initial."
+
+$multipartTimeBaseName = Get-Gc179ExportBaseFileName `
+    -EmployeeCode "000123456" `
+    -HeaderValues ([PSCustomObject]@{ Surname = "SMITH"; Given = "JANE" }) `
+    -MonthParts $roundTripMonth `
+    -PartNumber 1 `
+    -PartCount 2 `
+    -IncludesTimePayment $true
+Assert-Equal -Expected "000123456_SMITH_J_GC179_2026-07_1sur2_TEMPS" -Actual $multipartTimeBaseName -Message "Multipart GC179 filenames must remain unique while keeping TEMPS as the final suffix."
 
 $roundTripPreview = New-Gc179ImportPreview `
     -FdfContent ([string]$roundTripExport.Content) `
@@ -367,9 +415,9 @@ $roundTripPreview = New-Gc179ImportPreview `
 
 Assert-Equal -Expected 1 -Actual $roundTripPreview.entryCount -Message "The import service could not read current export output."
 Assert-Equal -Expected "000 123 456" -Actual $roundTripPreview.header.pri -Message "The GC179 PRI header did not survive export/import."
-Assert-Equal -Expected "STS" -Actual $roundTripPreview.header.group -Message "The employee's position was not exported into the GC179 Group field."
-Assert-Equal -Expected "SUF-00" -Actual $roundTripPreview.header.subGroup -Message "The employee's echelon was not exported into the GC179 Sub-Group field."
-Assert-Equal -Expected "" -Actual $roundTripPreview.header.level -Message "SAPHIR must not duplicate the echelon into the distinct GC179 Level field."
+Assert-Equal -Expected "STS" -Actual $roundTripPreview.header.group -Message "The employee's Group was not exported into the GC179 Group field."
+Assert-Equal -Expected "SUF-00" -Actual $roundTripPreview.header.subGroup -Message "The employee's Sub-Group was not exported into the GC179 Sub-Group field."
+Assert-Equal -Expected "01" -Actual $roundTripPreview.header.level -Message "The employee's Level was not exported into the distinct GC179 Level field."
 $roundTripImportedEntry = @($roundTripPreview.entries)[0]
 Assert-Equal -Expected "2026-07-05" -Actual $roundTripImportedEntry.date -Message "The round-trip entry date changed."
 Assert-Equal -Expected "09:15:00" -Actual $roundTripImportedEntry.punchIn -Message "The round-trip start time changed."
@@ -381,12 +429,13 @@ Assert-Equal -Expected "262" -Actual $roundTripImportedEntry.overtimeCode -Messa
 Assert-Equal -Expected "leave" -Actual $roundTripImportedEntry.paymentOption -Message "The round-trip payment choice changed."
 Assert-Equal -Expected "B" -Actual $roundTripImportedEntry.reasonCode -Message "The round-trip reason code changed."
 
-$script:RoundTripEmployee.gc179Profile.position = "CR4"
-$script:RoundTripEmployee.gc179Profile.level = "2"
+$script:RoundTripEmployee.gc179Profile.group = "CR4"
+$script:RoundTripEmployee.gc179Profile.subGroup = "2"
+$script:RoundTripEmployee.gc179Profile.level = "03"
 $nonStudentHeader = Get-Gc179HeaderValues -EmployeeCode "000123456" -MonthParts $roundTripMonth
-Assert-Equal -Expected "CR4" -Actual $nonStudentHeader.Group -Message "A non-student position was not mapped to the GC179 Group field."
-Assert-Equal -Expected "2" -Actual $nonStudentHeader.SubGroup -Message "A non-student echelon was not mapped to the GC179 Sub-Group field."
-Assert-Equal -Expected "" -Actual $nonStudentHeader.Level -Message "The separate GC179 Level field must remain blank."
+Assert-Equal -Expected "CR4" -Actual $nonStudentHeader.Group -Message "A non-student Group was not mapped to the GC179 Group field."
+Assert-Equal -Expected "2" -Actual $nonStudentHeader.SubGroup -Message "A non-student Sub-Group was not mapped to the GC179 Sub-Group field."
+Assert-Equal -Expected "03" -Actual $nonStudentHeader.Level -Message "A non-student Level was not mapped to the GC179 Level field."
 
 $script:RoundTripEmployee.gc179Profile = [PSCustomObject]@{
     surname            = "SMITH"
@@ -404,8 +453,9 @@ $script:RoundTripEmployee.gc179Profile = [PSCustomObject]@{
     givenName          = "JANE"
     initials           = "JS"
     pri                = "000123456"
-    position           = "STS"
-    level              = "SUF-00"
+    group              = "STS"
+    subGroup           = "SUF-00"
+    level              = "01"
     compressedWorkWeek = $false
 }
 
@@ -774,6 +824,10 @@ try {
     Assert-Equal -Expected $sourceHash -Actual $storedEntry.gc179SourceHash -Message "Stored provenance lost the source-file hash."
     Assert-Equal -Expected "manager" -Actual $storedEntry.gc179ImportedBy -Message "Stored provenance lost the importing administrator."
     Assert-Equal -Expected "gc179-000100001-2026-05.fdf" -Actual $storedEntry.gc179SourceFile -Message "Stored provenance lost the safe source filename."
+    $expectedRouteImportNote = "Import automatique de GC179 par Manager.$([Environment]::NewLine)Validated fixture"
+    Assert-Equal -Expected $expectedRouteImportNote -Actual ([string]$storedEntry.message) -Message "GC179 imports must add an automatic supervisor note without losing the manual note."
+    Assert-Equal -Expected "Manager" -Actual ([string]$storedEntry.messageAuthorName) -Message "The automatic GC179 supervisor note must retain the importing supervisor's name."
+    Assert-Equal -Expected "manager" -Actual ([string]$storedEntry.messageAuthorUsername) -Message "The automatic GC179 supervisor note must retain the importing supervisor's username."
     Assert-True -Condition (-not [string]::IsNullOrWhiteSpace([string]$storedEntry.gc179ImportFingerprint)) -Message "Stored GC179 entries need a fingerprint for safe undo."
 
     $duplicatePreview = New-Gc179ImportPreview -FdfContent $fixtureContent -EmployeeCode "000100001" -ProjectCode "TEST" -FileName "gc179-000100001-2026-05.fdf" -Status "pending" -ManagerMessage "Validated fixture"
@@ -815,6 +869,7 @@ try {
     $changedBatchId = "gc179-cccccccccccccccccccccccccccccccc"
     $changedImportResult = Import-Gc179PreviewEntries -Preview $selectedPreview -EmployeeCode "000100001" -EmployeeName "Fixture Employee" -SourceFile "gc179-000100001-2026-05.fdf" -SourceHash $sourceHash -ImportedBy "manager" -BatchId $changedBatchId -SkipDuplicates:$true
     Assert-Equal -Expected 1 -Actual $changedImportResult.importedCount -Message "The undo safety scenario could not recreate its imported row."
+    $expectedChangedImportNote = "Import automatique de GC179 par manager.$([Environment]::NewLine)Validated fixture"
     $changedEntries = @(Read-JsonArrayFile -Path $script:ImportDataFile)
     $changedEntries[0].message = "Edited after import"
     Write-JsonAtomic -Path $script:ImportDataFile -Value $changedEntries -Depth 10
@@ -824,7 +879,7 @@ try {
     Assert-Equal -Expected 1 -Actual @(Read-JsonArrayFile -Path $script:ImportDataFile).Count -Message "A refused undo must preserve the changed employee entry."
 
     $commentChangedEntries = @(Read-JsonArrayFile -Path $script:ImportDataFile)
-    $commentChangedEntries[0].message = "Validated fixture"
+    $commentChangedEntries[0].message = $expectedChangedImportNote
     $commentChangedEntries[0] | Add-Member -NotePropertyName "workComment" -NotePropertyValue "Added after import" -Force
     Write-JsonAtomic -Path $script:ImportDataFile -Value $commentChangedEntries -Depth 10
     Assert-Throws -Action {

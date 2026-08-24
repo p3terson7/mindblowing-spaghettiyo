@@ -241,6 +241,8 @@ function filterEntries(entries, searchTerm) {
       entry.workComment,
       getEntryStatusLabel(entry),
       entry.message,
+      entry.messageAuthorName,
+      entry.messageAuthorUsername,
     ].join(" ").toLowerCase();
 
     return window.Saphir.textSearch.matchesAll(combinedText, tokens);
@@ -275,14 +277,23 @@ function getEntryNotes(entry) {
   const safeEntry = entry && typeof entry === "object" ? entry : {};
   const employeeComment = getEntryWorkComment(safeEntry);
   const supervisorNote = String(safeEntry.message || "").trim();
+  const supervisorNoteAuthor = String(safeEntry.messageAuthorName || safeEntry.messageAuthorUsername || "").trim();
   const count = Number(Boolean(employeeComment)) + Number(Boolean(supervisorNote));
 
   return {
     employeeComment,
     supervisorNote,
+    supervisorNoteAuthor,
     count,
     preview: employeeComment || supervisorNote,
   };
+}
+
+function getEntrySupervisorNoteLabel(entry) {
+  const notes = getEntryNotes(entry);
+  return notes.supervisorNoteAuthor
+    ? t("shared.managerMessageBy", { name: notes.supervisorNoteAuthor })
+    : t("shared.managerMessage");
 }
 
 function encodeEntryNoteData(value) {
@@ -312,6 +323,7 @@ function renderEntryNotesPreview(entry, options = {}) {
       data-entry-notes-trigger
       data-entry-employee-comment="${escapeHtml(encodeEntryNoteData(notes.employeeComment))}"
       data-entry-supervisor-note="${escapeHtml(encodeEntryNoteData(notes.supervisorNote))}"
+      data-entry-supervisor-note-author="${escapeHtml(encodeEntryNoteData(notes.supervisorNoteAuthor))}"
       aria-expanded="false"
       aria-label="${escapeHtml(t("action.viewEntryNotes"))}"
       title="${escapeHtml(t("action.viewEntryNotes"))}"
@@ -332,6 +344,7 @@ function getEntryNotesFromTrigger(trigger) {
   return {
     employeeComment: decodeEntryNoteData(trigger && trigger.getAttribute("data-entry-employee-comment")),
     supervisorNote: decodeEntryNoteData(trigger && trigger.getAttribute("data-entry-supervisor-note")),
+    supervisorNoteAuthor: decodeEntryNoteData(trigger && trigger.getAttribute("data-entry-supervisor-note-author")),
   };
 }
 
@@ -349,9 +362,12 @@ function buildEntryNotesPopoverContent(trigger) {
   }
 
   if (notes.supervisorNote) {
+    const supervisorNoteLabel = notes.supervisorNoteAuthor
+      ? t("shared.managerMessageBy", { name: notes.supervisorNoteAuthor })
+      : t("shared.managerMessage");
     sections.push(`
       <div class="entry-notes-reader-section">
-        <div class="entry-notes-reader-label"><i class="fa-regular fa-note-sticky" aria-hidden="true"></i> ${escapeHtml(t("shared.managerMessage"))}</div>
+        <div class="entry-notes-reader-label"><i class="fa-regular fa-note-sticky" aria-hidden="true"></i> ${escapeHtml(supervisorNoteLabel)}</div>
         <div class="entry-notes-reader-text">${escapeHtml(notes.supervisorNote)}</div>
       </div>
     `);
@@ -549,6 +565,29 @@ function getFirstDefinedPropertyValue(source, names) {
   return undefined;
 }
 
+function getFirstNonEmptyPropertyValue(source, names) {
+  const objectSource = source && typeof source === "object" ? source : {};
+  const fieldNames = Array.isArray(names) ? names : [];
+  for (let index = 0; index < fieldNames.length; index += 1) {
+    const name = fieldNames[index];
+    if (!Object.prototype.hasOwnProperty.call(objectSource, name)) {
+      continue;
+    }
+    const candidate = objectSource[name];
+    if (candidate != null && String(candidate).trim()) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+function hasAnyOwnProperty(source, names) {
+  const objectSource = source && typeof source === "object" ? source : {};
+  const fieldNames = Array.isArray(names) ? names : [];
+  return fieldNames.some(name => Object.prototype.hasOwnProperty.call(objectSource, name));
+}
+
 function normalizeGc179ProfileCode(value, fallback, maxLength) {
   const normalized = String(value || "")
     .trim()
@@ -560,12 +599,24 @@ function normalizeGc179ProfileCode(value, fallback, maxLength) {
   return normalized || String(fallback || "").trim().toUpperCase();
 }
 
-function normalizeGc179Position(value) {
+function normalizeGc179Group(value) {
   return normalizeGc179ProfileCode(value, "STS", 6);
 }
 
-function normalizeGc179Echelon(value) {
+function normalizeGc179SubGroup(value) {
   return normalizeGc179ProfileCode(value, "SUF-00", 10);
+}
+
+function normalizeGc179Level(value) {
+  return normalizeGc179ProfileCode(value, "", 10);
+}
+
+function normalizeGc179Position(value) {
+  return normalizeGc179Group(value);
+}
+
+function normalizeGc179Echelon(value) {
+  return normalizeGc179SubGroup(value);
 }
 
 function bindGc179CodeFormatter(input, onChange) {
@@ -698,7 +749,7 @@ function toLocalDateInputValue(dateValue = new Date()) {
 
     switch (normalizedFilter) {
       case "1M":
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split("T")[0];
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
         break;
       case "6M":
         startDate = new Date(now.getFullYear(), now.getMonth() - 6, 1).toISOString().split("T")[0];
@@ -788,6 +839,7 @@ function toLocalDateInputValue(dateValue = new Date()) {
           projectCode,
           projectName: project.projectName,
           colorKey: project.colorKey,
+          markerKey: project.markerKey,
           count: 0,
           seconds: 0,
           approvedSeconds: 0,
@@ -1570,12 +1622,30 @@ const SAPHIR_PROJECT_COLOR_KEYS = Object.freeze([
   "mint",
 ]);
 
-function getDefaultProjectColorKey(projectCode) {
+const SAPHIR_PROJECT_MARKER_KEYS = Object.freeze([
+  "circle",
+  "square",
+  "diamond",
+  "triangle",
+]);
+
+const SAPHIR_PROJECT_IDENTITY_COUNT = SAPHIR_PROJECT_COLOR_KEYS.length * SAPHIR_PROJECT_MARKER_KEYS.length;
+
+function getProjectIdentityBucket(projectCode) {
   let hash = 0;
   String(projectCode || "").trim().toUpperCase().split("").forEach(character => {
-    hash = ((hash * 31) + character.charCodeAt(0)) % SAPHIR_PROJECT_COLOR_KEYS.length;
+    hash = ((hash * 31) + character.charCodeAt(0)) % SAPHIR_PROJECT_IDENTITY_COUNT;
   });
-  return SAPHIR_PROJECT_COLOR_KEYS[Math.abs(hash)];
+  return Math.abs(hash);
+}
+
+function getDefaultProjectColorKey(projectCode) {
+  return SAPHIR_PROJECT_COLOR_KEYS[getProjectIdentityBucket(projectCode) % SAPHIR_PROJECT_COLOR_KEYS.length];
+}
+
+function getDefaultProjectMarkerKey(projectCode) {
+  const markerIndex = Math.floor(getProjectIdentityBucket(projectCode) / SAPHIR_PROJECT_COLOR_KEYS.length);
+  return SAPHIR_PROJECT_MARKER_KEYS[markerIndex % SAPHIR_PROJECT_MARKER_KEYS.length];
 }
 
 function normalizeProjectColorKey(colorKey, projectCode = "") {
@@ -1594,6 +1664,32 @@ function getProjectColorKey(projectOrCode) {
   return normalizeProjectColorKey(colorKey, projectCode);
 }
 
+function normalizeProjectMarkerKey(markerKey, projectCode = "") {
+  const candidate = String(markerKey || "").trim().toLowerCase();
+  return SAPHIR_PROJECT_MARKER_KEYS.includes(candidate)
+    ? candidate
+    : getDefaultProjectMarkerKey(projectCode);
+}
+
+function getProjectMarkerKey(projectOrCode) {
+  const isProjectObject = projectOrCode && typeof projectOrCode === "object";
+  const projectCode = isProjectObject
+    ? String(projectOrCode.projectCode || "").trim()
+    : String(projectOrCode || "").trim();
+  const markerKey = isProjectObject ? projectOrCode.markerKey : "";
+  return normalizeProjectMarkerKey(markerKey, projectCode);
+}
+
+function getProjectIdentityFromBucket(bucket) {
+  const numericBucket = Number(bucket);
+  const safeBucket = Number.isFinite(numericBucket) ? Math.trunc(numericBucket) : 0;
+  const normalizedBucket = ((safeBucket % SAPHIR_PROJECT_IDENTITY_COUNT) + SAPHIR_PROJECT_IDENTITY_COUNT) % SAPHIR_PROJECT_IDENTITY_COUNT;
+  return {
+    colorKey: SAPHIR_PROJECT_COLOR_KEYS[normalizedBucket % SAPHIR_PROJECT_COLOR_KEYS.length],
+    markerKey: SAPHIR_PROJECT_MARKER_KEYS[Math.floor(normalizedBucket / SAPHIR_PROJECT_COLOR_KEYS.length)],
+  };
+}
+
 function getProjectColorStyle(projectOrCode) {
   return `--project-color:var(--project-color-${getProjectColorKey(projectOrCode)})`;
 }
@@ -1604,6 +1700,26 @@ function getProjectColorCssValue(projectOrCode) {
   return styles.getPropertyValue(`--project-color-${key}`).trim()
     || styles.getPropertyValue("--accent").trim()
     || "#0868d7";
+}
+
+function getProjectChartPointStyle(projectOrCode) {
+  const pointStyles = {
+    circle: "circle",
+    square: "rect",
+    diamond: "rectRot",
+    triangle: "triangle",
+  };
+  return pointStyles[getProjectMarkerKey(projectOrCode)] || "circle";
+}
+
+function getProjectChartBorderDash(projectOrCode) {
+  const borderDashes = {
+    circle: [],
+    square: [8, 4],
+    diamond: [3, 3],
+    triangle: [12, 4, 3, 4],
+  };
+  return borderDashes[getProjectMarkerKey(projectOrCode)].slice();
 }
 
 function findProjectByCode(projects, projectCode) {
@@ -1617,7 +1733,9 @@ function findProjectByCode(projects, projectCode) {
 }
 
 function renderProjectColorDot(projectOrCode) {
-  return `<span class="project-color-dot" style="${getProjectColorStyle(projectOrCode)}" aria-hidden="true"></span>`;
+  const colorKey = getProjectColorKey(projectOrCode);
+  const markerKey = getProjectMarkerKey(projectOrCode);
+  return `<span class="project-color-dot project-marker-${markerKey}" data-project-color-key="${colorKey}" data-project-marker-key="${markerKey}" style="${getProjectColorStyle(projectOrCode)}" aria-hidden="true"></span>`;
 }
 
 function renderProjectIdentityPill(projectOrCode, label = "", extraClass = "", title = "") {
@@ -1652,7 +1770,7 @@ function buildProjectOptions(projects, placeholder, selectedValue) {
     .concat(options.map(project => {
       const code = String(project.projectCode || "");
       const selected = code === nextSelectedValue ? " selected" : "";
-      return `<option value="${escapeHtml(code)}" data-project-color-key="${escapeHtml(getProjectColorKey(project))}"${selected}>${escapeHtml(formatProjectCodeAndName(project))}</option>`;
+      return `<option value="${escapeHtml(code)}" data-project-color-key="${escapeHtml(getProjectColorKey(project))}" data-project-marker-key="${escapeHtml(getProjectMarkerKey(project))}"${selected}>${escapeHtml(formatProjectCodeAndName(project))}</option>`;
     }))
     .join("");
 }
@@ -1849,8 +1967,8 @@ function localizeAuditHumanDate(dateLabel) {
     return t("shared.unknownDate");
   }
 
-  const parsedDate = new Date(rawDate);
-  if (Number.isNaN(parsedDate.getTime())) {
+  const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? parseLocalDate(rawDate) : new Date(rawDate);
+  if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
     return rawDate;
   }
 
@@ -1860,6 +1978,7 @@ function localizeAuditHumanDate(dateLabel) {
 function buildTranslatedAuditUpdateFragments(message) {
   const rawMessage = String(message || "");
   const fragments = [];
+  const dateMatch = rawMessage.match(/Date from <strong>(\d{4}-\d{2}-\d{2})<\/strong> to <strong>(\d{4}-\d{2}-\d{2})<\/strong>\./i);
   const punchInMatch = rawMessage.match(/Punch In from <strong>(.*?)<\/strong> to <strong>(.*?)<\/strong>\./i);
   const punchOutMatch = rawMessage.match(/Punch Out from <strong>(.*?)<\/strong> to <strong>(.*?)<\/strong>\./i);
   const punchOutRecordedMatch = rawMessage.match(/Punch Out recorded at <strong>(.*?)<\/strong>\./i);
@@ -1868,6 +1987,12 @@ function buildTranslatedAuditUpdateFragments(message) {
   const paymentUpdatedMatch = /Payment option updated\./i.test(rawMessage);
   const reasonUpdatedMatch = /Reason code updated\./i.test(rawMessage);
 
+  if (dateMatch) {
+    fragments.push(t("history.fragment.dateFromTo", {
+      from: localizeAuditHumanDate(dateMatch[1]),
+      to: localizeAuditHumanDate(dateMatch[2]),
+    }));
+  }
   if (punchInMatch) {
     fragments.push(t("history.fragment.punchInFromTo", { from: punchInMatch[1], to: punchInMatch[2] }));
   }

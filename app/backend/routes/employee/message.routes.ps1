@@ -41,7 +41,7 @@
                     continue
                 }
 
-                $existingData[$entryIndex].message = [string]$payload.message
+                Set-EntrySupervisorNote -Entry $existingData[$entryIndex] -Note ([string]$payload.message) -CurrentUser $currentUser | Out-Null
                 Write-JsonArrayAtomic -Path $dataFile -Items $existingData -Depth 6
             }
             finally {

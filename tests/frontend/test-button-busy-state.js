@@ -226,20 +226,20 @@ async function main() {
     assert(source.includes("runButtonAction("), `${name} has no protected backend action.`);
   }
   for (const asset of [
-    "assets/styles.css?v=20260817-chartjs-employee-cards-v2",
-    "scripts/Utilities.js?v=20260817-chartjs-employee-cards-v2",
-    "scripts/AppShell.js?v=20260817-chartjs-employee-cards-v2",
-    "scripts/Views/ViewSwitching.js?v=20260817-chartjs-employee-cards-v2",
-    "scripts/Views/SelfView.js?v=20260817-chartjs-employee-cards-v2",
+    "assets/styles.css?v=20260824-review-attention-tab-v1",
+    "scripts/Utilities.js?v=20260824-review-attention-tab-v1",
+    "scripts/AppShell.js?v=20260824-review-attention-tab-v1",
+    "scripts/Views/ViewSwitching.js?v=20260824-review-attention-tab-v1",
+    "scripts/Views/SelfView.js?v=20260824-review-attention-tab-v1",
   ]) {
     assert(indexSource.includes(asset), `The busy-state asset cache key was not updated: ${asset}`);
   }
   const managerViewCacheVersions = {
-    DashboardView: "20260817-chartjs-employee-cards-v2",
-    EmployeesView: "20260817-chartjs-employee-cards-v2",
-    ApprovalsView: "20260817-chartjs-employee-cards-v2",
-    HistoryView: "20260817-chartjs-employee-cards-v2",
-    ProjectsView: "20260817-chartjs-employee-cards-v2",
+    DashboardView: "20260824-review-attention-tab-v1",
+    EmployeesView: "20260824-review-attention-tab-v1",
+    ApprovalsView: "20260824-review-attention-tab-v1",
+    HistoryView: "20260824-review-attention-tab-v1",
+    ProjectsView: "20260824-review-attention-tab-v1",
   };
   for (const managerView of Object.keys(managerViewSources)) {
     assert(

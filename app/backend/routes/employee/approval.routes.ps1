@@ -67,8 +67,8 @@
                 }
 
                 $entry.status = $normalizedStatus
-                if ($normalizedStatus -eq "rejected") {
-                    $entry.message = $managerMessage.Trim()
+                if (-not [string]::IsNullOrWhiteSpace($managerMessage)) {
+                    Set-EntrySupervisorNote -Entry $entry -Note $managerMessage -CurrentUser $currentUser | Out-Null
                 }
 
                     Write-JsonArrayAtomic -Path $dataFile -Items $existingData -Depth 8

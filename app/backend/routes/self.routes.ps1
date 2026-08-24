@@ -335,9 +335,7 @@
                             else {
                                 Set-EntryPropertyValue -Entry $activeEntry -Name "exactPunchOut" -Value $exactNowText
                                 Set-EntryPropertyValue -Entry $activeEntry -Name "punchOut" -Value $roundedNowText
-                                $punchInTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchIn)", "yyyy-MM-dd HH:mm:ss", $null)
-                                $punchOutTime = [DateTime]::ParseExact("$($activeEntry.date) $($activeEntry.punchOut)", "yyyy-MM-dd HH:mm:ss", $null)
-                                Set-EntryPropertyValue -Entry $activeEntry -Name "overtime" -Value (($punchOutTime - $punchInTime).ToString("hh\:mm\:ss"))
+                                Update-EntryComputedOvertime -Entry $activeEntry
                                 if ($activeEntryType -eq "diverse") {
                                     Set-EntryPropertyValue -Entry $activeEntry -Name "diverseSummary" -Value $diverseSummary
                                 }

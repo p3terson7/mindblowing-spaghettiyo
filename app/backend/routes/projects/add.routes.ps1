@@ -10,6 +10,7 @@
             $projectCode = if ($null -ne $payload -and $payload.PSObject.Properties.Name -contains "projectCode") { ([string]$payload.projectCode).Trim() } else { "" }
             $projectName = if ($null -ne $payload -and $payload.PSObject.Properties.Name -contains "projectName") { ([string]$payload.projectName).Trim() } else { "" }
             $requestedColorKey = if ($null -ne $payload -and $payload.PSObject.Properties.Name -contains "colorKey") { ([string]$payload.colorKey).Trim().ToLowerInvariant() } else { "" }
+            $requestedMarkerKey = if ($null -ne $payload -and $payload.PSObject.Properties.Name -contains "markerKey") { ([string]$payload.markerKey).Trim().ToLowerInvariant() } else { "" }
 
             if ([string]::IsNullOrWhiteSpace($projectCode)) {
                 respondWithError $response 400 "Missing required field: projectCode is required."
@@ -27,7 +28,12 @@
                 respondWithError $response 400 "Unsupported project color."
                 continue
             }
+            if (-not [string]::IsNullOrWhiteSpace($requestedMarkerKey) -and -not (Test-ProjectMarkerKey -MarkerKey $requestedMarkerKey)) {
+                respondWithError $response 400 "Unsupported project marker."
+                continue
+            }
             $colorKey = Resolve-ProjectColorKey -ColorKey $requestedColorKey -ProjectCode $projectCode
+            $markerKey = Resolve-ProjectMarkerKey -MarkerKey $requestedMarkerKey -ProjectCode $projectCode
 
             $sector = if ($payload.PSObject.Properties.Name -contains "sector") { ([string]$payload.sector).Trim() } else { "" }
             $admins = if ($payload.PSObject.Properties.Name -contains "admins") { @(ConvertTo-CodeArray -Value $payload.admins) } else { @() }
@@ -69,6 +75,7 @@
                             backupAdmins = $backupAdmins
                             archived     = $false
                             colorKey     = $colorKey
+                            markerKey    = $markerKey
                         }
                         Write-JsonArrayAtomic -Path $projectsFile -Items $projects -Depth 6
                         $script:ProjectsCache = $null

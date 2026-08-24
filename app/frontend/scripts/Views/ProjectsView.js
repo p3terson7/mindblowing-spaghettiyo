@@ -1,5 +1,5 @@
 const projectDetailCache = {};
-let currentProjectFilter = "6M";
+let currentProjectFilter = "1M";
 let currentProjectCode = null;
 let pendingProjectChartFrameId = null;
 let pendingProjectInsightFrameId = null;
@@ -13,8 +13,14 @@ let pendingProjectWorkspaceTrendFrameId = null;
 const PROJECT_DETAIL_REQUEST_DELAY_MS = 90;
 const PROJECT_PORTFOLIO_SEARCH_DEBOUNCE_MS = 140;
 const PROJECT_WORKSPACE_RECENT_ENTRY_LIMIT = 6;
+const PROJECT_OTHER_TREND_KEY = "__SAPHIR_OTHER_PROJECTS__";
+const PROJECT_OTHER_CHART_POINT_STYLE = "crossRot";
+const PROJECT_OTHER_CHART_BORDER_DASH = Object.freeze([3, 5]);
+const PROJECT_TREND_LINE_WIDTH = 3;
+const PROJECT_TREND_FOCUSED_LINE_WIDTH = 3.75;
+const PROJECT_TREND_MUTED_LINE_WIDTH = 1.5;
 const projectInsightChartInstances = {};
-const projectPalette = ["#0868d7", "#16865a", "#7558d8", "#008994", "#c27a00", "#c43840", "#c94f8a", "#4f72d8", "#7f6b52"];
+const projectPalette = ["#0868d7", "#16865a", "#7558d8", "#008994", "#c27a00", "#c43840", "#c94f8a", "#4f72d8", "#7f6b52", "#0f8f7a"];
 const projectsViewState = {
   projects: [],
   employees: [],
@@ -42,31 +48,170 @@ const projectsViewState = {
   },
 };
 
+function getSelectedProjectEditorColorKey() {
+  const selectedInput = document.querySelector('input[name="projectEditorColorKey"]:checked');
+  const projectCode = document.getElementById("projectEditorCodeInput")?.value || "";
+  return normalizeProjectColorKey(selectedInput && selectedInput.value, projectCode);
+}
+
+function getSelectedProjectEditorMarkerKey() {
+  const selectedInput = document.querySelector('input[name="projectEditorMarkerKey"]:checked');
+  const projectCode = document.getElementById("projectEditorCodeInput")?.value || "";
+  return normalizeProjectMarkerKey(selectedInput && selectedInput.value, projectCode);
+}
+
 function renderProjectEditorColorOptions(selectedColorKey = "blue") {
-  const select = document.getElementById("projectEditorColorSelect");
-  if (!select) {
+  const container = document.getElementById("projectEditorColorChoices");
+  if (!container) {
     return;
   }
 
   const projectCode = document.getElementById("projectEditorCodeInput")?.value || "";
   const normalizedSelection = normalizeProjectColorKey(selectedColorKey, projectCode);
-  select.innerHTML = SAPHIR_PROJECT_COLOR_KEYS.map(colorKey => (
-    `<option value="${escapeHtml(colorKey)}"${colorKey === normalizedSelection ? " selected" : ""}>${escapeHtml(t(`projects.color.${colorKey}`))}</option>`
-  )).join("");
-  syncProjectEditorColorPreview();
+  container.innerHTML = SAPHIR_PROJECT_COLOR_KEYS.map(colorKey => {
+    const projectIdentity = { projectCode, colorKey };
+    const inputId = `projectEditorColor-${colorKey}`;
+    return `
+      <label class="project-identity-choice" for="${inputId}" style="${getProjectColorStyle(projectIdentity)}">
+        <input class="project-identity-choice-input" type="radio" name="projectEditorColorKey" id="${inputId}" value="${colorKey}"${colorKey === normalizedSelection ? " checked" : ""}>
+        <span class="project-identity-choice-content">
+          <span class="project-color-swatch" aria-hidden="true"></span>
+          <span>${escapeHtml(t(`projects.color.${colorKey}`))}</span>
+        </span>
+      </label>
+    `;
+  }).join("");
 }
 
-function syncProjectEditorColorPreview() {
-  const select = document.getElementById("projectEditorColorSelect");
-  const preview = document.getElementById("projectEditorColorPreview");
-  if (!select || !preview) {
+function renderProjectEditorMarkerOptions(selectedMarkerKey = "circle") {
+  const container = document.getElementById("projectEditorMarkerChoices");
+  if (!container) {
     return;
   }
 
   const projectCode = document.getElementById("projectEditorCodeInput")?.value || "";
-  const project = { projectCode, colorKey: select.value };
-  preview.setAttribute("style", getProjectColorStyle(project));
-  preview.innerHTML = renderProjectColorDot(project);
+  const colorKey = getSelectedProjectEditorColorKey();
+  const normalizedSelection = normalizeProjectMarkerKey(selectedMarkerKey, projectCode);
+  const projectIdentity = { projectCode, colorKey };
+  container.setAttribute("style", getProjectColorStyle(projectIdentity));
+  container.innerHTML = SAPHIR_PROJECT_MARKER_KEYS.map(markerKey => {
+    const inputId = `projectEditorMarker-${markerKey}`;
+    return `
+      <label class="project-identity-choice" for="${inputId}">
+        <input class="project-identity-choice-input" type="radio" name="projectEditorMarkerKey" id="${inputId}" value="${markerKey}"${markerKey === normalizedSelection ? " checked" : ""}>
+        <span class="project-identity-choice-content">
+          ${renderProjectColorDot({ projectCode, colorKey, markerKey })}
+          <span>${escapeHtml(t(`projects.marker.${markerKey}`))}</span>
+        </span>
+      </label>
+    `;
+  }).join("");
+}
+
+function getProjectIdentityUsageCount(colorKey, markerKey, ignoredProjectCode = "") {
+  const ignoredCode = String(ignoredProjectCode || "").trim().toLowerCase();
+  return (Array.isArray(projectsViewState.projects) ? projectsViewState.projects : []).filter(project => {
+    const projectCode = String(project && project.projectCode || "").trim();
+    if (isProjectArchived(project)) {
+      return false;
+    }
+    if (ignoredCode && projectCode.toLowerCase() === ignoredCode) {
+      return false;
+    }
+    return getProjectColorKey(project) === colorKey && getProjectMarkerKey(project) === markerKey;
+  }).length;
+}
+
+function getRecommendedProjectIdentity(projectCode, ignoredProjectCode = "") {
+  const startBucket = getProjectIdentityBucket(projectCode);
+  let leastUsedIdentity = null;
+
+  for (let offset = 0; offset < SAPHIR_PROJECT_IDENTITY_COUNT; offset += 1) {
+    const identity = getProjectIdentityFromBucket(startBucket + offset);
+    const usageCount = getProjectIdentityUsageCount(identity.colorKey, identity.markerKey, ignoredProjectCode);
+    const candidate = { ...identity, usageCount };
+    if (usageCount === 0) {
+      return candidate;
+    }
+    if (!leastUsedIdentity || usageCount < leastUsedIdentity.usageCount) {
+      leastUsedIdentity = candidate;
+    }
+  }
+
+  return leastUsedIdentity || { ...getProjectIdentityFromBucket(startBucket), usageCount: 0 };
+}
+
+function getProjectEditorIdentityContext() {
+  const mode = document.getElementById("projectEditorMode")?.value || "create";
+  return {
+    projectCode: document.getElementById("projectEditorCodeInput")?.value.trim() || "",
+    projectName: document.getElementById("projectEditorNameInput")?.value.trim() || "",
+    ignoredProjectCode: mode === "edit"
+      ? document.getElementById("projectEditorOriginalCodeInput")?.value.trim() || ""
+      : "",
+  };
+}
+
+function syncProjectEditorIdentityPreview() {
+  const preview = document.getElementById("projectEditorColorPreview");
+  const previewLabel = document.getElementById("projectEditorIdentityPreviewLabel");
+  const usage = document.getElementById("projectEditorIdentityUsage");
+  const recommendationButton = document.getElementById("projectEditorUseRecommendedIdentityButton");
+  if (!preview || !previewLabel || !usage || !recommendationButton) {
+    return;
+  }
+
+  const context = getProjectEditorIdentityContext();
+  const colorKey = getSelectedProjectEditorColorKey();
+  const markerKey = getSelectedProjectEditorMarkerKey();
+  const identity = { projectCode: context.projectCode, colorKey, markerKey };
+  const usageCount = getProjectIdentityUsageCount(colorKey, markerKey, context.ignoredProjectCode);
+  const recommendation = getRecommendedProjectIdentity(context.projectCode, context.ignoredProjectCode);
+  const colorLabel = t(`projects.color.${recommendation.colorKey}`);
+  const markerLabel = t(`projects.marker.${recommendation.markerKey}`);
+  const displayProject = {
+    projectCode: context.projectCode,
+    projectName: context.projectName,
+  };
+
+  preview.setAttribute("style", getProjectColorStyle(identity));
+  preview.innerHTML = renderProjectColorDot(identity);
+  previewLabel.textContent = formatProjectCodeAndName(displayProject) || t("projects.newProjectPreview");
+  usage.textContent = usageCount > 0
+    ? t("projects.identityUsed", { count: usageCount })
+    : t("projects.identityAvailable");
+  usage.classList.toggle("is-used", usageCount > 0);
+
+  recommendationButton.textContent = t("projects.useRecommendedIdentityNamed", {
+    color: colorLabel,
+    marker: markerLabel,
+  });
+  recommendationButton.dataset.colorKey = recommendation.colorKey;
+  recommendationButton.dataset.markerKey = recommendation.markerKey;
+  recommendationButton.disabled = colorKey === recommendation.colorKey
+    && markerKey === recommendation.markerKey
+    && usageCount === 0;
+
+  const markerChoices = document.getElementById("projectEditorMarkerChoices");
+  if (markerChoices) {
+    markerChoices.setAttribute("style", getProjectColorStyle(identity));
+    markerChoices.querySelectorAll(".project-color-dot").forEach(marker => {
+      marker.setAttribute("style", getProjectColorStyle(identity));
+    });
+  }
+}
+
+function renderProjectEditorIdentityOptions(selectedColorKey = "blue", selectedMarkerKey = "circle") {
+  renderProjectEditorColorOptions(selectedColorKey);
+  renderProjectEditorMarkerOptions(selectedMarkerKey);
+  syncProjectEditorIdentityPreview();
+}
+
+function applyRecommendedProjectIdentity() {
+  const button = document.getElementById("projectEditorUseRecommendedIdentityButton");
+  const colorKey = normalizeProjectColorKey(button && button.dataset.colorKey);
+  const markerKey = normalizeProjectMarkerKey(button && button.dataset.markerKey);
+  renderProjectEditorIdentityOptions(colorKey, markerKey);
 }
 
 function canManageProjects() {
@@ -508,7 +653,8 @@ function resetProjectEditorForm() {
   document.getElementById("projectEditorCodeInput").readOnly = false;
   document.getElementById("projectEditorNameInput").value = "";
   document.getElementById("projectEditorSectorInput").value = "";
-  renderProjectEditorColorOptions("blue");
+  const recommendedIdentity = getRecommendedProjectIdentity("");
+  renderProjectEditorIdentityOptions(recommendedIdentity.colorKey, recommendedIdentity.markerKey);
   projectsViewState.editorAssignments.admins = new Set();
   projectsViewState.editorAssignments.backupAdmins = new Set();
   projectsViewState.editorAssignments.adminsSearch = "";
@@ -548,7 +694,7 @@ async function openProjectEditorModal(mode, project) {
     document.getElementById("projectEditorCodeInput").readOnly = false;
     document.getElementById("projectEditorNameInput").value = project.projectName || "";
     document.getElementById("projectEditorSectorInput").value = project.sector || "";
-    renderProjectEditorColorOptions(getProjectColorKey(project));
+    renderProjectEditorIdentityOptions(getProjectColorKey(project), getProjectMarkerKey(project));
     document.getElementById("projectEditorRemoveButton").classList.toggle("d-none", isProjectArchived(project));
     document.getElementById("projectEditorDeleteButton").classList.remove("d-none");
     const restoreButton = document.getElementById("projectEditorRestoreButton");
@@ -573,8 +719,12 @@ function ensureProjectChartCanvas() {
 
   let canvas = document.getElementById("projectMultiLineChart");
   if (!canvas) {
-    chartStage.innerHTML = '<canvas id="projectMultiLineChart"></canvas>';
+    chartStage.innerHTML = '<canvas id="projectMultiLineChart" aria-describedby="projectTrendInteractionHint"></canvas>';
     canvas = document.getElementById("projectMultiLineChart");
+  }
+
+  if (canvas) {
+    canvas.setAttribute("aria-describedby", "projectTrendInteractionHint");
   }
 
   return canvas;
@@ -645,6 +795,15 @@ function getProjectChartColors(count) {
   });
 }
 
+function getStableProjectChartColor(label) {
+  const colors = getProjectChartColors(projectPalette.length);
+  let hash = 0;
+  String(label || "").trim().toUpperCase().split("").forEach(character => {
+    hash = ((hash * 31) + character.charCodeAt(0)) % colors.length;
+  });
+  return colors[Math.abs(hash)] || colors[0];
+}
+
 function normalizeProjectAssignmentCodes(value) {
   if (Array.isArray(value)) {
     return value.map(code => String(code || "").trim()).filter(Boolean);
@@ -698,7 +857,7 @@ function compactProjectChartItems(items, maxItems = 6) {
 
   const visibleItems = sortedItems.slice(0, maxItems - 1);
   const otherValue = sortedItems.slice(maxItems - 1).reduce((sum, item) => sum + Number(item.value || 0), 0);
-  visibleItems.push({ label: t("projects.other"), value: otherValue });
+  visibleItems.push({ label: t("projects.other"), value: otherValue, isOther: true });
   return visibleItems;
 }
 
@@ -716,6 +875,38 @@ function createProjectTooltipLabel(context, valueType) {
   }
 
   return `${label}: ${t("projects.projectCountValue", { count: rawValue })} (${percent}%)`;
+}
+
+function createProjectDoughnutLegendLabels(chart, chartItems) {
+  const doughnutGenerator = Chart.overrides
+    && Chart.overrides.doughnut
+    && Chart.overrides.doughnut.plugins
+    && Chart.overrides.doughnut.plugins.legend
+    && Chart.overrides.doughnut.plugins.legend.labels
+    && Chart.overrides.doughnut.plugins.legend.labels.generateLabels;
+  const items = Array.isArray(chartItems) ? chartItems : [];
+  const nativeLabels = typeof doughnutGenerator === "function"
+    ? doughnutGenerator(chart)
+    : items.map((item, index) => {
+      const dataset = chart.data && chart.data.datasets ? chart.data.datasets[0] || {} : {};
+      const backgroundColors = Array.isArray(dataset.backgroundColor) ? dataset.backgroundColor : [];
+      const borderColors = Array.isArray(dataset.borderColor) ? dataset.borderColor : [];
+      return {
+        text: chart.data && chart.data.labels ? chart.data.labels[index] : item.label,
+        fillStyle: backgroundColors[index] || dataset.backgroundColor,
+        strokeStyle: borderColors[index] || dataset.borderColor,
+        lineWidth: dataset.borderWidth || 0,
+        hidden: typeof chart.getDataVisibility === "function" ? !chart.getDataVisibility(index) : false,
+        index,
+      };
+    });
+
+  return nativeLabels.map((label, index) => ({
+    ...label,
+    pointStyle: items[index] && items[index].project
+      ? getProjectChartPointStyle(items[index].project)
+      : (items[index] && items[index].isOther ? PROJECT_OTHER_CHART_POINT_STYLE : "circle"),
+  }));
 }
 
 function renderProjectDoughnutInsight(canvasId, items, valueType = "count") {
@@ -738,8 +929,15 @@ function renderProjectDoughnutInsight(canvasId, items, valueType = "count") {
       labels: chartItems.map(item => item.label),
       datasets: [{
         data: chartItems.map(item => item.value),
-        backgroundColor: chartItems.map((item, index) => (
-          item.project ? getProjectColorCssValue(item.project) : getProjectChartColors(chartItems.length)[index]
+        backgroundColor: chartItems.map(item => (
+          item.project
+            ? getProjectColorCssValue(item.project)
+            : (item.isOther ? theme.textMuted : getStableProjectChartColor(item.label))
+        )),
+        pointStyle: chartItems.map(item => (
+          item.project
+            ? getProjectChartPointStyle(item.project)
+            : (item.isOther ? PROJECT_OTHER_CHART_POINT_STYLE : "circle")
         )),
         borderColor: theme.panel,
         borderWidth: 2,
@@ -758,6 +956,7 @@ function renderProjectDoughnutInsight(canvasId, items, valueType = "count") {
             color: theme.textSecondary,
             usePointStyle: true,
             boxWidth: 8,
+            generateLabels: chart => createProjectDoughnutLegendLabels(chart, chartItems),
           },
         },
         tooltip: {
@@ -807,11 +1006,101 @@ function compactProjectTrendData(trendData, maxDatasets = 6) {
     });
   });
 
-  compacted[t("projects.other")] = Object.keys(otherByMonth)
+  compacted[PROJECT_OTHER_TREND_KEY] = Object.keys(otherByMonth)
     .sort()
     .map(month => ({ month, overtime: otherByMonth[month] }));
 
   return compacted;
+}
+
+function getProjectTrendColorWithOpacity(color, opacity = 1) {
+  const normalizedColor = String(color || "").trim();
+  const normalizedOpacity = Math.max(0, Math.min(1, Number(opacity)));
+  const hexMatch = normalizedColor.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hexMatch) {
+    const hex = hexMatch[1];
+    const channels = hex.length === 3
+      ? hex.split("").map(channel => parseInt(`${channel}${channel}`, 16))
+      : [hex.slice(0, 2), hex.slice(2, 4), hex.slice(4, 6)].map(channel => parseInt(channel, 16));
+    return `rgba(${channels[0]}, ${channels[1]}, ${channels[2]}, ${normalizedOpacity})`;
+  }
+
+  const rgbMatch = normalizedColor.match(/^rgb\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/i);
+  if (rgbMatch) {
+    return `rgba(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]}, ${normalizedOpacity})`;
+  }
+
+  const rgbaMatch = normalizedColor.match(/^rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*[\d.]+\s*\)$/i);
+  if (rgbaMatch) {
+    return `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${normalizedOpacity})`;
+  }
+
+  return normalizedColor;
+}
+
+function formatProjectTrendHours(value) {
+  const hours = Number(value);
+  const safeHours = Number.isFinite(hours) ? hours : 0;
+  const locale = typeof getCurrentLocale === "function" ? getCurrentLocale() : undefined;
+  const formattedHours = new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: Number.isInteger(safeHours) ? 0 : 2,
+  }).format(safeHours);
+  return `${formattedHours} h`;
+}
+
+function updateProjectTrendFocus(chart, focusedDatasetIndex = null) {
+  if (!chart || !chart.data || !Array.isArray(chart.data.datasets)) {
+    return;
+  }
+
+  const focusedIndex = Number.isInteger(focusedDatasetIndex) ? focusedDatasetIndex : null;
+  if (chart.$saphirFocusedDatasetIndex === focusedIndex) {
+    return;
+  }
+
+  chart.$saphirFocusedDatasetIndex = focusedIndex;
+  chart.data.datasets.forEach((dataset, index) => {
+    const isOther = Boolean(dataset.$saphirIsOther);
+    const isFocused = focusedIndex === index;
+    const isMuted = focusedIndex != null && !isFocused;
+    const opacity = isMuted ? (isOther ? 0.2 : 0.28) : (isOther ? 0.48 : 1);
+
+    dataset.borderColor = getProjectTrendColorWithOpacity(dataset.$saphirBaseColor, opacity);
+    dataset.backgroundColor = getProjectTrendColorWithOpacity(dataset.$saphirBaseColor, isMuted ? 0.28 : (isOther ? 0.5 : 1));
+    dataset.borderWidth = isOther
+      ? (isFocused ? 2.25 : 1.5)
+      : (isFocused ? PROJECT_TREND_FOCUSED_LINE_WIDTH : (isMuted ? PROJECT_TREND_MUTED_LINE_WIDTH : PROJECT_TREND_LINE_WIDTH));
+    dataset.pointRadius = isOther
+      ? (isFocused ? 4.25 : 2.5)
+      : (isFocused ? 5.5 : (isMuted ? 2.5 : 4));
+    dataset.pointHoverRadius = isOther ? 5.5 : 7;
+  });
+
+  if (typeof chart.update === "function") {
+    chart.update("none");
+  }
+}
+
+function toggleProjectTrendLegendDataset(chart, datasetIndex) {
+  if (!chart || !Number.isInteger(datasetIndex)) {
+    return;
+  }
+
+  const isRestoringAll = chart.$saphirIsolatedDatasetIndex === datasetIndex;
+  chart.$saphirIsolatedDatasetIndex = isRestoringAll ? null : datasetIndex;
+  if (typeof chart.show === "function" && typeof chart.hide === "function") {
+    chart.data.datasets.forEach((_, index) => {
+      if (isRestoringAll || index === datasetIndex) {
+        chart.show(index);
+      }
+      else {
+        chart.hide(index);
+      }
+    });
+  }
+
+  updateProjectTrendFocus(chart, isRestoringAll ? null : datasetIndex);
 }
 
 function renderProjectInsights(projects) {
@@ -991,6 +1280,7 @@ function syncProjectWorkspaceHeader(project) {
 }
 
 function setProjectWorkspaceVisibility(isOpen, options = {}) {
+  const wasOpen = Boolean(projectsViewState.workspaceOpen);
   if (!isOpen) {
     destroyProjectWorkspaceTrendChart();
   }
@@ -1008,7 +1298,12 @@ function setProjectWorkspaceVisibility(isOpen, options = {}) {
 
   if (isOpen) {
     syncProjectWorkspaceHeader(getProjectByCode(currentProjectCode));
-    window.scrollTo({ top: 0, behavior: "auto" });
+    // Refreshing a period while already in the workspace must not reset the
+    // reader's place. The deliberate top-of-workspace navigation happens only
+    // when the workspace is actually opened.
+    if (!wasOpen && options.scrollToTop !== false) {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
     if (options.focus !== false && title) {
       title.focus({ preventScroll: true });
     }
@@ -1383,9 +1678,10 @@ async function refreshProjectsView() {
   const routeProjectCode = getProjectWorkspaceRouteCode();
   const shouldOpenWorkspaceFromRoute = Boolean(routeProjectCode) && !projectsViewState.workspaceOpen;
   if (routeProjectCode) {
-    projectsViewState.workspaceOpen = true;
     currentProjectCode = routeProjectCode;
-    setProjectWorkspaceVisibility(true, { focus: false });
+    if (shouldOpenWorkspaceFromRoute) {
+      setProjectWorkspaceVisibility(true, { focus: false });
+    }
   }
   const requestedProjectCode = projectsViewState.workspaceOpen ? currentProjectCode : null;
   const addButton = document.getElementById("addProjectButton");
@@ -1919,6 +2215,8 @@ function initializeProjectWorkspaceTrendChart(container, detail) {
           data: points.map(point => Number(point.seconds) || 0),
           borderColor: projectColor,
           backgroundColor: projectColor,
+          pointStyle: getProjectChartPointStyle(detail),
+          borderDash: getProjectChartBorderDash(detail),
           fill: false,
           borderWidth: 2.5,
           tension: 0.24,
@@ -2245,7 +2543,8 @@ async function submitProjectEditor() {
   const projectCode = document.getElementById("projectEditorCodeInput").value.trim();
   const projectName = document.getElementById("projectEditorNameInput").value.trim();
   const sector = document.getElementById("projectEditorSectorInput").value.trim();
-  const colorKey = normalizeProjectColorKey(document.getElementById("projectEditorColorSelect").value, projectCode);
+  const colorKey = getSelectedProjectEditorColorKey();
+  const markerKey = getSelectedProjectEditorMarkerKey();
   const admins = getProjectEditorAssignmentCodes("admins");
   const backupAdmins = getProjectEditorAssignmentCodes("backupAdmins");
   const existingProject = mode === "edit" ? getProjectByCode(originalProjectCode) : null;
@@ -2285,6 +2584,7 @@ async function submitProjectEditor() {
         projectName,
         sector,
         colorKey,
+        markerKey,
         admins,
         backupAdmins,
         archived: existingProject ? Boolean(existingProject.archived) : false,
@@ -2442,28 +2742,37 @@ function renderProjectMultiLineChart(trendData) {
   const timeLabels = Array.from(labelSet).sort();
   const formattedLabels = timeLabels.map(formatYMToWords);
   const theme = getProjectChartTheme();
-  const colors = getProjectChartColors(6);
 
-  const datasets = Object.keys(compactedTrendData || {}).map((projectCode, index) => {
+  const datasets = Object.keys(compactedTrendData || {}).map(projectCode => {
     const dataPoints = timeLabels.map(label => {
       const entry = compactedTrendData[projectCode].find(item => item.month === label);
       return entry ? entry.overtime : 0;
     });
+    const isOther = projectCode === PROJECT_OTHER_TREND_KEY;
+    const projectRecord = isOther ? null : findProjectByCode(projectsViewState.projects, projectCode);
+    const projectIdentity = projectRecord || projectCode;
+    const projectColor = isOther
+      ? theme.textMuted
+      : getProjectColorCssValue(projectIdentity);
 
     return {
-      label: projectCode,
+      label: isOther ? t("projects.other") : projectCode,
       data: dataPoints,
-      borderColor: findProjectByCode(projectsViewState.projects, projectCode)
-        ? getProjectColorCssValue(findProjectByCode(projectsViewState.projects, projectCode))
-        : colors[index % colors.length],
-      backgroundColor: findProjectByCode(projectsViewState.projects, projectCode)
-        ? getProjectColorCssValue(findProjectByCode(projectsViewState.projects, projectCode))
-        : colors[index % colors.length],
+      borderColor: getProjectTrendColorWithOpacity(projectColor, isOther ? 0.48 : 1),
+      backgroundColor: getProjectTrendColorWithOpacity(projectColor, isOther ? 0.5 : 1),
+      pointStyle: isOther ? PROJECT_OTHER_CHART_POINT_STYLE : getProjectChartPointStyle(projectIdentity),
+      // Marker shape and colour identify projects. Keeping actual project
+      // lines solid makes a dense trend readable; only the aggregate stays
+      // dotted as contextual information.
+      borderDash: isOther ? PROJECT_OTHER_CHART_BORDER_DASH.slice() : [],
       fill: false,
-      tension: 0.28,
-      borderWidth: 2,
-      pointRadius: 3,
-      pointHoverRadius: 5,
+      tension: 0,
+      borderWidth: isOther ? 1.5 : PROJECT_TREND_LINE_WIDTH,
+      pointRadius: isOther ? 2.5 : 4,
+      pointHoverRadius: isOther ? 5.5 : 7,
+      pointHitRadius: 16,
+      $saphirBaseColor: projectColor,
+      $saphirIsOther: isOther,
     };
   });
 
@@ -2489,20 +2798,38 @@ function renderProjectMultiLineChart(trendData) {
         maintainAspectRatio: false,
         animation: false,
         resizeDelay: 150,
+        interaction: {
+          mode: "nearest",
+          intersect: false,
+        },
+        onHover: (_event, activeElements, chart) => {
+          const activeElement = Array.isArray(activeElements) && activeElements.length > 0
+            ? activeElements[0]
+            : null;
+          updateProjectTrendFocus(chart, activeElement ? activeElement.datasetIndex : null);
+        },
         plugins: {
           legend: {
             position: "top",
+            onClick: (_event, legendItem, legend) => {
+              toggleProjectTrendLegendDataset(legend && legend.chart, legendItem && legendItem.datasetIndex);
+            },
             labels: {
               color: theme.textSecondary,
               usePointStyle: true,
-              boxWidth: 8,
-              padding: 18,
+              boxWidth: 11,
+              padding: 16,
             },
           },
           tooltip: {
             backgroundColor: theme.tooltip,
             titleColor: theme.tooltipText,
             bodyColor: theme.tooltipText,
+            displayColors: true,
+            padding: 10,
+            callbacks: {
+              label: context => `${context.dataset.label}: ${formatProjectTrendHours(context.parsed.y)}`,
+            },
           },
         },
         scales: {
@@ -2511,13 +2838,14 @@ function renderProjectMultiLineChart(trendData) {
               color: theme.textMuted,
             },
             grid: {
-              color: theme.grid,
+              display: false,
             },
           },
           y: {
             beginAtZero: true,
             ticks: {
               color: theme.textMuted,
+              callback: value => formatProjectTrendHours(value),
             },
             grid: {
               color: theme.grid,
@@ -2805,7 +3133,7 @@ document.getElementById("projectClearCustomRangeButton").addEventListener("click
   runButtonAction(event.currentTarget, async () => {
     projectsViewState.customRange.startDate = "";
     projectsViewState.customRange.endDate = "";
-    await setProjectRange("6M");
+    await setProjectRange("1M");
   }, { key: "projects-filter-refresh" }).catch(error => {
     console.error("Unable to reset the project range:", error);
     showToast(t("projects.unableToLoad"), "error");
@@ -2914,8 +3242,19 @@ document.getElementById("projectEditorBackupAdminsList").addEventListener("chang
     projectsViewState.editorAssignments.backupAdmins.delete(employeeCode);
   }
 });
-document.getElementById("projectEditorColorSelect").addEventListener("change", syncProjectEditorColorPreview);
-document.getElementById("projectEditorCodeInput").addEventListener("input", syncProjectEditorColorPreview);
+document.getElementById("projectEditorColorChoices").addEventListener("change", event => {
+  if (event.target.matches('input[name="projectEditorColorKey"]')) {
+    syncProjectEditorIdentityPreview();
+  }
+});
+document.getElementById("projectEditorMarkerChoices").addEventListener("change", event => {
+  if (event.target.matches('input[name="projectEditorMarkerKey"]')) {
+    syncProjectEditorIdentityPreview();
+  }
+});
+document.getElementById("projectEditorCodeInput").addEventListener("input", syncProjectEditorIdentityPreview);
+document.getElementById("projectEditorNameInput").addEventListener("input", syncProjectEditorIdentityPreview);
+document.getElementById("projectEditorUseRecommendedIdentityButton").addEventListener("click", applyRecommendedProjectIdentity);
 document.getElementById("projectEditorSaveButton").addEventListener("click", event => {
   runButtonAction(event.currentTarget, submitProjectEditor, {
     key: "project-editor-mutation",
@@ -2954,8 +3293,9 @@ window.addEventListener("app:theme-changed", () => {
 });
 
 window.rerenderProjectsViewForLanguageChange = function () {
-  const selectedEditorColor = document.getElementById("projectEditorColorSelect")?.value || "blue";
-  renderProjectEditorColorOptions(selectedEditorColor);
+  const selectedEditorColor = getSelectedProjectEditorColorKey();
+  const selectedEditorMarker = getSelectedProjectEditorMarkerKey();
+  renderProjectEditorIdentityOptions(selectedEditorColor, selectedEditorMarker);
   projectsViewState.portfolioSearch = getProjectPortfolioSearchValue();
   syncProjectRangeButtons();
   syncProjectCustomRangeInputs();

@@ -168,7 +168,7 @@ if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/employee
                 throw "Your permission for the selected project changed. Refresh the preview and try again."
             }
 
-            $result = Import-Gc179PreviewEntries -Preview $selectedPreview -EmployeeCode $employeeCode -EmployeeName ([string]$routeContext.employeeName) -SourceFile $fileName -SourceHash $sourceHash -ImportedBy $importedBy -SkipDuplicates:$true -PublishChange:$false
+            $result = Import-Gc179PreviewEntries -Preview $selectedPreview -EmployeeCode $employeeCode -EmployeeName ([string]$routeContext.employeeName) -SourceFile $fileName -SourceHash $sourceHash -ImportedBy $importedBy -MessageAuthor $currentUser -SkipDuplicates:$true -PublishChange:$false
         }
         finally {
             Release-ResourceLock -LockHandle $projectReferenceLockHandle

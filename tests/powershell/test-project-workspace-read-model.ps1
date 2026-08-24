@@ -23,7 +23,7 @@ $script:EmployeeFileCalls = @{}
 $script:CurrentUser = [PSCustomObject]@{ username = "workspace-admin"; employeeCode = "900"; role = "superAdmin" }
 $script:Projects = @(
     [PSCustomObject]@{ projectCode = "P0"; projectName = "No activity"; sector = "Test"; archived = $false; colorKey = "blue" },
-    [PSCustomObject]@{ projectCode = "P1"; projectName = "Large project"; sector = "Test"; archived = $false; colorKey = "teal" },
+    [PSCustomObject]@{ projectCode = "P1"; projectName = "Large project"; sector = "Test"; archived = $false; colorKey = "teal"; markerKey = "diamond" },
     [PSCustomObject]@{ projectCode = "P2"; projectName = "Single entry"; sector = "Test"; archived = $false; colorKey = "orange" }
 )
 $projectCodeSet = @{ P0 = $true; P1 = $true; P2 = $true }
@@ -63,6 +63,9 @@ function New-TestEntry {
         workComment   = "Work for $Id"
         diverseSummary = ""
         message       = "Supervisor note for $Id"
+        messageAuthorName = "Project Supervisor"
+        messageAuthorUsername = "project.supervisor"
+        messageUpdatedAt = "2026-08-15T12:00:00.0000000Z"
     }
     if (-not $OmitStatus) {
         $entry | Add-Member -NotePropertyName status -NotePropertyValue $Status
@@ -146,6 +149,8 @@ function ConvertTo-CodeArray { param($Value) return @($Value) }
 function Get-EmployeeNameMap { return [PSCustomObject]@{} }
 function Test-ProjectArchived { param($Project) return ($Project.PSObject.Properties.Name -contains "archived" -and [bool]$Project.archived) }
 function Resolve-ProjectColorKey { param([string]$ColorKey, [string]$ProjectCode) return $(if ([string]::IsNullOrWhiteSpace($ColorKey)) { "blue" } else { $ColorKey }) }
+function Resolve-ProjectMarkerKey { param([string]$MarkerKey, [string]$ProjectCode) return $(if ([string]::IsNullOrWhiteSpace($MarkerKey)) { "circle" } else { $MarkerKey }) }
+function Get-DefaultProjectMarkerKey { param([string]$ProjectCode) return "circle" }
 function ConvertTo-ProjectArchiveScope { param([string]$Scope) return $(if ([string]::IsNullOrWhiteSpace($Scope)) { "all" } else { $Scope }) }
 function Select-ProjectsByArchiveScope { param($Projects, [string]$Scope) return @($Projects) }
 
@@ -192,6 +197,8 @@ Assert-Equal -Expected 1 -Actual $p1.statusBuckets.other.count -Message "Unknown
 Assert-Equal -Expected "60:00:00" -Actual $p1.trackedOvertime -Message "The compatibility tracked total is wrong."
 Assert-Equal -Expected 83.33 -Actual $p1.departmentShare.percent -Message "Department share is wrong."
 Assert-Equal -Expected "approvedClosedOvertime" -Actual $p1.basis.id -Message "The summary does not document its approved-closed basis."
+Assert-Equal -Expected "diamond" -Actual $p1.markerKey -Message "The summary dropped the persisted project marker."
+Assert-Equal -Expected (Get-DefaultProjectMarkerKey -ProjectCode "P0") -Actual $p0.markerKey -Message "The summary did not expose a marker fallback for a legacy project."
 
 $lightweightStats = Get-ProjectStatisticsOverview -StartDate "2026-08-08" -EndDate "2026-08-14" -IncludeBreakdown:$false -CurrentUser $script:CurrentUser
 Assert-True -Condition ($null -eq $lightweightStats["P1"].breakdown) -Message "Lightweight summary aggregation retained an employee breakdown."
@@ -207,6 +214,7 @@ foreach ($bucketName in @("approved", "pending", "rejected", "open", "other")) {
 }
 
 $detail = Get-ProjectDetailModel -ProjectCode "P1" -StartDate "2026-08-08" -EndDate "2026-08-14" -CurrentUser $script:CurrentUser
+Assert-Equal -Expected "diamond" -Actual $detail.markerKey -Message "The project detail dropped the persisted project marker."
 Assert-Equal -Expected 5 -Actual @($detail.contributors).Count -Message "Contributor summaries dropped zero-approved participants."
 Assert-Equal -Expected "001" -Actual $detail.contributors[0].employeeCode -Message "Contributors are not sorted by approved hours."
 Assert-Equal -Expected 108000 -Actual $detail.contributors[0].approvedSeconds -Message "Contributor raw seconds are wrong."
@@ -220,7 +228,7 @@ Assert-Equal -Expected $true -Actual $eve.employeeArchived -Message "Archived co
 Assert-Equal -Expected 9 -Actual @($detail.recentEntries).Count -Message "Recent entries should include every current-period workflow record."
 Assert-Equal -Expected "current-archived" -Actual $detail.recentEntries[0].entryId -Message "Recent entries are not sorted by latest activity."
 $entryFact = $detail.recentEntries | Where-Object entryId -eq "current-b-approved" | Select-Object -First 1
-foreach ($propertyName in @("status", "statusBucket", "durationSeconds", "workComment", "message", "paymentOption", "overtimeCode", "reasonCode", "canModify", "canApprove", "permissionReason")) {
+foreach ($propertyName in @("status", "statusBucket", "durationSeconds", "workComment", "message", "messageAuthorName", "messageAuthorUsername", "messageUpdatedAt", "paymentOption", "overtimeCode", "reasonCode", "canModify", "canApprove", "permissionReason")) {
     Assert-True -Condition ($entryFact.PSObject.Properties.Name -contains $propertyName) -Message "Recent entry omitted $propertyName."
 }
 Assert-Equal -Expected $true -Actual $detail.comparison.available -Message "Equivalent-period comparison was not produced."
@@ -237,6 +245,7 @@ $serializedSummary = @($summary) | ConvertTo-Json -Depth 6 | ConvertFrom-Json
 $serializedDetail = $detail | ConvertTo-Json -Depth 8 | ConvertFrom-Json
 Assert-Equal -Expected 180000 -Actual $serializedSummary[1].statusBuckets.approved.seconds -Message "Summary route depth would truncate nested status buckets."
 Assert-Equal -Expected "Supervisor note for current-b-approved" -Actual (($serializedDetail.recentEntries | Where-Object entryId -eq "current-b-approved").message) -Message "Detail route depth would truncate recent-entry notes."
+Assert-Equal -Expected "Project Supervisor" -Actual (($serializedDetail.recentEntries | Where-Object entryId -eq "current-b-approved").messageAuthorName) -Message "Detail route depth would drop note attribution."
 
 $unboundedDetail = Get-ProjectDetailModel -ProjectCode "P1" -CurrentUser $script:CurrentUser
 Assert-Equal -Expected $false -Actual $unboundedDetail.comparison.available -Message "An unbounded period should not claim an equivalent comparison."

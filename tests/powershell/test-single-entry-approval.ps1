@@ -240,6 +240,13 @@ function Invoke-SingleEntryApproval {
     Assert-Equal -Expected 1 -Actual $savedEntries.Count -Message "The $Status mutation changed the number of entries."
     Assert-Equal -Expected $Status -Actual $savedEntries[0].status -Message "The single entry received the wrong status."
     Assert-Equal -Expected $managerMessage -Actual ([string]$savedEntries[0].message) -Message "The single entry received the wrong manager message."
+    if (-not [string]::IsNullOrWhiteSpace($managerMessage)) {
+        Assert-Equal -Expected "Test Manager" -Actual ([string]$savedEntries[0].messageAuthorName) -Message "The supervisor note lost its display-name attribution."
+        Assert-Equal -Expected "manager" -Actual ([string]$savedEntries[0].messageAuthorUsername) -Message "The supervisor note lost its stable author attribution."
+        if ([string]::IsNullOrWhiteSpace([string]$savedEntries[0].messageUpdatedAt)) {
+            throw "The supervisor note did not record when it was updated."
+        }
+    }
 }
 
 try {

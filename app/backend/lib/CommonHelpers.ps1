@@ -105,6 +105,31 @@ function Resolve-ProjectColorKey {
     return (Saphir.ProjectCatalog\Resolve-ProjectColorKey -ColorKey $ColorKey -ProjectCode $ProjectCode)
 }
 
+function Get-ProjectMarkerKeys {
+    return (Saphir.ProjectCatalog\Get-ProjectMarkerKeys)
+}
+
+function Get-DefaultProjectMarkerKey {
+    param([AllowNull()][string]$ProjectCode)
+
+    return (Saphir.ProjectCatalog\Get-DefaultProjectMarkerKey -ProjectCode $ProjectCode)
+}
+
+function Test-ProjectMarkerKey {
+    param([AllowNull()][string]$MarkerKey)
+
+    return (Saphir.ProjectCatalog\Test-ProjectMarkerKey -MarkerKey $MarkerKey)
+}
+
+function Resolve-ProjectMarkerKey {
+    param(
+        [AllowNull()][string]$MarkerKey,
+        [AllowNull()][string]$ProjectCode
+    )
+
+    return (Saphir.ProjectCatalog\Resolve-ProjectMarkerKey -MarkerKey $MarkerKey -ProjectCode $ProjectCode)
+}
+
 function Set-ProjectRecordColorKey {
     param(
         [Parameter(Mandatory = $true)]$Project,
@@ -117,6 +142,22 @@ function Set-ProjectRecordColorKey {
     }
     else {
         $Project | Add-Member -NotePropertyName colorKey -NotePropertyValue $resolved
+    }
+    return $resolved
+}
+
+function Set-ProjectRecordMarkerKey {
+    param(
+        [Parameter(Mandatory = $true)]$Project,
+        [AllowNull()][string]$MarkerKey
+    )
+
+    $resolved = Resolve-ProjectMarkerKey -MarkerKey $MarkerKey -ProjectCode ([string]$Project.projectCode)
+    if ($Project.PSObject.Properties.Name -contains "markerKey") {
+        $Project.markerKey = $resolved
+    }
+    else {
+        $Project | Add-Member -NotePropertyName markerKey -NotePropertyValue $resolved
     }
     return $resolved
 }

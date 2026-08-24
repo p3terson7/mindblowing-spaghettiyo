@@ -49,6 +49,17 @@
                 $payload | Add-Member -NotePropertyName reasonCode -NotePropertyValue "" -Force
             }
 
+            $workComment = if ($payload.PSObject.Properties.Name -contains "workComment") { ([string]$payload.workComment).Trim() } else { "" }
+            $managerMessage = if ($payload.PSObject.Properties.Name -contains "message") { ([string]$payload.message).Trim() } else { "" }
+            if ($workComment.Length -gt 1000) {
+                respondWithError $response 400 "Employee comments cannot exceed 1000 characters."
+                continue
+            }
+            if ($managerMessage.Length -gt 1000) {
+                respondWithError $response 400 "Supervisor notes cannot exceed 1000 characters."
+                continue
+            }
+
             # Validate that the provided projectCode exists in the projects list.
             $projects = Get-ActiveProjects
             $projectExists = $projects | Where-Object { $_.projectCode -eq $payload.projectCode }
@@ -90,10 +101,10 @@
             $punchInRounded = Convert-ToNearestQuarterHourText -Date $normalizedDate -TimeText $exactPunchIn
             $punchOutRounded = Convert-ToNearestQuarterHourText -Date $normalizedDate -TimeText $exactPunchOut
 
-            # Validate that punchOut is after punchIn.
-            $punchInTime = [DateTime]::ParseExact("$normalizedDate $punchInRounded", "yyyy-MM-dd HH:mm:ss", $null)
-            $punchOutTime = [DateTime]::ParseExact("$normalizedDate $punchOutRounded", "yyyy-MM-dd HH:mm:ss", $null)
-            if ($punchOutTime -le $punchInTime) {
+            # Validate the real interval. Rounded display times can legitimately
+            # be identical when a short entry earns no quarter-hour credit.
+            $creditSummary = Get-QuarterHourCreditSummary -Date $normalizedDate -PunchIn $exactPunchIn -PunchOut $exactPunchOut
+            if (-not [bool]$creditSummary.isValid) {
                 respondWithError $response 400 "Punch Out must be after Punch In."
                 continue
             }
@@ -126,7 +137,8 @@
                             [void]$updatedEntries.Add($existingEntry)
                         }
 
-                        # Create the new entry with an empty message and the projectCode.
+                        # Create the entry before adding optional notes. This keeps
+                        # legacy entry fields unchanged when the optional fields are blank.
                         $newEntry = [PSCustomObject]@{
                             entryId      = New-EntryIdentifier
                             name        = Get-EmployeeName $employeeCode
@@ -135,13 +147,20 @@
                             exactPunchIn = $exactPunchIn
                             punchOut    = $punchOutRounded
                             exactPunchOut = $exactPunchOut
-                            overtime    = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
+                            overtime    = [string]$creditSummary.creditedOvertime
+                            overtimeCalculationRule = "quarter-10m-v1"
                             status      = "pending"
                             message     = ""
                             projectCode = $payload.projectCode
                             overtimeCode = $payload.overtimeCode
                             paymentOption = $payload.paymentOption
                             reasonCode = $payload.reasonCode
+                        }
+                        if (-not [string]::IsNullOrWhiteSpace($workComment)) {
+                            Set-EntryPropertyValue -Entry $newEntry -Name "workComment" -Value $workComment
+                        }
+                        if (-not [string]::IsNullOrWhiteSpace($managerMessage)) {
+                            Set-EntrySupervisorNote -Entry $newEntry -Note $managerMessage -CurrentUser $currentUser | Out-Null
                         }
                         [void]$updatedEntries.Add($newEntry)
                         Write-JsonArrayAtomic -Path $dataFile -Items @($updatedEntries.ToArray()) -Depth 6

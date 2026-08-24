@@ -2,6 +2,10 @@ function Get-ProjectColorKeys {
     return @("blue", "green", "violet", "teal", "amber", "coral", "pink", "indigo", "graphite", "mint")
 }
 
+function Get-ProjectMarkerKeys {
+    return @("circle", "square", "diamond", "triangle")
+}
+
 function Get-ProjectColorKeyFromText {
     param([AllowNull()][string]$ProjectCodeText)
 
@@ -40,6 +44,50 @@ function Resolve-ProjectColorKey {
         return $candidate
     }
     return (Get-DefaultProjectColorKey -ProjectCode $ProjectCode)
+}
+
+function Get-ProjectMarkerKeyFromText {
+    param([AllowNull()][string]$ProjectCodeText)
+
+    $colorCount = @(Get-ProjectColorKeys).Count
+    $markers = @(Get-ProjectMarkerKeys)
+    $identityCount = $colorCount * $markers.Count
+    $hash = 0
+    foreach ($character in ([string]$ProjectCodeText).ToUpperInvariant().ToCharArray()) {
+        $hash = (($hash * 31) + [int][char]$character) % $identityCount
+    }
+
+    # The identity bucket deliberately keeps the existing color in its low
+    # digit: bucket % 10 is exactly the historical color hash, while the
+    # quotient supplies one of four additional markers.
+    $markerIndex = [int]([math]::Floor(([math]::Abs($hash) / $colorCount)) % $markers.Count)
+    return $markers[$markerIndex]
+}
+
+function Get-DefaultProjectMarkerKey {
+    param([AllowNull()][string]$ProjectCode)
+
+    return (Get-ProjectMarkerKeyFromText -ProjectCodeText ([string]$ProjectCode).Trim())
+}
+
+function Test-ProjectMarkerKey {
+    param([AllowNull()][string]$MarkerKey)
+
+    $candidate = ([string]$MarkerKey).Trim().ToLowerInvariant()
+    return (-not [string]::IsNullOrWhiteSpace($candidate) -and @(Get-ProjectMarkerKeys) -contains $candidate)
+}
+
+function Resolve-ProjectMarkerKey {
+    param(
+        [AllowNull()][string]$MarkerKey,
+        [AllowNull()][string]$ProjectCode
+    )
+
+    $candidate = ([string]$MarkerKey).Trim().ToLowerInvariant()
+    if (Test-ProjectMarkerKey -MarkerKey $candidate) {
+        return $candidate
+    }
+    return (Get-DefaultProjectMarkerKey -ProjectCode $ProjectCode)
 }
 
 function ConvertTo-CodeArray {
@@ -181,6 +229,8 @@ function ConvertTo-NormalizedProjectObject {
     $normalized["archived"] = Test-ProjectArchived -Project $Project
     $storedColorKey = if ($Project.PSObject.Properties.Name -contains "colorKey") { [string]$Project.colorKey } else { "" }
     $normalized["colorKey"] = Resolve-ProjectColorKey -ColorKey $storedColorKey -ProjectCode ([string]$Project.projectCode)
+    $storedMarkerKey = if ($Project.PSObject.Properties.Name -contains "markerKey") { [string]$Project.markerKey } else { "" }
+    $normalized["markerKey"] = Resolve-ProjectMarkerKey -MarkerKey $storedMarkerKey -ProjectCode ([string]$Project.projectCode)
 
     return [PSCustomObject]$normalized
 }
@@ -226,6 +276,11 @@ Export-ModuleMember -Function @(
     "Get-DefaultProjectColorKey",
     "Test-ProjectColorKey",
     "Resolve-ProjectColorKey",
+    "Get-ProjectMarkerKeys",
+    "Get-ProjectMarkerKeyFromText",
+    "Get-DefaultProjectMarkerKey",
+    "Test-ProjectMarkerKey",
+    "Resolve-ProjectMarkerKey",
     "ConvertTo-CodeArray",
     "Get-ProjectAdminCodes",
     "Get-ProjectBackupAdminCodes",

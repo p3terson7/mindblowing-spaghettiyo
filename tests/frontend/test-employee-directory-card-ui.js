@@ -64,8 +64,13 @@ assert(detailSource.includes('tabindex="-1"'), "The employee detail heading must
 
 assert.match(
   employeesSource,
-  /function openEmployeeDetailFromDirectory[\s\S]*?loadEmployeeDetail\(normalizedEmployeeCode\)[\s\S]*?detailTitle\.focus\(\{ preventScroll: true \}\)/,
-  "Opening an employee card must focus its loaded detail heading."
+  /function focusEmployeeDetailCard\(\)[\s\S]*?detailTitle\.focus\(\{ preventScroll: true \}\)[\s\S]*?detailCard\.scrollIntoView\(\{ behavior: "smooth", block: "start" \}\)/,
+  "Opening an employee card must focus its loaded detail heading and use the card as the scroll target."
+);
+assert.match(
+  employeesSource,
+  /function openEmployeeDetailFromDirectory[\s\S]*?loadEmployeeDetail\(normalizedEmployeeCode\)[\s\S]*?return focusEmployeeDetailCard\(\);/,
+  "Opening an employee card must use the shared offset-safe detail focus workflow."
 );
 assert.match(
   employeesSource,

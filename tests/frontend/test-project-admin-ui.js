@@ -43,11 +43,11 @@ for (const translationKey of [
   assert.strictEqual(occurrences, 2, `${translationKey} must have both English and French translations.`);
 }
 
-assert(appShellSource.includes("EmployeesView.js?v=20260817-chartjs-employee-cards-v2"), "EmployeesView cache version was not bumped.");
-assert(appShellSource.includes("DashboardView.js?v=20260817-chartjs-employee-cards-v2"), "DashboardView cache version was not bumped.");
-assert(appShellSource.includes("ApprovalsView.js?v=20260817-chartjs-employee-cards-v2"), "ApprovalsView cache version was not bumped.");
-assert(appShellSource.includes("HistoryView.js?v=20260817-chartjs-employee-cards-v2"), "HistoryView cache version was not bumped.");
-assert(appShellSource.includes("ProjectsView.js?v=20260817-chartjs-employee-cards-v2"), "ProjectsView cache version was not bumped.");
+assert(appShellSource.includes("EmployeesView.js?v=20260824-review-attention-tab-v1"), "EmployeesView cache version was not bumped.");
+assert(appShellSource.includes("DashboardView.js?v=20260824-review-attention-tab-v1"), "DashboardView cache version was not bumped.");
+assert(appShellSource.includes("ApprovalsView.js?v=20260824-review-attention-tab-v1"), "ApprovalsView cache version was not bumped.");
+assert(appShellSource.includes("HistoryView.js?v=20260824-review-attention-tab-v1"), "HistoryView cache version was not bumped.");
+assert(appShellSource.includes("ProjectsView.js?v=20260824-review-attention-tab-v1"), "ProjectsView cache version was not bumped.");
 
 for (const expectedLabel of ['"employees.employeeCode": "HRMIS"', '"employees.employeeCode": "SIGRH"']) {
   assert(i18nSource.includes(expectedLabel), `Missing localized employee identifier label: ${expectedLabel}`);

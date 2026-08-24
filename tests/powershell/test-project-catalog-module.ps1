@@ -14,6 +14,11 @@ $expectedFunctions = @(
     "Get-DefaultProjectColorKey",
     "Test-ProjectColorKey",
     "Resolve-ProjectColorKey",
+    "Get-ProjectMarkerKeys",
+    "Get-ProjectMarkerKeyFromText",
+    "Get-DefaultProjectMarkerKey",
+    "Test-ProjectMarkerKey",
+    "Resolve-ProjectMarkerKey",
     "ConvertTo-CodeArray",
     "Get-ProjectAdminCodes",
     "Get-ProjectBackupAdminCodes",
@@ -28,6 +33,10 @@ $facadeFunctions = @(
     "Get-DefaultProjectColorKey",
     "Test-ProjectColorKey",
     "Resolve-ProjectColorKey",
+    "Get-ProjectMarkerKeys",
+    "Get-DefaultProjectMarkerKey",
+    "Test-ProjectMarkerKey",
+    "Resolve-ProjectMarkerKey",
     "ConvertTo-CodeArray",
     "Get-ProjectAdminCodes",
     "Get-ProjectBackupAdminCodes",
@@ -119,6 +128,17 @@ function Assert-CatalogBehavior {
     Assert-Equal -Expected "violet" -Actual (Invoke-ProjectCatalogFunction -Name "Resolve-ProjectColorKey" -Arguments @{ ColorKey = " VIOLET "; ProjectCode = "P1" } -UseFacade $UseFacade) -Message "$Label did not normalize a supported explicit color."
     Assert-Equal -Expected "mint" -Actual (Invoke-ProjectCatalogFunction -Name "Resolve-ProjectColorKey" -Arguments @{ ColorKey = "neon"; ProjectCode = "P1" } -UseFacade $UseFacade) -Message "$Label changed invalid-color fallback behavior."
 
+    $markers = @(Invoke-ProjectCatalogFunction -Name "Get-ProjectMarkerKeys" -UseFacade $UseFacade)
+    Assert-SequenceEqual -Expected @("circle", "square", "diamond", "triangle") -Actual $markers -Message "$Label changed the marker palette or its stable order."
+    Assert-Equal -Expected "circle" -Actual (Invoke-ProjectCatalogFunction -Name "Get-DefaultProjectMarkerKey" -Arguments @{ ProjectCode = "" } -UseFacade $UseFacade) -Message "$Label changed the empty-code marker."
+    Assert-Equal -Expected "circle" -Actual (Invoke-ProjectCatalogFunction -Name "Get-DefaultProjectMarkerKey" -Arguments @{ ProjectCode = "P1" } -UseFacade $UseFacade) -Message "$Label changed the P1 marker."
+    Assert-Equal -Expected "circle" -Actual (Invoke-ProjectCatalogFunction -Name "Get-DefaultProjectMarkerKey" -Arguments @{ ProjectCode = " P1 " } -UseFacade $UseFacade) -Message "$Label no longer trims catalog project codes before marker hashing."
+    Assert-Equal -Expected "square" -Actual (Invoke-ProjectCatalogFunction -Name "Get-DefaultProjectMarkerKey" -Arguments @{ ProjectCode = "LEGACY" } -UseFacade $UseFacade) -Message "$Label changed a legacy marker fallback."
+    Assert-Equal -Expected $true -Actual (Invoke-ProjectCatalogFunction -Name "Test-ProjectMarkerKey" -Arguments @{ MarkerKey = " DIAMOND " } -UseFacade $UseFacade) -Message "$Label rejected a supported marker with legacy whitespace."
+    Assert-Equal -Expected $false -Actual (Invoke-ProjectCatalogFunction -Name "Test-ProjectMarkerKey" -Arguments @{ MarkerKey = "hexagon" } -UseFacade $UseFacade) -Message "$Label accepted an unsupported marker."
+    Assert-Equal -Expected "triangle" -Actual (Invoke-ProjectCatalogFunction -Name "Resolve-ProjectMarkerKey" -Arguments @{ MarkerKey = " TRIANGLE "; ProjectCode = "P1" } -UseFacade $UseFacade) -Message "$Label did not normalize a supported explicit marker."
+    Assert-Equal -Expected "circle" -Actual (Invoke-ProjectCatalogFunction -Name "Resolve-ProjectMarkerKey" -Arguments @{ MarkerKey = "hexagon"; ProjectCode = "P1" } -UseFacade $UseFacade) -Message "$Label changed invalid-marker fallback behavior."
+
     Assert-Equal -Expected 0 -Actual @(Invoke-ProjectCatalogFunction -Name "ConvertTo-CodeArray" -Arguments @{ Value = $null } -UseFacade $UseFacade).Count -Message "$Label did not preserve a null code collection."
     Assert-SequenceEqual -Expected @("A", "B", "C") -Actual @(Invoke-ProjectCatalogFunction -Name "ConvertTo-CodeArray" -Arguments @{ Value = " B ; A,A ,, C " } -UseFacade $UseFacade) -Message "$Label changed string splitting, trimming, uniqueness, or ordering."
     $mixedCodes = @(
@@ -189,14 +209,17 @@ function Assert-CatalogBehavior {
     Assert-SequenceEqual -Expected @("003") -Actual @($normalized.backupAdmins) -Message "$Label changed normalized backup admins."
     Assert-Equal -Expected $true -Actual ([bool]$normalized.archived) -Message "$Label changed normalized archive state."
     Assert-Equal -Expected "indigo" -Actual $normalized.colorKey -Message "$Label stopped trimming catalog codes for fallback color selection."
+    Assert-Equal -Expected "square" -Actual $normalized.markerKey -Message "$Label stopped exposing a stable marker for a legacy project."
     Assert-Equal -Expected "preserve-me" -Actual $normalized.futureField -Message "$Label discarded an unknown future field."
     Assert-SequenceEqual -Expected $legacyPropertyNamesBefore -Actual @($legacyProject.PSObject.Properties.Name) -Message "$Label mutated the source object's property set."
     Assert-Equal -Expected $false -Actual ($legacyProject.PSObject.Properties.Name -contains "sector") -Message "$Label added normalized fields to the source object."
     Assert-Equal -Expected $false -Actual ($legacyProject.PSObject.Properties.Name -contains "colorKey") -Message "$Label added a fallback color to the source object."
+    Assert-Equal -Expected $false -Actual ($legacyProject.PSObject.Properties.Name -contains "markerKey") -Message "$Label added a fallback marker to the source object."
 
-    $canonicalSector = Invoke-ProjectCatalogFunction -Name "ConvertTo-NormalizedProjectObject" -Arguments @{ Project = [PSCustomObject]@{ projectCode = "COLOR"; projectName = "Colored"; sector = ""; secteur = "ignored"; colorKey = " VIOLET " } } -UseFacade $UseFacade
+    $canonicalSector = Invoke-ProjectCatalogFunction -Name "ConvertTo-NormalizedProjectObject" -Arguments @{ Project = [PSCustomObject]@{ projectCode = "COLOR"; projectName = "Colored"; sector = ""; secteur = "ignored"; colorKey = " VIOLET "; markerKey = " DIAMOND " } } -UseFacade $UseFacade
     Assert-Equal -Expected "" -Actual $canonicalSector.sector -Message "$Label no longer gives the canonical sector property precedence."
     Assert-Equal -Expected "violet" -Actual $canonicalSector.colorKey -Message "$Label changed persisted color normalization."
+    Assert-Equal -Expected "diamond" -Actual $canonicalSector.markerKey -Message "$Label changed persisted marker normalization."
     Assert-Equal -Expected $null -Actual (Invoke-ProjectCatalogFunction -Name "ConvertTo-NormalizedProjectObject" -Arguments @{ Project = $null } -UseFacade $UseFacade) -Message "$Label no longer accepts a null project."
 
     Assert-Equal -Expected "active" -Actual (Invoke-ProjectCatalogFunction -Name "ConvertTo-ProjectArchiveScope" -Arguments @{ Scope = $null } -UseFacade $UseFacade) -Message "$Label changed null scope defaulting."
@@ -275,6 +298,31 @@ Assert-SequenceEqual -Expected @($expectedFunctions | Sort-Object) -Actual $firs
 Assert-CatalogBehavior -UseFacade $false -Label "Pure module"
 Assert-Equal -Expected "teal" -Actual (Saphir.ProjectCatalog\Get-ProjectColorKeyFromText -ProjectCodeText " P1 ") -Message "The raw color primitive trimmed analytics project text."
 Assert-Equal -Expected "mint" -Actual (Saphir.ProjectCatalog\Get-ProjectColorKeyFromText -ProjectCodeText "P1") -Message "The raw color primitive changed its P1 golden value."
+Assert-Equal -Expected "diamond" -Actual (Saphir.ProjectCatalog\Get-ProjectMarkerKeyFromText -ProjectCodeText " P1 ") -Message "The raw marker primitive trimmed analytics project text."
+Assert-Equal -Expected "circle" -Actual (Saphir.ProjectCatalog\Get-ProjectMarkerKeyFromText -ProjectCodeText "P1") -Message "The raw marker primitive changed its P1 golden value."
+
+# Cover every one of the 10 x 4 identity buckets and independently prove that
+# introducing markers did not alter the historical base-31 modulo-10 colors.
+$legacyPalette = @("blue", "green", "violet", "teal", "amber", "coral", "pink", "indigo", "graphite", "mint")
+$markerPalette = @("circle", "square", "diamond", "triangle")
+$seenIdentities = @{}
+for ($candidateIndex = 0; $candidateIndex -lt 10000 -and $seenIdentities.Count -lt 40; $candidateIndex++) {
+    $candidateCode = "PROJECT-$candidateIndex"
+    $legacyHash = 0
+    $identityHash = 0
+    foreach ($character in $candidateCode.ToUpperInvariant().ToCharArray()) {
+        $legacyHash = (($legacyHash * 31) + [int][char]$character) % 10
+        $identityHash = (($identityHash * 31) + [int][char]$character) % 40
+    }
+    $expectedColor = $legacyPalette[[math]::Abs($legacyHash)]
+    $expectedMarker = $markerPalette[[math]::Floor(([math]::Abs($identityHash) / 10))]
+    $actualColor = Saphir.ProjectCatalog\Get-DefaultProjectColorKey -ProjectCode $candidateCode
+    $actualMarker = Saphir.ProjectCatalog\Get-DefaultProjectMarkerKey -ProjectCode $candidateCode
+    Assert-Equal -Expected $expectedColor -Actual $actualColor -Message "Marker hashing recolored $candidateCode."
+    Assert-Equal -Expected $expectedMarker -Actual $actualMarker -Message "Marker hashing changed the expected identity bucket for $candidateCode."
+    $seenIdentities["$actualColor/$actualMarker"] = $true
+}
+Assert-Equal -Expected 40 -Actual $seenIdentities.Count -Message "The deterministic fallback did not make all 40 color/marker identities reachable."
 
 $secondModule = Import-Module -Name $manifestPath -Force -PassThru -ErrorAction Stop
 $secondExports = @($secondModule.ExportedCommands.Keys | Sort-Object)
@@ -301,6 +349,8 @@ foreach ($functionName in $facadeFunctions) {
 }
 Assert-Equal -Expected "teal" -Actual (Get-AnalyticsReportProjectColorKey -ProjectCode " P1 " -ColorKey "unsupported") -Message "Analytics no longer preserves raw project-code whitespace hashing."
 Assert-Equal -Expected "violet" -Actual (Get-AnalyticsReportProjectColorKey -ProjectCode " P1 " -ColorKey " VIOLET ") -Message "Analytics stopped normalizing a valid explicit color."
+Assert-Equal -Expected "diamond" -Actual (Get-AnalyticsReportProjectMarkerKey -ProjectCode " P1 " -MarkerKey "unsupported") -Message "Analytics no longer preserves raw project-code whitespace marker hashing."
+Assert-Equal -Expected "triangle" -Actual (Get-AnalyticsReportProjectMarkerKey -ProjectCode " P1 " -MarkerKey " TRIANGLE ") -Message "Analytics stopped normalizing a valid explicit marker."
 
 # The report service is also dot-sourced by focused tests. Validate that it can
 # bootstrap the pure dependency by itself when CommonHelpers was not loaded.
@@ -311,11 +361,15 @@ $standaloneResult = & {
         ModuleCount = @(Get-Module -Name "Saphir.ProjectCatalog").Count
         RawColor = Get-AnalyticsReportProjectColorKey -ProjectCode " P1 " -ColorKey "unsupported"
         ExplicitColor = Get-AnalyticsReportProjectColorKey -ProjectCode "P1" -ColorKey "mint"
+        RawMarker = Get-AnalyticsReportProjectMarkerKey -ProjectCode " P1 " -MarkerKey "unsupported"
+        ExplicitMarker = Get-AnalyticsReportProjectMarkerKey -ProjectCode "P1" -MarkerKey "square"
     }
 }
 Assert-Equal -Expected 1 -Actual $standaloneResult.ModuleCount -Message "Standalone AnalyticsReportService did not load ProjectCatalog exactly once."
 Assert-Equal -Expected "teal" -Actual $standaloneResult.RawColor -Message "Standalone AnalyticsReportService changed raw code hashing."
 Assert-Equal -Expected "mint" -Actual $standaloneResult.ExplicitColor -Message "Standalone AnalyticsReportService changed explicit colors."
+Assert-Equal -Expected "diamond" -Actual $standaloneResult.RawMarker -Message "Standalone AnalyticsReportService changed raw marker hashing."
+Assert-Equal -Expected "square" -Actual $standaloneResult.ExplicitMarker -Message "Standalone AnalyticsReportService changed explicit markers."
 
 Remove-Module -Name "Saphir.ProjectCatalog" -Force -ErrorAction SilentlyContinue
 Write-Host "Project catalog module tests passed: exact exports, pure behavior, legacy facade parity, and analytics load order."

@@ -121,7 +121,8 @@ const employeeDetailStart = employeesSource.indexOf("function renderEmployeeDeta
 const employeeDetailEnd = employeesSource.indexOf("async function loadEmployeeDetail", employeeDetailStart);
 const employeeDetailSource = employeesSource.slice(employeeDetailStart, employeeDetailEnd);
 assert(employeeDetailSource.includes("employee-edit-button"), "Employee editing must remain available in the employee detail header.");
-assert.match(employeesSource, /function openEmployeeDetailFromDirectory[\s\S]*?loadEmployeeDetail\(normalizedEmployeeCode\)[\s\S]*?detailTitle\.focus\(\{ preventScroll: true \}\)/, "Opening an employee card must focus its loaded detail heading.");
+assert.match(employeesSource, /function focusEmployeeDetailCard\(\)[\s\S]*?detailTitle\.focus\(\{ preventScroll: true \}\)[\s\S]*?detailCard\.scrollIntoView\(\{ behavior: "smooth", block: "start" \}\)/, "Opening an employee card must focus its loaded detail heading using the visible card as its scroll target.");
+assert.match(employeesSource, /function openEmployeeDetailFromDirectory[\s\S]*?loadEmployeeDetail\(normalizedEmployeeCode\)[\s\S]*?return focusEmployeeDetailCard\(\);/, "Opening an employee card must reuse the shared detail-focus workflow.");
 assert.match(employeesSource, /const titleButton = employeeCard\.querySelector\("\.employee-card-title-button\.employee-open-button"\)[\s\S]*?openEmployeeDetailFromDirectory\(employeeCode\)/, "Whole-card clicks must use the retained title button and the accessible detail workflow.");
 assert(projectsSource.includes("project-open-button"), "Project cards need an explicit keyboard-accessible open action.");
 assert(projectsSource.includes('aria-controls="projectWorkspace"'), "Project open actions must identify their workspace destination.");

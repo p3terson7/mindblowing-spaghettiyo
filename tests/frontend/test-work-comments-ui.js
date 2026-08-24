@@ -32,14 +32,16 @@ const context = {
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
   },
-  t(key) {
-    return {
+  t(key, variables = {}) {
+    const translated = {
       "action.viewEntryNotes": "View entry notes",
       "shared.employeeWorkComment": "Employee comment",
       "shared.managerMessage": "Supervisor note",
+      "shared.managerMessageBy": "Supervisor note · {name}",
       "shared.entryNotes": "Entry notes",
       "shared.noEntryNotes": "No employee comment or supervisor note.",
     }[key] || key;
+    return translated.replace(/\{(\w+)\}/g, (match, name) => String(variables[name] ?? match));
   },
 };
 vm.createContext(context);
@@ -47,6 +49,7 @@ vm.runInContext(`${utilitiesSource.slice(helperStart, helperEnd)}
 this.workCommentApi = {
   getEntryWorkComment,
   getEntryNotes,
+  getEntrySupervisorNoteLabel,
   renderEntryWorkComment,
   renderEntryNotesPreview,
   buildEntryNotesPopoverContent,
@@ -79,14 +82,27 @@ assert.equal(context.workCommentApi.renderEntryWorkComment({ workComment: "" }),
 const combinedNotes = context.workCommentApi.getEntryNotes({
   workComment: "Prepared the monthly reconciliation",
   message: "Approved after verification",
+  messageAuthorName: "Marie Tremblay",
 });
 assert.equal(combinedNotes.count, 2, "Employee and supervisor notes must be combined into one reader trigger.");
 assert.equal(combinedNotes.preview, "Prepared the monthly reconciliation");
+assert.equal(combinedNotes.supervisorNoteAuthor, "Marie Tremblay");
+assert.equal(
+  context.workCommentApi.getEntrySupervisorNoteLabel({ message: "Approved", messageAuthorName: "Marie Tremblay" }),
+  "Supervisor note · Marie Tremblay",
+  "Attributed notes need the supervisor's name in their visible label.",
+);
+assert.equal(
+  context.workCommentApi.getEntrySupervisorNoteLabel({ message: "Legacy note" }),
+  "Supervisor note",
+  "Legacy notes without attribution must keep the generic label.",
+);
 assert.equal(context.workCommentApi.getEntryNotes({ message: "Supervisor only" }).preview, "Supervisor only");
 
 const previewMarkup = context.workCommentApi.renderEntryNotesPreview({
   workComment: '<script>alert("x")</script>\nSecond line',
   message: 'Manager said "approved"',
+  messageAuthorName: "Marie Tremblay",
 });
 assert.match(previewMarkup, /<button[\s\S]*?type="button"[\s\S]*?class="entry-notes-preview"/, "Compact notes must be a real button.");
 assert.match(previewMarkup, /data-entry-notes-trigger/, "The delegated popover trigger is missing.");
@@ -96,6 +112,7 @@ assert.match(previewMarkup, /entry-notes-count[\s\S]*?>2</, "Two available notes
 assert.match(previewMarkup, /&lt;script&gt;/, "The visible preview must escape note HTML.");
 assert.doesNotMatch(previewMarkup, /<script>/, "Raw note HTML reached the preview markup.");
 assert.match(previewMarkup, /%3Cscript%3E/, "Full note text must be safely encoded in data attributes.");
+assert.match(previewMarkup, /data-entry-supervisor-note-author="Marie%20Tremblay"/, "The compact reader did not carry note attribution.");
 assert.equal(context.workCommentApi.renderEntryNotesPreview({}), "", "Empty entries must not create a clickable blank preview.");
 assert.match(
   context.workCommentApi.renderEntryNotesPreview({}, { showEmpty: true }),
@@ -111,11 +128,15 @@ const popoverMarkup = context.workCommentApi.buildEntryNotesPopoverContent({
     if (name === "data-entry-supervisor-note") {
       return encodeURIComponent("Supervisor note with accents: vérifié");
     }
+    if (name === "data-entry-supervisor-note-author") {
+      return encodeURIComponent("Marie Tremblay");
+    }
     return "";
   },
 });
 assert.match(popoverMarkup, /Employee comment/, "The reader must label the employee comment.");
 assert.match(popoverMarkup, /Supervisor note/, "The reader must label the supervisor note.");
+assert.match(popoverMarkup, /Marie Tremblay/, "The reader must identify who wrote the supervisor note.");
 assert.match(popoverMarkup, /&lt;script&gt;/, "Popover content must escape stored note HTML.");
 assert.doesNotMatch(popoverMarkup, /<script>/, "Raw note HTML reached the popover.");
 assert.match(popoverMarkup, /vérifié/, "Unicode note content must survive attribute encoding.");
@@ -136,6 +157,7 @@ assert.match(selfSource, /renderEntryNotesPreview\(entry\)/, "Employees must get
 assert.doesNotMatch(selfSource, /expandedNotes|calendar-note-toggle|calendar-entry-note/, "The self calendar still carries the old inline expansion system.");
 
 assert.match(dashboardSource, /renderDashboardApprovalQueue[\s\S]*?renderEntryWorkComment\(entry\)/, "Dashboard approvals must show employee comments.");
+assert.match(dashboardSource, /renderDashboardApprovalQueue[\s\S]*?getEntrySupervisorNoteLabel\(entry\)/, "Dashboard note cards must show supervisor attribution.");
 assert.match(dashboardSource, /dashboard-entry-col-note[\s\S]*?renderEntryNotesPreview\(entry, \{ showEmpty: true \}\)/, "The dashboard inspector must use the unified compact notes reader.");
 assert.match(dashboardSource, /class="dashboard-note-edit-button"[\s\S]*?action\.editSupervisorNote/, "Supervisor-note editing needs a separate explicit pencil action.");
 assert.match(dashboardSource, /closest\("\.dashboard-note-edit-button"\)/, "The inspector pencil must remain wired to the existing editor.");
@@ -144,6 +166,7 @@ assert.match(dashboardSource, /data-workcomment=/, "Entry edit buttons must carr
 assert.match(dashboardSource, /workComment === originalWorkComment/, "Comment edits must participate in change detection.");
 assert.match(dashboardSource, /reasonCode, workComment, status:/, "Normal entry updates must persist workComment.");
 assert.match(approvalsSource, /buildApprovalCard[\s\S]*?renderEntryWorkComment\(entry\)/, "Review cards must show employee comments.");
+assert.match(approvalsSource, /buildApprovalCard[\s\S]*?getEntrySupervisorNoteLabel\(entry\)/, "Review cards must show supervisor attribution.");
 assert.match(employeesSource, /renderPeopleProjectEntryRows[\s\S]*?renderEntryNotesPreview\(entry\)/, "Employee project rows must use the compact notes reader.");
 assert.match(employeesSource, /entryPreview = dayEntries\.map[\s\S]*?renderEntryNotesPreview\(entry\)/, "The administrative employee calendar must use the compact notes reader.");
 assert.doesNotMatch(employeesSource, /expandedNotes|calendar-note-toggle|calendar-entry-note/, "The administrative calendar still carries the old inline expansion system.");
@@ -176,15 +199,17 @@ for (const text of [
   "Lire les notes de l’entrée",
   "Edit supervisor note",
   "Modifier la note du superviseur",
+  "Supervisor note · {name}",
+  "Note du superviseur · {name}",
 ]) {
   assert(i18nSource.includes(text), `Missing bilingual work-comment copy: ${text}`);
 }
 
 const workCommentViewCacheVersions = {
-  EmployeesView: "20260817-chartjs-employee-cards-v2",
-  DashboardView: "20260817-chartjs-employee-cards-v2",
-  ApprovalsView: "20260817-chartjs-employee-cards-v2",
-  ProjectsView: "20260817-chartjs-employee-cards-v2",
+  EmployeesView: "20260824-review-attention-tab-v1",
+  DashboardView: "20260824-review-attention-tab-v1",
+  ApprovalsView: "20260824-review-attention-tab-v1",
+  ProjectsView: "20260824-review-attention-tab-v1",
 };
 for (const [view, version] of Object.entries(workCommentViewCacheVersions)) {
   assert(
@@ -193,11 +218,11 @@ for (const [view, version] of Object.entries(workCommentViewCacheVersions)) {
   );
 }
 const workCommentAssetCacheVersions = {
-  "apple-ui.css": "20260817-chartjs-employee-cards-v2",
-  "I18n.js": "20260817-chartjs-employee-cards-v2",
-  "Utilities.js": "20260817-chartjs-employee-cards-v2",
-  "AppShell.js": "20260817-chartjs-employee-cards-v2",
-  "SelfView.js": "20260817-chartjs-employee-cards-v2",
+  "apple-ui.css": "20260824-review-attention-tab-v1",
+  "I18n.js": "20260824-review-attention-tab-v1",
+  "Utilities.js": "20260824-review-attention-tab-v1",
+  "AppShell.js": "20260824-review-attention-tab-v1",
+  "SelfView.js": "20260824-review-attention-tab-v1",
 };
 for (const [asset, version] of Object.entries(workCommentAssetCacheVersions)) {
   assert(indexSource.includes(`${asset}?v=${version}`), `${asset} is missing its work-comment cache buster.`);

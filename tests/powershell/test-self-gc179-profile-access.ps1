@@ -130,8 +130,9 @@ try {
     Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A Diverse-only employee could not read their self profile."
     $initialProfileResponse = $script:CapturedBody | ConvertFrom-Json
     Assert-Equal -Expected "diverse" -Actual (@($initialProfileResponse.timeEntryTypes) -join ",") -Message "Reading the profile changed or hid Diverse-only access."
-    Assert-Equal -Expected "STS" -Actual $initialProfileResponse.gc179Profile.position -Message "A legacy Diverse-only profile did not receive the GC179 Group default."
-    Assert-Equal -Expected "SUF-00" -Actual $initialProfileResponse.gc179Profile.level -Message "A legacy Diverse-only profile did not receive the GC179 Sub-Group default."
+    Assert-Equal -Expected "STS" -Actual $initialProfileResponse.gc179Profile.group -Message "A legacy Diverse-only profile did not receive the GC179 Group default."
+    Assert-Equal -Expected "SUF-00" -Actual $initialProfileResponse.gc179Profile.subGroup -Message "A legacy Diverse-only profile did not receive the GC179 Sub-Group default."
+    Assert-Equal -Expected "" -Actual $initialProfileResponse.gc179Profile.level -Message "A legacy Diverse-only profile did not receive a blank GC179 Level."
 
     $studentProfilePayload = [PSCustomObject]@{
         gc179Profile = [PSCustomObject]@{
@@ -139,8 +140,9 @@ try {
             givenName          = "DIVERSE ONLY"
             initials           = "D.O.E"
             pri                = "000000731"
-            position           = " sts "
-            level              = " suf - 00 "
+            group              = " sts "
+            subGroup           = " suf - 00 "
+            level              = " 02 "
             compressedWorkWeek = $false
         }
     }
@@ -151,8 +153,9 @@ try {
     $savedUsers = @(Get-Content -LiteralPath $script:usersFile -Raw | ConvertFrom-Json)
     $savedUser = $savedUsers | Where-Object { [string]$_.employeeCode -eq $employeeCode } | Select-Object -First 1
     Assert-Equal -Expected "diverse" -Actual (@($savedUser.timeEntryTypes) -join ",") -Message "Saving GC179 parameters changed the employee's Diverse-only rights."
-    Assert-Equal -Expected "STS" -Actual $savedUser.gc179Profile.position -Message "The Diverse-only employee's position/group was not persisted."
-    Assert-Equal -Expected "SUF-00" -Actual $savedUser.gc179Profile.level -Message "The Diverse-only employee's echelon/sub-group was not persisted."
+    Assert-Equal -Expected "STS" -Actual $savedUser.gc179Profile.group -Message "The Diverse-only employee's Group was not persisted."
+    Assert-Equal -Expected "SUF-00" -Actual $savedUser.gc179Profile.subGroup -Message "The Diverse-only employee's Sub-Group was not persisted."
+    Assert-Equal -Expected "02" -Actual $savedUser.gc179Profile.level -Message "The Diverse-only employee's Level was not persisted."
 
     Write-Host "Diverse-only GC179 self-profile access test passed."
 }

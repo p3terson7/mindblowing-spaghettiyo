@@ -272,6 +272,10 @@ function Test-OptionCode { param($Options, [string]$Code, [bool]$AllowBlank) ret
 function Convert-ToNormalizedDateText { param([string]$DateText) return $DateText }
 function Convert-ToNormalizedTimeText { param([string]$TimeText) return $TimeText }
 function Convert-ToNearestQuarterHourText { param([string]$Date, [string]$TimeText) return $TimeText }
+function Get-QuarterHourCreditSummary {
+    param([string]$Date, [string]$PunchIn, [string]$PunchOut)
+    return [PSCustomObject]@{ isValid = $true; creditedOvertime = "01:00:00" }
+}
 function New-EntryIdentifier { return "entry-new" }
 
 function Test-CurrentUserSuperAdmin { param($CurrentUser) return $true }
@@ -404,6 +408,24 @@ function Set-ProjectRecordColorKey {
     $resolved = Resolve-ProjectColorKey -ColorKey $ColorKey -ProjectCode ([string]$Project.projectCode)
     if ($Project.PSObject.Properties.Name -contains "colorKey") { $Project.colorKey = $resolved }
     else { $Project | Add-Member -NotePropertyName colorKey -NotePropertyValue $resolved }
+    return $resolved
+}
+function Get-ProjectMarkerKeys { return @("circle", "square", "diamond", "triangle") }
+function Test-ProjectMarkerKey {
+    param([AllowNull()][string]$MarkerKey)
+    return (@(Get-ProjectMarkerKeys) -contains ([string]$MarkerKey).Trim().ToLowerInvariant())
+}
+function Resolve-ProjectMarkerKey {
+    param([AllowNull()][string]$MarkerKey, [AllowNull()][string]$ProjectCode)
+    $candidate = ([string]$MarkerKey).Trim().ToLowerInvariant()
+    if (Test-ProjectMarkerKey -MarkerKey $candidate) { return $candidate }
+    return "circle"
+}
+function Set-ProjectRecordMarkerKey {
+    param([Parameter(Mandatory = $true)]$Project, [AllowNull()][string]$MarkerKey)
+    $resolved = Resolve-ProjectMarkerKey -MarkerKey $MarkerKey -ProjectCode ([string]$Project.projectCode)
+    if ($Project.PSObject.Properties.Name -contains "markerKey") { $Project.markerKey = $resolved }
+    else { $Project | Add-Member -NotePropertyName markerKey -NotePropertyValue $resolved }
     return $resolved
 }
 function Get-Projects { return ,@($script:Projects) }

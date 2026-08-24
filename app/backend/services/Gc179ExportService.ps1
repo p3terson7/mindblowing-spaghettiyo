@@ -40,15 +40,17 @@ function Get-Gc179HeaderValues {
         ConvertTo-Gc179ProfileObject -Value $null -DisplayName $displayName
     }
 
-    $group = ConvertTo-Gc179PositionText -Value ([string]$profile.position)
+    $group = ConvertTo-Gc179GroupText -Value ([string]$profile.group)
     if ([string]::IsNullOrWhiteSpace($group)) {
         $group = "STS"
     }
 
-    $subGroup = ConvertTo-Gc179EchelonText -Value ([string]$profile.level)
+    $subGroup = ConvertTo-Gc179SubGroupText -Value ([string]$profile.subGroup)
     if ([string]::IsNullOrWhiteSpace($subGroup)) {
         $subGroup = "SUF-00"
     }
+
+    $level = ConvertTo-Gc179LevelText -Value ([string]$profile.level)
 
     return [PSCustomObject]@{
         Month     = [string]$MonthParts.Month
@@ -63,9 +65,7 @@ function Get-Gc179HeaderValues {
         Given     = [string]$profile.givenName
         Initials  = [string]$profile.initials
         PRI       = ConvertTo-Gc179PriText -Value ([string]$profile.pri)
-        # Level/Niveau is a separate GC179 field. SAPHIR currently collects
-        # Poste and Echelon only, which map to Group and Sub-Group respectively.
-        Level     = ""
+        Level     = $level
         WorkWeek  = if ($profile.compressedWorkWeek) { "2" } else { "1" }
     }
 }
@@ -127,17 +127,23 @@ function Get-Gc179ExportBaseFileName {
         [Parameter(Mandatory = $true)]$HeaderValues,
         [Parameter(Mandatory = $true)]$MonthParts,
         [int]$PartNumber = 1,
-        [int]$PartCount = 1
+        [int]$PartCount = 1,
+        [bool]$IncludesTimePayment = $false
     )
 
     $hrmis = ConvertTo-Gc179FileNameToken -Value $EmployeeCode -Fallback "HRMIS"
-    $surname = ConvertTo-Gc179FileNameToken -Value ([string]$HeaderValues.Surname) -Fallback "LASTNAME"
-    $givenName = ConvertTo-Gc179FileNameToken -Value ([string]$HeaderValues.Given) -FirstTokenOnly $true -Fallback "FIRSTNAME"
-    $monthKey = ([string]$MonthParts.MonthKey) -replace "-", "_"
-    $baseName = "{0}_{1}_{2}_GC179_{3}" -f $hrmis, $surname, $givenName, $monthKey
+    $surname = ConvertTo-Gc179FileNameToken -Value ([string]$HeaderValues.Surname) -Fallback "NOM"
+    $givenName = ConvertTo-Gc179FileNameToken -Value ([string]$HeaderValues.Given) -FirstTokenOnly $true -Fallback "X"
+    $givenInitial = if ([string]::IsNullOrWhiteSpace($givenName)) { "X" } else { $givenName.Substring(0, 1) }
+    $monthKey = [string]$MonthParts.MonthKey
+    $baseName = "{0}_{1}_{2}_GC179_{3}" -f $hrmis, $surname, $givenInitial, $monthKey
 
     if ($PartCount -gt 1) {
-        return ("{0}_{1}sur{2}" -f $baseName, $PartNumber, $PartCount)
+        $baseName = "{0}_{1}sur{2}" -f $baseName, $PartNumber, $PartCount
+    }
+
+    if ($IncludesTimePayment) {
+        $baseName = "{0}_TEMPS" -f $baseName
     }
 
     return $baseName
@@ -350,7 +356,11 @@ function Test-Gc179WorkedDateEntry {
         return $false
     }
 
-    return (-not [string]::IsNullOrWhiteSpace([string]$Entry.punchIn) -and -not [string]::IsNullOrWhiteSpace([string]$Entry.punchOut))
+    return (
+        -not [string]::IsNullOrWhiteSpace([string]$Entry.punchIn) -and
+        -not [string]::IsNullOrWhiteSpace([string]$Entry.punchOut) -and
+        -not [string]::IsNullOrWhiteSpace((ConvertTo-Gc179DurationText -Entry $Entry))
+    )
 }
 
 function Get-Gc179WorkedDateSet {
@@ -404,7 +414,9 @@ function Test-Gc179ExportableEntry {
         return $false
     }
 
-    return $true
+    # A completed short entry can intentionally carry 00:00:00 so a
+    # supervisor can see it in Review. It must not create an empty GC179 row.
+    return (-not [string]::IsNullOrWhiteSpace((ConvertTo-Gc179DurationText -Entry $Entry)))
 }
 
 function Get-Gc179EntrySortKey {
@@ -516,7 +528,12 @@ function New-Gc179FdfExportPart {
     [void]$builder.AppendLine("<< /Root 1 0 R >>")
     [void]$builder.AppendLine("%%EOF")
 
-    $baseFileName = Get-Gc179ExportBaseFileName -EmployeeCode $EmployeeCode -HeaderValues $headerValues -MonthParts $MonthParts -PartNumber $PartNumber -PartCount $PartCount
+    $includesTimePayment = @(
+        $entries | Where-Object {
+            (Get-Gc179PaymentValueName -PaymentOption ([string]$_.paymentOption)) -eq "2"
+        }
+    ).Count -gt 0
+    $baseFileName = Get-Gc179ExportBaseFileName -EmployeeCode $EmployeeCode -HeaderValues $headerValues -MonthParts $MonthParts -PartNumber $PartNumber -PartCount $PartCount -IncludesTimePayment $includesTimePayment
     $fileName = "{0}.fdf" -f $baseFileName
 
     return [PSCustomObject]@{

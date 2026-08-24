@@ -215,8 +215,8 @@
                             }
 
                             $entry.status = $normalizedStatus
-                            if ($normalizedStatus -eq "rejected") {
-                                $entry.message = $managerMessage.Trim()
+                            if (-not [string]::IsNullOrWhiteSpace($managerMessage)) {
+                                Set-EntrySupervisorNote -Entry $entry -Note $managerMessage -CurrentUser $currentUser | Out-Null
                             }
 
                             $action = if ($normalizedStatus -eq "approved") { "Approved" } else { "Rejected" }

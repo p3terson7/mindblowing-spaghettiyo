@@ -109,7 +109,7 @@ function Reset-ProjectScenario {
     $script:IsSuperAdmin = $true
     $script:Projects = @(
         [PSCustomObject]@{
-            projectCode = "P001"; projectName = "Original"; sector = ""; admins = @(); backupAdmins = @(); archived = $false; colorKey = "blue"
+            projectCode = "P001"; projectName = "Original"; sector = ""; admins = @(); backupAdmins = @(); archived = $false; colorKey = "blue"; markerKey = "square"
         }
     )
     $script:RequestPayload = $null
@@ -203,6 +203,7 @@ try {
     Assert-Equal -Expected "" -Actual $script:Projects[1].projectName -Message "An omitted project name should be stored as an empty string."
     Assert-Equal -Expected "P002" -Actual $script:PublishedResource -Message "The nameless project code was not published."
     Assert-Equal -Expected (Get-DefaultProjectColorKey -ProjectCode "P002") -Actual $script:Projects[1].colorKey -Message "A project without an explicit color did not receive its stable fallback."
+    Assert-Equal -Expected (Get-DefaultProjectMarkerKey -ProjectCode "P002") -Actual $script:Projects[1].markerKey -Message "A project without an explicit marker did not receive its stable fallback."
     Assert-Equal -Expected "Created a project with code <strong>P002</strong>." -Actual $script:HistoryMessage -Message "A nameless project used an unclear history message."
     Assert-Equal -Expected $false -Actual $script:HistoryPublishChange -Message "Project creation duplicated sync publication through history logging."
 
@@ -231,10 +232,22 @@ try {
     Assert-Equal -Expected "violet" -Actual $script:Projects[1].colorKey -Message "The chosen project color was not persisted."
 
     Reset-ProjectScenario
+    $script:RequestPayload = [PSCustomObject]@{ projectCode = "P005-M"; projectName = "Marked"; markerKey = "triangle"; sector = ""; admins = @(); backupAdmins = @() }
+    Invoke-ProjectAddRoute
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A supported project marker should be accepted."
+    Assert-Equal -Expected "triangle" -Actual $script:Projects[1].markerKey -Message "The chosen project marker was not persisted."
+
+    Reset-ProjectScenario
     $script:RequestPayload = [PSCustomObject]@{ projectCode = "P006"; projectName = "Invalid color"; colorKey = "neon-chartreuse"; sector = ""; admins = @(); backupAdmins = @() }
     Invoke-ProjectAddRoute
     Assert-Equal -Expected 400 -Actual $script:CapturedStatusCode -Message "An arbitrary project color should be rejected."
     Assert-Equal -Expected 0 -Actual $script:WriteCount -Message "Invalid project color validation wrote project data."
+
+    Reset-ProjectScenario
+    $script:RequestPayload = [PSCustomObject]@{ projectCode = "P006-M"; projectName = "Invalid marker"; markerKey = "hexagon"; sector = ""; admins = @(); backupAdmins = @() }
+    Invoke-ProjectAddRoute
+    Assert-Equal -Expected 400 -Actual $script:CapturedStatusCode -Message "An arbitrary project marker should be rejected."
+    Assert-Equal -Expected 0 -Actual $script:WriteCount -Message "Invalid project marker validation wrote project data."
 
     Reset-ProjectScenario
     Set-TestEmployeeEntries -EmployeeCode "000000001" -Entries @(
@@ -266,11 +279,23 @@ try {
     Invoke-ProjectUpdateRoute
     Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A name-only project update should succeed even with entries."
     Assert-Equal -Expected "New name" -Actual $script:Projects[0].projectName -Message "Project name was not updated."
+    Assert-Equal -Expected "square" -Actual $script:Projects[0].markerKey -Message "An update without markerKey changed the persisted marker."
 
     $script:RequestPayload = [PSCustomObject]@{ projectCode = "P001"; projectName = "New name"; colorKey = "mint"; sector = "Sector"; admins = @(); backupAdmins = @(); archived = $false }
     Invoke-ProjectUpdateRoute
     Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A project color update should succeed."
     Assert-Equal -Expected "mint" -Actual $script:Projects[0].colorKey -Message "The project color update was not persisted."
+
+    $script:RequestPayload = [PSCustomObject]@{ projectCode = "P001"; projectName = "New name"; markerKey = "diamond"; sector = "Sector"; admins = @(); backupAdmins = @(); archived = $false }
+    Invoke-ProjectUpdateRoute
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A project marker update should succeed."
+    Assert-Equal -Expected "diamond" -Actual $script:Projects[0].markerKey -Message "The project marker update was not persisted."
+
+    $writeCountBeforeInvalidMarker = $script:WriteCount
+    $script:RequestPayload = [PSCustomObject]@{ projectCode = "P001"; projectName = "New name"; markerKey = "star"; sector = "Sector"; admins = @(); backupAdmins = @(); archived = $false }
+    Invoke-ProjectUpdateRoute
+    Assert-Equal -Expected 400 -Actual $script:CapturedStatusCode -Message "An unsupported project marker update should be rejected."
+    Assert-Equal -Expected $writeCountBeforeInvalidMarker -Actual $script:WriteCount -Message "Invalid project marker update wrote project data."
 
     $script:RequestPayload = [PSCustomObject]@{ projectCode = "P001"; projectName = ""; sector = "Sector"; admins = @(); backupAdmins = @(); archived = $false }
     Invoke-ProjectUpdateRoute

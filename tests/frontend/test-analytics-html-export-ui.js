@@ -104,8 +104,8 @@ assert(
   "The analytics export does not use the shared busy-button workflow."
 );
 assert(projectsSource.includes('link.download = filename;'), "The HTML report is not handed to the browser as a download.");
-assert(indexSource.includes("scripts/I18n.js?v=20260817-chartjs-employee-cards-v2"), "The localized export UI cache key was not bumped.");
-assert(indexSource.includes("scripts/AppShell.js?v=20260817-chartjs-employee-cards-v2"), "The application shell cache key was not bumped.");
-assert(appShellSource.includes("ProjectsView.js?v=20260817-chartjs-employee-cards-v2"), "The project view cache key was not bumped.");
+assert(indexSource.includes("scripts/I18n.js?v=20260824-review-attention-tab-v1"), "The localized export UI cache key was not bumped.");
+assert(indexSource.includes("scripts/AppShell.js?v=20260824-review-attention-tab-v1"), "The application shell cache key was not bumped.");
+assert(appShellSource.includes("ProjectsView.js?v=20260824-review-attention-tab-v1"), "The project view cache key was not bumped.");
 
 console.log("Analytics HTML export UI contract test passed.");

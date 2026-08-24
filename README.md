@@ -245,7 +245,7 @@ Les services importants sont :
 | Fichier | Rôle |
 | --- | --- |
 | `AuthService.ps1` | Connexion, mots de passe, sessions, rôles et permissions. |
-| `EntryService.ps1` | Normalisation des entrées, arrondi au quart d’heure, calculs de durée, oubli de punch-out. |
+| `EntryService.ps1` | Normalisation des entrées, affichage arrondi au quart d’heure, calcul du crédit à partir des heures exactes et oubli de punch-out. |
 | `ReadModelService.ps1` | Prépare les données utilisées par les vues et garde des caches de lecture. |
 | `EmployeeDirectoryService.ps1` | Gestion des employés, fiches et fichiers associés. |
 | `ProjectStatsService.ps1` | Statistiques liées aux projets. |
@@ -358,7 +358,9 @@ Les données sont stockées dans le dossier `data/`. Les fichiers principaux son
 }
 ```
 
-Le système garde l’heure exacte et l’heure arrondie. L’heure arrondie est utilisée pour la gestion, tandis que l’heure exacte permet de savoir ce qui s’est réellement passé.
+Le système garde l’heure exacte et l’heure arrondie. L’heure arrondie reste utile pour l’affichage et l’historique, tandis que le crédit d’heures est calculé avec les heures exactes.
+
+Pour une entrée créée, modifiée ou terminée dans SAPHIR, chaque tranche fixe de 15 minutes (`:00–:15`, `:15–:30`, etc.) vaut 15 minutes seulement si au moins 10 minutes ont réellement été faites dans cette tranche. Par exemple, `14:04–14:08` garde les deux heures exactes, mais compte `00:00:00` et apparaît dans Révision sous **À vérifier**. Les GC179 importées gardent leur durée officielle et les anciennes données ne sont pas réécrites automatiquement.
 
 ### Exemple simplifié d’une entrée Divers
 

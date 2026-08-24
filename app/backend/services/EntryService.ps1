@@ -6,6 +6,10 @@ $entryStateModuleManifest = Join-Path -Path $PSScriptRoot -ChildPath "../modules
 Import-Module -Name $entryStateModuleManifest -Force -ErrorAction Stop | Out-Null
 Remove-Variable -Name entryStateModuleManifest -ErrorAction SilentlyContinue
 
+$entryDurationModuleManifest = Join-Path -Path $PSScriptRoot -ChildPath "../modules/Saphir.EntryDuration.psd1"
+Import-Module -Name $entryDurationModuleManifest -Force -ErrorAction Stop | Out-Null
+Remove-Variable -Name entryDurationModuleManifest -ErrorAction SilentlyContinue
+
 function New-EntryIdentifier {
     return ([System.Guid]::NewGuid().ToString("N"))
 }
@@ -158,6 +162,68 @@ function Test-EntryForgottenClockOut {
     return (Saphir.EntryState\Test-EntryForgottenClockOut -Entry $Entry)
 }
 
+function Get-QuarterHourCreditSummary {
+    param(
+        [Parameter(Mandatory = $true)][string]$Date,
+        [Parameter(Mandatory = $true)][string]$PunchIn,
+        [Parameter(Mandatory = $true)][string]$PunchOut
+    )
+
+    return (Saphir.EntryDuration\Get-QuarterHourCreditSummary -Date $Date -PunchIn $PunchIn -PunchOut $PunchOut)
+}
+
+function Test-EntryGc179Import {
+    param($Entry)
+
+    if ($null -eq $Entry) {
+        return $false
+    }
+
+    foreach ($propertyName in @("gc179ImportBatchId", "gc179ImportedAtUtc", "gc179SourceFile")) {
+        if ($Entry.PSObject.Properties.Name -contains $propertyName -and
+            -not [string]::IsNullOrWhiteSpace([string]$Entry.PSObject.Properties[$propertyName].Value)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-EntryReviewIssues {
+    param($Entry)
+
+    $issues = New-Object System.Collections.ArrayList
+    if ($null -eq $Entry) {
+        return @($issues.ToArray())
+    }
+
+    if (Test-EntryForgottenClockOut -Entry $Entry) {
+        [void]$issues.Add([PSCustomObject]@{ code = "clockOutMissing" })
+    }
+
+    $exactPunchIn = Get-EntryExactPunchInText -Entry $Entry
+    $exactPunchOut = Get-EntryExactPunchOutText -Entry $Entry
+    if ([string]::IsNullOrWhiteSpace($exactPunchIn) -or [string]::IsNullOrWhiteSpace($exactPunchOut)) {
+        return @($issues.ToArray())
+    }
+
+    $creditSummary = Get-QuarterHourCreditSummary -Date ([string]$Entry.date) -PunchIn $exactPunchIn -PunchOut $exactPunchOut
+    if (-not [bool]$creditSummary.isValid) {
+        [void]$issues.Add([PSCustomObject]@{ code = "invalidPunchTimes" })
+    }
+    elseif (-not (Test-EntryGc179Import -Entry $Entry) -and
+        [int]$creditSummary.actualSeconds -gt 0 -and
+        [int]$creditSummary.creditedSeconds -eq 0) {
+        [void]$issues.Add([PSCustomObject]@{
+            code            = "shortOvertime"
+            actualSeconds   = [int]$creditSummary.actualSeconds
+            creditedSeconds = [int]$creditSummary.creditedSeconds
+        })
+    }
+
+    return @($issues.ToArray())
+}
+
 function Get-LatestActiveEntry {
     param([Parameter(Mandatory = $true)]$Entries)
 
@@ -228,6 +294,45 @@ function Clear-EntryForgottenClockOutReview {
     Set-EntryPropertyValue -Entry $Entry -Name "forgottenClockOutDetectedAtUtc" -Value ""
 }
 
+function Set-EntrySupervisorNote {
+    param(
+        [Parameter(Mandatory = $true)]$Entry,
+        [AllowNull()][AllowEmptyString()][string]$Note,
+        $CurrentUser
+    )
+
+    $normalizedNote = ([string]$Note).Trim()
+    Set-EntryPropertyValue -Entry $Entry -Name "message" -Value $normalizedNote
+
+    # These fields are deliberately additive. Older entries without attribution
+    # remain valid and are rendered with the legacy generic label.
+    if ([string]::IsNullOrWhiteSpace($normalizedNote)) {
+        Set-EntryPropertyValue -Entry $Entry -Name "messageAuthorName" -Value ""
+        Set-EntryPropertyValue -Entry $Entry -Name "messageAuthorUsername" -Value ""
+        Set-EntryPropertyValue -Entry $Entry -Name "messageUpdatedAt" -Value ""
+        return $Entry
+    }
+
+    $authorName = ""
+    $authorUsername = ""
+    if ($null -ne $CurrentUser) {
+        if ($CurrentUser.PSObject.Properties.Name -contains "displayName") {
+            $authorName = ([string]$CurrentUser.displayName).Trim()
+        }
+        if ($CurrentUser.PSObject.Properties.Name -contains "username") {
+            $authorUsername = ([string]$CurrentUser.username).Trim()
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($authorName)) {
+        $authorName = $authorUsername
+    }
+
+    Set-EntryPropertyValue -Entry $Entry -Name "messageAuthorName" -Value $authorName
+    Set-EntryPropertyValue -Entry $Entry -Name "messageAuthorUsername" -Value $authorUsername
+    Set-EntryPropertyValue -Entry $Entry -Name "messageUpdatedAt" -Value ((Get-Date).ToUniversalTime().ToString("o"))
+    return $Entry
+}
+
 function Convert-ToNormalizedEntryObject {
     param($Entry)
 
@@ -249,6 +354,9 @@ function Convert-ToNormalizedEntryObject {
         overtime      = if ($null -ne $Entry.overtime -and -not [string]::IsNullOrWhiteSpace([string]$Entry.overtime)) { [string]$Entry.overtime } else { $null }
         status        = if ($null -ne $Entry.status -and -not [string]::IsNullOrWhiteSpace([string]$Entry.status)) { [string]$Entry.status } else { "pending" }
         message       = if ($null -ne $Entry.message) { [string]$Entry.message } else { "" }
+        messageAuthorName = if ($Entry.PSObject.Properties.Name -contains "messageAuthorName") { [string]$Entry.messageAuthorName } else { "" }
+        messageAuthorUsername = if ($Entry.PSObject.Properties.Name -contains "messageAuthorUsername") { [string]$Entry.messageAuthorUsername } else { "" }
+        messageUpdatedAt = if ($Entry.PSObject.Properties.Name -contains "messageUpdatedAt") { [string]$Entry.messageUpdatedAt } else { "" }
         projectCode   = if ($null -ne $Entry.projectCode) { [string]$Entry.projectCode } else { "" }
         overtimeCode  = if ($null -ne $Entry.overtimeCode) { [string]$Entry.overtimeCode } else { "" }
         paymentOption = if ($null -ne $Entry.paymentOption -and -not [string]::IsNullOrWhiteSpace([string]$Entry.paymentOption)) { [string]$Entry.paymentOption } elseif ($entryType -eq "diverse") { "" } else { "cash" }
@@ -256,6 +364,10 @@ function Convert-ToNormalizedEntryObject {
         workComment   = if ($Entry.PSObject.Properties.Name -contains "workComment") { [string]$Entry.workComment } else { "" }
         diverseReason = if ($Entry.PSObject.Properties.Name -contains "diverseReason") { [string]$Entry.diverseReason } else { "" }
         diverseSummary = if ($Entry.PSObject.Properties.Name -contains "diverseSummary") { [string]$Entry.diverseSummary } else { "" }
+        overtimeCalculationRule = if ($Entry.PSObject.Properties.Name -contains "overtimeCalculationRule") { [string]$Entry.overtimeCalculationRule } else { "" }
+        gc179ImportBatchId = if ($Entry.PSObject.Properties.Name -contains "gc179ImportBatchId") { [string]$Entry.gc179ImportBatchId } else { "" }
+        gc179ImportedAtUtc = if ($Entry.PSObject.Properties.Name -contains "gc179ImportedAtUtc") { [string]$Entry.gc179ImportedAtUtc } else { "" }
+        gc179SourceFile = if ($Entry.PSObject.Properties.Name -contains "gc179SourceFile") { [string]$Entry.gc179SourceFile } else { "" }
         forgottenClockOut = Test-EntryForgottenClockOut -Entry $Entry
         needsClockOutReview = Test-EntryForgottenClockOut -Entry $Entry
         forgottenClockOutAttemptedDate = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedDate") { [string]$Entry.forgottenClockOutAttemptedDate } else { "" }
@@ -304,16 +416,34 @@ function Find-EntryIndexFromLookup {
 function Update-EntryComputedOvertime {
     param($Entry)
 
-    if ($null -eq $Entry -or [string]::IsNullOrWhiteSpace([string]$Entry.date) -or [string]::IsNullOrWhiteSpace([string]$Entry.punchIn) -or [string]::IsNullOrWhiteSpace([string]$Entry.punchOut)) {
+    if ($null -eq $Entry -or [string]::IsNullOrWhiteSpace([string]$Entry.date)) {
         if ($null -ne $Entry) {
             $Entry.overtime = $null
         }
         return
     }
 
-    $punchInTime = [DateTime]::ParseExact(("{0} {1}" -f [string]$Entry.date, [string]$Entry.punchIn), "yyyy-MM-dd HH:mm:ss", $null)
-    $punchOutTime = [DateTime]::ParseExact(("{0} {1}" -f [string]$Entry.date, [string]$Entry.punchOut), "yyyy-MM-dd HH:mm:ss", $null)
-    $Entry.overtime = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
+    # Imported GC179 rows carry the duration declared on the official form.
+    # Saving a note or status change must never silently replace that value.
+    if (Test-EntryGc179Import -Entry $Entry) {
+        return
+    }
+
+    $exactPunchIn = Get-EntryExactPunchInText -Entry $Entry
+    $exactPunchOut = Get-EntryExactPunchOutText -Entry $Entry
+    if ([string]::IsNullOrWhiteSpace($exactPunchIn) -or [string]::IsNullOrWhiteSpace($exactPunchOut)) {
+        $Entry.overtime = $null
+        return
+    }
+
+    $creditSummary = Get-QuarterHourCreditSummary -Date ([string]$Entry.date) -PunchIn $exactPunchIn -PunchOut $exactPunchOut
+    if (-not [bool]$creditSummary.isValid) {
+        $Entry.overtime = $null
+        return
+    }
+
+    Set-EntryPropertyValue -Entry $Entry -Name "overtime" -Value ([string]$creditSummary.creditedOvertime)
+    Set-EntryPropertyValue -Entry $Entry -Name "overtimeCalculationRule" -Value "quarter-10m-v1"
 }
 
 function Get-EntryHistorySpanText {

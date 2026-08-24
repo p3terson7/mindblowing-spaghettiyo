@@ -33,6 +33,44 @@ function Get-ObjectStringProperty {
     return ""
 }
 
+function Get-FirstObjectStringProperty {
+    param(
+        $Value,
+        [Parameter(Mandatory = $true)][string[]]$Names
+    )
+
+    foreach ($name in @($Names)) {
+        $candidate = Get-ObjectStringProperty -Value $Value -Name $name
+        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+            return $candidate
+        }
+    }
+
+    return ""
+}
+
+function Test-ObjectHasAnyProperty {
+    param(
+        $Value,
+        [Parameter(Mandatory = $true)][string[]]$Names
+    )
+
+    if ($null -eq $Value) {
+        return $false
+    }
+
+    foreach ($name in @($Names)) {
+        if ($Value -is [hashtable] -and $Value.ContainsKey($name)) {
+            return $true
+        }
+        if ($Value.PSObject.Properties.Name -contains $name) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function ConvertTo-Gc179UpperText {
     param([AllowNull()][string]$Value)
 
@@ -149,20 +187,42 @@ function ConvertTo-Gc179HeaderCodeText {
     return $normalized
 }
 
+function ConvertTo-Gc179GroupText {
+    param([AllowNull()][string]$Value)
+
+    # The GC179 Group field accepts up to six characters. Codes vary by
+    # employee (for example CR4, AS-03, or STS), so do not use an allowlist.
+    return (ConvertTo-Gc179HeaderCodeText -Value $Value -MaximumLength 6)
+}
+
+function ConvertTo-Gc179SubGroupText {
+    param([AllowNull()][string]$Value)
+
+    # The GC179 Sub-Group field accepts up to ten characters.
+    return (ConvertTo-Gc179HeaderCodeText -Value $Value -MaximumLength 10)
+}
+
+function ConvertTo-Gc179LevelText {
+    param([AllowNull()][string]$Value)
+
+    # Level/Niveau is a distinct ten-character field in the GC179 header.
+    return (ConvertTo-Gc179HeaderCodeText -Value $Value -MaximumLength 10)
+}
+
 function ConvertTo-Gc179PositionText {
     param([AllowNull()][string]$Value)
 
-    # The GC179 Group field accepts up to six characters. Position codes vary
-    # by employee (for example CR4, AS-03, or STS), so do not use an allowlist.
-    return (ConvertTo-Gc179HeaderCodeText -Value $Value -MaximumLength 6)
+    # Compatibility facade for profile data written before Group was named
+    # explicitly in SAPHIR.
+    return (ConvertTo-Gc179GroupText -Value $Value)
 }
 
 function ConvertTo-Gc179EchelonText {
     param([AllowNull()][string]$Value)
 
-    # The GC179 Sub-Group field accepts up to ten characters. Student and
-    # indeterminate classifications use different formats, such as SUF-00.
-    return (ConvertTo-Gc179HeaderCodeText -Value $Value -MaximumLength 10)
+    # Compatibility facade for profile data written before Sub-Group was
+    # named explicitly in SAPHIR.
+    return (ConvertTo-Gc179SubGroupText -Value $Value)
 }
 
 function ConvertTo-Gc179ProfileObject {
@@ -208,26 +268,23 @@ function ConvertTo-Gc179ProfileObject {
         $pri = Get-ObjectStringProperty -Value $Value -Name "PRI"
     }
 
-    $level = Get-ObjectStringProperty -Value $Value -Name "level"
-    if ([string]::IsNullOrWhiteSpace($level)) {
-        $level = Get-ObjectStringProperty -Value $Value -Name "Level"
-    }
-    if ([string]::IsNullOrWhiteSpace($level)) {
-        $level = Get-ObjectStringProperty -Value $Value -Name "echelon"
-    }
-    if ([string]::IsNullOrWhiteSpace($level)) {
-        $level = Get-ObjectStringProperty -Value $Value -Name "Echelon"
+    $groupPropertyNames = @("group", "Group", "groupe", "Groupe")
+    $subGroupPropertyNames = @("subGroup", "SubGroup", "subgroup", "SousGroupe", "sousGroupe")
+    $hasExplicitGroup = Test-ObjectHasAnyProperty -Value $Value -Names $groupPropertyNames
+    $hasExplicitSubGroup = Test-ObjectHasAnyProperty -Value $Value -Names $subGroupPropertyNames
+
+    # Version 2 profiles use the three GC179 field names directly. Legacy
+    # profiles had only position + level, where level actually meant
+    # Sub-Group. Keep that mapping while reading old shared-disk data.
+    $group = Get-FirstObjectStringProperty -Value $Value -Names ($groupPropertyNames + @("position", "Position", "poste", "Poste", "classification", "Classification"))
+    $subGroup = Get-FirstObjectStringProperty -Value $Value -Names $subGroupPropertyNames
+    if ([string]::IsNullOrWhiteSpace($subGroup) -and -not $hasExplicitGroup -and -not $hasExplicitSubGroup) {
+        $subGroup = Get-FirstObjectStringProperty -Value $Value -Names @("echelon", "Echelon", "level", "Level")
     }
 
-    $position = Get-ObjectStringProperty -Value $Value -Name "position"
-    if ([string]::IsNullOrWhiteSpace($position)) {
-        $position = Get-ObjectStringProperty -Value $Value -Name "Position"
-    }
-    if ([string]::IsNullOrWhiteSpace($position)) {
-        $position = Get-ObjectStringProperty -Value $Value -Name "poste"
-    }
-    if ([string]::IsNullOrWhiteSpace($position)) {
-        $position = Get-ObjectStringProperty -Value $Value -Name "classification"
+    $level = ""
+    if ($hasExplicitGroup -or $hasExplicitSubGroup) {
+        $level = Get-FirstObjectStringProperty -Value $Value -Names @("level", "Level", "niveau", "Niveau")
     }
 
     $compressedWorkWeekValue = Get-ObjectPropertyValue -Value $Value -Name "compressedWorkWeek"
@@ -239,14 +296,14 @@ function ConvertTo-Gc179ProfileObject {
     }
     $compressedWorkWeek = ConvertTo-Gc179BooleanValue -Value $compressedWorkWeekValue -DefaultValue $false
 
-    $normalizedPosition = ConvertTo-Gc179PositionText -Value $position
-    if ([string]::IsNullOrWhiteSpace($normalizedPosition)) {
-        $normalizedPosition = "STS"
+    $normalizedGroup = ConvertTo-Gc179GroupText -Value $group
+    if ([string]::IsNullOrWhiteSpace($normalizedGroup)) {
+        $normalizedGroup = "STS"
     }
 
-    $normalizedLevel = ConvertTo-Gc179EchelonText -Value $level
-    if ([string]::IsNullOrWhiteSpace($normalizedLevel)) {
-        $normalizedLevel = "SUF-00"
+    $normalizedSubGroup = ConvertTo-Gc179SubGroupText -Value $subGroup
+    if ([string]::IsNullOrWhiteSpace($normalizedSubGroup)) {
+        $normalizedSubGroup = "SUF-00"
     }
 
     return [PSCustomObject]@{
@@ -254,8 +311,9 @@ function ConvertTo-Gc179ProfileObject {
         givenName          = ConvertTo-Gc179UpperText -Value $givenName
         initials           = ConvertTo-Gc179UpperText -Value $initials
         pri                = ConvertTo-Gc179PriText -Value $pri
-        position           = $normalizedPosition
-        level              = $normalizedLevel
+        group              = $normalizedGroup
+        subGroup           = $normalizedSubGroup
+        level              = ConvertTo-Gc179LevelText -Value $level
         compressedWorkWeek = [bool]$compressedWorkWeek
     }
 }
@@ -267,12 +325,8 @@ function Get-Gc179ProfileFromUserRecord {
         return (ConvertTo-Gc179ProfileObject -Value $null -DisplayName "")
     }
 
-    $profile = $null
-    if ($UserRecord.PSObject.Properties.Name -contains "gc179Profile") {
-        $profile = $UserRecord.gc179Profile
-    }
-
-    $displayName = if ($UserRecord.PSObject.Properties.Name -contains "displayName") { [string]$UserRecord.displayName } else { "" }
+    $profile = Get-ObjectPropertyValue -Value $UserRecord -Name "gc179Profile"
+    $displayName = Get-ObjectStringProperty -Value $UserRecord -Name "displayName"
     return (ConvertTo-Gc179ProfileObject -Value $profile -DisplayName $displayName)
 }
 
@@ -282,6 +336,9 @@ Export-ModuleMember -Function @(
     "ConvertTo-Gc179BooleanValue",
     "ConvertTo-Gc179PriText",
     "ConvertTo-Gc179HeaderCodeText",
+    "ConvertTo-Gc179GroupText",
+    "ConvertTo-Gc179SubGroupText",
+    "ConvertTo-Gc179LevelText",
     "ConvertTo-Gc179PositionText",
     "ConvertTo-Gc179EchelonText",
     "ConvertTo-Gc179ProfileObject",

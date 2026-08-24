@@ -30,6 +30,11 @@ for (const id of [
 }
 
 assert(indexSource.includes('id="projectWorkspace" class="project-workspace d-none"'), "The workspace must not compete with the portfolio on first render.");
+assert.match(indexSource, /id="projectQuickRangeButtons"[\s\S]*?class="chip-button active" data-range="1M" data-i18n="projects\.range\.1M">This Month/, "Projects must default to the current calendar month.");
+assert.match(projectsSource, /^let currentProjectFilter = "1M";/m, "The project view must initialize on the current calendar month.");
+assert.match(projectsSource, /await setProjectRange\("1M"\);/, "Resetting the Projects date filter must restore the current calendar month.");
+assert(i18nSource.includes('"projects.range.1M": "This Month"'), "The English current-month range label is missing.");
+assert(i18nSource.includes('"projects.range.1M": "Ce mois-ci"'), "The French current-month range label is missing.");
 assert(indexSource.includes('aria-live="polite" aria-busy="false"'), "Workspace loading changes must be announced without interrupting the user.");
 assert.match(projectsSource, /portfolio\.classList\.toggle\("d-none", isOpen\)/, "Opening a project must hide the long portfolio.");
 assert.match(projectsSource, /workspace\.classList\.toggle\("d-none", !isOpen\)/, "Opening a project must show the dedicated workspace.");
@@ -77,6 +82,8 @@ const trendContext = {
     grid: "#dddddd",
   }),
   getProjectColorCssValue: () => "#0868d7",
+  getProjectChartPointStyle: project => project && project.markerKey === "diamond" ? "rectRot" : "circle",
+  getProjectChartBorderDash: project => project && project.markerKey === "diamond" ? [3, 3] : [],
 };
 vm.createContext(trendContext);
 vm.runInContext(`let projectWorkspaceTrendChartInstance = null;
@@ -170,7 +177,7 @@ const chartContainer = {
     return null;
   },
 };
-const lifecycleDetail = { approvedTrend: [{ month: "2026-07", seconds: 5400 }] };
+const lifecycleDetail = { markerKey: "diamond", approvedTrend: [{ month: "2026-07", seconds: 5400 }] };
 trendContext.initializeProjectWorkspaceTrendChart(chartContainer, lifecycleDetail);
 assert.equal(queuedFrames.size, 1, "Trend creation must wait for a rendered layout frame.");
 const firstFrame = Array.from(queuedFrames.entries())[0];
@@ -178,6 +185,8 @@ queuedFrames.delete(firstFrame[0]);
 firstFrame[1]();
 assert.equal(chartInstances.length, 1, "A rendered workspace must create one Chart.js instance.");
 assert.equal(chartInstances[0].config.options.animation, false, "The workspace trend must not animate after navigation or filtering.");
+assert.equal(chartInstances[0].config.data.datasets[0].pointStyle, "rectRot", "The workspace trend must use the project's marker shape.");
+assert.deepEqual(chartInstances[0].config.data.datasets[0].borderDash, [3, 3], "The workspace trend must distinguish the project line between points.");
 trendContext.destroyProjectWorkspaceTrendChart();
 assert.equal(chartInstances[0].destroyed, true, "Closing or rerendering the workspace must destroy its Chart.js instance.");
 trendContext.initializeProjectWorkspaceTrendChart(chartContainer, lifecycleDetail);
@@ -269,8 +278,8 @@ assert(!i18nSource.includes('"projects.departmentShare": "Part du projet dans le
 assert(!i18nSource.includes('"projects.usageOverTime": "Utilisation des heures supp. dans le temps"'), "The vague former trend heading must not return.");
 
 assert(!projectsSource.includes("20260817-project-detail-card-fixes"), "The project workspace must not retain the previous asset version.");
-assert(indexSource.includes("assets/apple-ui.css?v=20260817-chartjs-employee-cards-v2"), "The project workspace stylesheet cache key was not bumped.");
-assert(appShellSource.includes("ProjectsView.js?v=20260817-chartjs-employee-cards-v2"), "The lazy project script cache key was not bumped.");
+assert(indexSource.includes("assets/apple-ui.css?v=20260824-review-attention-tab-v1"), "The project workspace stylesheet cache key was not bumped.");
+assert(appShellSource.includes("ProjectsView.js?v=20260824-review-attention-tab-v1"), "The lazy project script cache key was not bumped.");
 assert(!indexSource.includes("20260817-employee-chart-loading-v1"), "The initial frontend assets must not mix the previous cache revision with the new one.");
 assert(!appShellSource.includes("20260817-employee-chart-loading-v1"), "Lazy frontend assets must not mix the previous cache revision with the new one.");
 

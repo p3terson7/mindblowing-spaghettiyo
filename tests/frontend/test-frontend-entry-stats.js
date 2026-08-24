@@ -66,6 +66,7 @@ function legacySummarize(entries, options) {
         projectCode,
         projectName: project.projectName,
         colorKey: project.colorKey,
+        markerKey: project.markerKey,
         count: 0,
         seconds: 0,
         approvedSeconds: 0,
@@ -194,9 +195,9 @@ const stableTieBuckets = Object.freeze({
 assert.equal(entryStats.selectTopBucket(stableTieBuckets), stableTieBuckets.first, "A complete tie must preserve insertion order.");
 
 const projects = Object.freeze({
-  P1: Object.freeze({ projectName: "Alpha", colorKey: "blue" }),
-  P2: Object.freeze({ projectName: "Beta", colorKey: "mint" }),
-  P3: Object.freeze({ projectName: "Gamma", colorKey: "purple" }),
+  P1: Object.freeze({ projectName: "Alpha", colorKey: "blue", markerKey: "circle" }),
+  P2: Object.freeze({ projectName: "Beta", colorKey: "mint", markerKey: "square" }),
+  P3: Object.freeze({ projectName: "Gamma", colorKey: "purple", markerKey: "diamond" }),
 });
 const entries = Object.freeze([
   Object.freeze({ id: "a", status: "approved", projectCode: "P1", overtimeCode: "260", duration: 7200, timestamp: 100, message: "Révision" }),
@@ -227,6 +228,7 @@ const baseOptions = Object.freeze({
       projectCode,
       projectName: project ? project.projectName : (rawProjectCode || "No project"),
       colorKey: project ? project.colorKey : `fallback:${projectCode}`,
+      markerKey: project ? project.markerKey : `fallback-marker:${projectCode}`,
     };
   },
   getOvertimeCode(entry) {
@@ -351,6 +353,9 @@ function testFacadeDelegation(kind) {
     getProjectColorKey(projectOrCode) {
       return typeof projectOrCode === "object" ? projectOrCode.colorKey : `fallback:${projectOrCode}`;
     },
+    getProjectMarkerKey(projectOrCode) {
+      return typeof projectOrCode === "object" ? (projectOrCode.markerKey || "circle") : `fallback-marker:${projectOrCode}`;
+    },
     t(key) {
       return key === "shared.noProject" ? "No project" : "Uncoded";
     },
@@ -405,11 +410,13 @@ function testFacadeDelegation(kind) {
     projectCode: "P1",
     projectName: "Alpha",
     colorKey: "blue",
+    markerKey: "circle",
   });
   assert.deepEqual(plain(options.getProject("__NO_PROJECT__", { projectCode: "" })), {
     projectCode: "__NO_PROJECT__",
     projectName: "No project",
     colorKey: "fallback:__NO_PROJECT__",
+    markerKey: "fallback-marker:__NO_PROJECT__",
   });
   assert.equal(options.getOvertimeCode({ overtimeCode: "" }), "Uncoded");
 }

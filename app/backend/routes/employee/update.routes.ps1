@@ -16,6 +16,8 @@
             $payload = Read-JsonRequestBody -Request $request
             $entryId = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "entryId")) { [string]$payload.entryId } else { "" }
             $date = if ($null -ne $payload) { [string]$payload.date } else { "" }
+            $newDateProvided = ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "newDate"))
+            $newDate = if ($newDateProvided) { [string]$payload.newDate } else { "" }
             $originalPunchIn = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "originalPunchIn")) { [string]$payload.originalPunchIn } else { "" }
             $managerMessage = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "message")) { [string]$payload.message } else { "" }
             $statusProvided = ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "status"))
@@ -37,6 +39,15 @@
                 continue
             }
             $date = $normalizedDate
+
+            if ($newDateProvided) {
+                $normalizedNewDate = Convert-ToNormalizedDateText -DateText $newDate
+                if ([string]::IsNullOrWhiteSpace($normalizedNewDate)) {
+                    respondWithError $response 400 "If provided, newDate must use the yyyy-MM-dd format."
+                    continue
+                }
+                $newDate = $normalizedNewDate
+            }
 
             if ([string]::IsNullOrWhiteSpace($managerMessage)) {
                 respondWithError $response 400 "A manager message is required when updating an entry."
@@ -141,6 +152,12 @@
 
                 $originalRoundedPunchIn = [string]$existingEntry.punchIn
                 $originalRoundedPunchOut = if ($existingEntry.punchOut) { [string]$existingEntry.punchOut } else { $null }
+                $originalEntryDate = Convert-ToNormalizedDateText -DateText ([string]$existingEntry.date)
+                if ([string]::IsNullOrWhiteSpace($originalEntryDate)) {
+                    respondWithError $response 409 "The stored entry date is invalid. Correct the data before editing this entry."
+                    continue
+                }
+                $updatedEntryDate = if ($newDateProvided) { $newDate } else { $originalEntryDate }
                 $originalProjectCode = if ($existingEntry.projectCode) { [string]$existingEntry.projectCode } else { "" }
                 $originalOvertimeCode = if ($existingEntry.overtimeCode) { [string]$existingEntry.overtimeCode } else { "" }
                 $originalPaymentOption = if ($existingEntry.paymentOption) { [string]$existingEntry.paymentOption } else { "cash" }
@@ -207,13 +224,16 @@
                     $newExactPunchOut = Get-EntryExactPunchOutText -Entry $existingEntry
                 }
 
-                $newRoundedPunchIn = Convert-ToNearestQuarterHourText -Date $date -TimeText $newExactPunchIn
-                $newRoundedPunchOut = if ($newExactPunchOut) { Convert-ToNearestQuarterHourText -Date $date -TimeText $newExactPunchOut } else { $null }
+                $newRoundedPunchIn = Convert-ToNearestQuarterHourText -Date $updatedEntryDate -TimeText $newExactPunchIn
+                $newRoundedPunchOut = if ($newExactPunchOut) { Convert-ToNearestQuarterHourText -Date $updatedEntryDate -TimeText $newExactPunchOut } else { $null }
 
+                $newCreditSummary = $null
                 if ($newRoundedPunchOut) {
-                    $punchInTime = [DateTime]::ParseExact("$date $newRoundedPunchIn", "yyyy-MM-dd HH:mm:ss", $null)
-                    $punchOutTime = [DateTime]::ParseExact("$date $newRoundedPunchOut", "yyyy-MM-dd HH:mm:ss", $null)
-                    if ($punchOutTime -le $punchInTime) {
+                    # Compare exact times instead of their rounded display
+                    # values: a short completed interval is saved at 00:00 so
+                    # it can be shown to a supervisor in Review.
+                    $newCreditSummary = Get-QuarterHourCreditSummary -Date $updatedEntryDate -PunchIn $newExactPunchIn -PunchOut $newExactPunchOut
+                    if (-not [bool]$newCreditSummary.isValid) {
                         respondWithError $response 400 "Punch Out must be after Punch In."
                         continue
                     }
@@ -238,6 +258,9 @@
                 }
 
                 $messages = @()
+                if ($originalEntryDate -ne $updatedEntryDate) {
+                    $messages += "Date from <strong>$originalEntryDate</strong> to <strong>$updatedEntryDate</strong>."
+                }
                 if ($originalRoundedPunchIn -ne $newRoundedPunchIn) {
                     $messages += "Punch In from <strong>$(Format-TimeForHistory $originalRoundedPunchIn)</strong> to <strong>$(Format-TimeForHistory $newRoundedPunchIn)</strong>."
                 }
@@ -283,6 +306,7 @@
                     $messages += "Status changed from <strong>$originalStatus</strong> to <strong>$requestedStatus</strong>."
                 }
 
+                Set-EntryPropertyValue -Entry $existingEntry -Name "date" -Value $updatedEntryDate
                 $existingEntry.punchIn = $newRoundedPunchIn
                 $existingEntry.exactPunchIn = $newExactPunchIn
                 $existingEntry.punchOut = $newRoundedPunchOut
@@ -322,7 +346,7 @@
                 if ($statusProvided) {
                     $existingEntry.status = $requestedStatus
                 }
-                $existingEntry.message = $managerMessage.Trim()
+                Set-EntrySupervisorNote -Entry $existingEntry -Note $managerMessage -CurrentUser $currentUser | Out-Null
                 Update-EntryComputedOvertime -Entry $existingEntry
 
                     Write-JsonArrayAtomic -Path $dataFile -Items $existingData -Depth 8
@@ -334,7 +358,7 @@
 
                     $historyWarning = Invoke-PostCommitActionSafely -Description "Entry update saved, but history logging failed" -Action {
                         $employeeName = Get-EmployeeName $employeeCode
-                        $formattedDate = (Get-Date $date).ToString("MMMM dd, yyyy")
+                        $formattedDate = (Get-Date $updatedEntryDate).ToString("MMMM dd, yyyy")
                         $historySpan = Get-EntryHistorySpanText -StartTime ([string]$existingEntry.punchIn) -EndTime ([string]$existingEntry.punchOut)
                         if ($messages.Count -eq 0) {
                             $finalMessage = "Updated an entry on $formattedDate $historySpan."

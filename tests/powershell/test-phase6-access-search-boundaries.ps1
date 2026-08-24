@@ -15,7 +15,7 @@ $projectsPath = Join-Path -Path $frontendRoot -ChildPath "scripts/Views/Projects
 $indexPath = Join-Path -Path $frontendRoot -ChildPath "index.html"
 $appShellPath = Join-Path -Path $frontendRoot -ChildPath "scripts/AppShell.js"
 $architecturePath = Join-Path -Path $repoRoot -ChildPath "docs/ARCHITECTURE.md"
-$expectedFrontendCacheKey = "20260817-chartjs-employee-cards-v2"
+$expectedFrontendCacheKey = "20260824-review-attention-tab-v1"
 
 $expectedAccessFunctions = @(
     "Get-NormalizedRoleName",

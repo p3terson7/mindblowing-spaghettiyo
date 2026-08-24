@@ -16,7 +16,7 @@ $repoRoot = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath "../..")).Pa
 . (Join-Path -Path $repoRoot -ChildPath "app/backend/services/AnalyticsReportService.ps1")
 
 $script:ReportProjects = @(
-    [PSCustomObject]@{ projectCode = "P1"; projectName = "Projet </script><img src=x onerror=alert(1)>"; sector = "Ops"; colorKey = "mint"; archived = $false },
+    [PSCustomObject]@{ projectCode = "P1"; projectName = "Projet </script><img src=x onerror=alert(1)>"; sector = "Ops"; colorKey = "mint"; markerKey = "triangle"; archived = $false },
     [PSCustomObject]@{ projectCode = "ARCH"; projectName = "Ancien"; sector = "Archives"; archived = $true }
 )
 $script:ReportUsers = @(
@@ -120,6 +120,8 @@ Assert-Equal 1 $model.quality.invalidDurationCount "Invalid durations must be fl
 Assert-Equal 1 $model.quality.missingProjectCount "Historical entries for a missing project must use a fallback project."
 Assert-True (@($model.projects | Where-Object { $_.projectCode -eq "MISSING" }).Count -eq 1) "The missing project fallback was not added."
 Assert-Equal "mint" ($model.projects | Where-Object { $_.projectCode -eq "P1" } | Select-Object -First 1).colorKey "The analytics model ignored the persisted project color."
+Assert-Equal "triangle" ($model.projects | Where-Object { $_.projectCode -eq "P1" } | Select-Object -First 1).markerKey "The analytics model ignored the persisted project marker."
+Assert-Equal (Get-AnalyticsReportProjectMarkerKey -ProjectCode "MISSING") ($model.projects | Where-Object { $_.projectCode -eq "MISSING" } | Select-Object -First 1).markerKey "The analytics model did not expose a fallback marker for a missing project."
 Assert-True (@($model.facts | Where-Object { $_.date -eq "2025-12-31" }).Count -eq 0) "The start bound was not inclusive and strict."
 Assert-True (@($model.facts | Where-Object { $_.date -eq "2026-01-01" }).Count -eq 1) "The start date should be included."
 Assert-True (@($model.facts | Where-Object { $_.date -eq "2026-01-31" }).Count -eq 1) "The end date should be included."
@@ -150,6 +152,16 @@ Assert-True (-not $export.Html.Contains("fetch(")) "The standalone report must n
 Assert-True (-not $export.Html.Contains("XMLHttpRequest")) "The standalone report must not make XHR requests."
 Assert-True $export.Html.Contains('<meta name="color-scheme" content="light">') "The meeting report must explicitly remain in the light color scheme."
 Assert-True $export.Html.Contains('--bg:#fff') "The meeting report must use a white canvas."
+$expectedProjectColors = [ordered]@{
+    blue = "#0868d7"; green = "#16865a"; violet = "#7558d8"; teal = "#008994"; amber = "#b56f00"
+    coral = "#c43840"; pink = "#b9477f"; indigo = "#4f66c8"; graphite = "#667085"; mint = "#0f8f7a"
+}
+foreach ($projectColor in $expectedProjectColors.GetEnumerator()) {
+    Assert-True $export.Html.Contains(("--{0}:{1}" -f $projectColor.Key, $projectColor.Value)) ("The report project color '{0}' drifted from the application's light palette." -f $projectColor.Key)
+}
+Assert-True $export.Html.Contains('print-color-adjust:exact') "The meeting report must preserve project identities when printed."
+Assert-True $export.Html.Contains('marker-triangle') "The meeting report omitted its marker-shape styles."
+Assert-True $export.Html.Contains('projectMarker(project)') "The meeting report does not render project markers."
 Assert-True (-not $export.Html.Contains('@media(prefers-color-scheme:dark)')) "The meeting report must not inherit a dark system theme."
 Assert-True $export.Html.Contains('select.control{appearance:none') "Report dropdowns must use the styled select treatment."
 Assert-True $export.Html.Contains('select.control option{background:#fff') "Report dropdown options must remain readable on white."

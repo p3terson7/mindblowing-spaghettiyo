@@ -150,10 +150,16 @@ try {
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.EntryIdentity.psm1") -PathType Leaf) -Message "runtime must include the pure entry identity module"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.EntryState.psd1") -PathType Leaf) -Message "runtime must include the entry state module manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.EntryState.psm1") -PathType Leaf) -Message "runtime must include the pure entry state module"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.EntryDuration.psd1") -PathType Leaf) -Message "runtime must include the entry duration module manifest"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.EntryDuration.psm1") -PathType Leaf) -Message "runtime must include the pure entry duration module"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.Gc179Profile.psd1") -PathType Leaf) -Message "runtime must include the GC179 profile module manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.Gc179Profile.psm1") -PathType Leaf) -Message "runtime must include the pure GC179 profile module"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.ProjectCatalog.psd1") -PathType Leaf) -Message "runtime must include the project catalog module manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.ProjectCatalog.psm1") -PathType Leaf) -Message "runtime must include the pure project catalog module"
+    $packagedProjectCatalogManifest = Import-PowerShellDataFile -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.ProjectCatalog.psd1")
+    foreach ($identityFunction in @("Get-ProjectMarkerKeys", "Get-DefaultProjectMarkerKey", "Test-ProjectMarkerKey", "Resolve-ProjectMarkerKey")) {
+        Assert-True -Condition (@($packagedProjectCatalogManifest.FunctionsToExport) -contains $identityFunction) -Message ("runtime project catalog must export {0}" -f $identityFunction)
+    }
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.UserAccessProfile.psd1") -PathType Leaf) -Message "runtime must include the user access profile module manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.UserAccessProfile.psm1") -PathType Leaf) -Message "runtime must include the pure user access profile module"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/services/DataSchemaService.ps1") -PathType Leaf) -Message "runtime must include the data schema guard"

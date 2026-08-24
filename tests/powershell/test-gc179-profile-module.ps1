@@ -15,6 +15,9 @@ $expectedFunctions = @(
     "ConvertTo-Gc179BooleanValue",
     "ConvertTo-Gc179PriText",
     "ConvertTo-Gc179HeaderCodeText",
+    "ConvertTo-Gc179GroupText",
+    "ConvertTo-Gc179SubGroupText",
+    "ConvertTo-Gc179LevelText",
     "ConvertTo-Gc179PositionText",
     "ConvertTo-Gc179EchelonText",
     "ConvertTo-Gc179ProfileObject",
@@ -22,7 +25,9 @@ $expectedFunctions = @(
 )
 $privateFunctions = @(
     "Get-ObjectPropertyValue",
-    "Get-ObjectStringProperty"
+    "Get-ObjectStringProperty",
+    "Get-FirstObjectStringProperty",
+    "Test-ObjectHasAnyProperty"
 )
 $expectedParameterContracts = @{
     "ConvertTo-Gc179UpperText"          = @('Value|System.String|[AllowNull()],[string]|<none>')
@@ -30,6 +35,9 @@ $expectedParameterContracts = @{
     "ConvertTo-Gc179BooleanValue"       = @('Value|System.Object||<none>', 'DefaultValue|System.Boolean|[bool]|$false')
     "ConvertTo-Gc179PriText"            = @('Value|System.String|[AllowNull()],[string]|<none>')
     "ConvertTo-Gc179HeaderCodeText"     = @('Value|System.String|[AllowNull()],[string]|<none>', 'MaximumLength|System.Int32|[Parameter(Mandatory=$true)],[int]|<none>')
+    "ConvertTo-Gc179GroupText"          = @('Value|System.String|[AllowNull()],[string]|<none>')
+    "ConvertTo-Gc179SubGroupText"       = @('Value|System.String|[AllowNull()],[string]|<none>')
+    "ConvertTo-Gc179LevelText"          = @('Value|System.String|[AllowNull()],[string]|<none>')
     "ConvertTo-Gc179PositionText"       = @('Value|System.String|[AllowNull()],[string]|<none>')
     "ConvertTo-Gc179EchelonText"        = @('Value|System.String|[AllowNull()],[string]|<none>')
     "ConvertTo-Gc179ProfileObject"      = @('Value|System.Object||<none>', 'DisplayName|System.String|[AllowNull()],[string]|<none>')
@@ -271,50 +279,60 @@ foreach ($case in $headerCases) {
     $actual = Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179HeaderCodeText" -Arguments @{ Value = $case.Value; MaximumLength = $case.MaximumLength }
     Assert-Equal -Expected $case.Expected -Actual $actual -Message ("Header-code golden failed for {0}." -f $case.Label)
 }
-Assert-Equal -Expected "ABCDEF" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179PositionText" -Arguments @{ Value = "abcdefghijkl" }) -Message "Position no longer uses the six-character limit."
-Assert-Equal -Expected "ABCDEFGHIJ" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179EchelonText" -Arguments @{ Value = "abcdefghijkl" }) -Message "Echelon no longer uses the ten-character limit."
-Assert-Equal -Expected "AS-03" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179PositionText" -Arguments @{ Value = " as-03() " }) -Message "Position normalization changed."
-Assert-Equal -Expected "CR/01" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179EchelonText" -Arguments @{ Value = " cr/01!? " }) -Message "Echelon normalization changed."
+Assert-Equal -Expected "ABCDEF" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179GroupText" -Arguments @{ Value = "abcdefghijkl" }) -Message "Group no longer uses the six-character limit."
+Assert-Equal -Expected "ABCDEFGHIJ" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179SubGroupText" -Arguments @{ Value = "abcdefghijkl" }) -Message "Sub-Group no longer uses the ten-character limit."
+Assert-Equal -Expected "ABCDEFGHIJ" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179LevelText" -Arguments @{ Value = "abcdefghijkl" }) -Message "Level no longer uses the ten-character limit."
+Assert-Equal -Expected "AS-03" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179GroupText" -Arguments @{ Value = " as-03() " }) -Message "Group normalization changed."
+Assert-Equal -Expected "CR/01" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179SubGroupText" -Arguments @{ Value = " cr/01!? " }) -Message "Sub-Group normalization changed."
+Assert-Equal -Expected "02" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179LevelText" -Arguments @{ Value = " 02!? " }) -Message "Level normalization changed."
+Assert-Equal -Expected "AS-03" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179PositionText" -Arguments @{ Value = " as-03() " }) -Message "The legacy Position compatibility alias changed."
+Assert-Equal -Expected "CR/01" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179EchelonText" -Arguments @{ Value = " cr/01!? " }) -Message "The legacy Echelon compatibility alias changed."
 
 $profileCases = @(
     [PSCustomObject]@{
         Label = "null fallback"
         Value = $null
         DisplayName = "Jane Mary Doe"
-        Expected = [PSCustomObject]@{ surname = "DOE"; givenName = "JANE MARY"; initials = "J.D"; pri = ""; position = "STS"; level = "SUF-00"; compressedWorkWeek = $false }
+        Expected = [PSCustomObject]@{ surname = "DOE"; givenName = "JANE MARY"; initials = "J.D"; pri = ""; group = "STS"; subGroup = "SUF-00"; level = ""; compressedWorkWeek = $false }
     },
     [PSCustomObject]@{
-        Label = "canonical"
+        Label = "canonical three fields"
+        Value = [PSCustomObject]@{ surname = " smith "; givenName = " jane "; initials = " js "; pri = "000123456"; group = " as-03() "; subGroup = " cr/01!? "; level = " 02 "; compressedWorkWeek = " ON " }
+        DisplayName = "Fallback Person"
+        Expected = [PSCustomObject]@{ surname = "SMITH"; givenName = "JANE"; initials = "JS"; pri = "000 123 456"; group = "AS-03"; subGroup = "CR/01"; level = "02"; compressedWorkWeek = $true }
+    },
+    [PSCustomObject]@{
+        Label = "legacy two fields"
         Value = [PSCustomObject]@{ surname = " smith "; givenName = " jane "; initials = " js "; pri = "000123456"; position = " as-03() "; level = " cr/01!? "; compressedWorkWeek = " ON " }
         DisplayName = "Fallback Person"
-        Expected = [PSCustomObject]@{ surname = "SMITH"; givenName = "JANE"; initials = "JS"; pri = "000 123 456"; position = "AS-03"; level = "CR/01"; compressedWorkWeek = $true }
+        Expected = [PSCustomObject]@{ surname = "SMITH"; givenName = "JANE"; initials = "JS"; pri = "000 123 456"; group = "AS-03"; subGroup = "CR/01"; level = ""; compressedWorkWeek = $true }
     },
     [PSCustomObject]@{
         Label = "legacy aliases"
         Value = [PSCustomObject]@{ lastName = " legacy "; Given = " user "; Initials = " lu "; PRI = "12-3456-7890"; poste = " abc 12 "; Echelon = " xy / 99 "; isCompressedWorkWeek = "yes" }
         DisplayName = "Fallback Person"
-        Expected = [PSCustomObject]@{ surname = "LEGACY"; givenName = "USER"; initials = "LU"; pri = "123 456 789"; position = "ABC12"; level = "XY/99"; compressedWorkWeek = $true }
+        Expected = [PSCustomObject]@{ surname = "LEGACY"; givenName = "USER"; initials = "LU"; pri = "123 456 789"; group = "ABC12"; subGroup = "XY/99"; level = ""; compressedWorkWeek = $true }
     },
     [PSCustomObject]@{
         Label = "hashtable"
         Value = @{ lastName = "Hash"; Given = "Table"; classification = "ab 12"; level = "l-001"; compressed = "y" }
         DisplayName = "Fallback Person"
-        Expected = [PSCustomObject]@{ surname = "HASH"; givenName = "TABLE"; initials = "F.P"; pri = ""; position = "AB12"; level = "L-001"; compressedWorkWeek = $true }
+        Expected = [PSCustomObject]@{ surname = "HASH"; givenName = "TABLE"; initials = "F.P"; pri = ""; group = "AB12"; subGroup = "L-001"; level = ""; compressedWorkWeek = $true }
     },
     [PSCustomObject]@{
         Label = "blank aliases and compressed precedence"
         Value = [PSCustomObject]@{ surname = ""; lastName = "Alias"; givenName = ""; Given = "Name"; Initials = "AN"; position = ""; classification = "zz-99"; level = ""; Echelon = "l/2"; compressedWorkWeek = ""; isCompressedWorkWeek = $true }
         DisplayName = "Fallback Person"
-        Expected = [PSCustomObject]@{ surname = "ALIAS"; givenName = "NAME"; initials = "AN"; pri = ""; position = "ZZ-99"; level = "L/2"; compressedWorkWeek = $false }
+        Expected = [PSCustomObject]@{ surname = "ALIAS"; givenName = "NAME"; initials = "AN"; pri = ""; group = "ZZ-99"; subGroup = "L/2"; level = ""; compressedWorkWeek = $false }
     },
     [PSCustomObject]@{
         Label = "one-token defaults"
         Value = [PSCustomObject]@{ unknown = "preserve nowhere" }
         DisplayName = "Prince"
-        Expected = [PSCustomObject]@{ surname = "PRINCE"; givenName = ""; initials = "P"; pri = ""; position = "STS"; level = "SUF-00"; compressedWorkWeek = $false }
+        Expected = [PSCustomObject]@{ surname = "PRINCE"; givenName = ""; initials = "P"; pri = ""; group = "STS"; subGroup = "SUF-00"; level = ""; compressedWorkWeek = $false }
     }
 )
-$profilePropertyOrder = @("surname", "givenName", "initials", "pri", "position", "level", "compressedWorkWeek")
+$profilePropertyOrder = @("surname", "givenName", "initials", "pri", "group", "subGroup", "level", "compressedWorkWeek")
 foreach ($case in $profileCases) {
     $before = ConvertTo-ComparableJson -Value $case.Value
     $actual = Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179ProfileObject" -Arguments @{ Value = $case.Value; DisplayName = $case.DisplayName }
@@ -325,10 +343,11 @@ foreach ($case in $profileCases) {
 }
 
 $userCases = @(
-    [PSCustomObject]@{ Label = "null user"; Value = $null; Expected = [PSCustomObject]@{ surname = ""; givenName = ""; initials = ""; pri = ""; position = "STS"; level = "SUF-00"; compressedWorkWeek = $false } },
-    [PSCustomObject]@{ Label = "display fallback"; Value = [PSCustomObject]@{ displayName = "Legacy Employee" }; Expected = [PSCustomObject]@{ surname = "EMPLOYEE"; givenName = "LEGACY"; initials = "L.E"; pri = ""; position = "STS"; level = "SUF-00"; compressedWorkWeek = $false } },
-    [PSCustomObject]@{ Label = "saved profile"; Value = [PSCustomObject]@{ displayName = "Fallback Employee"; gc179Profile = [PSCustomObject]@{ surname = "Saved"; givenName = "Person"; position = "CR4"; level = "L-02"; compressedWorkWeek = $true } }; Expected = [PSCustomObject]@{ surname = "SAVED"; givenName = "PERSON"; initials = "F.E"; pri = ""; position = "CR4"; level = "L-02"; compressedWorkWeek = $true } },
-    [PSCustomObject]@{ Label = "legacy hashtable user adapter"; Value = @{ displayName = "Hash User"; gc179Profile = @{ surname = "Ignored" } }; Expected = [PSCustomObject]@{ surname = ""; givenName = ""; initials = ""; pri = ""; position = "STS"; level = "SUF-00"; compressedWorkWeek = $false } }
+    [PSCustomObject]@{ Label = "null user"; Value = $null; Expected = [PSCustomObject]@{ surname = ""; givenName = ""; initials = ""; pri = ""; group = "STS"; subGroup = "SUF-00"; level = ""; compressedWorkWeek = $false } },
+    [PSCustomObject]@{ Label = "display fallback"; Value = [PSCustomObject]@{ displayName = "Legacy Employee" }; Expected = [PSCustomObject]@{ surname = "EMPLOYEE"; givenName = "LEGACY"; initials = "L.E"; pri = ""; group = "STS"; subGroup = "SUF-00"; level = ""; compressedWorkWeek = $false } },
+    [PSCustomObject]@{ Label = "saved legacy profile"; Value = [PSCustomObject]@{ displayName = "Fallback Employee"; gc179Profile = [PSCustomObject]@{ surname = "Saved"; givenName = "Person"; position = "CR4"; level = "L-02"; compressedWorkWeek = $true } }; Expected = [PSCustomObject]@{ surname = "SAVED"; givenName = "PERSON"; initials = "F.E"; pri = ""; group = "CR4"; subGroup = "L-02"; level = ""; compressedWorkWeek = $true } },
+    [PSCustomObject]@{ Label = "saved three-field profile"; Value = [PSCustomObject]@{ displayName = "Fallback Employee"; gc179Profile = [PSCustomObject]@{ surname = "Saved"; givenName = "Person"; group = "CR4"; subGroup = "L-02"; level = "03"; compressedWorkWeek = $true } }; Expected = [PSCustomObject]@{ surname = "SAVED"; givenName = "PERSON"; initials = "F.E"; pri = ""; group = "CR4"; subGroup = "L-02"; level = "03"; compressedWorkWeek = $true } },
+    [PSCustomObject]@{ Label = "legacy hashtable user adapter"; Value = @{ displayName = "Hash User"; gc179Profile = @{ surname = "Ignored" } }; Expected = [PSCustomObject]@{ surname = "IGNORED"; givenName = "HASH"; initials = "H.U"; pri = ""; group = "STS"; subGroup = "SUF-00"; level = ""; compressedWorkWeek = $false } }
 )
 foreach ($case in $userCases) {
     $before = ConvertTo-ComparableJson -Value $case.Value
@@ -384,7 +403,7 @@ foreach ($case in $headerCases) {
     $arguments = @{ Value = $case.Value; MaximumLength = $case.MaximumLength }
     Assert-Equal -Expected (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179HeaderCodeText" -Arguments $arguments) -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179HeaderCodeText" -Arguments $arguments -UseFacade $true) -Message ("Header-code facade differs for {0}." -f $case.Label)
 }
-foreach ($name in @("ConvertTo-Gc179PositionText", "ConvertTo-Gc179EchelonText")) {
+foreach ($name in @("ConvertTo-Gc179GroupText", "ConvertTo-Gc179SubGroupText", "ConvertTo-Gc179LevelText", "ConvertTo-Gc179PositionText", "ConvertTo-Gc179EchelonText")) {
     foreach ($value in @($null, " as-03() ", "abcdefghijkl")) {
         $arguments = @{ Value = $value }
         Assert-Equal -Expected (Invoke-Gc179ProfileFunction -Name $name -Arguments $arguments) -Actual (Invoke-Gc179ProfileFunction -Name $name -Arguments $arguments -UseFacade $true) -Message ("{0} facade differs." -f $name)

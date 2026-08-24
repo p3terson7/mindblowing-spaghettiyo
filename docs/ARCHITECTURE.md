@@ -85,9 +85,17 @@ si une entrée est encore ouverte. Les noms historiques de `EntryService`,
 de statut, les horodatages, les écritures et les autorisations demeurent hors du
 module.
 
+`Saphir.EntryDuration` isole le calcul pur du crédit d’heures. Il reçoit une
+date et les deux heures exactes, puis compte une tranche fixe de 15 minutes
+seulement lorsqu’elle contient au moins 10 minutes réellement travaillées. Les
+routes conservent leurs heures arrondies historiques pour l’affichage, mais
+stockent la durée créditée renvoyée par ce module. Les GC179 importées restent
+hors de ce recalcul : leur durée déclarée est la source officielle.
+
 `Saphir.Gc179Profile` isole la normalisation du profil utilisé pour produire une
-GC179 : nom, initiales, indicateurs, PRI, codes d'en-tête, poste et échelon. Les
-neuf noms historiques de `AuthService.ps1` restent des façades afin que les
+GC179 : nom, initiales, indicateurs, PRI et les trois codes d'en-tête Groupe,
+Sous-groupe et Niveau. Les douze fonctions publiques de `AuthService.ps1`
+restent des façades, dont les anciens noms Poste et Échelon, afin que les
 consommateurs actuels et les anciens profils gardent exactement leurs valeurs de
 repli. Le module reçoit un objet utilisateur déjà lu; il ne consulte ni les
 utilisateurs, ni les sessions, ni DATA et ne persiste aucune modification.
@@ -317,8 +325,8 @@ de test et un essai de coupure réseau.
 ### Phase 5 : profils normalisés et journées de calendrier
 
 - une seule normalisation du profil GC179 et de ses anciens champs;
-- conservation des neuf façades de `AuthService` et de leurs valeurs de repli;
-- matrices golden pour les noms, drapeaux, PRI, codes, poste et échelon;
+- conservation des douze façades de `AuthService` et de leurs valeurs de repli;
+- matrices golden pour les noms, drapeaux, PRI, codes, groupe, sous-groupe et niveau;
 - une seule construction des journées utilisée par Mes heures et Personnel;
 - conservation du nombre de cellules, des totaux, des références et de l'ordre
   propre à chaque vue;

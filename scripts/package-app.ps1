@@ -429,6 +429,8 @@ try {
         "app/backend/modules/Saphir.EntryIdentity.psm1",
         "app/backend/modules/Saphir.EntryState.psd1",
         "app/backend/modules/Saphir.EntryState.psm1",
+        "app/backend/modules/Saphir.EntryDuration.psd1",
+        "app/backend/modules/Saphir.EntryDuration.psm1",
         "app/backend/modules/Saphir.Gc179Profile.psd1",
         "app/backend/modules/Saphir.Gc179Profile.psm1",
         "app/backend/modules/Saphir.ProjectCatalog.psd1",

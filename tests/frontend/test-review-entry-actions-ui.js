@@ -61,8 +61,8 @@ assert.match(
 );
 assert.match(
   employeesSource,
-  /openPeopleProjectFilter\(employeeCode, projectCode, entryId = ""\)[\s\S]*?prepareEmployeeEntryFocus\(employeeCode, entryId\);[\s\S]*?focusEmployeeEntry\(entryId\);/,
-  "The employee file must render the entry's month and focus the requested entry.",
+  /openPeopleProjectFilter\(employeeCode, projectCode, entryId = ""\)[\s\S]*?prepareEmployeeEntryFocus\(employeeCode, entryId\);\s*if \(!focusEmployeeEntry\(entryId\)\) \{\s*focusEmployeeDetailCard\(\);/,
+  "The employee file must focus the requested entry, or land on its employee card when no exact entry was requested.",
 );
 assert.match(employeesSource, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/, "Open Entry must bring its target into view.");
 assert.match(cssSource, /\.calendar-entry\.is-entry-focus-target/, "The opened entry needs a temporary visual focus marker.");

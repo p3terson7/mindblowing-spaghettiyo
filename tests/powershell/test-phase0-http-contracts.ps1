@@ -481,16 +481,18 @@ try {
     $beforeAdd = $afterReads
     $manualAdd = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/employee/add/$employeeCode" -Token $token -Body @{
         date = "2026-07-16"
-        punchIn = "17:02"
-        punchOut = "18:01"
+        punchIn = "14:04"
+        punchOut = "14:08"
         projectCode = "P001"
         overtimeCode = "260"
         paymentOption = "cash"
         reasonCode = "D"
+        workComment = "Comment added during entry creation."
+        message = "Supervisor note added during entry creation."
     }
     Assert-Equal -Expected 200 -Actual $manualAdd.StatusCode -Message "Manual entry creation failed."
     Assert-Equal -Expected "Entry added successfully." -Actual ([string]$manualAdd.Json.message) -Message "Manual-add response contract changed."
-    Assert-Equal -Expected "17:02:00" -Actual ([string]$manualAdd.Json.time) -Message "Manual-add response time contract changed."
+    Assert-Equal -Expected "14:04:00" -Actual ([string]$manualAdd.Json.time) -Message "Manual-add response time contract changed."
     Assert-HasProperty -Value $manualAdd.Json -PropertyName "warnings" -Message "Manual-add warning contract changed."
 
     $afterAdd = Get-TestDataFolderSnapshot -RootPath $testDataRoot -ForbiddenRootPath $productionDataRoot
@@ -511,6 +513,20 @@ try {
     Assert-Equal -Expected 2 -Actual $savedAfterAdd.Count -Message "Manual add did not preserve the original entry."
     Assert-Equal -Expected $entryId -Actual ([string]$savedAfterAdd[0].entryId) -Message "Manual add replaced the original entry."
     Assert-True -Condition (-not [string]::IsNullOrWhiteSpace([string]$savedAfterAdd[1].entryId)) -Message "Manual add did not persist an entry ID."
+    Assert-Equal -Expected "Comment added during entry creation." -Actual ([string]$savedAfterAdd[1].workComment) -Message "Manual add did not persist the optional employee comment."
+    Assert-Equal -Expected "Supervisor note added during entry creation." -Actual ([string]$savedAfterAdd[1].message) -Message "Manual add did not persist the optional supervisor note."
+    Assert-Equal -Expected "Phase Zero Admin" -Actual ([string]$savedAfterAdd[1].messageAuthorName) -Message "Manual-add supervisor notes must retain the author display name."
+    Assert-Equal -Expected $adminUsername -Actual ([string]$savedAfterAdd[1].messageAuthorUsername) -Message "Manual-add supervisor notes must retain the author username."
+    Assert-True -Condition (-not [string]::IsNullOrWhiteSpace([string]$savedAfterAdd[1].messageUpdatedAt)) -Message "Manual-add supervisor notes need an attribution timestamp."
+    Assert-Equal -Expected "00:00:00" -Actual ([string]$savedAfterAdd[1].overtime) -Message "A four-minute manual entry must not receive fifteen minutes of credit."
+    Assert-Equal -Expected "quarter-10m-v1" -Actual ([string]$savedAfterAdd[1].overtimeCalculationRule) -Message "Manual entry did not record the 10-minute quarter rule."
+
+    $reviewBootstrap = Invoke-TestHttpRequest -Method "GET" -Uri "$baseUri/review/bootstrap" -Token $token
+    Assert-Equal -Expected 200 -Actual $reviewBootstrap.StatusCode -Message "Review bootstrap failed after a short manual entry."
+    $shortReviewEntry = @($reviewBootstrap.Json.approvals | Where-Object { [string]$_.entryId -eq [string]$savedAfterAdd[1].entryId }) | Select-Object -First 1
+    Assert-True -Condition ($null -ne $shortReviewEntry) -Message "Review bootstrap did not include the short manual entry."
+    Assert-True -Condition ([bool]$shortReviewEntry.hasReviewIssues) -Message "Short manual entry did not set the Review attention flag."
+    Assert-Equal -Expected "shortOvertime" -Actual ([string]$shortReviewEntry.reviewIssues[0].code) -Message "Review bootstrap returned the wrong short-entry warning."
 
     $beforeApproval = $afterAdd
     $approval = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/employee/approval/$employeeCode" -Token $token -Body @{

@@ -400,6 +400,7 @@ function buildSelfStatsModel(entries) {
         projectCode,
         projectName: rawProjectCode ? getSelfProjectName(projectCode) : t("shared.noProject"),
         colorKey: projectRecord ? getProjectColorKey(projectRecord) : getProjectColorKey(projectCode),
+        markerKey: projectRecord ? getProjectMarkerKey(projectRecord) : getProjectMarkerKey(projectCode),
       };
     },
     getOvertimeCode(entry) {

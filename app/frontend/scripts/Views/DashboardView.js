@@ -488,7 +488,7 @@ function renderDashboardApprovalQueue(entries) {
       ${renderEntryWorkComment(entry)}
       ${entry.message ? `
         <div class="review-card-message">
-          <div class="entry-work-comment-label">${escapeHtml(t("shared.managerMessage"))}</div>
+          <div class="entry-work-comment-label">${escapeHtml(getEntrySupervisorNoteLabel(entry))}</div>
           <div>${escapeHtml(entry.message)}</div>
         </div>
       ` : ""}
@@ -1015,6 +1015,9 @@ async function openAddEntryModal(employeeCodeOverride = "", triggerButton = null
     ["addPunchInHours", "addPunchInMinutes", "addPunchOutHours", "addPunchOutMinutes"].forEach(id => {
       document.getElementById(id).value = "";
     });
+    ["addWorkComment", "addManagerMessage"].forEach(id => {
+      document.getElementById(id).value = "";
+    });
     await populateEntryLookups("addProjectCode", "addOvertimeCode", "", "", "addPaymentOption", "addReasonCode");
     const addModal = new bootstrap.Modal(document.getElementById("addEntryModal"));
     addModal.show();
@@ -1046,6 +1049,7 @@ async function openUpdateModal(button, refreshPeopleEmployee = "") {
     await runButtonAction(button, async () => {
       document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee = refreshPeopleEmployee;
       document.getElementById("updateEntryForm").dataset.employeeCode = button.getAttribute("data-employee-code") || "";
+      document.getElementById("originalDate").value = date;
       document.getElementById("updateDate").value = date;
       document.getElementById("originalPunchIn").value = originalPunchIn;
       document.getElementById("originalPunchOut").value = currentPunchOut;
@@ -1333,6 +1337,8 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async event
   const overtimeCode = document.getElementById("addOvertimeCode").value;
   const paymentOption = document.getElementById("addPaymentOption").value;
   const reasonCode = document.getElementById("addReasonCode").value;
+  const workComment = document.getElementById("addWorkComment").value.trim();
+  const managerMessage = document.getElementById("addManagerMessage").value.trim();
 
   if (!punchInHours || !punchInMinutes || !punchOutHours || !punchOutMinutes) {
     showToast(t("dashboard.fillAllTimeFields"), "error");
@@ -1376,6 +1382,8 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async event
           overtimeCode,
           paymentOption,
           reasonCode,
+          workComment,
+          message: managerMessage,
         }),
       });
       await parseResponse(response);
@@ -1397,7 +1405,9 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async event
 document.getElementById("saveUpdateBtn").addEventListener("click", async event => {
   const saveButton = event.currentTarget;
   const employeeCode = document.getElementById("updateEntryForm").dataset.employeeCode || document.getElementById("employeeSelect").value;
-  const date = document.getElementById("updateDate").value;
+  const originalDate = document.getElementById("originalDate").value;
+  const updateDateInput = document.getElementById("updateDate");
+  const newDate = updateDateInput.value;
   const originalPunchIn = document.getElementById("originalPunchIn").value;
   const originalPunchOut = document.getElementById("originalPunchOut").value || null;
   const originalExactPunchIn = document.getElementById("updateEntryForm").dataset.originalExactPunchIn || originalPunchIn;
@@ -1425,6 +1435,11 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
   const entryStatus = document.getElementById("updateEntryStatus").value;
   const originalEntryStatus = document.getElementById("originalEntryStatus").value || "pending";
   const managerMessage = document.getElementById("updateManagerMessage").value.trim();
+
+  if (!updateDateInput.checkValidity()) {
+    updateDateInput.reportValidity();
+    return;
+  }
 
   if (!punchInHours || !punchInMinutes || !punchOutHours || !punchOutMinutes) {
     showToast(t("dashboard.fillAllTimeFields"), "error");
@@ -1468,12 +1483,12 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
   const overtimeFieldsUnchanged = projectCode === originalProjectCode && overtimeCode === originalOvertimeCode && paymentOption === originalPaymentOption && reasonCode === originalReasonCode && workComment === originalWorkComment;
   const diverseFieldsUnchanged = diverseReason === originalDiverseReason && diverseSummary === originalDiverseSummary;
   const typeSpecificFieldsUnchanged = entryType === "diverse" ? diverseFieldsUnchanged : overtimeFieldsUnchanged;
-  if (newPunchInBackend === originalExactPunchIn && punchOutBackend === originalExactPunchOut && typeSpecificFieldsUnchanged && entryStatus === originalEntryStatus) {
+  if (newDate === originalDate && newPunchInBackend === originalExactPunchIn && punchOutBackend === originalExactPunchOut && typeSpecificFieldsUnchanged && entryStatus === originalEntryStatus) {
     showToast(t("dashboard.noChanges"), "info");
     return;
   }
 
-  if (new Date(`${date}T${punchOutBackend}`) <= new Date(`${date}T${newPunchInBackend}`)) {
+  if (new Date(`${newDate}T${punchOutBackend}`) <= new Date(`${newDate}T${newPunchInBackend}`)) {
     showToast(t("dashboard.punchOutAfterPunchIn"), "error");
     return;
   }
@@ -1484,8 +1499,8 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(entryType === "diverse"
-          ? { entryId, entryType, date, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, diverseReason, diverseSummary, status: entryStatus, message: managerMessage }
-          : { entryId, entryType, date, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, paymentOption, reasonCode, workComment, status: entryStatus, message: managerMessage }),
+          ? { entryId, entryType, date: originalDate, newDate, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, diverseReason, diverseSummary, status: entryStatus, message: managerMessage }
+          : { entryId, entryType, date: originalDate, newDate, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, paymentOption, reasonCode, workComment, status: entryStatus, message: managerMessage }),
       });
       await parseResponse(response);
       const refreshPeopleEmployee = document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee || "";
@@ -1496,7 +1511,7 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
       dashboardState.historyLoaded = false;
       showToast(t("dashboard.entryUpdated"), "success");
       await refreshAfterEntryMutation(employeeCode, refreshPeopleEmployee);
-    }, { key: `entry:${employeeCode}:${entryId || `${date}:${originalPunchIn}`}` });
+    }, { key: `entry:${employeeCode}:${entryId || `${originalDate}:${originalPunchIn}`}` });
   } catch (error) {
     console.error("Error updating entry:", error);
     showToast(t("dashboard.entryUpdateError", { message: error.message }), "error");

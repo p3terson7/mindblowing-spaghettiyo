@@ -263,6 +263,7 @@ function New-EmployeeDirectoryProjectReference {
         responsibility = $Responsibility
         archived       = Test-ProjectArchived -Project $Project
         colorKey       = Resolve-ProjectColorKey -ColorKey $(if ($Project.PSObject.Properties.Name -contains "colorKey") { [string]$Project.colorKey } else { "" }) -ProjectCode $projectCode
+        markerKey      = Resolve-ProjectMarkerKey -MarkerKey $(if ($Project.PSObject.Properties.Name -contains "markerKey") { [string]$Project.markerKey } else { "" }) -ProjectCode $projectCode
     }
 }
 

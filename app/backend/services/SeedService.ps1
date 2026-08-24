@@ -222,14 +222,7 @@ function New-DemoSeedEntry {
     $exactPunchOut = $exactEnd.ToString("HH:mm:ss")
     $punchInRounded = Convert-ToNearestQuarterHourText -Date $dateText -TimeText $exactPunchIn
     $punchOutRounded = Convert-ToNearestQuarterHourText -Date $dateText -TimeText $exactPunchOut
-    $punchInTime = [DateTime]::ParseExact(("{0} {1}" -f $dateText, $punchInRounded), "yyyy-MM-dd HH:mm:ss", $null)
-    $punchOutTime = [DateTime]::ParseExact(("{0} {1}" -f $dateText, $punchOutRounded), "yyyy-MM-dd HH:mm:ss", $null)
-
-    if ($punchOutTime -le $punchInTime) {
-        $punchOutTime = $punchInTime.AddMinutes(15)
-        $punchOutRounded = $punchOutTime.ToString("HH:mm:ss")
-        $exactPunchOut = $punchOutRounded
-    }
+    $creditSummary = Get-QuarterHourCreditSummary -Date $dateText -PunchIn $exactPunchIn -PunchOut $exactPunchOut
 
     $status = Get-DemoSeedStatus
 
@@ -241,7 +234,8 @@ function New-DemoSeedEntry {
         exactPunchIn = $exactPunchIn
         punchOut = $punchOutRounded
         exactPunchOut = $exactPunchOut
-        overtime = ($punchOutTime - $punchInTime).ToString("hh\:mm\:ss")
+        overtime = [string]$creditSummary.creditedOvertime
+        overtimeCalculationRule = "quarter-10m-v1"
         status = $status
         message = Get-DemoSeedManagerMessage -Status $status
         projectCode = [string]$Project.projectCode

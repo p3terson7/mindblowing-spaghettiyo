@@ -77,7 +77,7 @@ function legacyProjectDateRange(filterPeriod, customRange, now) {
 
   switch (normalizedFilter) {
     case "1M":
-      startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split("T")[0];
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
       break;
     case "6M":
       startDate = new Date(now.getFullYear(), now.getMonth() - 6, 1).toISOString().split("T")[0];

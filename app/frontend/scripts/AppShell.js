@@ -17,11 +17,11 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20260817-chartjs-employee-cards-v2",
-  dashboard: "scripts/Views/DashboardView.js?v=20260817-chartjs-employee-cards-v2",
-  approvals: "scripts/Views/ApprovalsView.js?v=20260817-chartjs-employee-cards-v2",
-  history: "scripts/Views/HistoryView.js?v=20260817-chartjs-employee-cards-v2",
-  projects: "scripts/Views/ProjectsView.js?v=20260817-chartjs-employee-cards-v2",
+  employees: "scripts/Views/EmployeesView.js?v=20260824-review-attention-tab-v1",
+  dashboard: "scripts/Views/DashboardView.js?v=20260824-review-attention-tab-v1",
+  approvals: "scripts/Views/ApprovalsView.js?v=20260824-review-attention-tab-v1",
+  history: "scripts/Views/HistoryView.js?v=20260824-review-attention-tab-v1",
+  projects: "scripts/Views/ProjectsView.js?v=20260824-review-attention-tab-v1",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
@@ -826,13 +826,35 @@ function inferSelfGc179NameParts(displayName) {
 function normalizeSelfGc179Profile(profile, displayName) {
   const fallback = inferSelfGc179NameParts(displayName);
   const source = profile && typeof profile === "object" ? profile : {};
+  const groupPropertyNames = ["group", "Group", "groupe", "Groupe"];
+  const subGroupPropertyNames = ["subGroup", "SubGroup", "subgroup", "SousGroupe", "sousGroupe"];
+  const hasExplicitGroup = hasAnyOwnProperty(source, groupPropertyNames);
+  const hasExplicitSubGroup = hasAnyOwnProperty(source, subGroupPropertyNames);
+  const group = getFirstNonEmptyPropertyValue(source, [
+    ...groupPropertyNames,
+    "position",
+    "Position",
+    "poste",
+    "Poste",
+    "classification",
+    "Classification",
+  ]);
+  let subGroup = getFirstNonEmptyPropertyValue(source, subGroupPropertyNames);
+  if (!subGroup && !hasExplicitGroup && !hasExplicitSubGroup) {
+    subGroup = getFirstNonEmptyPropertyValue(source, ["echelon", "Echelon", "level", "Level"]);
+  }
+  const level = hasExplicitGroup || hasExplicitSubGroup
+    ? getFirstNonEmptyPropertyValue(source, ["level", "Level", "niveau", "Niveau"])
+    : "";
+
   return {
     surname: toSelfGc179UpperText(source.surname || source.Surname || source.lastName || fallback.surname),
     givenName: toSelfGc179UpperText(source.givenName || source.given || source.Given || fallback.givenName),
     initials: toSelfGc179UpperText(source.initials || source.Initials || fallback.initials),
     pri: formatGc179Pri(source.pri || source.PRI || ""),
-    position: normalizeGc179Position(source.position || source.poste || source.classification || source.Position || ""),
-    level: normalizeGc179Echelon(source.level || source.Level || source.echelon || source.Echelon || ""),
+    group: normalizeGc179Group(group),
+    subGroup: normalizeGc179SubGroup(subGroup),
+    level: normalizeGc179Level(level),
     compressedWorkWeek: normalizeBooleanValue(getFirstDefinedPropertyValue(source, ["compressedWorkWeek", "isCompressedWorkWeek", "compressed"]), false),
   };
 }
@@ -855,23 +877,29 @@ function setSelfGc179ProfileForm(profile, displayName) {
   document.getElementById("selfGc179GivenInput").value = normalized.givenName;
   document.getElementById("selfGc179InitialsInput").value = normalized.initials;
   document.getElementById("selfGc179PriInput").value = normalized.pri;
-  document.getElementById("selfGc179PositionSelect").value = normalized.position;
+  document.getElementById("selfGc179GroupInput").value = normalized.group;
+  document.getElementById("selfGc179SubGroupInput").value = normalized.subGroup;
   document.getElementById("selfGc179LevelInput").value = normalized.level;
   document.getElementById("selfGc179CompressedWorkWeekInput").checked = Boolean(normalized.compressedWorkWeek);
   updateSelfGc179MappingPreview();
 }
 
 function updateSelfGc179MappingPreview() {
-  const groupInput = document.getElementById("selfGc179PositionSelect");
-  const subGroupInput = document.getElementById("selfGc179LevelInput");
+  const groupInput = document.getElementById("selfGc179GroupInput");
+  const subGroupInput = document.getElementById("selfGc179SubGroupInput");
+  const levelInput = document.getElementById("selfGc179LevelInput");
   const groupPreview = document.getElementById("selfGc179GroupPreview");
   const subGroupPreview = document.getElementById("selfGc179SubGroupPreview");
+  const levelPreview = document.getElementById("selfGc179LevelPreview");
 
   if (groupPreview) {
-    groupPreview.textContent = normalizeGc179Position(groupInput ? groupInput.value : "");
+    groupPreview.textContent = normalizeGc179Group(groupInput ? groupInput.value : "");
   }
   if (subGroupPreview) {
-    subGroupPreview.textContent = normalizeGc179Echelon(subGroupInput ? subGroupInput.value : "");
+    subGroupPreview.textContent = normalizeGc179SubGroup(subGroupInput ? subGroupInput.value : "");
+  }
+  if (levelPreview) {
+    levelPreview.textContent = normalizeGc179Level(levelInput ? levelInput.value : "") || "—";
   }
 }
 
@@ -881,7 +909,8 @@ function getSelfGc179ProfileForm(displayName) {
     givenName: document.getElementById("selfGc179GivenInput").value,
     initials: document.getElementById("selfGc179InitialsInput").value,
     pri: document.getElementById("selfGc179PriInput").value,
-    position: document.getElementById("selfGc179PositionSelect").value,
+    group: document.getElementById("selfGc179GroupInput").value,
+    subGroup: document.getElementById("selfGc179SubGroupInput").value,
     level: document.getElementById("selfGc179LevelInput").value,
     compressedWorkWeek: document.getElementById("selfGc179CompressedWorkWeekInput").checked,
   }, displayName);
@@ -1748,9 +1777,11 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("selfGc179ProfileSaveButton").addEventListener("click", event => submitSelfGc179Profile(event.currentTarget));
   bindGc179PriFormatter(document.getElementById("selfGc179PriInput"));
   bindGc179PriFormatter(document.getElementById("employeeEditorGc179PriInput"));
-  bindGc179CodeFormatter(document.getElementById("selfGc179PositionSelect"), updateSelfGc179MappingPreview);
+  bindGc179CodeFormatter(document.getElementById("selfGc179GroupInput"), updateSelfGc179MappingPreview);
+  bindGc179CodeFormatter(document.getElementById("selfGc179SubGroupInput"), updateSelfGc179MappingPreview);
   bindGc179CodeFormatter(document.getElementById("selfGc179LevelInput"), updateSelfGc179MappingPreview);
-  bindGc179CodeFormatter(document.getElementById("employeeEditorGc179PositionSelect"));
+  bindGc179CodeFormatter(document.getElementById("employeeEditorGc179GroupInput"));
+  bindGc179CodeFormatter(document.getElementById("employeeEditorGc179SubGroupInput"));
   bindGc179CodeFormatter(document.getElementById("employeeEditorGc179LevelInput"));
   updateSelfGc179MappingPreview();
   document.getElementById("appLogoutButton").addEventListener("click", event => submitLogout(event.currentTarget));

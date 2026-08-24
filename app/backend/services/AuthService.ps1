@@ -324,6 +324,24 @@ function ConvertTo-Gc179HeaderCodeText {
     return (Saphir.Gc179Profile\ConvertTo-Gc179HeaderCodeText -Value $Value -MaximumLength $MaximumLength)
 }
 
+function ConvertTo-Gc179GroupText {
+    param([AllowNull()][string]$Value)
+
+    return (Saphir.Gc179Profile\ConvertTo-Gc179GroupText -Value $Value)
+}
+
+function ConvertTo-Gc179SubGroupText {
+    param([AllowNull()][string]$Value)
+
+    return (Saphir.Gc179Profile\ConvertTo-Gc179SubGroupText -Value $Value)
+}
+
+function ConvertTo-Gc179LevelText {
+    param([AllowNull()][string]$Value)
+
+    return (Saphir.Gc179Profile\ConvertTo-Gc179LevelText -Value $Value)
+}
+
 function ConvertTo-Gc179PositionText {
     param([AllowNull()][string]$Value)
 
@@ -779,6 +797,7 @@ function Get-ProjectsForCurrentUser {
             backupAdmins = @(Get-ProjectBackupAdminCodes -Project $project)
             archived     = Test-ProjectArchived -Project $project
             colorKey     = Resolve-ProjectColorKey -ColorKey $(if ($project.PSObject.Properties.Name -contains "colorKey") { [string]$project.colorKey } else { "" }) -ProjectCode $projectCode
+            markerKey    = Resolve-ProjectMarkerKey -MarkerKey $(if ($project.PSObject.Properties.Name -contains "markerKey") { [string]$project.markerKey } else { "" }) -ProjectCode $projectCode
             canModify    = [bool]$modifyAccessModel.ProjectCodeSet.ContainsKey($projectCode)
         }
     }

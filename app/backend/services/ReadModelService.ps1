@@ -418,6 +418,7 @@ function New-EmployeeEntryProjection {
     )
 
     $entryType = if ($Entry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.entryType)) { ([string]$Entry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
+    $reviewIssues = @(Get-EntryReviewIssues -Entry $Entry)
 
     return [PSCustomObject]@{
         entryId       = Get-EntryIdentifierValue -Entry $Entry
@@ -429,8 +430,13 @@ function New-EmployeeEntryProjection {
         punchOut      = if ($null -ne $Entry.punchOut) { [string]$Entry.punchOut } else { $null }
         exactPunchOut = Get-EntryExactPunchOutText -Entry $Entry
         overtime      = if ($null -ne $Entry.overtime) { [string]$Entry.overtime } else { $null }
+        reviewIssues  = $reviewIssues
+        hasReviewIssues = ($reviewIssues.Count -gt 0)
         status        = if ($null -ne $Entry.status) { [string]$Entry.status } else { "pending" }
         message       = if ($null -ne $Entry.message) { [string]$Entry.message } else { "" }
+        messageAuthorName = if ($Entry.PSObject.Properties.Name -contains "messageAuthorName") { [string]$Entry.messageAuthorName } else { "" }
+        messageAuthorUsername = if ($Entry.PSObject.Properties.Name -contains "messageAuthorUsername") { [string]$Entry.messageAuthorUsername } else { "" }
+        messageUpdatedAt = if ($Entry.PSObject.Properties.Name -contains "messageUpdatedAt") { [string]$Entry.messageUpdatedAt } else { "" }
         projectCode   = if ($null -ne $Entry.projectCode) { [string]$Entry.projectCode } else { "" }
         overtimeCode  = if ($null -ne $Entry.overtimeCode) { [string]$Entry.overtimeCode } else { "" }
         paymentOption = if ($null -ne $Entry.paymentOption -and -not [string]::IsNullOrWhiteSpace([string]$Entry.paymentOption)) { [string]$Entry.paymentOption } elseif ($entryType -eq "diverse") { "" } else { "cash" }
@@ -1093,6 +1099,9 @@ function New-ProjectEntryDetailProjection {
         workComment      = if ($Entry.PSObject.Properties.Name -contains "workComment") { [string]$Entry.workComment } else { "" }
         diverseSummary   = if ($Entry.PSObject.Properties.Name -contains "diverseSummary") { [string]$Entry.diverseSummary } else { "" }
         message          = if ($Entry.PSObject.Properties.Name -contains "message") { [string]$Entry.message } else { "" }
+        messageAuthorName = if ($Entry.PSObject.Properties.Name -contains "messageAuthorName") { [string]$Entry.messageAuthorName } else { "" }
+        messageAuthorUsername = if ($Entry.PSObject.Properties.Name -contains "messageAuthorUsername") { [string]$Entry.messageAuthorUsername } else { "" }
+        messageUpdatedAt = if ($Entry.PSObject.Properties.Name -contains "messageUpdatedAt") { [string]$Entry.messageUpdatedAt } else { "" }
         paymentOption    = if ($Entry.PSObject.Properties.Name -contains "paymentOption") { [string]$Entry.paymentOption } else { "" }
         overtimeCode     = if ($Entry.PSObject.Properties.Name -contains "overtimeCode") { [string]$Entry.overtimeCode } else { "" }
         reasonCode       = if ($Entry.PSObject.Properties.Name -contains "reasonCode") { [string]$Entry.reasonCode } else { "" }
@@ -1291,6 +1300,7 @@ function Get-ProjectSummaryList {
                 backupAdminDisplay = @(New-ProjectAdminDisplayList -Codes $backupAdminCodes -EmployeeNameMap $employeeNameMap)
                 archived        = if ($project) { Test-ProjectArchived -Project $project } else { $false }
                 colorKey        = Resolve-ProjectColorKey -ColorKey $(if ($project -and $project.PSObject.Properties.Name -contains "colorKey") { [string]$project.colorKey } else { "" }) -ProjectCode ([string]$projectCode)
+                markerKey       = Resolve-ProjectMarkerKey -MarkerKey $(if ($project -and $project.PSObject.Properties.Name -contains "markerKey") { [string]$project.markerKey } else { "" }) -ProjectCode ([string]$projectCode)
                 basis           = $basis
                 period          = $period
                 totalSeconds    = $totalSeconds
@@ -1487,6 +1497,7 @@ function Get-ProjectDetailModel {
         backupAdminDisplay  = if ($projectSummary.PSObject.Properties.Name -contains "backupAdminDisplay") { @($projectSummary.backupAdminDisplay) } else { @() }
         archived            = if ($projectSummary.PSObject.Properties.Name -contains "archived") { [bool]$projectSummary.archived } else { $false }
         colorKey            = Resolve-ProjectColorKey -ColorKey $(if ($projectSummary.PSObject.Properties.Name -contains "colorKey") { [string]$projectSummary.colorKey } else { "" }) -ProjectCode ([string]$projectSummary.projectCode)
+        markerKey           = Resolve-ProjectMarkerKey -MarkerKey $(if ($projectSummary.PSObject.Properties.Name -contains "markerKey") { [string]$projectSummary.markerKey } else { "" }) -ProjectCode ([string]$projectSummary.projectCode)
         basis               = $projectSummary.basis
         period              = $projectSummary.period
         totalSeconds        = [long]$projectSummary.totalSeconds

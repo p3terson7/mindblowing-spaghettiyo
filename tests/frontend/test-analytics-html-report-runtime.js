@@ -48,8 +48,8 @@ const model = {
     { reportEmployeeId: "e3", displayName: "Chloé", archived: false },
   ],
   projects: [
-    { projectCode: "P1", displayName: "Alpha", sector: "Ops", colorKey: "blue", archived: false },
-    { projectCode: "P2", displayName: "Beta", sector: "Tech", colorKey: "coral", archived: false },
+    { projectCode: "P1", displayName: "Alpha", sector: "Ops", colorKey: "blue", markerKey: "diamond", archived: false },
+    { projectCode: "P2", displayName: "Beta", sector: "Tech", colorKey: "coral", markerKey: "triangle", archived: false },
   ],
   facts: [
     { employeeRef: "e1", projectCode: "P1", date: "2026-07-01", month: "2026-07", durationSeconds: 7200, status: "approved", payment: "cash", overtimeCode: "260", reasonCode: "D" },
@@ -81,12 +81,14 @@ class MockElement {
     this.className = "";
     this.hidden = false;
     this.title = "";
+    this.attributes = {};
   }
   set textContent(value) { this._textContent = String(value == null ? "" : value); }
   get textContent() { return this._textContent || ""; }
   appendChild(child) { this.children.push(child); return child; }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = [...children]; this.textContent = ""; }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
   addEventListener(type, listener) { this.listeners[type] = listener; }
   click() { if (this.listeners.click) this.listeners.click({ currentTarget: this }); }
   dispatch(type) { if (this.listeners[type]) this.listeners[type]({ currentTarget: this, target: this }); }
@@ -143,6 +145,11 @@ assert.strictEqual(elements.get("hoursKpi").textContent, "2 h", "Initial KPI mus
 assert.strictEqual(elements.get("entriesKpi").textContent, "1", "Initial project entry count is wrong.");
 assert.strictEqual(elements.get("employeesKpi").textContent, "1", "Initial active employee count is wrong.");
 assert.strictEqual(elements.get("employeeBars").children.length, 3, "The employee chart must retain zero-hour roster members.");
+const initialEmployeeSegment = elements.get("employeeBars").children[0].children[1].children[0];
+assert(initialEmployeeSegment.className.includes("marker-diamond"), "Employee chart segments must retain the project's marker pattern.");
+assert(initialEmployeeSegment.attributes["aria-label"].includes("Alpha"), "Employee chart segments need an accessible exact-value label.");
+assert.strictEqual(initialEmployeeSegment.attributes.role, "img", "Employee chart segments need a semantic image role for their accessible label.");
+assert.strictEqual(initialEmployeeSegment.tabIndex, 0, "Employee chart segments must expose exact values to keyboard users.");
 
 elements.get("statusFilter").value = "";
 elements.get("statusFilter").dispatch("change");

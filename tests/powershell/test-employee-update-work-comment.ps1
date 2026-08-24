@@ -193,7 +193,12 @@ function New-CompletedDiverseEntry {
 function Invoke-EmployeeUpdate {
     param(
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
-        [Parameter(Mandatory = $true)][string]$EntryId,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$EntryId,
+        [string]$Date = "2026-08-01",
+        [string]$NewPunchIn = "08:02:00",
+        [string]$PunchOut = "09:03:00",
+        [switch]$IncludeNewDate,
+        [string]$NewDate = "",
         [ValidateSet("overtime", "diverse")][string]$EntryType = "overtime",
         [switch]$IncludeWorkComment,
         [string]$WorkComment = "",
@@ -204,14 +209,17 @@ function Invoke-EmployeeUpdate {
     $payloadProperties = [ordered]@{
         entryId        = $EntryId
         entryType      = $EntryType
-        date           = "2026-08-01"
+        date           = $Date
         originalPunchIn = "08:00:00"
-        newPunchIn     = "08:02:00"
-        punchOut       = "09:03:00"
+        newPunchIn     = $NewPunchIn
+        punchOut       = $PunchOut
         message        = "Reviewed by the manager."
     }
     if ($IncludeWorkComment) {
         $payloadProperties.workComment = $WorkComment
+    }
+    if ($IncludeNewDate) {
+        $payloadProperties.newDate = $NewDate
     }
     if ($IncludeDiverseSummary) {
         $payloadProperties.diverseSummary = $DiverseSummary
@@ -272,6 +280,8 @@ try {
     Assert-Contains -Value $script:HistoryMessage -ExpectedText "Work comment updated" -Message "History did not identify the work-comment change."
     $commentedSaved = @(Read-JsonArrayFile -Path $legacyPath)[0]
     Assert-Equal -Expected "Validated expense claim totals." -Actual $commentedSaved.workComment -Message "Manager edit did not trim and persist workComment."
+    Assert-Equal -Expected "Test Manager" -Actual $commentedSaved.messageAuthorName -Message "Manager edit did not attribute its supervisor note."
+    Assert-Equal -Expected "manager" -Actual $commentedSaved.messageAuthorUsername -Message "Manager edit lost the note author's stable username."
 
     Invoke-EmployeeUpdate -EmployeeCode $legacyEmployeeCode -EntryId $legacyEntryId -IncludeWorkComment -WorkComment "   "
     Assert-Equal -Expected 400 -Actual $script:CapturedStatusCode -Message "Clearing an existing comment from a completed entry should be rejected."
@@ -293,6 +303,57 @@ try {
     Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A Diverse summary at the 1000-character limit should be accepted."
     $diverseBoundarySaved = @(Read-JsonArrayFile -Path $diversePath)[0]
     Assert-Equal -Expected 1000 -Actual ([string]$diverseBoundarySaved.diverseSummary).Length -Message "The Diverse-summary boundary value was not stored intact."
+
+    $dateEmployeeCode = "000000303"
+    $dateEntryId = "date-edit-entry"
+    $datePath = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $dateEmployeeCode)
+    Write-JsonArrayAtomic -Path $datePath -Items @((New-CompletedOvertimeEntry -EntryId $dateEntryId -IncludeWorkComment -WorkComment "Preserve this comment.")) -Depth 8
+
+    Invoke-EmployeeUpdate -EmployeeCode $dateEmployeeCode -EntryId $dateEntryId -IncludeNewDate -NewDate "2026-08-04"
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "Moving an entry to another calendar day failed."
+    Assert-Equal -Expected 1 -Actual $script:PublishCount -Message "A date edit did not publish exactly one employee change."
+    Assert-Contains -Value $script:CapturedMessage -ExpectedText "Date from <strong>2026-08-01</strong> to <strong>2026-08-04</strong>." -Message "The date edit response did not describe the changed day."
+    Assert-Contains -Value $script:HistoryMessage -ExpectedText "Date from <strong>2026-08-01</strong> to <strong>2026-08-04</strong>." -Message "The audit history did not describe the changed day."
+    $dateSaved = @(Read-JsonArrayFile -Path $datePath)[0]
+    Assert-Equal -Expected "2026-08-04" -Actual $dateSaved.date -Message "The edited calendar day was not persisted."
+    Assert-Equal -Expected $dateEntryId -Actual $dateSaved.entryId -Message "Changing the day replaced the stable entry ID."
+    Assert-Equal -Expected "08:02:00" -Actual $dateSaved.exactPunchIn -Message "Changing the day altered the exact punch-in time."
+    Assert-Equal -Expected "09:03:00" -Actual $dateSaved.exactPunchOut -Message "Changing the day altered the exact punch-out time."
+    Assert-Equal -Expected "01:00:00" -Actual $dateSaved.overtime -Message "Changing the day altered the computed duration."
+    Assert-Equal -Expected "Preserve this comment." -Actual $dateSaved.workComment -Message "Changing the day altered unrelated entry data."
+
+    $shortEmployeeCode = "000000305"
+    $shortEntryId = "short-duration-entry"
+    $shortPath = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $shortEmployeeCode)
+    Write-JsonArrayAtomic -Path $shortPath -Items @((New-CompletedOvertimeEntry -EntryId $shortEntryId)) -Depth 8
+    Invoke-EmployeeUpdate -EmployeeCode $shortEmployeeCode -EntryId $shortEntryId -NewPunchIn "14:04:00" -PunchOut "14:08:00"
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A short completed entry should remain editable for Review."
+    $shortSaved = @(Read-JsonArrayFile -Path $shortPath)[0]
+    Assert-Equal -Expected "14:04:00" -Actual ([string]$shortSaved.exactPunchIn) -Message "Editing did not preserve the short exact punch-in."
+    Assert-Equal -Expected "14:08:00" -Actual ([string]$shortSaved.exactPunchOut) -Message "Editing did not preserve the short exact punch-out."
+    Assert-Equal -Expected "00:00:00" -Actual ([string]$shortSaved.overtime) -Message "Editing a short interval incorrectly earned quarter-hour credit."
+    Assert-Equal -Expected "quarter-10m-v1" -Actual ([string]$shortSaved.overtimeCalculationRule) -Message "Edited entry did not record the current credit rule."
+
+    Invoke-EmployeeUpdate -EmployeeCode $dateEmployeeCode -EntryId $dateEntryId -Date "2026-08-04" -IncludeNewDate -NewDate "2026-02-30"
+    Assert-Equal -Expected 400 -Actual $script:CapturedStatusCode -Message "An impossible replacement date was accepted."
+    Assert-Equal -Expected 0 -Actual $script:PublishCount -Message "A rejected date edit published a data change."
+    Assert-Equal -Expected "2026-08-04" -Actual (@(Read-JsonArrayFile -Path $datePath)[0].date) -Message "A rejected date edit changed the stored day."
+
+    Invoke-EmployeeUpdate -EmployeeCode $dateEmployeeCode -EntryId $dateEntryId -Date "2026-08-04"
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "The additive date contract broke an older update request without newDate."
+    Assert-Equal -Expected "2026-08-04" -Actual (@(Read-JsonArrayFile -Path $datePath)[0].date) -Message "An older update request unexpectedly moved the entry."
+
+    $legacyDateEmployeeCode = "000000304"
+    $legacyDatePath = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $legacyDateEmployeeCode)
+    $legacyDateEntry = New-CompletedOvertimeEntry -EntryId "temporary"
+    $legacyDateEntry.PSObject.Properties.Remove("entryId")
+    Write-JsonArrayAtomic -Path $legacyDatePath -Items @($legacyDateEntry) -Depth 8
+
+    Invoke-EmployeeUpdate -EmployeeCode $legacyDateEmployeeCode -EntryId "" -IncludeNewDate -NewDate "2026-08-05"
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A legacy entry could not be moved by its original date/time key."
+    $legacyDateSaved = @(Read-JsonArrayFile -Path $legacyDatePath)[0]
+    Assert-Equal -Expected "2026-08-05" -Actual $legacyDateSaved.date -Message "The legacy entry's new day was not persisted."
+    Assert-Equal -Expected $false -Actual ([string]::IsNullOrWhiteSpace([string]$legacyDateSaved.entryId)) -Message "Editing a legacy entry did not preserve it under a new stable ID."
 
     Write-Host "Employee update work-comment regression tests passed."
 }

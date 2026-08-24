@@ -39,6 +39,9 @@ $entry = [PSCustomObject]@{
     overtime      = "02:00:00"
     status        = "pending"
     message       = "Ready for review"
+    messageAuthorName = "Test Supervisor"
+    messageAuthorUsername = "supervisor"
+    messageUpdatedAt = "2026-08-12T20:00:00.0000000Z"
     projectCode   = "P001"
     overtimeCode  = "260"
     paymentOption = "cash"
@@ -60,6 +63,9 @@ Assert-Equal -Expected "17:03:00" -Actual $editable.exactPunchIn -Message "The e
 Assert-Equal -Expected "19:07:00" -Actual $editable.exactPunchOut -Message "The exact end time required by the shared editor was not projected."
 Assert-Equal -Expected "Prepared the briefing" -Actual $editable.workComment -Message "The employee comment required by the shared editor was not projected."
 Assert-Equal -Expected "Ready for review" -Actual $editable.message -Message "The supervisor note required by the shared editor was not projected."
+Assert-Equal -Expected "Test Supervisor" -Actual $editable.messageAuthorName -Message "The supervisor-note author name was not projected."
+Assert-Equal -Expected "supervisor" -Actual $editable.messageAuthorUsername -Message "The supervisor-note author username was not projected."
+Assert-Equal -Expected "2026-08-12T20:00:00.0000000Z" -Actual $editable.messageUpdatedAt -Message "The supervisor-note update timestamp was not projected."
 
 $readOnly = New-EmployeeEntryProjectionForAccessModel `
     -EmployeeCode "000100001" `

@@ -723,12 +723,32 @@ code {
 /* Shared project identity contract. Set --project-color on the component. */
 .project-color-dot {
   display: inline-block;
-  width: 0.58rem;
-  height: 0.58rem;
-  flex: 0 0 0.58rem;
+  width: 0.64rem;
+  height: 0.64rem;
+  flex: 0 0 0.64rem;
   border-radius: 50%;
   background: var(--project-color, var(--accent));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--project-color, var(--accent)) 16%, transparent);
+}
+
+.project-color-dot.project-marker-circle {
+  border-radius: 50%;
+}
+
+.project-color-dot.project-marker-square {
+  border-radius: 2px;
+}
+
+.project-color-dot.project-marker-diamond {
+  border-radius: 1px;
+  transform: rotate(45deg) scale(0.78);
+}
+
+.project-color-dot.project-marker-triangle {
+  border-radius: 0;
+  clip-path: polygon(50% 3%, 98% 94%, 2% 94%);
+  box-shadow: none;
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--project-color, var(--accent)) 45%, transparent));
 }
 
 .project-identity-pill {
@@ -752,11 +772,131 @@ code {
   border-inline-start-color: color-mix(in srgb, var(--project-color) 72%, var(--separator));
 }
 
-.project-color-editor-control {
+.project-identity-editor {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.project-identity-editor > legend {
+  float: none;
+  width: auto;
+  margin-bottom: 10px;
+}
+
+.project-identity-editor-section + .project-identity-editor-section {
+  margin-top: 13px;
+}
+
+.project-identity-editor-label {
+  margin-bottom: 7px;
+  color: var(--label-secondary);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.project-color-choice-grid,
+.project-marker-choice-grid {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
+}
+
+.project-color-choice-grid {
+  grid-template-columns: repeat(auto-fit, minmax(94px, 1fr));
+}
+
+.project-marker-choice-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.project-identity-choice {
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.project-identity-choice-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.project-identity-choice-content {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  min-height: 36px;
+  padding: 6px 9px;
+  overflow: hidden;
+  color: var(--label-secondary);
+  background: var(--surface);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1.15;
+  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.project-identity-choice:hover .project-identity-choice-content {
+  border-color: var(--separator-strong);
+  background: var(--surface-raised);
+}
+
+.project-identity-choice-input:checked + .project-identity-choice-content {
+  color: var(--label-primary);
+  background: color-mix(in srgb, var(--project-color, var(--accent)) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--project-color, var(--accent)) 55%, var(--separator));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--project-color, var(--accent)) 20%, transparent);
+}
+
+.project-identity-choice-input:focus-visible + .project-identity-choice-content {
+  outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.project-color-swatch {
+  width: 1.15rem;
+  height: 0.72rem;
+  flex: 0 0 1.15rem;
+  background: var(--project-color, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--project-color, var(--accent)) 72%, var(--label-primary));
+  border-radius: 4px;
+}
+
+.project-identity-editor-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
+  margin-top: 13px;
+  padding: 10px;
+  background: var(--surface-secondary);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-control);
+}
+
+.project-identity-editor-summary-copy {
+  min-width: 0;
+}
+
+.project-identity-editor-summary-copy strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-identity-editor-summary-copy .form-text {
+  margin-top: 2px;
+}
+
+.project-identity-editor-summary-copy .form-text.is-used {
+  color: var(--pending);
 }
 
 .project-color-editor-preview {
@@ -770,9 +910,9 @@ code {
 }
 
 .project-color-editor-preview .project-color-dot {
-  width: 0.78rem;
-  height: 0.78rem;
-  flex-basis: 0.78rem;
+  width: 1rem;
+  height: 1rem;
+  flex-basis: 1rem;
 }
 
 .project-entry-context {
@@ -1368,6 +1508,40 @@ code {
   background: var(--surface);
 }
 
+.review-card-attention {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  color: var(--label-primary);
+  background: color-mix(in srgb, var(--pending-soft) 72%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--pending) 34%, var(--separator));
+  border-radius: var(--radius-sm);
+}
+
+.review-card-attention-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pending);
+  font-size: 0.76rem;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+.review-card-attention-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-card-attention-item {
+  color: var(--label-secondary);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
 .people-project-entry-row.is-entry-focus-target,
 .calendar-entry.is-entry-focus-target,
 .calendar-live-card.is-entry-focus-target {
@@ -1382,6 +1556,10 @@ code {
 }
 
 #pendingContainer .review-card {
+  border-left: 3px solid var(--pending);
+}
+
+#attentionContainer .review-card {
   border-left: 3px solid var(--pending);
 }
 
@@ -2456,6 +2634,10 @@ code {
   scroll-margin-top: 88px;
 }
 
+.employee-detail-card {
+  scroll-margin-top: 88px;
+}
+
 :root[data-theme="dark"] .dashboard-entry-row.is-open,
 :root[data-theme="dark"] .calendar-live-card {
   background: var(--live-soft);
@@ -2772,6 +2954,19 @@ code {
 }
 
 @media (max-width: 480px) {
+  .project-marker-choice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .project-identity-editor-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .project-identity-editor-summary .btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
   .project-workspace-metrics {
     grid-template-columns: minmax(0, 1fr);
   }

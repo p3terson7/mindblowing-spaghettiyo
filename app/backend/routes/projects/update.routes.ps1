@@ -16,6 +16,8 @@
             $requestedProjectCode = if ($payload.PSObject.Properties.Name -contains "projectCode") { ([string]$payload.projectCode).Trim() } else { $projectCode }
             $colorKeyWasProvided = ($payload.PSObject.Properties.Name -contains "colorKey")
             $requestedColorKey = if ($colorKeyWasProvided) { ([string]$payload.colorKey).Trim().ToLowerInvariant() } else { "" }
+            $markerKeyWasProvided = ($payload.PSObject.Properties.Name -contains "markerKey")
+            $requestedMarkerKey = if ($markerKeyWasProvided) { ([string]$payload.markerKey).Trim().ToLowerInvariant() } else { "" }
             $projectCodeChanged = ($requestedProjectCode -cne $projectCode)
             if ($projectName.Length -gt 200) {
                 respondWithError $response 400 "Project name cannot exceed 200 characters."
@@ -27,6 +29,10 @@
             }
             if ($colorKeyWasProvided -and -not [string]::IsNullOrWhiteSpace($requestedColorKey) -and -not (Test-ProjectColorKey -ColorKey $requestedColorKey)) {
                 respondWithError $response 400 "Unsupported project color."
+                continue
+            }
+            if ($markerKeyWasProvided -and -not [string]::IsNullOrWhiteSpace($requestedMarkerKey) -and -not (Test-ProjectMarkerKey -MarkerKey $requestedMarkerKey)) {
+                respondWithError $response 400 "Unsupported project marker."
                 continue
             }
 
@@ -97,6 +103,8 @@
                         $projects[$projectIndex].archived = if ($archivedWasProvided) { $archived } else { Test-ProjectArchived -Project $projects[$projectIndex] }
                         $existingColorKey = if ($projects[$projectIndex].PSObject.Properties.Name -contains "colorKey") { [string]$projects[$projectIndex].colorKey } else { "" }
                         [void](Set-ProjectRecordColorKey -Project $projects[$projectIndex] -ColorKey $(if ($colorKeyWasProvided) { $requestedColorKey } else { $existingColorKey }))
+                        $existingMarkerKey = if ($projects[$projectIndex].PSObject.Properties.Name -contains "markerKey") { [string]$projects[$projectIndex].markerKey } else { "" }
+                        [void](Set-ProjectRecordMarkerKey -Project $projects[$projectIndex] -MarkerKey $(if ($markerKeyWasProvided) { $requestedMarkerKey } else { $existingMarkerKey }))
 
                         Write-JsonArrayAtomic -Path $projectsFile -Items $projects -Depth 6
                         $script:ProjectsCache = $null

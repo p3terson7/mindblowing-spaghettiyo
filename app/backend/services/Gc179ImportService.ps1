@@ -66,6 +66,54 @@ function Assert-Gc179ImportPayload {
     }
 }
 
+function Get-Gc179ImportInitiatorName {
+    param(
+        $MessageAuthor,
+        [AllowNull()][string]$ImportedBy
+    )
+
+    $displayName = ""
+    if ($null -ne $MessageAuthor -and $MessageAuthor.PSObject.Properties.Name -contains "displayName") {
+        $displayName = ([string]$MessageAuthor.displayName).Trim()
+    }
+    if ([string]::IsNullOrWhiteSpace($displayName) -and $null -ne $MessageAuthor -and $MessageAuthor.PSObject.Properties.Name -contains "username") {
+        $displayName = ([string]$MessageAuthor.username).Trim()
+    }
+    if ([string]::IsNullOrWhiteSpace($displayName)) {
+        $displayName = ([string]$ImportedBy).Trim()
+    }
+
+    return $(if ([string]::IsNullOrWhiteSpace($displayName)) { "un superviseur" } else { $displayName })
+}
+
+function New-Gc179ImportAutomaticSupervisorNote {
+    param(
+        $MessageAuthor,
+        [AllowNull()][string]$ImportedBy
+    )
+
+    $initiatorName = Get-Gc179ImportInitiatorName -MessageAuthor $MessageAuthor -ImportedBy $ImportedBy
+    return "Import automatique de GC179 par $initiatorName."
+}
+
+function Join-Gc179ImportSupervisorNotes {
+    param(
+        [AllowNull()][string]$AutomaticNote,
+        [AllowNull()][string]$ManagerMessage
+    )
+
+    $automatic = ([string]$AutomaticNote).Trim()
+    $manual = ([string]$ManagerMessage).Trim()
+    if ([string]::IsNullOrWhiteSpace($manual) -or $manual -eq $automatic) {
+        return $automatic
+    }
+    if ([string]::IsNullOrWhiteSpace($automatic)) {
+        return $manual
+    }
+
+    return ($automatic + [Environment]::NewLine + $manual)
+}
+
 function Read-Gc179EmployeeDataStrict {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -939,6 +987,7 @@ function Import-Gc179PreviewEntries {
         [AllowNull()][string]$SourceFile,
         [AllowNull()][string]$SourceHash,
         [AllowNull()][string]$ImportedBy,
+        $MessageAuthor,
         [AllowNull()][string]$BatchId,
         [bool]$SkipDuplicates = $true,
         [bool]$PublishChange = $true
@@ -974,8 +1023,9 @@ function Import-Gc179PreviewEntries {
             }
         }
 
-        $importedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
-        foreach ($entry in @($Preview.entries)) {
+    $importedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+    $automaticSupervisorNote = New-Gc179ImportAutomaticSupervisorNote -MessageAuthor $MessageAuthor -ImportedBy $ImportedBy
+    foreach ($entry in @($Preview.entries)) {
             $baseKey = Get-Gc179ImportDuplicateKey -Entry $entry
             if ($existingByBaseKey.ContainsKey($baseKey)) {
                 $hasExact = $false
@@ -993,6 +1043,7 @@ function Import-Gc179PreviewEntries {
                 continue
             }
 
+            $supervisorNote = Join-Gc179ImportSupervisorNotes -AutomaticNote $automaticSupervisorNote -ManagerMessage ([string]$entry.message)
             $newEntry = [PSCustomObject]@{
                 entryId             = New-EntryIdentifier
                 entryType           = "overtime"
@@ -1004,7 +1055,7 @@ function Import-Gc179PreviewEntries {
                 exactPunchOut       = [string]$entry.exactPunchOut
                 overtime            = [string]$entry.overtime
                 status              = [string]$entry.status
-                message             = [string]$entry.message
+                message             = $supervisorNote
                 projectCode         = [string]$entry.projectCode
                 overtimeCode        = [string]$entry.overtimeCode
                 paymentOption       = [string]$entry.paymentOption
@@ -1018,6 +1069,32 @@ function Import-Gc179PreviewEntries {
                 gc179ImportedAtUtc  = $importedAtUtc
                 gc179ImportedBy     = ([string]$ImportedBy).Trim()
                 gc179ImportBatchId  = $resolvedBatchId
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace([string]$newEntry.message)) {
+                $resolvedMessageAuthor = $MessageAuthor
+                if ($null -eq $resolvedMessageAuthor -and -not [string]::IsNullOrWhiteSpace([string]$ImportedBy)) {
+                    $resolvedMessageAuthor = [PSCustomObject]@{
+                        username    = ([string]$ImportedBy).Trim()
+                        displayName = ""
+                    }
+                }
+                $messageAuthorName = ""
+                $messageAuthorUsername = ""
+                if ($null -ne $resolvedMessageAuthor) {
+                    if ($resolvedMessageAuthor.PSObject.Properties.Name -contains "displayName") {
+                        $messageAuthorName = ([string]$resolvedMessageAuthor.displayName).Trim()
+                    }
+                    if ($resolvedMessageAuthor.PSObject.Properties.Name -contains "username") {
+                        $messageAuthorUsername = ([string]$resolvedMessageAuthor.username).Trim()
+                    }
+                }
+                if ([string]::IsNullOrWhiteSpace($messageAuthorName)) {
+                    $messageAuthorName = $messageAuthorUsername
+                }
+                Set-Gc179ImportProperty -Value $newEntry -Name "messageAuthorName" -PropertyValue $messageAuthorName
+                Set-Gc179ImportProperty -Value $newEntry -Name "messageAuthorUsername" -PropertyValue $messageAuthorUsername
+                Set-Gc179ImportProperty -Value $newEntry -Name "messageUpdatedAt" -PropertyValue ((Get-Date).ToUniversalTime().ToString("o"))
             }
 
             $fingerprint = Get-Gc179ImportEntryFingerprint -Entry $newEntry

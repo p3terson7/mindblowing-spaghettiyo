@@ -20,6 +20,11 @@ $expectedProjectCatalogFunctions = @(
     "Get-DefaultProjectColorKey",
     "Test-ProjectColorKey",
     "Resolve-ProjectColorKey",
+    "Get-ProjectMarkerKeys",
+    "Get-ProjectMarkerKeyFromText",
+    "Get-DefaultProjectMarkerKey",
+    "Test-ProjectMarkerKey",
+    "Resolve-ProjectMarkerKey",
     "ConvertTo-CodeArray",
     "Get-ProjectAdminCodes",
     "Get-ProjectBackupAdminCodes",
@@ -34,6 +39,10 @@ $expectedCommonHelperFacades = @(
     "Get-DefaultProjectColorKey",
     "Test-ProjectColorKey",
     "Resolve-ProjectColorKey",
+    "Get-ProjectMarkerKeys",
+    "Get-DefaultProjectMarkerKey",
+    "Test-ProjectMarkerKey",
+    "Resolve-ProjectMarkerKey",
     "ConvertTo-CodeArray",
     "Get-ProjectAdminCodes",
     "Get-ProjectBackupAdminCodes",
@@ -147,6 +156,12 @@ $analyticsColorCommands = @($analyticsColorFunction.Body.FindAll({ param($node) 
 Assert-True -Condition ($analyticsColorCommands -contains "Saphir.ProjectCatalog\Test-ProjectColorKey") -Message "Analytics no longer validates colors through ProjectCatalog."
 Assert-True -Condition ($analyticsColorCommands -contains "Saphir.ProjectCatalog\Get-ProjectColorKeyFromText") -Message "Analytics no longer delegates legacy raw-code hashing to ProjectCatalog."
 Assert-True -Condition (-not $analyticsColorFunction.Extent.Text.Contains('@("blue"')) -Message "The duplicated analytics project palette returned."
+
+$analyticsMarkerFunction = Get-NamedFunctionAst -Ast $analyticsAst -Name "Get-AnalyticsReportProjectMarkerKey"
+Assert-True -Condition ($null -ne $analyticsMarkerFunction) -Message "The analytics marker compatibility adapter is missing."
+$analyticsMarkerCommands = @($analyticsMarkerFunction.Body.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { [string]$_.GetCommandName() })
+Assert-True -Condition ($analyticsMarkerCommands -contains "Saphir.ProjectCatalog\Test-ProjectMarkerKey") -Message "Analytics no longer validates markers through ProjectCatalog."
+Assert-True -Condition ($analyticsMarkerCommands -contains "Saphir.ProjectCatalog\Get-ProjectMarkerKeyFromText") -Message "Analytics no longer delegates raw-code marker hashing to ProjectCatalog."
 
 $utilitiesSource = [System.IO.File]::ReadAllText($utilitiesPath)
 $selfSource = [System.IO.File]::ReadAllText($selfViewPath)

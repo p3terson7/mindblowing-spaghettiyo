@@ -131,13 +131,35 @@ function inferEmployeeGc179NameParts(employeeName) {
 function normalizeEmployeeGc179Profile(profile, employeeName) {
   const fallback = inferEmployeeGc179NameParts(employeeName);
   const source = profile && typeof profile === "object" ? profile : {};
+  const groupPropertyNames = ["group", "Group", "groupe", "Groupe"];
+  const subGroupPropertyNames = ["subGroup", "SubGroup", "subgroup", "SousGroupe", "sousGroupe"];
+  const hasExplicitGroup = hasAnyOwnProperty(source, groupPropertyNames);
+  const hasExplicitSubGroup = hasAnyOwnProperty(source, subGroupPropertyNames);
+  const group = getFirstNonEmptyPropertyValue(source, [
+    ...groupPropertyNames,
+    "position",
+    "Position",
+    "poste",
+    "Poste",
+    "classification",
+    "Classification",
+  ]);
+  let subGroup = getFirstNonEmptyPropertyValue(source, subGroupPropertyNames);
+  if (!subGroup && !hasExplicitGroup && !hasExplicitSubGroup) {
+    subGroup = getFirstNonEmptyPropertyValue(source, ["echelon", "Echelon", "level", "Level"]);
+  }
+  const level = hasExplicitGroup || hasExplicitSubGroup
+    ? getFirstNonEmptyPropertyValue(source, ["level", "Level", "niveau", "Niveau"])
+    : "";
+
   return {
     surname: toGc179UpperText(source.surname || source.Surname || source.lastName || fallback.surname),
     givenName: toGc179UpperText(source.givenName || source.given || source.Given || fallback.givenName),
     initials: toGc179UpperText(source.initials || source.Initials || fallback.initials),
     pri: formatGc179Pri(source.pri || source.PRI || ""),
-    position: normalizeGc179Position(source.position || source.poste || source.classification || source.Position || ""),
-    level: normalizeGc179Echelon(source.level || source.Level || source.echelon || source.Echelon || ""),
+    group: normalizeGc179Group(group),
+    subGroup: normalizeGc179SubGroup(subGroup),
+    level: normalizeGc179Level(level),
     compressedWorkWeek: normalizeBooleanValue(getFirstDefinedPropertyValue(source, ["compressedWorkWeek", "isCompressedWorkWeek", "compressed"]), false),
   };
 }
@@ -152,7 +174,8 @@ function setEmployeeEditorGc179Profile(profile, employeeName) {
   document.getElementById("employeeEditorGc179GivenInput").value = normalized.givenName;
   document.getElementById("employeeEditorGc179InitialsInput").value = normalized.initials;
   document.getElementById("employeeEditorGc179PriInput").value = normalized.pri;
-  document.getElementById("employeeEditorGc179PositionSelect").value = normalized.position;
+  document.getElementById("employeeEditorGc179GroupInput").value = normalized.group;
+  document.getElementById("employeeEditorGc179SubGroupInput").value = normalized.subGroup;
   document.getElementById("employeeEditorGc179LevelInput").value = normalized.level;
   document.getElementById("employeeEditorGc179CompressedWorkWeekInput").checked = Boolean(normalized.compressedWorkWeek);
 }
@@ -163,7 +186,8 @@ function getEmployeeEditorGc179Profile(employeeName) {
     givenName: document.getElementById("employeeEditorGc179GivenInput").value,
     initials: document.getElementById("employeeEditorGc179InitialsInput").value,
     pri: document.getElementById("employeeEditorGc179PriInput").value,
-    position: document.getElementById("employeeEditorGc179PositionSelect").value,
+    group: document.getElementById("employeeEditorGc179GroupInput").value,
+    subGroup: document.getElementById("employeeEditorGc179SubGroupInput").value,
     level: document.getElementById("employeeEditorGc179LevelInput").value,
     compressedWorkWeek: document.getElementById("employeeEditorGc179CompressedWorkWeekInput").checked,
   };
@@ -173,7 +197,7 @@ function getEmployeeEditorGc179Profile(employeeName) {
 function employeeEditorGc179ProfileChanged(employee, employeeName) {
   const original = getEmployeeGc179Profile(employee);
   const selected = getEmployeeEditorGc179Profile(employeeName);
-  return ["surname", "givenName", "initials", "pri", "position", "level", "compressedWorkWeek"].some(key => original[key] !== selected[key]);
+  return ["surname", "givenName", "initials", "pri", "group", "subGroup", "level", "compressedWorkWeek"].some(key => original[key] !== selected[key]);
 }
 
 function getEmployeeRoleLabel(employee) {
@@ -1647,6 +1671,7 @@ function normalizeEmployeeProjectReferenceArray(projects) {
         projectName,
         sector,
         colorKey: getProjectColorKey(project),
+        markerKey: getProjectMarkerKey(project),
         responsibility: String(project && project.responsibility ? project.responsibility : "").trim(),
       };
     })
@@ -1946,7 +1971,7 @@ function populateEmployeesProjectFilter(projects) {
     .concat(projectItems.map(project => {
       const projectCode = String(project.projectCode || "");
       const selected = projectCode === selectedValue ? " selected" : "";
-      return `<option value="${escapeHtml(projectCode)}"${selected}>${escapeHtml(formatProjectCodeAndName(project))}</option>`;
+      return `<option value="${escapeHtml(projectCode)}" data-project-color-key="${escapeHtml(getProjectColorKey(project))}" data-project-marker-key="${escapeHtml(getProjectMarkerKey(project))}"${selected}>${escapeHtml(formatProjectCodeAndName(project))}</option>`;
     }))
     .join("");
 
@@ -2476,6 +2501,7 @@ function buildEmployeeStatsModel(entries) {
         projectCode,
         projectName: projectRecord ? getProjectDisplayName(projectRecord) : (rawProjectCode || t("shared.noProject")),
         colorKey: projectRecord ? getProjectColorKey(projectRecord) : getProjectColorKey(projectCode),
+        markerKey: projectRecord ? getProjectMarkerKey(projectRecord) : getProjectMarkerKey(projectCode),
       };
     },
     getOvertimeCode(entry) {
@@ -3074,7 +3100,9 @@ async function openPeopleProjectFilter(employeeCode, projectCode, entryId = "") 
     applyEmployeeSearchFilter();
     await loadEmployeeDetail(employeeCode);
     prepareEmployeeEntryFocus(employeeCode, entryId);
-    focusEmployeeEntry(entryId);
+    if (!focusEmployeeEntry(entryId)) {
+      focusEmployeeDetailCard();
+    }
   }
 }
 
@@ -3102,14 +3130,14 @@ function prepareEmployeeEntryFocus(employeeCode, entryId) {
 function focusEmployeeEntry(entryId) {
   const normalizedEntryId = String(entryId || employeesViewState.focusEntryId || "").trim();
   if (!normalizedEntryId) {
-    return;
+    return false;
   }
 
   const entryAction = Array.from(document.querySelectorAll("#employeeDetailContainer [data-entryid]"))
     .find(element => String(element.getAttribute("data-entryid") || "") === normalizedEntryId);
   const entryContainer = entryAction && entryAction.closest(".people-project-entry-row, .calendar-entry, .calendar-live-card");
   if (!entryContainer) {
-    return;
+    return false;
   }
 
   const disclosure = entryContainer.closest("details");
@@ -3120,6 +3148,7 @@ function focusEmployeeEntry(entryId) {
   entryContainer.scrollIntoView({ behavior: "smooth", block: "center" });
   window.setTimeout(() => entryContainer.classList.remove("is-entry-focus-target"), 2400);
   employeesViewState.focusEntryId = "";
+  return true;
 }
 
 window.openPeopleProjectFilter = openPeopleProjectFilter;
@@ -3142,6 +3171,24 @@ function updateActiveEmployeeDirectoryCard() {
   });
 }
 
+function focusEmployeeDetailCard() {
+  const detailContainer = document.getElementById("employeeDetailContainer");
+  if (!detailContainer) {
+    return false;
+  }
+
+  const detailTitle = detailContainer.querySelector(".employee-detail-title");
+  if (detailTitle) {
+    detailTitle.focus({ preventScroll: true });
+  }
+
+  const detailCard = detailContainer.querySelector(".employee-detail-card") || detailContainer;
+  if (typeof detailCard.scrollIntoView === "function") {
+    detailCard.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  return true;
+}
+
 async function openEmployeeDetailFromDirectory(employeeCode) {
   const normalizedEmployeeCode = String(employeeCode || "").trim();
   if (!normalizedEmployeeCode) {
@@ -3155,15 +3202,7 @@ async function openEmployeeDetailFromDirectory(employeeCode) {
     return false;
   }
 
-  const detailContainer = document.getElementById("employeeDetailContainer");
-  const detailTitle = detailContainer ? detailContainer.querySelector(".employee-detail-title") : null;
-  if (detailTitle) {
-    detailTitle.focus({ preventScroll: true });
-  }
-  if (detailContainer && typeof detailContainer.scrollIntoView === "function") {
-    detailContainer.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-  return true;
+  return focusEmployeeDetailCard();
 }
 
 document.getElementById("employeesDirectoryContainer").addEventListener("click", event => {
