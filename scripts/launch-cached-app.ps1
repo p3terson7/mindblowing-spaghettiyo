@@ -1,4 +1,9 @@
-param([switch]$Force)
+param(
+    [switch]$Force,
+    [switch]$NoBrowser,
+    [switch]$NonInteractive,
+    [string]$DistributionRoot = ""
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -7,21 +12,35 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
 }
 
 $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
-$distributionRoot = (Get-Item -LiteralPath $scriptDir).Parent.FullName
-$manifestPath = Join-Path -Path $distributionRoot -ChildPath "deployment/current.json"
+$defaultDistributionRoot = (Get-Item -LiteralPath $scriptDir).Parent.FullName
+if ([string]::IsNullOrWhiteSpace($DistributionRoot)) {
+    $resolvedDistributionRoot = $defaultDistributionRoot
+}
+else {
+    if (-not [System.IO.Path]::IsPathRooted($DistributionRoot)) {
+        throw "DistributionRoot must be an absolute path."
+    }
+    $resolvedDistributionRoot = [System.IO.Path]::GetFullPath($DistributionRoot)
+}
+$manifestPath = Join-Path -Path $resolvedDistributionRoot -ChildPath "deployment/current.json"
+$applicationLayoutLibrary = Join-Path -Path $scriptDir -ChildPath "lib/ApplicationLayout.ps1"
 $localCacheLibrary = Join-Path -Path $scriptDir -ChildPath "lib/LocalAppCache.ps1"
 $serverControlLibrary = Join-Path -Path $scriptDir -ChildPath "lib/ServerControl.ps1"
 $developmentLaunchScript = Join-Path -Path $scriptDir -ChildPath "launch-app.ps1"
-$developmentServerScript = Join-Path -Path $distributionRoot -ChildPath "apps/admin/backend/admin-server.ps1"
+if (-not (Test-Path -LiteralPath $applicationLayoutLibrary -PathType Leaf)) {
+    throw "The SAPHIR application-layout library is missing from the shared distribution."
+}
+. $applicationLayoutLibrary
+$developmentLayout = Resolve-SaphirApplicationLayout -ApplicationRoot $resolvedDistributionRoot
 
 # A source checkout has no published manifest. Preserve the existing developer
 # workflow while employee distributions always use the versioned local cache.
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf) -and
-    (Test-Path -LiteralPath $developmentServerScript -PathType Leaf) -and
+    $null -ne $developmentLayout -and
     (Test-Path -LiteralPath $developmentLaunchScript -PathType Leaf)) {
     # Source checkouts follow the same warm-launch rule as installed releases.
     # Developers can still request a restart explicitly after editing code.
-    & $developmentLaunchScript -Force:$Force
+    & $developmentLaunchScript -Force:$Force -NoBrowser:$NoBrowser
     return
 }
 
@@ -62,7 +81,8 @@ function Write-SaphirBootstrapFailure {
     Write-SaphirBootstrapLog -Message $Message
 
     Write-Error $Message -ErrorAction Continue
-    if ($PSVersionTable.PSEdition -eq "Desktop" -or [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+    if (-not $NonInteractive -and
+        ($PSVersionTable.PSEdition -eq "Desktop" -or [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)) {
         try {
             $shell = New-Object -ComObject WScript.Shell
             [void]$shell.Popup($Message, 0, "SAPHIR could not start", 16)
@@ -97,12 +117,83 @@ function Get-SaphirActiveRuntimeRoot {
 function Open-SaphirWarmFrontend {
     param([Parameter(Mandatory = $true)][string]$FrontendUrl)
 
+    if ($NoBrowser) {
+        Write-Host "SAPHIR is already running."
+        return
+    }
+
     Write-Host "SAPHIR is already running. Opening it without checking the network release."
     try {
         Open-UriInDefaultBrowser -Uri $FrontendUrl
     }
     catch {
         Write-Warning "SAPHIR is ready, but the browser could not be opened automatically. Open $FrontendUrl manually."
+    }
+}
+
+function Invoke-SaphirReleaseLaunch {
+    param(
+        [Parameter(Mandatory = $true)][string]$LaunchScript,
+        [Parameter(Mandatory = $true)][bool]$ForceRestart,
+        [Parameter(Mandatory = $true)][bool]$SuppressBrowser
+    )
+
+    $launchParameters = @{}
+    if ($ForceRestart) {
+        $launchParameters["Force"] = $true
+    }
+
+    if ($SuppressBrowser) {
+        # Cached releases created before the launcher UI did not expose
+        # -NoBrowser. Keep the offline rollback path compatible with them.
+        $launchCommand = Get-Command -Name $LaunchScript -CommandType ExternalScript -ErrorAction Stop
+        if ($launchCommand.Parameters.ContainsKey("NoBrowser")) {
+            $launchParameters["NoBrowser"] = $true
+        }
+    }
+
+    & $LaunchScript @launchParameters
+}
+
+function Test-SaphirCacheRepairMayRetryLaunch {
+    param([Parameter(Mandatory = $true)][string]$ReleasePath)
+
+    try {
+        $runtimeRoot = Get-SaphirActiveRuntimeRoot -ReleasePath $ReleasePath
+        $pidFile = Join-Path -Path $runtimeRoot -ChildPath "pids/app.pid.json"
+        $status = Get-ServiceStatus `
+            -Name "app" `
+            -DisplayName "SAPHIR Backend" `
+            -Port 8081 `
+            -PidFile $pidFile
+
+        $metadataProcessId = if ($status.PSObject.Properties.Name -contains "MetadataProcessId") {
+            $status.MetadataProcessId
+        }
+        else {
+            $null
+        }
+
+        # Repair replaces files in the cached release and its retry uses -Force.
+        # It is safe only after status proves that neither a listener nor a
+        # managed/candidate backend process is still active. An inconclusive
+        # health probe must never be upgraded into permission to replace it.
+        if ([bool]$status.IsRunning -or
+            [bool]$status.TrackedProcessId -or
+            [bool]$metadataProcessId) {
+            return $false
+        }
+
+        $applicationLayout = Resolve-SaphirApplicationLayout -ApplicationRoot $ReleasePath
+        if ($null -eq $applicationLayout) {
+            return $false
+        }
+        return (@(Find-ServiceProcessesByScriptPath -ScriptPath ([string]$applicationLayout.ServerScript)).Count -eq 0)
+    }
+    catch {
+        # Failure to establish an offline state is not permission to mutate the
+        # cache or force-restart a process.
+        return $false
     }
 }
 
@@ -124,14 +215,17 @@ try {
             $warmFrontendUrl = "http://localhost:8081/"
             $warmRuntimeRoot = Get-SaphirActiveRuntimeRoot -ReleasePath ([string]$warmRelease.ReleasePath)
             $warmPidFile = Join-Path -Path $warmRuntimeRoot -ChildPath "pids/app.pid.json"
-            $warmServerScript = Join-Path -Path ([string]$warmRelease.ReleasePath) -ChildPath "apps/admin/backend/admin-server.ps1"
-            $warmBackendHealthy = Test-ManagedServiceHealthyForScript `
-                -Name "app" `
-                -DisplayName "SAPHIR Backend" `
-                -ServerScript $warmServerScript `
-                -Port 8081 `
-                -PidFile $warmPidFile `
-                -FrontendUrl $warmFrontendUrl
+            $warmLayout = Resolve-SaphirApplicationLayout -ApplicationRoot ([string]$warmRelease.ReleasePath)
+            $warmBackendHealthy = $false
+            if ($null -ne $warmLayout) {
+                $warmBackendHealthy = Test-ManagedServiceHealthyForScript `
+                    -Name "app" `
+                    -DisplayName "SAPHIR Backend" `
+                    -ServerScript ([string]$warmLayout.ServerScript) `
+                    -Port 8081 `
+                    -PidFile $warmPidFile `
+                    -FrontendUrl $warmFrontendUrl
+            }
             if ($warmBackendHealthy) {
                 Open-SaphirWarmFrontend -FrontendUrl $warmFrontendUrl
                 return
@@ -146,13 +240,13 @@ try {
     $usedPreviousRelease = $false
     $targetManifest = $null
     try {
-        $targetManifest = Read-SaphirReleaseManifest -ManifestPath $manifestPath -DistributionRoot $distributionRoot
+        $targetManifest = Read-SaphirReleaseManifest -ManifestPath $manifestPath -DistributionRoot $resolvedDistributionRoot
     }
     catch {
         $manifestError = $_
         if ($null -ne $previousRelease -and (Test-Path -LiteralPath $previousRelease.LaunchScript -PathType Leaf)) {
             Write-Warning "The network release information is unavailable. Starting the previous local SAPHIR version."
-            & $previousRelease.LaunchScript -Force:$Force
+            Invoke-SaphirReleaseLaunch -LaunchScript $previousRelease.LaunchScript -ForceRestart ([bool]$Force) -SuppressBrowser ([bool]$NoBrowser)
             Set-SaphirActiveRelease -CacheRoot $cacheRoot -Release $previousRelease
             Write-SaphirBootstrapLog -Message ("The release manifest could not be read. SAPHIR restored '{0}'. {1}" -f $previousRelease.ReleaseId, $manifestError.Exception.Message)
             $release = $previousRelease
@@ -173,7 +267,7 @@ try {
 
         if ($skipKnownFailedRelease) {
             Write-Warning "SAPHIR is using the previous local version because the current network release already failed on this computer."
-            & $previousRelease.LaunchScript -Force:$Force
+            Invoke-SaphirReleaseLaunch -LaunchScript $previousRelease.LaunchScript -ForceRestart ([bool]$Force) -SuppressBrowser ([bool]$NoBrowser)
             Set-SaphirActiveRelease -CacheRoot $cacheRoot -Release $previousRelease
             $release = $previousRelease
             $usedPreviousRelease = $true
@@ -186,14 +280,17 @@ try {
                     # process still running from files at the same path. Warm
                     # launches of an unchanged cached release are reused.
                     $restartForInstalledRelease = $Force -or [bool]$release.Installed
-                    & $release.LaunchScript -Force:$restartForInstalledRelease
+                    Invoke-SaphirReleaseLaunch -LaunchScript $release.LaunchScript -ForceRestart ([bool]$restartForInstalledRelease) -SuppressBrowser ([bool]$NoBrowser)
                 }
                 catch {
                     $cachedLaunchError = $_
                     if (-not [bool]$release.Installed) {
+                        if (-not (Test-SaphirCacheRepairMayRetryLaunch -ReleasePath ([string]$release.ReleasePath))) {
+                            throw "The local SAPHIR process is still active or could not be identified safely. Its readiness check may have timed out while it was busy, so SAPHIR did not repair its files or force-restart it automatically. Wait for the current action to finish and try again. Original launch error: $($cachedLaunchError.Exception.Message)"
+                        }
                         Write-Warning "The local SAPHIR copy failed to start. Repairing it once from the network release."
                         $release = Install-SaphirCachedRelease -Manifest $targetManifest -CacheRoot $cacheRoot -ForceReinstall
-                        & $release.LaunchScript -Force
+                        Invoke-SaphirReleaseLaunch -LaunchScript $release.LaunchScript -ForceRestart $true -SuppressBrowser ([bool]$NoBrowser)
                     }
                     else {
                         throw $cachedLaunchError
@@ -212,7 +309,7 @@ try {
                         Write-Warning "The new SAPHIR release failed. Restoring the previous local release."
                         # Displace any partially started new release before
                         # restoring the last version known to work.
-                        & $previousRelease.LaunchScript -Force
+                        Invoke-SaphirReleaseLaunch -LaunchScript $previousRelease.LaunchScript -ForceRestart $true -SuppressBrowser ([bool]$NoBrowser)
                         Set-SaphirActiveRelease -CacheRoot $cacheRoot -Release $previousRelease
                         try {
                             Set-SaphirFailedRelease -CacheRoot $cacheRoot -Manifest $targetManifest

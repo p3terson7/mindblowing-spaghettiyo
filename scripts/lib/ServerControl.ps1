@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 function Test-IsWindowsHost {
     return ($PSVersionTable.PSEdition -eq "Desktop") -or ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
@@ -39,18 +39,34 @@ function Get-ManagedServiceLaunchPlan {
         }
     }
 
-    if ($IsRunning -and -not $HasTrackedProcess -and -not $Force) {
+    if ($Force) {
+        return [PSCustomObject]@{
+            Action       = "Restart"
+            ForceRestart = $true
+        }
+    }
+
+    if ($IsRunning -and -not $HasTrackedProcess) {
         return [PSCustomObject]@{
             Action       = "Block"
             ForceRestart = $false
         }
     }
 
-    $restartTrackedService = $HasTrackedProcess -and (-not $IsExpectedManagedInstance -or -not $FrontendIsAvailable)
-    $forceRestart = [bool]($Force -or $restartTrackedService)
+    if ($IsRunning -and $HasTrackedProcess -and $IsExpectedManagedInstance -and -not $FrontendIsAvailable) {
+        # The backend serializes requests. A short health timeout can simply mean
+        # a legitimate data operation is still in progress, so it must never
+        # authorize an automatic force restart.
+        return [PSCustomObject]@{
+            Action       = "Block"
+            ForceRestart = $false
+        }
+    }
+
+    $restartTrackedService = $HasTrackedProcess -and (-not $IsExpectedManagedInstance -or -not $IsRunning)
     return [PSCustomObject]@{
-        Action       = if ($forceRestart) { "Restart" } else { "Start" }
-        ForceRestart = $forceRestart
+        Action       = if ($restartTrackedService) { "Restart" } else { "Start" }
+        ForceRestart = [bool]$restartTrackedService
     }
 }
 
@@ -67,7 +83,16 @@ function Test-ManagedServiceHealthyForScript {
 
     try {
         $status = Get-ServiceStatus -Name $Name -DisplayName $DisplayName -Port $Port -PidFile $PidFile
-        if (-not $status.IsRunning -or -not $status.TrackedProcessId -or $null -eq $status.Metadata -or
+        $metadataProcessId = if ($status.TrackedProcessId) {
+            [int]$status.TrackedProcessId
+        }
+        elseif ($status.PSObject.Properties.Name -contains "MetadataProcessId" -and $status.MetadataProcessId) {
+            [int]$status.MetadataProcessId
+        }
+        else {
+            0
+        }
+        if (-not $status.IsRunning -or $metadataProcessId -le 0 -or $null -eq $status.Metadata -or
             [string]::IsNullOrWhiteSpace([string]$status.Metadata.scriptPath) -or
             [string]::IsNullOrWhiteSpace([string]$status.Metadata.instanceToken)) {
             return $false
@@ -94,6 +119,92 @@ function Test-ManagedServiceHealthyForScript {
                 $statusCode -lt 400 -and
                 $appIdentity -eq "SAPHIR" -and
                 $responseInstanceToken.Equals($expectedInstanceToken, [System.StringComparison]::Ordinal))
+        }
+        finally {
+            $response.Close()
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-ManagedServiceHttpIdentity {
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [Parameter(Mandatory = $true)][string]$InstanceToken,
+        [int]$TimeoutMilliseconds = 1500
+    )
+
+    if ([string]::IsNullOrWhiteSpace($InstanceToken)) {
+        return $false
+    }
+
+    try {
+        $request = [System.Net.WebRequest]::Create($Uri)
+        $request.Method = "GET"
+        $request.Timeout = $TimeoutMilliseconds
+        $request.ReadWriteTimeout = $TimeoutMilliseconds
+        $request.AllowAutoRedirect = $false
+        $request.Proxy = $null
+        $response = [System.Net.HttpWebResponse]$request.GetResponse()
+        try {
+            $statusCode = [int]$response.StatusCode
+            $appIdentity = [string]$response.Headers["X-SAPHIR-App"]
+            $responseInstanceToken = [string]$response.Headers["X-SAPHIR-Instance"]
+            return ($statusCode -ge 200 -and
+                $statusCode -lt 400 -and
+                $appIdentity -eq "SAPHIR" -and
+                $responseInstanceToken.Equals($InstanceToken, [System.StringComparison]::Ordinal))
+        }
+        finally {
+            $response.Close()
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
+function Invoke-ManagedServiceGracefulShutdown {
+    param(
+        [Parameter(Mandatory = $true)][int]$Port,
+        [Parameter(Mandatory = $true)][string]$InstanceToken,
+        [int]$TimeoutMilliseconds = 30000
+    )
+
+    if ([string]::IsNullOrWhiteSpace($InstanceToken)) {
+        return $false
+    }
+
+    # The backend intentionally serializes requests so file mutations cannot
+    # overlap. A health request may therefore wait behind a legitimate shared
+    # data write. Give that request enough time to finish before the protected
+    # force-stop fallback is considered.
+    $baseUri = "http://localhost:{0}/" -f $Port
+    if (-not (Test-ManagedServiceHttpIdentity `
+        -Uri $baseUri `
+        -InstanceToken $InstanceToken `
+        -TimeoutMilliseconds $TimeoutMilliseconds)) {
+        return $false
+    }
+
+    try {
+        $request = [System.Net.WebRequest]::Create(("{0}__saphir/control/shutdown" -f $baseUri))
+        $request.Method = "POST"
+        $request.Timeout = $TimeoutMilliseconds
+        $request.ReadWriteTimeout = $TimeoutMilliseconds
+        $request.AllowAutoRedirect = $false
+        $request.Proxy = $null
+        $request.ContentLength = 0
+        $request.Headers["X-SAPHIR-Control-Token"] = $InstanceToken
+        $response = [System.Net.HttpWebResponse]$request.GetResponse()
+        try {
+            $appIdentity = [string]$response.Headers["X-SAPHIR-App"]
+            $responseInstanceToken = [string]$response.Headers["X-SAPHIR-Instance"]
+            return ([int]$response.StatusCode -eq 202 -and
+                $appIdentity -eq "SAPHIR" -and
+                $responseInstanceToken.Equals($InstanceToken, [System.StringComparison]::Ordinal))
         }
         finally {
             $response.Close()
@@ -335,45 +446,145 @@ function Find-ServiceProcessesByScriptPath {
     return @($matches)
 }
 
-function Test-ServiceProcessMatchesMetadata {
+function ConvertTo-ServiceProcessId {
+    param($Value)
+
+    $parsedProcessId = 0
+    if ($null -eq $Value -or
+        -not [int]::TryParse(([string]$Value).Trim(), [ref]$parsedProcessId) -or
+        $parsedProcessId -le 0) {
+        return $null
+    }
+
+    return $parsedProcessId
+}
+
+function ConvertTo-ServiceTimestampUtc {
+    param($Value)
+
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $null
+    }
+
+    try {
+        if ($Value -is [DateTime]) {
+            return ([DateTime]$Value).ToUniversalTime()
+        }
+
+        return [DateTime]::Parse(
+            [string]$Value,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::RoundtripKind
+        ).ToUniversalTime()
+    }
+    catch {
+        return $null
+    }
+}
+
+function Test-ServiceMetadataSchema {
+    param($Metadata)
+
+    if ($null -eq $Metadata -or
+        -not ($Metadata.PSObject.Properties.Name -contains "pid") -or
+        $null -eq (ConvertTo-ServiceProcessId -Value $Metadata.pid) -or
+        -not ($Metadata.PSObject.Properties.Name -contains "scriptPath") -or
+        [string]::IsNullOrWhiteSpace([string]$Metadata.scriptPath)) {
+        return $false
+    }
+
+    try {
+        if (-not [System.IO.Path]::IsPathRooted([string]$Metadata.scriptPath)) {
+            return $false
+        }
+        $scriptPath = [System.IO.Path]::GetFullPath([string]$Metadata.scriptPath)
+    }
+    catch {
+        return $false
+    }
+
+    $recordedStartValue = if ($Metadata.PSObject.Properties.Name -contains "processStartedAtUtc" -and
+        -not [string]::IsNullOrWhiteSpace([string]$Metadata.processStartedAtUtc)) {
+        $Metadata.processStartedAtUtc
+    }
+    elseif ($Metadata.PSObject.Properties.Name -contains "startedAtUtc") {
+        $Metadata.startedAtUtc
+    }
+    else {
+        $null
+    }
+    if ($null -eq (ConvertTo-ServiceTimestampUtc -Value $recordedStartValue)) {
+        return $false
+    }
+
+    if ($Metadata.PSObject.Properties.Name -contains "requestedProcessId" -and
+        $null -ne $Metadata.requestedProcessId -and
+        -not [string]::IsNullOrWhiteSpace([string]$Metadata.requestedProcessId) -and
+        $null -eq (ConvertTo-ServiceProcessId -Value $Metadata.requestedProcessId)) {
+        return $false
+    }
+
+    if ($Metadata.PSObject.Properties.Name -contains "port" -and
+        $null -ne $Metadata.port -and
+        -not [string]::IsNullOrWhiteSpace([string]$Metadata.port)) {
+        $metadataPort = 0
+        if (-not [int]::TryParse(([string]$Metadata.port).Trim(), [ref]$metadataPort) -or
+            $metadataPort -lt 1 -or $metadataPort -gt 65535) {
+            return $false
+        }
+    }
+
+    if ($Metadata.PSObject.Properties.Name -contains "instanceToken" -and
+        -not [string]::IsNullOrWhiteSpace([string]$Metadata.instanceToken) -and
+        ([string]$Metadata.instanceToken).Trim() -notmatch "^[a-fA-F0-9]{32}$") {
+        return $false
+    }
+
+    return $true
+}
+
+function Test-ServiceProcessMetadataAnchor {
     param(
         $Process,
         $Metadata
     )
 
-    if (-not (Test-IsManagedPowerShellProcess -Process $Process) -or $null -eq $Metadata) {
+    if (-not (Test-IsManagedPowerShellProcess -Process $Process) -or
+        -not (Test-ServiceMetadataSchema -Metadata $Metadata)) {
         return $false
     }
 
     $recordedStartValue = if ($Metadata.processStartedAtUtc) { $Metadata.processStartedAtUtc } else { $Metadata.startedAtUtc }
-    if ($null -ne $recordedStartValue -and -not [string]::IsNullOrWhiteSpace([string]$recordedStartValue)) {
-        try {
-            # PowerShell 7's ConvertFrom-Json turns ISO timestamps into DateTime
-            # values. Casting that DateTime back to text drops its UTC kind and
-            # can apply the local offset twice, making valid PID metadata look
-            # stale. Preserve DateTime values directly; parse only legacy text.
-            $recordedStart = if ($recordedStartValue -is [DateTime]) {
-                ([DateTime]$recordedStartValue).ToUniversalTime()
-            }
-            else {
-                [DateTime]::Parse(
-                    [string]$recordedStartValue,
-                    [System.Globalization.CultureInfo]::InvariantCulture,
-                    [System.Globalization.DateTimeStyles]::RoundtripKind
-                ).ToUniversalTime()
-            }
-            $actualStart = $Process.StartTime.ToUniversalTime()
-            $allowedDifferenceSeconds = if ($Metadata.processStartedAtUtc) { 5 } else { 120 }
-            if ([math]::Abs(($actualStart - $recordedStart).TotalSeconds) -gt $allowedDifferenceSeconds) {
-                return $false
-            }
-        }
-        catch {
+    $recordedStart = ConvertTo-ServiceTimestampUtc -Value $recordedStartValue
+    try {
+        $actualStart = $Process.StartTime.ToUniversalTime()
+        $allowedDifferenceSeconds = if ($Metadata.processStartedAtUtc) { 5 } else { 120 }
+        if ([math]::Abs(($actualStart - $recordedStart).TotalSeconds) -gt $allowedDifferenceSeconds) {
             return $false
         }
     }
+    catch {
+        return $false
+    }
 
-    return -not [string]::IsNullOrWhiteSpace([string]$Metadata.scriptPath)
+    return $true
+}
+
+function Test-ServiceProcessMatchesMetadata {
+    param(
+        $Process,
+        $Metadata,
+        [string]$CommandLine
+    )
+
+    if (-not (Test-ServiceProcessMetadataAnchor -Process $Process -Metadata $Metadata)) {
+        return $false
+    }
+
+    return (Test-ProcessRunsPowerShellFile `
+        -Process $Process `
+        -ScriptPath ([string]$Metadata.scriptPath) `
+        -CommandLine $CommandLine)
 }
 
 function Read-ServiceMetadata {
@@ -384,7 +595,11 @@ function Read-ServiceMetadata {
     }
 
     try {
-        return (Get-Content -LiteralPath $PidFile -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop)
+        $metadata = Get-Content -LiteralPath $PidFile -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if (-not (Test-ServiceMetadataSchema -Metadata $metadata)) {
+            return $null
+        }
+        return $metadata
     }
     catch {
         return $null
@@ -432,26 +647,51 @@ function Get-ServiceStatus {
         [Parameter(Mandatory = $true)][string]$PidFile
     )
 
+    $metadataFileExists = Test-Path -LiteralPath $PidFile -PathType Leaf
     $metadata = Read-ServiceMetadata -PidFile $PidFile
-    $trackedPid = $null
-    if ($null -ne $metadata -and $metadata.pid) {
-        $trackedPid = [int]$metadata.pid
+    if ($metadataFileExists -and $null -eq $metadata) {
+        # PID metadata is disposable runtime state. Remove invalid content so one
+        # malformed field cannot crash every status/start/stop operation.
+        Remove-ServiceMetadata -PidFile $PidFile
     }
 
-    $trackedProcess = Get-ManagedProcess -ProcessId $trackedPid
-    if ($null -ne $trackedProcess -and -not (Test-ServiceProcessMatchesMetadata -Process $trackedProcess -Metadata $metadata)) {
-        $trackedProcess = $null
+    $metadataProcessId = if ($null -ne $metadata) {
+        ConvertTo-ServiceProcessId -Value $metadata.pid
     }
-    if ($null -eq $trackedProcess -and $trackedPid) {
+    else {
+        $null
+    }
+    $metadataProcess = Get-ManagedProcess -ProcessId $metadataProcessId
+    if ($null -ne $metadataProcess -and
+        -not (Test-ServiceProcessMetadataAnchor -Process $metadataProcess -Metadata $metadata)) {
+        $metadataProcess = $null
+    }
+    if ($null -eq $metadataProcess -and $metadataProcessId) {
         Remove-ServiceMetadata -PidFile $PidFile
         $metadata = $null
-        $trackedPid = $null
+        $metadataProcessId = $null
+    }
+
+    $trackedProcess = $null
+    $trackedPid = $null
+    if ($null -ne $metadataProcess -and
+        (Test-ServiceProcessMatchesMetadata -Process $metadataProcess -Metadata $metadata)) {
+        $trackedProcess = $metadataProcess
+        $trackedPid = $metadataProcessId
     }
 
     $portOwnerId = Get-ListeningProcessId -Port $Port
     $portOwnerProcess = Get-ManagedProcess -ProcessId $portOwnerId
 
-    $displayProcessId = if ($trackedPid) { $trackedPid } else { $portOwnerId }
+    $displayProcessId = if ($trackedPid) {
+        $trackedPid
+    }
+    elseif ($metadataProcessId) {
+        $metadataProcessId
+    }
+    else {
+        $portOwnerId
+    }
 
     return [PSCustomObject]@{
         Name             = $Name
@@ -461,6 +701,9 @@ function Get-ServiceStatus {
         Metadata         = $metadata
         TrackedProcessId = $trackedPid
         TrackedProcess   = $trackedProcess
+        MetadataProcessId = $metadataProcessId
+        MetadataProcess  = $metadataProcess
+        ProcessIdentityVerified = ($null -ne $trackedProcess)
         PortOwnerId      = $portOwnerId
         PortOwnerProcess = $portOwnerProcess
         DisplayProcessId = $displayProcessId
@@ -503,6 +746,28 @@ function Wait-ForPortState {
     }
 
     return (Get-ListeningProcessId -Port $Port)
+}
+
+function Wait-ForManagedServiceHttpIdentity {
+    param(
+        [Parameter(Mandatory = $true)][int]$Port,
+        [Parameter(Mandatory = $true)][string]$InstanceToken,
+        [int]$TimeoutSeconds = 10
+    )
+
+    $deadline = (Get-Date).AddSeconds([math]::Max(1, $TimeoutSeconds))
+    $uri = "http://localhost:{0}/" -f $Port
+    while ((Get-Date) -lt $deadline) {
+        if (Test-ManagedServiceHttpIdentity `
+            -Uri $uri `
+            -InstanceToken $InstanceToken `
+            -TimeoutMilliseconds 1000) {
+            return $true
+        }
+        Start-Sleep -Milliseconds 200
+    }
+
+    return $false
 }
 
 function Get-StartupTimeoutSeconds {
@@ -569,19 +834,16 @@ function Start-ManagedService {
 
     $status = Get-ServiceStatus -Name $Name -DisplayName $DisplayName -Port $Port -PidFile $PidFile
     if ($status.IsRunning -and -not $Force) {
-        $isManagedInstance = $status.Metadata -and $status.Metadata.scriptPath -and ([string]$status.Metadata.scriptPath -eq $ServerScript) -and $status.TrackedProcessId
+        $isManagedInstance = $status.Metadata -and
+            $status.Metadata.scriptPath -and
+            ([string]$status.Metadata.scriptPath -eq $ServerScript) -and
+            $status.TrackedProcessId
         if ($isManagedInstance) {
             Write-Host "$DisplayName is already running on port $Port (PID $($status.DisplayProcessId))."
             return $status
         }
 
-        if (Test-IsWindowsHost -and [int]$status.PortOwnerId -eq 4 -and -not $status.TrackedProcessId) {
-            Write-Host "$DisplayName appears to be behind HTTP.sys on port $Port. Attempting a managed restart."
-            Remove-ServiceMetadata -PidFile $PidFile
-        }
-        else {
         throw "$DisplayName could not start because port $Port is already in use by PID $($status.PortOwnerId). Stop that process or run the stop script first."
-        }
     }
 
     if ($Force) {
@@ -668,6 +930,31 @@ function Start-ManagedService {
         throw "Failed to start $DisplayName on port $Port.$detailText"
     }
 
+    if (-not (Wait-ForManagedServiceHttpIdentity `
+        -Port $Port `
+        -InstanceToken $instanceToken `
+        -TimeoutSeconds $startupTimeoutSeconds)) {
+        if ($null -ne $process) {
+            try {
+                $process.Refresh()
+                if (-not $process.HasExited) {
+                    $process.Kill()
+                }
+            }
+            catch { }
+        }
+
+        $stderrTail = Get-LogTail -Path $StdErrLog
+        $stdoutTail = Get-LogTail -Path $StdOutLog
+        $details = @(
+            "The listener did not return the expected SAPHIR instance token.",
+            "Logs: $StdOutLog and $StdErrLog"
+        )
+        if ($stderrTail) { $details += "stderr:`n$stderrTail" }
+        if ($stdoutTail) { $details += "stdout:`n$stdoutTail" }
+        throw "Failed to verify the $DisplayName instance on port $Port. `n`n$($details -join "`n`n")"
+    }
+
     $managedProcessId = if (Test-IsWindowsHost) { [int]$requestedProcessId } else { [int]$listenerPid }
     $managedProcess = Get-ManagedProcess -ProcessId $managedProcessId
     $processStartedAtUtc = if ($null -ne $managedProcess) {
@@ -711,14 +998,37 @@ function Stop-ManagedService {
 
     $status = Get-ServiceStatus -Name $Name -DisplayName $DisplayName -Port $Port -PidFile $PidFile
     $processIds = @()
-    if ($status.TrackedProcessId) {
-        $processIds += [int]$status.TrackedProcessId
+    $scriptVerifiedProcessIds = @{}
+    $tokenVerifiedProcessIds = @{}
+    $tokenVerifiedProcessStartTicks = @{}
+    $metadataScriptPath = if ($status.Metadata -and $status.Metadata.scriptPath) {
+        [string]$status.Metadata.scriptPath
     }
-    if ($status.Metadata -and $status.Metadata.requestedProcessId) {
-        $requestedProcessId = [int]$status.Metadata.requestedProcessId
+    else {
+        ""
+    }
+    $verificationScriptPath = if (-not [string]::IsNullOrWhiteSpace($ServerScript)) {
+        $ServerScript
+    }
+    else {
+        $metadataScriptPath
+    }
+
+    if ($status.TrackedProcessId) {
+        $trackedProcessId = [int]$status.TrackedProcessId
+        $processIds += $trackedProcessId
+        $scriptVerifiedProcessIds[[string]$trackedProcessId] = $metadataScriptPath
+    }
+
+    if ($status.Metadata -and $status.Metadata.requestedProcessId -and
+        -not [string]::IsNullOrWhiteSpace($verificationScriptPath)) {
+        $requestedProcessId = ConvertTo-ServiceProcessId -Value $status.Metadata.requestedProcessId
         $requestedProcess = Get-ManagedProcess -ProcessId $requestedProcessId
-        if ($processIds -notcontains $requestedProcessId -and (Test-IsManagedPowerShellProcess -Process $requestedProcess)) {
+        if ($requestedProcessId -and
+            $processIds -notcontains $requestedProcessId -and
+            (Test-ProcessRunsPowerShellFile -Process $requestedProcess -ScriptPath $verificationScriptPath)) {
             $processIds += $requestedProcessId
+            $scriptVerifiedProcessIds[[string]$requestedProcessId] = $verificationScriptPath
         }
     }
 
@@ -727,6 +1037,55 @@ function Stop-ManagedService {
             $matchingProcessId = [int]$matchingProcess.Id
             if ($matchingProcessId -gt 0 -and $processIds -notcontains $matchingProcessId) {
                 $processIds += $matchingProcessId
+                $scriptVerifiedProcessIds[[string]$matchingProcessId] = $ServerScript
+            }
+        }
+    }
+
+    $metadataProcessId = if ($status.PSObject.Properties.Name -contains "MetadataProcessId" -and $status.MetadataProcessId) {
+        [int]$status.MetadataProcessId
+    }
+    elseif ($status.TrackedProcessId) {
+        [int]$status.TrackedProcessId
+    }
+    else {
+        0
+    }
+    $instanceToken = if ($status.Metadata -and $status.Metadata.instanceToken) {
+        [string]$status.Metadata.instanceToken
+    }
+    else {
+        ""
+    }
+    $canRequestGracefulShutdown = $status.IsRunning -and
+        $metadataProcessId -gt 0 -and
+        -not [string]::IsNullOrWhiteSpace($instanceToken)
+
+    $gracefulShutdownAccepted = $false
+    if ($canRequestGracefulShutdown) {
+        $gracefulShutdownAccepted = Invoke-ManagedServiceGracefulShutdown -Port $Port -InstanceToken $instanceToken
+        if ($gracefulShutdownAccepted) {
+            # The shutdown helper first verifies the exact instance token over
+            # HTTP. That identity is a safe fallback when process command-line
+            # inspection is unavailable on a locked-down Windows machine.
+            $metadataProcess = if ($status.PSObject.Properties.Name -contains "MetadataProcess") {
+                $status.MetadataProcess
+            }
+            else {
+                $null
+            }
+            $metadataProcessStartTicks = try {
+                $metadataProcess.StartTime.ToUniversalTime().Ticks
+            }
+            catch {
+                $null
+            }
+            if ($null -ne $metadataProcessStartTicks) {
+                if ($processIds -notcontains $metadataProcessId) {
+                    $processIds += $metadataProcessId
+                }
+                $tokenVerifiedProcessIds[[string]$metadataProcessId] = $true
+                $tokenVerifiedProcessStartTicks[[string]$metadataProcessId] = [long]$metadataProcessStartTicks
             }
         }
     }
@@ -734,6 +1093,9 @@ function Stop-ManagedService {
     if ($processIds.Count -eq 0) {
         if ($status.IsRunning) {
             throw "$DisplayName was not stopped because port $Port belongs to an untracked process (PID $($status.PortOwnerId))."
+        }
+        if ($metadataProcessId -gt 0) {
+            throw "$DisplayName was not stopped because its process identity could not be verified."
         }
 
         Remove-ServiceMetadata -PidFile $PidFile
@@ -743,21 +1105,76 @@ function Stop-ManagedService {
         return $false
     }
 
+    $managedProcessIds = @($processIds | Where-Object { [int]$_ -gt 0 -and [int]$_ -ne 4 })
+    if ($gracefulShutdownAccepted) {
+        $gracefulProcessesStopped = $true
+        if ($managedProcessIds.Count -gt 0) {
+            $gracefulProcessesStopped = Wait-ForProcessesToExit -ProcessIds $managedProcessIds -TimeoutSeconds 5
+        }
+
+        $gracefulPortOwner = Wait-ForPortState -Port $Port -ShouldBeListening $false -TimeoutSeconds 5
+        $gracefulPortStopped = -not $gracefulPortOwner -or
+            (Test-IsWindowsHost -and [int]$gracefulPortOwner -eq 4)
+
+        if ($gracefulProcessesStopped -and $gracefulPortStopped) {
+            Remove-ServiceMetadata -PidFile $PidFile
+            if (-not $Quiet) {
+                Write-Host "Stopped $DisplayName."
+            }
+            return $true
+        }
+    }
+
+    $identityChanged = $false
     foreach ($processId in $processIds) {
+        $currentProcess = Get-ManagedProcess -ProcessId ([int]$processId)
+        if ($null -eq $currentProcess) {
+            continue
+        }
+
+        $processIdKey = [string][int]$processId
+        $stillAuthorized = $false
+        if ($scriptVerifiedProcessIds.ContainsKey($processIdKey)) {
+            $authorizedScriptPath = [string]$scriptVerifiedProcessIds[$processIdKey]
+            $stillAuthorized = -not [string]::IsNullOrWhiteSpace($authorizedScriptPath) -and
+                (Test-ProcessRunsPowerShellFile -Process $currentProcess -ScriptPath $authorizedScriptPath)
+        }
+        if (-not $stillAuthorized -and
+            $tokenVerifiedProcessIds.ContainsKey($processIdKey) -and
+            $status.Metadata) {
+            $currentProcessStartTicks = try {
+                $currentProcess.StartTime.ToUniversalTime().Ticks
+            }
+            catch {
+                $null
+            }
+            $stillAuthorized = $null -ne $currentProcessStartTicks -and
+                $tokenVerifiedProcessStartTicks.ContainsKey($processIdKey) -and
+                [long]$currentProcessStartTicks -eq [long]$tokenVerifiedProcessStartTicks[$processIdKey] -and
+                (Test-ServiceProcessMetadataAnchor -Process $currentProcess -Metadata $status.Metadata)
+        }
+
+        if (-not $stillAuthorized) {
+            $identityChanged = $true
+            continue
+        }
+
         try {
             Stop-Process -Id $processId -Force -ErrorAction Stop
         }
         catch { }
     }
 
-    $managedProcessIds = @($processIds | Where-Object { [int]$_ -gt 0 -and [int]$_ -ne 4 })
+    if ($identityChanged) {
+        throw "$DisplayName was not force-stopped because a process identity changed during shutdown."
+    }
+
     $managedProcessesStopped = $true
     if ($managedProcessIds.Count -gt 0) {
         $managedProcessesStopped = Wait-ForProcessesToExit -ProcessIds $managedProcessIds -TimeoutSeconds 10
     }
 
     $remainingPortOwner = Wait-ForPortState -Port $Port -ShouldBeListening $false -TimeoutSeconds 10
-    Remove-ServiceMetadata -PidFile $PidFile
 
     if (-not $managedProcessesStopped) {
         throw "Failed to stop $DisplayName cleanly. A managed backend process is still running."
@@ -767,6 +1184,7 @@ function Stop-ManagedService {
         throw "Failed to stop $DisplayName cleanly. Port $Port is still in use by PID $remainingPortOwner."
     }
 
+    Remove-ServiceMetadata -PidFile $PidFile
     if (-not $Quiet) {
         Write-Host "Stopped $DisplayName."
     }

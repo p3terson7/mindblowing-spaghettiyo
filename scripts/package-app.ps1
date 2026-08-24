@@ -1,9 +1,10 @@
-param(
+﻿param(
     [string]$OutputRoot = "",
     [string]$DataFolderPath = "",
     [string]$ReleaseId = "",
     [switch]$NoZip,
-    [switch]$AllowLocalDataPath
+    [switch]$AllowLocalDataPath,
+    [switch]$BootstrapOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +15,7 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
 
 $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 $repoRoot = (Resolve-Path (Join-Path -Path $scriptDir -ChildPath "..")).Path
+$launcherSourceRoot = Join-Path -Path $repoRoot -ChildPath "deploy/bootstrap"
 
 function Ensure-PackageDirectory {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -304,13 +306,18 @@ if (-not (Test-PackageReleaseId -Value $ReleaseId)) {
     throw "ReleaseId must be a Windows-safe name containing only letters, numbers, periods, underscores, and hyphens."
 }
 
-$resolvedDataFolderPath = Resolve-PackageDataFolderPath -Path $DataFolderPath -AllowLocal:$AllowLocalDataPath
+$resolvedDataFolderPath = if ($BootstrapOnly) {
+    ""
+}
+else {
+    Resolve-PackageDataFolderPath -Path $DataFolderPath -AllowLocal:$AllowLocalDataPath
+}
 $distributionRoot = Join-Path -Path $OutputRoot -ChildPath "SAPHIR-Distribution"
 $deploymentRoot = Join-Path -Path $distributionRoot -ChildPath "deployment"
 $releasesRoot = Join-Path -Path $deploymentRoot -ChildPath "releases"
 
-if ((Test-PackagePathContains -ParentPath $distributionRoot -ChildPath $resolvedDataFolderPath) -or
-    (Test-PackagePathContains -ParentPath $resolvedDataFolderPath -ChildPath $distributionRoot)) {
+if (-not $BootstrapOnly -and ((Test-PackagePathContains -ParentPath $distributionRoot -ChildPath $resolvedDataFolderPath) -or
+    (Test-PackagePathContains -ParentPath $resolvedDataFolderPath -ChildPath $distributionRoot))) {
     throw "The SAPHIR distribution folder and shared data folder must be separate and must not contain one another."
 }
 
@@ -329,32 +336,73 @@ try {
     # until the release ZIP has also been built and validated successfully.
     Ensure-PackageDirectory -Path $bootstrapRoot
     Ensure-PackageDirectory -Path (Join-Path -Path $bootstrapRoot -ChildPath "scripts/lib")
-    foreach ($launcherName in @("Launch SAPHIR.bat", "Launch SAPHIR.vbs", "Stop SAPHIR.bat", "Stop SAPHIR.vbs", "Install SAPHIR Shortcut.vbs", "SAPHIR.ico")) {
-        Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath $launcherName) -Destination (Join-Path -Path $bootstrapRoot -ChildPath $launcherName)
+    foreach ($launcherName in @("Launch SAPHIR.bat", "Launch SAPHIR.vbs", "SAPHIR Launcher.vbs", "Stop SAPHIR.bat", "Stop SAPHIR.vbs", "Install SAPHIR Shortcut.vbs", "SAPHIR.ico")) {
+        Copy-PackageItem -Source (Join-Path -Path $launcherSourceRoot -ChildPath $launcherName) -Destination (Join-Path -Path $bootstrapRoot -ChildPath $launcherName)
     }
     Write-PackagePlainTextGuide -Source (Join-Path -Path $repoRoot -ChildPath "docs/EMPLOYEE-QUICK-START.md") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "GUIDE-DEMARRAGE-SAPHIR.txt")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/launch-cached-app.ps1") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "scripts/launch-cached-app.ps1")
+    Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/saphir-launcher.ps1") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "scripts/saphir-launcher.ps1")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/stop-all.ps1") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "scripts/stop-all.ps1")
-    foreach ($libraryName in @("LocalAppCache.ps1", "RuntimeLayout.ps1", "ServerControl.ps1")) {
+    foreach ($libraryName in @("ApplicationLayout.ps1", "LauncherControl.ps1", "LocalAppCache.ps1", "RuntimeLayout.ps1", "ServerControl.ps1")) {
         Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath ("scripts/lib/{0}" -f $libraryName)) -Destination (Join-Path -Path $bootstrapRoot -ChildPath ("scripts/lib/{0}" -f $libraryName))
     }
     Convert-PackagePowerShellFilesToUtf8Bom -Root $bootstrapRoot
 
+    $bootstrapRelativePaths = @(
+        "scripts/lib/ApplicationLayout.ps1",
+        "scripts/lib/RuntimeLayout.ps1",
+        "scripts/lib/ServerControl.ps1",
+        "scripts/lib/LocalAppCache.ps1",
+        "scripts/lib/LauncherControl.ps1",
+        "scripts/stop-all.ps1",
+        "scripts/launch-cached-app.ps1",
+        "scripts/saphir-launcher.ps1",
+        "GUIDE-DEMARRAGE-SAPHIR.txt",
+        "SAPHIR.ico",
+        "SAPHIR Launcher.vbs",
+        "Install SAPHIR Shortcut.vbs",
+        "Stop SAPHIR.bat",
+        "Stop SAPHIR.vbs",
+        "Launch SAPHIR.bat",
+        "Launch SAPHIR.vbs"
+    )
+
+    if ($BootstrapOnly) {
+        foreach ($relativePath in $bootstrapRelativePaths) {
+            Publish-PackageFileAtomic -Source (Join-Path -Path $bootstrapRoot -ChildPath $relativePath) -Destination (Join-Path -Path $distributionRoot -ChildPath $relativePath)
+        }
+
+        Write-Host "SAPHIR launcher bootstrap published successfully."
+        Write-Host "No application ZIP, current.json pointer, or DATA file was changed."
+        Write-Host "Next step: run 'Install SAPHIR Shortcut.vbs' from SAPHIR-Distribution on each existing workstation, then close and reopen the launcher."
+
+        [PSCustomObject]@{
+            DistributionFolder = $distributionRoot
+            BootstrapOnly      = $true
+            ReleaseId          = ""
+            ReleasePackage     = ""
+            ReleaseSha256      = ""
+            DistributionZip    = ""
+            DataFolder         = ""
+        }
+        return
+    }
+
     Ensure-PackageDirectory -Path $runtimeRoot
-    Ensure-PackageDirectory -Path (Join-Path -Path $runtimeRoot -ChildPath "apps")
     Ensure-PackageDirectory -Path (Join-Path -Path $runtimeRoot -ChildPath "docs")
     Ensure-PackageDirectory -Path (Join-Path -Path $runtimeRoot -ChildPath "scripts/lib")
 
-    Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "apps/admin") -Destination (Join-Path -Path $runtimeRoot -ChildPath "apps/admin") -Recurse
+    Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "app") -Destination (Join-Path -Path $runtimeRoot -ChildPath "app") -Recurse
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "docs/GC179.pdf") -Destination (Join-Path -Path $runtimeRoot -ChildPath "docs/GC179.pdf")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/launch-app.ps1") -Destination (Join-Path -Path $runtimeRoot -ChildPath "scripts/launch-app.ps1")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/lib/RuntimeLayout.ps1") -Destination (Join-Path -Path $runtimeRoot -ChildPath "scripts/lib/RuntimeLayout.ps1")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/lib/ServerControl.ps1") -Destination (Join-Path -Path $runtimeRoot -ChildPath "scripts/lib/ServerControl.ps1")
+    Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/lib/ApplicationLayout.ps1") -Destination (Join-Path -Path $runtimeRoot -ChildPath "scripts/lib/ApplicationLayout.ps1")
 
     Get-ChildItem -LiteralPath $runtimeRoot -Recurse -Force -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -eq ".DS_Store" } |
         Remove-Item -Force -ErrorAction SilentlyContinue
-    $backendReadme = Join-Path -Path $runtimeRoot -ChildPath "apps/admin/backend/README.md"
+    $backendReadme = Join-Path -Path $runtimeRoot -ChildPath "app/backend/README.md"
     if (Test-Path -LiteralPath $backendReadme) {
         Remove-Item -LiteralPath $backendReadme -Force
     }
@@ -368,15 +416,31 @@ try {
     EnableGc179Import = `$true
 }
 "@
-    Set-Content -LiteralPath (Join-Path -Path $runtimeRoot -ChildPath "apps/admin/backend/admin-config.psd1") -Value $runtimeConfig -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path -Path $runtimeRoot -ChildPath "app/backend/saphir-config.psd1") -Value $runtimeConfig -Encoding UTF8
     Convert-PackagePowerShellFilesToUtf8Bom -Root $runtimeRoot
 
     foreach ($requiredRuntimeFile in @(
-        "apps/admin/backend/admin-server.ps1",
-        "apps/admin/backend/services/RouteDispatchService.ps1",
-        "apps/admin/frontend/index.html",
+        "app/backend/saphir-server.ps1",
+        "app/backend/lib/AppContext.ps1",
+        "app/backend/lib/ControlService.ps1",
+        "app/backend/services/DataSchemaService.ps1",
+        "app/backend/services/RouteDispatchService.ps1",
+        "app/backend/modules/Saphir.EntryIdentity.psd1",
+        "app/backend/modules/Saphir.EntryIdentity.psm1",
+        "app/backend/modules/Saphir.EntryState.psd1",
+        "app/backend/modules/Saphir.EntryState.psm1",
+        "app/backend/modules/Saphir.EntryDuration.psd1",
+        "app/backend/modules/Saphir.EntryDuration.psm1",
+        "app/backend/modules/Saphir.Gc179Profile.psd1",
+        "app/backend/modules/Saphir.Gc179Profile.psm1",
+        "app/backend/modules/Saphir.ProjectCatalog.psd1",
+        "app/backend/modules/Saphir.ProjectCatalog.psm1",
+        "app/backend/modules/Saphir.UserAccessProfile.psd1",
+        "app/backend/modules/Saphir.UserAccessProfile.psm1",
+        "app/frontend/index.html",
         "docs/GC179.pdf",
         "scripts/launch-app.ps1",
+        "scripts/lib/ApplicationLayout.ps1",
         "scripts/lib/RuntimeLayout.ps1",
         "scripts/lib/ServerControl.ps1"
     )) {
@@ -419,20 +483,6 @@ try {
     # Publish complete bootstrap files through same-directory temporary names.
     # Libraries go first and launchers last so a concurrent employee launch sees
     # either the old complete bootstrap or the new complete file contents.
-    $bootstrapRelativePaths = @(
-        "scripts/lib/RuntimeLayout.ps1",
-        "scripts/lib/ServerControl.ps1",
-        "scripts/lib/LocalAppCache.ps1",
-        "scripts/stop-all.ps1",
-        "scripts/launch-cached-app.ps1",
-        "GUIDE-DEMARRAGE-SAPHIR.txt",
-        "SAPHIR.ico",
-        "Install SAPHIR Shortcut.vbs",
-        "Stop SAPHIR.bat",
-        "Stop SAPHIR.vbs",
-        "Launch SAPHIR.bat",
-        "Launch SAPHIR.vbs"
-    )
     foreach ($relativePath in $bootstrapRelativePaths) {
         Publish-PackageFileAtomic -Source (Join-Path -Path $bootstrapRoot -ChildPath $relativePath) -Destination (Join-Path -Path $distributionRoot -ChildPath $relativePath)
     }
