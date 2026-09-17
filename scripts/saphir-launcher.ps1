@@ -76,6 +76,9 @@ try {
             Start             = "_Démarrer SAPHIR"
             Open              = "_Ouvrir SAPHIR"
             Restart           = "_Redémarrer"
+            UpdateAndStart    = "_Mettre à jour et démarrer"
+            UpdateAndRestart  = "_Mettre à jour et redémarrer"
+            Repair            = "_Réparer SAPHIR"
             Stop              = "A_rrêter"
             Refresh           = "A_ctualiser"
             Logs              = "Ouvrir les _journaux"
@@ -96,10 +99,12 @@ try {
             CurrentRelease    = "À jour"
             UpdateAvailable   = "mise à jour"
             PreviousFailure   = "échec précédent"
-            UpdateOnStart     = "La version {0} est disponible. Démarrez SAPHIR pour l’installer."
-            UpdateOnRestart   = "La version {0} est disponible. Redémarrez SAPHIR pour l’installer."
+            UpdateOnStart     = "La version {0} est disponible. Cliquez sur Mettre à jour et démarrer."
+            UpdateOnRestart   = "La version {0} est disponible. Cliquez sur Mettre à jour et redémarrer."
             Starting          = "Démarrage de SAPHIR…"
             Restarting        = "Redémarrage de SAPHIR…"
+            Updating          = "Installation de la mise à jour…"
+            Repairing         = "Vérification et réparation de SAPHIR…"
             Stopping          = "Arrêt de SAPHIR…"
             StatusError       = "Impossible de vérifier l’état de SAPHIR."
             ActionError       = "L’opération n’a pas pu être terminée."
@@ -117,7 +122,7 @@ try {
             DataPathInvalid   = "Le chemin DATA de la version {0} est invalide. Republiez avec le bon DataFolderPath."
             PackageUnavailable = "current.json annonce la version {0}, mais son ZIP est introuvable : {1}. Republiez cette version ou restaurez le ZIP correspondant."
             TargetDataUnavailable = "La version {0} pointe vers un dossier DATA inaccessible : {1}. Rétablissez l’accès réseau ou republiez avec le bon chemin."
-            TargetPreviouslyFailed = "La version {0} est publiée, mais ce même paquet a déjà échoué sur ce poste. Relancez Install SAPHIR Shortcut.vbs depuis la distribution pour débloquer une version rejetée par l’ancien lanceur. Si l’échec persiste, consultez bootstrap.log et publiez une version corrigée."
+            TargetPreviouslyFailed = "La version {0} a échoué lors d’une tentative précédente. Cliquez sur Réparer SAPHIR pour la retélécharger et la vérifier automatiquement."
         }
     }
     else {
@@ -133,6 +138,9 @@ try {
             Start             = "_Start SAPHIR"
             Open              = "_Open SAPHIR"
             Restart           = "_Restart"
+            UpdateAndStart    = "_Update and start"
+            UpdateAndRestart  = "_Update and restart"
+            Repair            = "_Repair SAPHIR"
             Stop              = "S_top"
             Refresh           = "_Refresh"
             Logs              = "Open _logs"
@@ -153,10 +161,12 @@ try {
             CurrentRelease    = "Up to date"
             UpdateAvailable   = "update available"
             PreviousFailure   = "previous failure"
-            UpdateOnStart     = "Release {0} is available. Start SAPHIR to install it."
-            UpdateOnRestart   = "Release {0} is available. Restart SAPHIR to install it."
+            UpdateOnStart     = "Release {0} is available. Select Update and start."
+            UpdateOnRestart   = "Release {0} is available. Select Update and restart."
             Starting          = "Starting SAPHIR…"
             Restarting        = "Restarting SAPHIR…"
+            Updating          = "Installing the update…"
+            Repairing         = "Checking and repairing SAPHIR…"
             Stopping          = "Stopping SAPHIR…"
             StatusError       = "SAPHIR's status could not be checked."
             ActionError       = "The operation could not be completed."
@@ -174,7 +184,7 @@ try {
             DataPathInvalid   = "The DATA path for release {0} is invalid. Republish with the correct DataFolderPath."
             PackageUnavailable = "current.json announces release {0}, but its ZIP is missing: {1}. Republish this release or restore the matching ZIP."
             TargetDataUnavailable = "Release {0} points to an unavailable DATA folder: {1}. Restore network access or republish with the correct path."
-            TargetPreviouslyFailed = "Release {0} is published, but the same package previously failed on this computer. Run Install SAPHIR Shortcut.vbs again from the distribution to unlock a release rejected by the former launcher. If it still fails, review bootstrap.log and publish a corrected release."
+            TargetPreviouslyFailed = "Release {0} failed during an earlier attempt. Click Repair SAPHIR to download and verify it again automatically."
         }
     }
 
@@ -389,7 +399,8 @@ try {
             </Grid.RowDefinitions>
             <StackPanel Grid.Row="0" Orientation="Horizontal">
                 <Button x:Name="StartButton" Style="{StaticResource PrimaryButtonStyle}"/>
-                <Button x:Name="OpenButton" Style="{StaticResource PrimaryButtonStyle}" IsDefault="True"/>
+                <Button x:Name="UpdateButton" Style="{StaticResource PrimaryButtonStyle}"/>
+                <Button x:Name="OpenButton" Style="{StaticResource SecondaryButtonStyle}" IsDefault="True"/>
                 <Button x:Name="RestartButton" Style="{StaticResource SecondaryButtonStyle}"/>
                 <Button x:Name="StopButton" Style="{StaticResource DangerButtonStyle}" Margin="0"/>
             </StackPanel>
@@ -397,9 +408,11 @@ try {
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Button x:Name="LogsButton" Style="{StaticResource SecondaryButtonStyle}"/>
-                <Button Grid.Column="1" x:Name="RefreshButton" Style="{StaticResource SecondaryButtonStyle}" Margin="0"/>
+                <Button Grid.Column="1" x:Name="RepairButton" Style="{StaticResource SecondaryButtonStyle}"/>
+                <Button Grid.Column="2" x:Name="RefreshButton" Style="{StaticResource SecondaryButtonStyle}" Margin="0"/>
             </Grid>
         </Grid>
     </Grid>
@@ -417,7 +430,7 @@ try {
         "DistributionValue", "DistributionPathText", "ReleaseLabel", "ReleaseValue",
         "TargetReleaseLabel", "TargetReleaseValue",
         "BusyProgress", "BusyText", "ErrorBanner", "ErrorText", "StartButton",
-        "OpenButton", "RestartButton", "StopButton", "LogsButton", "RefreshButton"
+        "UpdateButton", "OpenButton", "RestartButton", "StopButton", "LogsButton", "RepairButton", "RefreshButton"
     )
     foreach ($name in $names) {
         Set-Variable -Name $name -Value $window.FindName($name) -Scope Script
@@ -431,10 +444,12 @@ try {
     $script:ReleaseLabel.Text = $text.ReleaseLabel
     $script:TargetReleaseLabel.Text = $text.TargetReleaseLabel
     $script:StartButton.Content = $text.Start
+    $script:UpdateButton.Content = $text.UpdateAndRestart
     $script:OpenButton.Content = $text.Open
     $script:RestartButton.Content = $text.Restart
     $script:StopButton.Content = $text.Stop
     $script:LogsButton.Content = $text.Logs
+    $script:RepairButton.Content = $text.Repair
     $script:RefreshButton.Content = $text.Refresh
 
     $iconCandidates = @(
@@ -574,9 +589,11 @@ try {
         $script:BusyText.Text = $Message
         foreach ($button in @(
             $script:StartButton,
+            $script:UpdateButton,
             $script:OpenButton,
             $script:RestartButton,
             $script:StopButton,
+            $script:RepairButton,
             $script:RefreshButton
         )) {
             $button.IsEnabled = -not $Busy
@@ -586,6 +603,8 @@ try {
             $script:OpenButton.IsEnabled = [bool]$script:lastStatus.CanOpen
             $script:RestartButton.IsEnabled = [bool]$script:lastStatus.CanRestart
             $script:StopButton.IsEnabled = [bool]$script:lastStatus.CanStop
+            $script:UpdateButton.IsEnabled = [bool]$script:lastStatus.CanUpdate
+            $script:RepairButton.IsEnabled = [bool]$script:lastStatus.CanRepair
         }
     }
 
@@ -603,7 +622,7 @@ try {
         $script:DistributionPathText.Text = ""
         $script:ReleaseValue.Text = "—"
         $script:TargetReleaseValue.Text = "—"
-        foreach ($button in @($script:StartButton, $script:OpenButton, $script:RestartButton, $script:StopButton)) {
+        foreach ($button in @($script:StartButton, $script:UpdateButton, $script:OpenButton, $script:RestartButton, $script:StopButton, $script:RepairButton)) {
             Set-Visible -Element $button -Visible $false
         }
     }
@@ -752,16 +771,22 @@ try {
             Hide-Error
         }
 
-        Set-Visible -Element $script:StartButton -Visible ($state -eq "Offline")
+        $showUpdate = [bool]$Status.CanUpdate
+        $script:UpdateButton.Content = if ($state -eq "Offline") { $text.UpdateAndStart } else { $text.UpdateAndRestart }
+        Set-Visible -Element $script:StartButton -Visible ($state -eq "Offline" -and -not $showUpdate)
+        Set-Visible -Element $script:UpdateButton -Visible $showUpdate
         Set-Visible -Element $script:OpenButton -Visible ($state -eq "Online")
-        Set-Visible -Element $script:RestartButton -Visible ($state -eq "Online" -or $state -eq "Unresponsive")
+        Set-Visible -Element $script:RestartButton -Visible (($state -eq "Online" -or $state -eq "Unresponsive") -and -not $showUpdate)
         Set-Visible -Element $script:StopButton -Visible ($state -eq "Online" -or $state -eq "Unresponsive")
+        Set-Visible -Element $script:RepairButton -Visible ([bool]$Status.CanRepair)
 
         if (-not $script:actionBusy) {
             $script:StartButton.IsEnabled = [bool]$Status.CanStart
             $script:OpenButton.IsEnabled = [bool]$Status.CanOpen
             $script:RestartButton.IsEnabled = [bool]$Status.CanRestart
             $script:StopButton.IsEnabled = [bool]$Status.CanStop
+            $script:UpdateButton.IsEnabled = [bool]$Status.CanUpdate
+            $script:RepairButton.IsEnabled = [bool]$Status.CanRepair
             $script:RefreshButton.IsEnabled = $true
         }
     }
@@ -813,7 +838,7 @@ Invoke-SaphirLauncherAction -Action $Action -DistributionRoot $DistributionRoot
     }
 
     function Start-LauncherAction {
-        param([Parameter(Mandatory = $true)][ValidateSet("Start", "Restart", "Stop")][string]$Action)
+        param([Parameter(Mandatory = $true)][ValidateSet("Start", "Restart", "Stop", "Update", "Repair")][string]$Action)
 
         if ($script:closing -or $null -ne $script:actionWorker) {
             return
@@ -823,6 +848,8 @@ Invoke-SaphirLauncherAction -Action $Action -DistributionRoot $DistributionRoot
         $busyMessage = switch ($Action) {
             "Start" { $text.Starting }
             "Restart" { $text.Restarting }
+            "Update" { $text.Updating }
+            "Repair" { $text.Repairing }
             default { $text.Stopping }
         }
         Set-BusyState -Busy $true -Message $busyMessage
@@ -923,12 +950,14 @@ Invoke-SaphirLauncherAction -Action $Action -DistributionRoot $DistributionRoot
     $refreshTimer.Start()
 
     $script:StartButton.Add_Click({ Start-LauncherAction -Action "Start" })
+    $script:UpdateButton.Add_Click({ Start-LauncherAction -Action "Update" })
     $script:RestartButton.Add_Click({ Start-LauncherAction -Action "Restart" })
     $script:StopButton.Add_Click({ Start-LauncherAction -Action "Stop" })
     $script:RefreshButton.Add_Click({
         Hide-Error
         Start-StatusRefresh -ShowProgress
     })
+    $script:RepairButton.Add_Click({ Start-LauncherAction -Action "Repair" })
     $script:OpenButton.Add_Click({
         if ($script:actionBusy -or $null -eq $script:lastStatus -or -not [bool]$script:lastStatus.CanOpen) {
             return

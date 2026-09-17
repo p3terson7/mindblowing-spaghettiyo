@@ -17,11 +17,11 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20260824-review-attention-tab-v1",
-  dashboard: "scripts/Views/DashboardView.js?v=20260824-review-attention-tab-v1",
-  approvals: "scripts/Views/ApprovalsView.js?v=20260824-review-attention-tab-v1",
-  history: "scripts/Views/HistoryView.js?v=20260824-review-attention-tab-v1",
-  projects: "scripts/Views/ProjectsView.js?v=20260824-review-attention-tab-v1",
+  employees: "scripts/Views/EmployeesView.js?v=20260917-phase7-validation-v1",
+  dashboard: "scripts/Views/DashboardView.js?v=20260917-phase7-validation-v1",
+  approvals: "scripts/Views/ApprovalsView.js?v=20260917-phase7-validation-v1",
+  history: "scripts/Views/HistoryView.js?v=20260917-phase7-validation-v1",
+  projects: "scripts/Views/ProjectsView.js?v=20260917-phase7-validation-v1",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
@@ -161,6 +161,8 @@ const appShellState = {
   viewState: {},
   storedSession: null,
   storedSessionLoaded: false,
+  budgetPeriodConfiguration: null,
+  compensationBands: [],
 };
 
 function loadScriptOnce(source) {
@@ -698,6 +700,492 @@ async function loadSettingsHealth(triggerButton) {
     : loadHealth();
 }
 
+const BUDGET_PERIOD_ENDPOINT = "budget-periods";
+const BUDGET_PERIOD_IDS = Object.freeze(["P1", "P2", "P3", "P4"]);
+
+function setBudgetPeriodSettingsMessage(message, type) {
+  const messageBox = document.getElementById("budgetPeriodSettingsMessage");
+  if (!messageBox) {
+    return;
+  }
+
+  if (!message) {
+    messageBox.className = "alert d-none";
+    messageBox.textContent = "";
+    return;
+  }
+
+  messageBox.className = `alert alert-${type || "danger"}`;
+  messageBox.textContent = message;
+}
+
+function normalizeBudgetPeriodConfiguration(payload) {
+  const sourcePeriods = payload && Array.isArray(payload.periods) ? payload.periods : [];
+  const periodsById = new Map(sourcePeriods.map(period => [String(period && period.id || "").trim().toUpperCase(), period]));
+  return {
+    schemaVersion: 1,
+    cycleLabel: String(payload && payload.cycleLabel || "").trim().slice(0, 80),
+    periods: BUDGET_PERIOD_IDS.map(id => {
+      const source = periodsById.get(id) || {};
+      return {
+        id,
+        startDate: normalizeCompensationGridDate(source.startDate),
+        endDate: normalizeCompensationGridDate(source.endDate),
+      };
+    }),
+  };
+}
+
+function renderBudgetPeriodSettings(configuration) {
+  const normalized = normalizeBudgetPeriodConfiguration(configuration);
+  appShellState.budgetPeriodConfiguration = normalized;
+  const cycleLabelInput = document.getElementById("budgetPeriodCycleLabelInput");
+  const rows = document.getElementById("budgetPeriodSettingsRows");
+  if (cycleLabelInput) {
+    cycleLabelInput.value = normalized.cycleLabel;
+  }
+  if (!rows) {
+    return;
+  }
+
+  rows.innerHTML = normalized.periods.map(period => `
+    <tr data-budget-period-id="${period.id}">
+      <th scope="row"><span class="budget-period-id">${period.id}</span></th>
+      <td><input type="date" class="form-control form-control-sm budget-period-start-input" value="${escapeHtml(period.startDate)}" aria-label="${escapeHtml(t("settings.budgetStartDateFor", { period: period.id }))}"></td>
+      <td><input type="date" class="form-control form-control-sm budget-period-end-input" value="${escapeHtml(period.endDate)}" aria-label="${escapeHtml(t("settings.budgetEndDateFor", { period: period.id }))}"></td>
+    </tr>
+  `).join("");
+}
+
+function renderBudgetPeriodSettingsLoading() {
+  const rows = document.getElementById("budgetPeriodSettingsRows");
+  if (rows) {
+    rows.innerHTML = `<tr><td colspan="3" class="budget-period-empty">${escapeHtml(t("settings.budgetLoading"))}</td></tr>`;
+  }
+}
+
+function getBudgetPeriodConfigurationFromForm() {
+  const rows = document.getElementById("budgetPeriodSettingsRows");
+  const cycleLabelInput = document.getElementById("budgetPeriodCycleLabelInput");
+  return {
+    schemaVersion: 1,
+    cycleLabel: String(cycleLabelInput && cycleLabelInput.value || "").trim().slice(0, 80),
+    periods: BUDGET_PERIOD_IDS.map(id => {
+      const row = rows && rows.querySelector(`[data-budget-period-id="${id}"]`);
+      return {
+        id,
+        startDate: normalizeCompensationGridDate(row && row.querySelector(".budget-period-start-input")?.value),
+        endDate: normalizeCompensationGridDate(row && row.querySelector(".budget-period-end-input")?.value),
+      };
+    }),
+  };
+}
+
+function getBudgetPeriodValidationError(configuration) {
+  const periods = configuration && Array.isArray(configuration.periods) ? configuration.periods : [];
+  let previousConfiguredPeriod = null;
+  for (const period of periods) {
+    const hasStart = Boolean(period.startDate);
+    const hasEnd = Boolean(period.endDate);
+    if (hasStart !== hasEnd) {
+      return t("settings.budgetBothDatesRequired", { period: period.id });
+    }
+    if (!hasStart) {
+      continue;
+    }
+    if (period.endDate < period.startDate) {
+      return t("settings.budgetInvalidDateRange", { period: period.id });
+    }
+    if (previousConfiguredPeriod && period.startDate <= previousConfiguredPeriod.endDate) {
+      return t("settings.budgetPeriodsOverlap", { period: period.id, previous: previousConfiguredPeriod.id });
+    }
+    previousConfiguredPeriod = period;
+  }
+  return "";
+}
+
+async function loadBudgetPeriods() {
+  if (!getSessionToken() || !isSuperAdminUser()) {
+    return;
+  }
+
+  setBudgetPeriodSettingsMessage("");
+  renderBudgetPeriodSettingsLoading();
+  try {
+    const response = await fetch(apiUrl + BUDGET_PERIOD_ENDPOINT, { cache: "no-store" });
+    const payload = await parseResponse(response);
+    renderBudgetPeriodSettings(payload);
+  } catch (error) {
+    renderBudgetPeriodSettings({ periods: [] });
+    setBudgetPeriodSettingsMessage(error.message || t("settings.budgetLoadError"), "warning");
+  }
+}
+
+async function saveBudgetPeriods(triggerButton) {
+  if (!isSuperAdminUser()) {
+    return;
+  }
+
+  const configuration = getBudgetPeriodConfigurationFromForm();
+  const validationError = getBudgetPeriodValidationError(configuration);
+  if (validationError) {
+    setBudgetPeriodSettingsMessage(validationError, "danger");
+    return;
+  }
+
+  setBudgetPeriodSettingsMessage("");
+  const saveButton = triggerButton || document.getElementById("budgetPeriodSaveButton");
+  const savePeriods = async () => {
+    try {
+      const response = await fetch(apiUrl + BUDGET_PERIOD_ENDPOINT, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(configuration),
+      });
+      const payload = await parseResponse(response);
+      renderBudgetPeriodSettings(payload);
+      showToast(t("settings.budgetSaveSuccess"), "success");
+    } catch (error) {
+      setBudgetPeriodSettingsMessage(error.message || t("settings.budgetSaveError"), "danger");
+    }
+  };
+
+  return runButtonAction(saveButton, savePeriods, {
+    key: "budget-period-save",
+    disableWhileRunning: () => document.querySelectorAll("#budgetPeriodSettingsSection input, #budgetPeriodSettingsSection button"),
+  });
+}
+
+const COMPENSATION_GRID_ENDPOINT = "compensation-grid";
+
+function getCompensationGridSettingsRowsElement() {
+  return document.getElementById("compensationGridSettingsRows");
+}
+
+function setCompensationGridSettingsMessage(message, type) {
+  const messageBox = document.getElementById("compensationGridSettingsMessage");
+  if (!messageBox) {
+    return;
+  }
+
+  if (!message) {
+    messageBox.className = "alert d-none";
+    messageBox.textContent = "";
+    return;
+  }
+
+  messageBox.className = `alert alert-${type || "danger"}`;
+  messageBox.textContent = message;
+}
+
+function normalizeCompensationGridCode(value, maximumLength) {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .slice(0, maximumLength);
+
+  return /^[0-9A-Z._/-]*$/.test(normalized) ? normalized : "";
+}
+
+function normalizeCompensationGroupCode(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function normalizeCompensationTwoDigitCode(value) {
+  const text = String(value || "").trim();
+  return /^[0-9]{1,2}$/.test(text) ? text.padStart(2, "0") : text;
+}
+
+function normalizeCompensationGridDate(value) {
+  const text = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return "";
+  }
+
+  const [year, month, day] = text.split("-").map(Number);
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  return candidate.getUTCFullYear() === year
+    && candidate.getUTCMonth() === month - 1
+    && candidate.getUTCDate() === day
+    ? text
+    : "";
+}
+
+function parseCompensationAnnualSalaryCents(value) {
+  let text = String(value == null ? "" : value)
+    .trim()
+    .replace(/\bCAD\b/gi, "")
+    .replace(/[\s\u00a0$]/g, "");
+  if (!text || !/^[0-9.,]+$/.test(text)) {
+    return null;
+  }
+
+  const lastComma = text.lastIndexOf(",");
+  const lastPeriod = text.lastIndexOf(".");
+  const lastSeparator = Math.max(lastComma, lastPeriod);
+  let normalized = text;
+  if (lastComma >= 0 && lastPeriod >= 0) {
+    const decimalSeparator = lastComma > lastPeriod ? "," : ".";
+    const thousandsSeparator = decimalSeparator === "," ? "." : ",";
+    normalized = text.replace(new RegExp(`\\${thousandsSeparator}`, "g"), "").replace(decimalSeparator, ".");
+  } else if (lastSeparator >= 0) {
+    const decimalDigits = text.length - lastSeparator - 1;
+    if (decimalDigits > 0 && decimalDigits <= 2) {
+      normalized = text.replace(text.charAt(lastSeparator), ".");
+    } else {
+      normalized = text.replace(/[.,]/g, "");
+    }
+  }
+
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) {
+    return null;
+  }
+
+  const dollars = Number(normalized);
+  const cents = Math.round(dollars * 100);
+  return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
+}
+
+function formatCompensationAnnualSalaryCents(value) {
+  const cents = Number(value);
+  if (!Number.isSafeInteger(cents) || cents <= 0) {
+    return "";
+  }
+
+  const locale = typeof getI18nLocale === "function" ? getI18nLocale() : "en-CA";
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
+function createCompensationBandId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+
+  return `band-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function createEmptyCompensationBand() {
+  return {
+    id: createCompensationBandId(),
+    group: "",
+    subGroup: "",
+    level: "",
+    annualSalaryCents: "",
+    effectiveFrom: "",
+    effectiveTo: "",
+  };
+}
+
+function normalizeCompensationBandForDisplay(band) {
+  const source = band && typeof band === "object" ? band : {};
+  const cents = Number(source.annualSalaryCents);
+  const annualSalaryCents = Number.isSafeInteger(cents) && cents > 0
+    ? cents
+    : parseCompensationAnnualSalaryCents(source.annualSalary);
+  return {
+    id: String(source.id || "").trim() || createCompensationBandId(),
+    group: normalizeCompensationGroupCode(source.group),
+    subGroup: normalizeCompensationTwoDigitCode(source.subGroup),
+    level: normalizeCompensationTwoDigitCode(source.level),
+    annualSalaryCents: annualSalaryCents || "",
+    effectiveFrom: normalizeCompensationGridDate(source.effectiveFrom),
+    effectiveTo: normalizeCompensationGridDate(source.effectiveTo),
+  };
+}
+
+function getCompensationGridPayloadBands(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  if (payload && Array.isArray(payload.bands)) {
+    return payload.bands;
+  }
+  return [];
+}
+
+function renderCompensationGridSettingsRows(bands) {
+  const rowsElement = getCompensationGridSettingsRowsElement();
+  if (!rowsElement) {
+    return;
+  }
+
+  const normalizedBands = Array.isArray(bands) ? bands.map(normalizeCompensationBandForDisplay) : [];
+  appShellState.compensationBands = normalizedBands;
+  if (normalizedBands.length === 0) {
+    rowsElement.innerHTML = `<tr class="compensation-grid-empty"><td colspan="7">${escapeHtml(t("settings.compensationEmpty"))}</td></tr>`;
+    return;
+  }
+
+  rowsElement.innerHTML = normalizedBands.map(band => `
+    <tr data-compensation-band-id="${escapeHtml(band.id)}">
+      <td><input type="text" class="form-control form-control-sm compensation-grid-group-input" value="${escapeHtml(band.group)}" maxlength="6" pattern="[A-Za-z]+" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="${escapeHtml(t("settings.compensationGroup"))}"></td>
+      <td><input type="text" class="form-control form-control-sm compensation-grid-sub-group-input" value="${escapeHtml(band.subGroup)}" maxlength="2" pattern="[0-9]{2}" inputmode="numeric" autocomplete="off" spellcheck="false" aria-label="${escapeHtml(t("settings.compensationSubGroup"))}"></td>
+      <td><input type="text" class="form-control form-control-sm compensation-grid-level-input" value="${escapeHtml(band.level)}" maxlength="2" pattern="[0-9]{2}" inputmode="numeric" autocomplete="off" spellcheck="false" aria-label="${escapeHtml(t("settings.compensationLevel"))}"></td>
+      <td><input type="text" class="form-control form-control-sm compensation-grid-salary-input" value="${escapeHtml(formatCompensationAnnualSalaryCents(band.annualSalaryCents))}" inputmode="decimal" autocomplete="off" aria-label="${escapeHtml(t("settings.compensationAnnualSalary"))}"></td>
+      <td><input type="date" class="form-control form-control-sm compensation-grid-date-input compensation-grid-effective-from-input" value="${escapeHtml(band.effectiveFrom)}" aria-label="${escapeHtml(t("settings.compensationEffectiveFrom"))}"></td>
+      <td><input type="date" class="form-control form-control-sm compensation-grid-date-input compensation-grid-effective-to-input" value="${escapeHtml(band.effectiveTo)}" aria-label="${escapeHtml(t("settings.compensationEffectiveTo"))}"></td>
+      <td><button type="button" class="btn btn-outline-danger btn-sm compensation-grid-remove-button" data-compensation-remove-band="${escapeHtml(band.id)}" aria-label="${escapeHtml(t("action.remove"))}" title="${escapeHtml(t("action.remove"))}"><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button></td>
+    </tr>
+  `).join("");
+
+  rowsElement.querySelectorAll("[data-compensation-remove-band]").forEach(button => {
+    button.addEventListener("click", () => {
+      const id = String(button.getAttribute("data-compensation-remove-band") || "");
+      const formBands = getCompensationGridBandsFromForm();
+      const currentBands = formBands.length > 0 ? formBands : appShellState.compensationBands;
+      renderCompensationGridSettingsRows(currentBands.filter(band => band.id !== id));
+    });
+  });
+
+  rowsElement.querySelectorAll(".compensation-grid-group-input").forEach(input => {
+    input.addEventListener("input", () => {
+      input.value = normalizeCompensationGroupCode(input.value);
+    });
+  });
+  rowsElement.querySelectorAll(".compensation-grid-sub-group-input, .compensation-grid-level-input").forEach(input => {
+    input.addEventListener("blur", () => {
+      input.value = normalizeCompensationTwoDigitCode(input.value);
+    });
+  });
+}
+
+function renderCompensationGridLoading() {
+  const rowsElement = getCompensationGridSettingsRowsElement();
+  if (rowsElement) {
+    rowsElement.innerHTML = `<tr class="compensation-grid-empty"><td colspan="7">${escapeHtml(t("settings.compensationLoading"))}</td></tr>`;
+  }
+}
+
+function getCompensationGridBandsFromForm() {
+  const rowsElement = getCompensationGridSettingsRowsElement();
+  if (!rowsElement) {
+    return [];
+  }
+
+  return Array.from(rowsElement.querySelectorAll("tr[data-compensation-band-id]")).map(row => ({
+    id: String(row.getAttribute("data-compensation-band-id") || "").trim(),
+    group: normalizeCompensationGroupCode(row.querySelector(".compensation-grid-group-input").value),
+    subGroup: normalizeCompensationTwoDigitCode(row.querySelector(".compensation-grid-sub-group-input").value),
+    level: normalizeCompensationTwoDigitCode(row.querySelector(".compensation-grid-level-input").value),
+    annualSalaryCents: parseCompensationAnnualSalaryCents(row.querySelector(".compensation-grid-salary-input").value),
+    effectiveFrom: normalizeCompensationGridDate(row.querySelector(".compensation-grid-effective-from-input").value),
+    effectiveTo: normalizeCompensationGridDate(row.querySelector(".compensation-grid-effective-to-input").value),
+  }));
+}
+
+function getCompensationGridValidationError(bands) {
+  if (!Array.isArray(bands) || bands.length === 0) {
+    return t("settings.compensationRequiredFields");
+  }
+
+  const bandsByClassification = new Map();
+  for (const band of bands) {
+    if (!band.id || !band.group || !band.subGroup || !band.level || !band.effectiveFrom) {
+      return t("settings.compensationRequiredFields");
+    }
+    if (!/^[A-Z]{1,6}$/.test(band.group) || !/^[0-9]{2}$/.test(band.subGroup) || !/^[0-9]{2}$/.test(band.level)) {
+      return t("settings.compensationInvalidClassification");
+    }
+    if (!Number.isSafeInteger(band.annualSalaryCents) || band.annualSalaryCents <= 0) {
+      return t("settings.compensationInvalidSalary");
+    }
+    if (!normalizeCompensationGridDate(band.effectiveFrom)
+      || (band.effectiveTo && !normalizeCompensationGridDate(band.effectiveTo))) {
+      return t("settings.compensationInvalidDate");
+    }
+    if (band.effectiveTo && band.effectiveTo < band.effectiveFrom) {
+      return t("settings.compensationInvalidDateRange");
+    }
+
+    const classification = [band.group, band.subGroup, band.level].join("|");
+    const existingBands = bandsByClassification.get(classification) || [];
+    const effectiveTo = band.effectiveTo || "9999-12-31";
+    for (const existingBand of existingBands) {
+      const existingEffectiveTo = existingBand.effectiveTo || "9999-12-31";
+      if (band.effectiveFrom <= existingEffectiveTo && existingBand.effectiveFrom <= effectiveTo) {
+        return band.effectiveFrom === existingBand.effectiveFrom
+          ? t("settings.compensationDuplicateBand")
+          : t("settings.compensationOverlappingBand");
+      }
+    }
+    existingBands.push(band);
+    bandsByClassification.set(classification, existingBands);
+  }
+
+  return "";
+}
+
+function addCompensationGridBand() {
+  const currentBands = getCompensationGridBandsFromForm();
+  const existingBands = currentBands.length > 0 ? currentBands : appShellState.compensationBands;
+  renderCompensationGridSettingsRows([...existingBands, createEmptyCompensationBand()]);
+  const rowsElement = getCompensationGridSettingsRowsElement();
+  const firstInput = rowsElement && rowsElement.querySelector("tr:last-child .compensation-grid-group-input");
+  if (firstInput) {
+    firstInput.focus();
+  }
+}
+
+async function loadCompensationGrid() {
+  if (!getSessionToken() || !isSuperAdminUser()) {
+    return;
+  }
+
+  setCompensationGridSettingsMessage("");
+  renderCompensationGridLoading();
+  try {
+    const response = await fetch(apiUrl + COMPENSATION_GRID_ENDPOINT, { cache: "no-store" });
+    const payload = await parseResponse(response);
+    renderCompensationGridSettingsRows(getCompensationGridPayloadBands(payload));
+  } catch (error) {
+    renderCompensationGridSettingsRows([]);
+    setCompensationGridSettingsMessage(error.message || t("settings.compensationLoadError"), "warning");
+  }
+}
+
+async function saveCompensationGrid(triggerButton) {
+  if (!isSuperAdminUser()) {
+    return;
+  }
+
+  const bands = getCompensationGridBandsFromForm();
+  const validationError = getCompensationGridValidationError(bands);
+  if (validationError) {
+    setCompensationGridSettingsMessage(validationError, "danger");
+    return;
+  }
+
+  setCompensationGridSettingsMessage("");
+  const saveButton = triggerButton || document.getElementById("compensationGridSaveButton");
+  const saveGrid = async () => {
+    try {
+      const response = await fetch(apiUrl + COMPENSATION_GRID_ENDPOINT, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ bands }),
+      });
+      const payload = await parseResponse(response);
+      renderCompensationGridSettingsRows(getCompensationGridPayloadBands(payload).length > 0
+        ? getCompensationGridPayloadBands(payload)
+        : bands);
+      showToast(t("settings.compensationSaveSuccess"), "success");
+    } catch (error) {
+      setCompensationGridSettingsMessage(error.message || t("settings.compensationSaveError"), "danger");
+    }
+  };
+
+  return runButtonAction(saveButton, saveGrid, {
+    key: "compensation-grid-save",
+    disableWhileRunning: () => document.querySelectorAll("#compensationGridSettingsSection input, #compensationGridSettingsSection button"),
+  });
+}
+
 function updateSessionSummary() {
   const summary = document.getElementById("appSessionSummary");
   const settingsButton = document.getElementById("appSettingsButton");
@@ -924,6 +1412,9 @@ function updateStoredUserGc179Profile(profile) {
 
   session.user.gc179Profile = profile;
   setStoredSession(session);
+  if (typeof window.syncSelfWorkScheduleFromGc179Profile === "function") {
+    window.syncSelfWorkScheduleFromGc179Profile(profile);
+  }
 }
 
 async function openSelfSettingsForm(triggerButton) {
@@ -955,6 +1446,8 @@ async function openSelfSettingsForm(triggerButton) {
   const loadSettings = () => Promise.all([
     loadSettingsHealth(),
     loadProfile(),
+    isSuperAdminUser(user) ? loadBudgetPeriods() : Promise.resolve(),
+    isSuperAdminUser(user) ? loadCompensationGrid() : Promise.resolve(),
   ]).then(() => undefined);
 
   return triggerButton
@@ -969,6 +1462,11 @@ async function submitSelfGc179Profile(triggerButton) {
   }
 
   setSelfGc179ProfileMessage("");
+  const classificationError = getGc179ClassificationFormError("selfGc179");
+  if (classificationError) {
+    setSelfGc179ProfileMessage(classificationError, "danger");
+    return;
+  }
   const gc179Profile = getSelfGc179ProfileForm(user.displayName || user.username || "");
 
   const saveProfile = async () => {
@@ -1773,16 +2271,19 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("changePasswordButton").addEventListener("click", event => submitPasswordChange(event.currentTarget));
   document.getElementById("appSettingsButton").addEventListener("click", event => openSelfSettingsForm(event.currentTarget));
   document.getElementById("settingsHealthRefreshButton").addEventListener("click", event => loadSettingsHealth(event.currentTarget));
+  document.getElementById("budgetPeriodSaveButton").addEventListener("click", event => saveBudgetPeriods(event.currentTarget));
   document.getElementById("selfPasswordSaveButton").addEventListener("click", event => submitModalPasswordChange(event.currentTarget));
   document.getElementById("selfGc179ProfileSaveButton").addEventListener("click", event => submitSelfGc179Profile(event.currentTarget));
+  document.getElementById("compensationGridAddButton").addEventListener("click", addCompensationGridBand);
+  document.getElementById("compensationGridSaveButton").addEventListener("click", event => saveCompensationGrid(event.currentTarget));
   bindGc179PriFormatter(document.getElementById("selfGc179PriInput"));
   bindGc179PriFormatter(document.getElementById("employeeEditorGc179PriInput"));
-  bindGc179CodeFormatter(document.getElementById("selfGc179GroupInput"), updateSelfGc179MappingPreview);
-  bindGc179CodeFormatter(document.getElementById("selfGc179SubGroupInput"), updateSelfGc179MappingPreview);
-  bindGc179CodeFormatter(document.getElementById("selfGc179LevelInput"), updateSelfGc179MappingPreview);
-  bindGc179CodeFormatter(document.getElementById("employeeEditorGc179GroupInput"));
-  bindGc179CodeFormatter(document.getElementById("employeeEditorGc179SubGroupInput"));
-  bindGc179CodeFormatter(document.getElementById("employeeEditorGc179LevelInput"));
+  bindGc179GroupFormatter(document.getElementById("selfGc179GroupInput"), updateSelfGc179MappingPreview);
+  bindGc179TwoDigitFormatter(document.getElementById("selfGc179SubGroupInput"), normalizeGc179SubGroup, updateSelfGc179MappingPreview);
+  bindGc179TwoDigitFormatter(document.getElementById("selfGc179LevelInput"), normalizeGc179Level, updateSelfGc179MappingPreview);
+  bindGc179GroupFormatter(document.getElementById("employeeEditorGc179GroupInput"));
+  bindGc179TwoDigitFormatter(document.getElementById("employeeEditorGc179SubGroupInput"), normalizeGc179SubGroup);
+  bindGc179TwoDigitFormatter(document.getElementById("employeeEditorGc179LevelInput"), normalizeGc179Level);
   updateSelfGc179MappingPreview();
   document.getElementById("appLogoutButton").addEventListener("click", event => submitLogout(event.currentTarget));
   document.querySelectorAll("[data-settings-theme]").forEach(button => {

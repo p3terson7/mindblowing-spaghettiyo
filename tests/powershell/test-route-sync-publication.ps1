@@ -110,7 +110,12 @@ function Get-EmployeeUserByCode {
     param([string]$EmployeeCode)
     return [PSCustomObject]@{ username = $EmployeeCode; employeeCode = $EmployeeCode; disabled = $false }
 }
+function Get-Gc179ProfileFromUserRecord {
+    param($UserRecord)
+    return [PSCustomObject]@{ compressedWorkWeek = $false }
+}
 function Test-EmployeeUserRecord { param($UserRecord, [string]$EmployeeCode) return $true }
+function Get-EmployeeTimeEntryTypesFromUserRecord { param($UserRecord) return @("overtime", "diverse") }
 function Ensure-EmployeeDataFile {
     param([string]$EmployeeCode)
     return (Join-Path -Path $script:sharedFolder -ChildPath ("{0}_data.json" -f $EmployeeCode))

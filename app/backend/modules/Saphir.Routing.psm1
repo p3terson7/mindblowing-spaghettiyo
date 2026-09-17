@@ -4,6 +4,8 @@ $script:AdminRouteScriptPaths = @(
     "routes/sync.routes.ps1",
     "routes/seed.routes.ps1",
     "routes/self.routes.ps1",
+    "routes/compensation-grid.routes.ps1",
+    "routes/budget-periods.routes.ps1",
     "routes/history.routes.ps1",
     "routes/dashboard.routes.ps1",
     "routes/employee.routes.ps1",
@@ -30,6 +32,7 @@ $script:AdminRouteScriptPaths = @(
     "routes/projects/delete.routes.ps1",
     "routes/project-stats.routes.ps1",
     "routes/stats/analytics-export.routes.ps1",
+    "routes/stats/budget-periods.routes.ps1",
     "routes/stats/summary.routes.ps1",
     "routes/stats/trends.routes.ps1",
     "routes/stats/detail.routes.ps1"
@@ -54,6 +57,8 @@ function Resolve-AdminTopLevelRouteScript {
     if ($Path -eq "/health" -or $Path -match "^/sync(/|$)") { return "routes/sync.routes.ps1" }
     if ($Path -match "^/seed(/|$)") { return "routes/seed.routes.ps1" }
     if ($Path -match "^/self(/|$)") { return "routes/self.routes.ps1" }
+    if ($Path -match "^/compensation-grid(/|$)") { return "routes/compensation-grid.routes.ps1" }
+    if ($Path -match "^/budget-periods(/|$)") { return "routes/budget-periods.routes.ps1" }
     if ($Path -match "^/history(/|$)") { return "routes/history.routes.ps1" }
     if ($Path -match "^/(dashboard|approvals|review)(/|$)") { return "routes/dashboard.routes.ps1" }
     if ($Path -match "^/employees?(/|$)") { return "routes/employee.routes.ps1" }
@@ -155,6 +160,9 @@ function Resolve-ProjectStatsRouteScript {
     }
     if ($Path -match "^/stats/analytics-export/?$") {
         return "routes/stats/analytics-export.routes.ps1"
+    }
+    if ($Path -match "^/stats/budget-periods/?$") {
+        return "routes/stats/budget-periods.routes.ps1"
     }
     if ($Path -match "^/stats/projects/trends/?$") {
         return "routes/stats/trends.routes.ps1"

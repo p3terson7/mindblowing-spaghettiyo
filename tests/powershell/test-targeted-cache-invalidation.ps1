@@ -63,6 +63,7 @@ try {
     $script:overtimeCodesFile = Join-Path -Path $tempFolder -ChildPath "overtimeCodes.json"
     $script:paymentOptionsFile = Join-Path -Path $tempFolder -ChildPath "paymentOptions.json"
     $script:reasonCodesFile = Join-Path -Path $tempFolder -ChildPath "reasonCodes.json"
+    $script:budgetPeriodsFile = Join-Path -Path $tempFolder -ChildPath "budget-periods.json"
     $script:SyncStateWatcherInitialized = $true
     $script:SyncStateValidationIntervalMs = 1
 
@@ -81,6 +82,7 @@ try {
         [System.IO.File]::WriteAllText($coreArrayFile, "[]", (New-Object System.Text.UTF8Encoding($false)))
     }
     [System.IO.File]::WriteAllText($script:mappingFile, "{}", (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($script:budgetPeriodsFile, "{}", (New-Object System.Text.UTF8Encoding($false)))
 
     $script:AuthRuntimeClearCount = 0
     $script:ProjectAccessClearCount = 0
@@ -160,7 +162,8 @@ try {
             $script:historyFile,
             $script:overtimeCodesFile,
             $script:paymentOptionsFile,
-            $script:reasonCodesFile
+            $script:reasonCodesFile,
+            $script:budgetPeriodsFile
         )) {
             Read-TextFileCached -Path $corePath | Out-Null
         }
@@ -220,6 +223,20 @@ try {
     Assert-CoreFileCached -Path $script:projectsFile -Expected:$true -Message "Auth changes should preserve project content."
     Assert-Equal -Expected 1 -Actual $script:AuthRuntimeClearCount -Message "Auth changes should clear authentication runtime caches once."
 
+    # Budget-calendar changes only invalidate their configuration and audit
+    # history. Large employee entry caches must stay warm on the shared disk.
+    Prime-CoreFileCaches
+    $beforeBudgetReadCount = $script:EmployeeJsonReadCount
+    Publish-DataChange -Category "budget-periods" -Resource "shared" | Out-Null
+    foreach ($employeeCode in $employeeCodes) {
+        Get-EmployeeMarker -Path $employeeFiles[$employeeCode] | Out-Null
+    }
+    Assert-Equal -Expected $beforeBudgetReadCount -Actual $script:EmployeeJsonReadCount -Message "Budget-period changes should not reparse employee files."
+    Assert-CoreFileCached -Path $script:budgetPeriodsFile -Expected:$false -Message "Budget-period changes should invalidate the shared calendar."
+    Assert-CoreFileCached -Path $script:historyFile -Expected:$false -Message "Budget-period changes should invalidate audit history."
+    Assert-CoreFileCached -Path $script:projectsFile -Expected:$true -Message "Budget-period changes should preserve the project catalog cache."
+    Assert-CoreFileCached -Path $script:usersFile -Expected:$true -Message "Budget-period changes should preserve the users cache."
+
     # If this process misses one or more publications, the last category cannot
     # describe every changed core file. Fall back to a complete core reset.
     Prime-CoreFileCaches
@@ -235,7 +252,8 @@ try {
         $script:historyFile,
         $script:overtimeCodesFile,
         $script:paymentOptionsFile,
-        $script:reasonCodesFile
+        $script:reasonCodesFile,
+        $script:budgetPeriodsFile
     )) {
         Assert-CoreFileCached -Path $corePath -Expected:$false -Message "A skipped sync revision should conservatively clear every core file cache."
     }

@@ -127,13 +127,15 @@ try {
     $legacyText = [System.IO.File]::ReadAllText($legacyPath)
     Assert-True -Condition $legacyText.TrimStart().StartsWith("{") -Message "The legacy singleton fixture must retain its JSON object root."
     $legacyEntry = Read-JsonPreservingRootArray -Path $legacyPath
-    foreach ($newerOptionalProperty in @("entryType", "exactPunchIn", "exactPunchOut", "workComment", "diverseReason", "diverseSummary")) {
+    foreach ($newerOptionalProperty in @("entryType", "workSchedule", "workScheduleSource", "exactPunchIn", "exactPunchOut", "workComment", "diverseReason", "diverseSummary")) {
         Assert-True -Condition (-not ($legacyEntry.PSObject.Properties.Name -contains $newerOptionalProperty)) -Message "The legacy fixture unexpectedly contains newer field '$newerOptionalProperty'."
     }
 
     . (Join-Path -Path $repoRoot -ChildPath "app/backend/services/EntryService.ps1")
     $normalizedLegacyEntry = Convert-ToNormalizedEntryObject -Entry $legacyEntry
     Assert-Equal -Expected "overtime" -Actual ([string]$normalizedLegacyEntry.entryType) -Message "A legacy entry without entryType no longer defaults to overtime."
+    Assert-Equal -Expected "unconfirmed" -Actual ([string]$normalizedLegacyEntry.workSchedule) -Message "A legacy entry without workSchedule must remain explicitly unconfirmed."
+    Assert-Equal -Expected "" -Actual ([string]$normalizedLegacyEntry.workScheduleSource) -Message "A legacy entry must not invent a work-schedule source."
     Assert-Equal -Expected ([string]$legacyEntry.punchIn) -Actual ([string]$normalizedLegacyEntry.exactPunchIn) -Message "Legacy exact punch-in fallback changed."
     Assert-Equal -Expected ([string]$legacyEntry.punchOut) -Actual ([string]$normalizedLegacyEntry.exactPunchOut) -Message "Legacy exact punch-out fallback changed."
     Assert-Equal -Expected "" -Actual ([string]$normalizedLegacyEntry.workComment) -Message "A missing legacy workComment no longer defaults to an empty string."

@@ -363,6 +363,31 @@ function ConvertTo-Gc179ProfileObject {
     return (Saphir.Gc179Profile\ConvertTo-Gc179ProfileObject -Value $Value -DisplayName $DisplayName)
 }
 
+function Assert-Gc179ProfileClassificationInput {
+    param($Profile)
+
+    # Tolerant legacy readers are not validators for new writes. Reject
+    # ambiguous input before acquiring a lock instead of silently turning
+    # e.g. level 123 into 12 or group AS* into AS.
+    if ($null -eq $Profile) { return }
+    $groupNames = @("group", "groupe", "position", "poste", "classification")
+    $ordinalNames = @("subGroup", "sousGroupe", "level", "niveau", "echelon")
+    $fields = if ($Profile -is [System.Collections.IDictionary]) {
+        @($Profile.Keys | ForEach-Object { [PSCustomObject]@{ Name = [string]$_; Value = $Profile[$_] } })
+    }
+    else { @($Profile.PSObject.Properties) }
+    foreach ($field in $fields) {
+        $text = ([string]$field.Value).Trim()
+        if ($text -eq "") { continue }
+        if ($groupNames -contains [string]$field.Name -and $text -notmatch "^[A-Za-z]{1,6}$") {
+            throw [System.ArgumentException]::new("GC179 Group must contain 1 to 6 letters only (for example AS or CR).")
+        }
+        if ($ordinalNames -contains [string]$field.Name -and $text -cnotmatch "^[0-9]{1,2}$") {
+            throw [System.ArgumentException]::new("GC179 Sub-group and Level must contain one or two digits only (for example 04 or 01).")
+        }
+    }
+}
+
 function Get-Gc179ProfileFromUserRecord {
     param($UserRecord)
 
@@ -1425,6 +1450,7 @@ function Ensure-EmployeeUser {
         $Gc179Profile = $null
     )
 
+    Assert-Gc179ProfileClassificationInput -Profile $Gc179Profile
     $effectivePassword = if ([string]::IsNullOrWhiteSpace($InitialPassword)) {
         New-TemporaryPassword
     }
@@ -1544,14 +1570,19 @@ function Set-EmployeeUserProfile {
         [string]$DisplayName,
         [string]$Role,
         $TimeEntryTypes,
-        $Gc179Profile
+        $Gc179Profile,
+        $CompressedWorkWeek
     )
 
     $updateDisplayName = $PSBoundParameters.ContainsKey("DisplayName")
     $updateRole = $PSBoundParameters.ContainsKey("Role")
     $updateTimeEntryTypes = $PSBoundParameters.ContainsKey("TimeEntryTypes")
     $updateGc179Profile = $PSBoundParameters.ContainsKey("Gc179Profile")
-    if (-not ($updateDisplayName -or $updateRole -or $updateTimeEntryTypes -or $updateGc179Profile)) {
+    $updateCompressedWorkWeek = $PSBoundParameters.ContainsKey("CompressedWorkWeek")
+    if ($updateGc179Profile) {
+        Assert-Gc179ProfileClassificationInput -Profile $Gc179Profile
+    }
+    if (-not ($updateDisplayName -or $updateRole -or $updateTimeEntryTypes -or $updateGc179Profile -or $updateCompressedWorkWeek)) {
         return $false
     }
 
@@ -1597,6 +1628,26 @@ function Set-EmployeeUserProfile {
                         [string](Get-EmployeeName $EmployeeCode)
                     }
                     $effectiveGc179Profile = ConvertTo-Gc179ProfileObject -Value $Gc179Profile -DisplayName $profileDisplayName
+                    if ($user.PSObject.Properties.Name -contains "gc179Profile") {
+                        $user.gc179Profile = $effectiveGc179Profile
+                    }
+                    else {
+                        $user | Add-Member -NotePropertyName "gc179Profile" -NotePropertyValue $effectiveGc179Profile -Force
+                    }
+                }
+                if ($updateCompressedWorkWeek) {
+                    # Update this dashboard setting from the latest record while
+                    # holding users.json's writer lock. This avoids replacing
+                    # concurrently saved GC179 identity/classification fields.
+                    $effectiveGc179Profile = if ($user.PSObject.Properties.Name -contains "gc179Profile" -and $null -ne $user.gc179Profile) {
+                        # Copy the persisted profile as-is: toggling a schedule
+                        # must not also migrate legacy classification fields.
+                        $user.gc179Profile | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+                    }
+                    else {
+                        [PSCustomObject]@{}
+                    }
+                    Set-AuthRecordProperty -Record $effectiveGc179Profile -Name "compressedWorkWeek" -Value ([bool]$CompressedWorkWeek)
                     if ($user.PSObject.Properties.Name -contains "gc179Profile") {
                         $user.gc179Profile = $effectiveGc179Profile
                     }
@@ -1656,6 +1707,15 @@ function Set-EmployeeUserGc179Profile {
     )
 
     return (Set-EmployeeUserProfile -EmployeeCode $EmployeeCode -Gc179Profile $Gc179Profile)
+}
+
+function Set-EmployeeUserCompressedWorkWeek {
+    param(
+        [Parameter(Mandatory = $true)][string]$EmployeeCode,
+        [Parameter(Mandatory = $true)][bool]$CompressedWorkWeek
+    )
+
+    return (Set-EmployeeUserProfile -EmployeeCode $EmployeeCode -CompressedWorkWeek:$CompressedWorkWeek)
 }
 
 function Disable-EmployeeUser {

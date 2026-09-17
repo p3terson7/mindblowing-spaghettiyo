@@ -78,6 +78,32 @@ function Convert-PackagePowerShellFilesToUtf8Bom {
     }
 }
 
+function Get-PackageLauncherFingerprint {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string[]]$RelativePaths
+    )
+
+    $fingerprintLines = foreach ($relativePath in @($RelativePaths | Sort-Object)) {
+        $candidatePath = Join-Path -Path $Root -ChildPath $relativePath
+        if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
+            throw "Launcher fingerprint input is missing: $relativePath"
+        }
+        $fileHash = (Get-FileHash -LiteralPath $candidatePath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+        "{0}:{1}" -f ($relativePath -replace "\\", "/"), $fileHash
+    }
+
+    $fingerprintText = @($fingerprintLines) -join "`n"
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hashBytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($fingerprintText))
+    }
+    finally {
+        $sha.Dispose()
+    }
+    return (($hashBytes | ForEach-Object { $_.ToString("x2") }) -join "")
+}
+
 function Get-PackagePathStringComparison {
     $windowsHost = $PSVersionTable.PSEdition -eq "Desktop" -or [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
     if ($windowsHost) {
@@ -336,7 +362,7 @@ try {
     # until the release ZIP has also been built and validated successfully.
     Ensure-PackageDirectory -Path $bootstrapRoot
     Ensure-PackageDirectory -Path (Join-Path -Path $bootstrapRoot -ChildPath "scripts/lib")
-    foreach ($launcherName in @("Launch SAPHIR.bat", "Launch SAPHIR.vbs", "SAPHIR Launcher.vbs", "Stop SAPHIR.bat", "Stop SAPHIR.vbs", "Install SAPHIR Shortcut.vbs", "SAPHIR.ico")) {
+    foreach ($launcherName in @("Launch SAPHIR.bat", "Launch SAPHIR.vbs", "SAPHIR Launcher.vbs", "SAPHIR Launcher Host.vbs", "Stop SAPHIR.bat", "Stop SAPHIR.vbs", "Install SAPHIR Shortcut.vbs", "Installer SAPHIR sur le Bureau.vbs", "SAPHIR.ico")) {
         Copy-PackageItem -Source (Join-Path -Path $launcherSourceRoot -ChildPath $launcherName) -Destination (Join-Path -Path $bootstrapRoot -ChildPath $launcherName)
     }
     Write-PackagePlainTextGuide -Source (Join-Path -Path $repoRoot -ChildPath "docs/EMPLOYEE-QUICK-START.md") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "GUIDE-DEMARRAGE-SAPHIR.txt")
@@ -348,7 +374,7 @@ try {
     }
     Convert-PackagePowerShellFilesToUtf8Bom -Root $bootstrapRoot
 
-    $bootstrapRelativePaths = @(
+    $launcherFingerprintPaths = @(
         "scripts/lib/ApplicationLayout.ps1",
         "scripts/lib/RuntimeLayout.ps1",
         "scripts/lib/ServerControl.ps1",
@@ -360,12 +386,23 @@ try {
         "GUIDE-DEMARRAGE-SAPHIR.txt",
         "SAPHIR.ico",
         "SAPHIR Launcher.vbs",
+        "SAPHIR Launcher Host.vbs",
         "Install SAPHIR Shortcut.vbs",
+        "Installer SAPHIR sur le Bureau.vbs",
         "Stop SAPHIR.bat",
         "Stop SAPHIR.vbs",
         "Launch SAPHIR.bat",
         "Launch SAPHIR.vbs"
     )
+    $launcherFingerprint = Get-PackageLauncherFingerprint -Root $bootstrapRoot -RelativePaths $launcherFingerprintPaths
+    [System.IO.File]::WriteAllText(
+        (Join-Path -Path $bootstrapRoot -ChildPath "launcher-version.txt"),
+        $launcherFingerprint,
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+    # Publish the version marker last. A local launcher will only attempt an
+    # automatic upgrade after every file for that fingerprint is visible.
+    $bootstrapRelativePaths = @($launcherFingerprintPaths) + @("launcher-version.txt")
 
     if ($BootstrapOnly) {
         foreach ($relativePath in $bootstrapRelativePaths) {
@@ -374,7 +411,7 @@ try {
 
         Write-Host "SAPHIR launcher bootstrap published successfully."
         Write-Host "No application ZIP, current.json pointer, or DATA file was changed."
-        Write-Host "Next step: run 'Install SAPHIR Shortcut.vbs' from SAPHIR-Distribution on each existing workstation, then close and reopen the launcher."
+        Write-Host "Existing workstations need one final run of 'Installer SAPHIR sur le Bureau.vbs'. Future launcher updates install themselves automatically."
 
         [PSCustomObject]@{
             DistributionFolder = $distributionRoot
@@ -424,6 +461,8 @@ try {
         "app/backend/lib/AppContext.ps1",
         "app/backend/lib/ControlService.ps1",
         "app/backend/services/DataSchemaService.ps1",
+        "app/backend/services/CompensationGridService.ps1",
+        "app/backend/services/BudgetPeriodService.ps1",
         "app/backend/services/RouteDispatchService.ps1",
         "app/backend/modules/Saphir.EntryIdentity.psd1",
         "app/backend/modules/Saphir.EntryIdentity.psm1",
@@ -431,12 +470,20 @@ try {
         "app/backend/modules/Saphir.EntryState.psm1",
         "app/backend/modules/Saphir.EntryDuration.psd1",
         "app/backend/modules/Saphir.EntryDuration.psm1",
+        "app/backend/modules/Saphir.BusinessRules.psd1",
+        "app/backend/modules/Saphir.BusinessRules.psm1",
         "app/backend/modules/Saphir.Gc179Profile.psd1",
         "app/backend/modules/Saphir.Gc179Profile.psm1",
+        "app/backend/modules/Saphir.CompensationGrid.psd1",
+        "app/backend/modules/Saphir.CompensationGrid.psm1",
+        "app/backend/modules/Saphir.BudgetPeriods.psd1",
+        "app/backend/modules/Saphir.BudgetPeriods.psm1",
         "app/backend/modules/Saphir.ProjectCatalog.psd1",
         "app/backend/modules/Saphir.ProjectCatalog.psm1",
         "app/backend/modules/Saphir.UserAccessProfile.psd1",
         "app/backend/modules/Saphir.UserAccessProfile.psm1",
+        "app/backend/defaults/compensation-grid.v1.json",
+        "app/backend/defaults/budget-periods.v1.json",
         "app/frontend/index.html",
         "docs/GC179.pdf",
         "scripts/launch-app.ps1",

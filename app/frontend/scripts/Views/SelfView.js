@@ -5,6 +5,8 @@ const selfViewState = {
   paymentOptions: [],
   reasonCodes: [],
   timeEntryTypes: ["overtime"],
+  compressedWorkWeek: false,
+  workScheduleSaving: false,
   lookupsLoaded: false,
   selectedEntryType: localStorage.getItem("selfSelectedEntryType") || "overtime",
   selectedProjectCode: localStorage.getItem("selfSelectedProjectCode") || "",
@@ -223,18 +225,79 @@ function applySelfBootstrap(payload) {
   selfViewState.paymentOptions = Array.isArray(payload && payload.paymentOptions) ? payload.paymentOptions : [];
   selfViewState.reasonCodes = Array.isArray(payload && payload.reasonCodes) ? payload.reasonCodes : [];
   selfViewState.timeEntryTypes = Array.isArray(payload && payload.timeEntryTypes) && payload.timeEntryTypes.length > 0 ? payload.timeEntryTypes : ["overtime"];
+  selfViewState.compressedWorkWeek = Boolean(payload && payload.gc179Profile && payload.gc179Profile.compressedWorkWeek);
   if (payload && payload.gc179Profile && typeof updateStoredUserGc179Profile === "function") {
     updateStoredUserGc179Profile(payload.gc179Profile);
   }
   selfViewState.lookupsLoaded = true;
   renderSelfPunchSelectors();
+  syncSelfWorkScheduleControl();
 }
 
 function initializeSelfView() {
   renderSelfPunchSelectors();
+  syncSelfWorkScheduleControl();
 }
 
 window.initializeSelfView = initializeSelfView;
+
+function syncSelfWorkScheduleControl() {
+  const toggle = document.getElementById("selfCompressedScheduleToggle");
+  const stateLabel = document.getElementById("selfWorkScheduleState");
+  const hint = document.getElementById("selfWorkScheduleHint");
+  const control = document.getElementById("selfWorkScheduleControl");
+  const isCompressed = Boolean(selfViewState.compressedWorkWeek);
+  const hasActiveEntry = Boolean(getSelfActiveEntry(selfViewState.entries));
+
+  if (toggle) {
+    toggle.checked = isCompressed;
+    toggle.disabled = Boolean(selfViewState.workScheduleSaving);
+    toggle.setAttribute("aria-busy", selfViewState.workScheduleSaving ? "true" : "false");
+  }
+  if (stateLabel) {
+    stateLabel.textContent = t(isCompressed ? "shared.workScheduleCompressed" : "shared.workScheduleRegular");
+  }
+  if (hint) {
+    hint.textContent = t(hasActiveEntry ? "self.compressedScheduleNextHint" : "self.compressedScheduleHint");
+  }
+  if (control) {
+    control.classList.toggle("is-compressed", isCompressed);
+    control.classList.toggle("is-saving", Boolean(selfViewState.workScheduleSaving));
+  }
+}
+
+window.syncSelfWorkScheduleFromGc179Profile = function (profile) {
+  selfViewState.compressedWorkWeek = Boolean(profile && profile.compressedWorkWeek);
+  syncSelfWorkScheduleControl();
+};
+
+async function saveSelfWorkSchedule(compressedWorkWeek) {
+  const previousValue = Boolean(selfViewState.compressedWorkWeek);
+  selfViewState.compressedWorkWeek = Boolean(compressedWorkWeek);
+  selfViewState.workScheduleSaving = true;
+  syncSelfWorkScheduleControl();
+
+  try {
+    const response = await fetch(apiUrl + "self/work-schedule", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ compressedWorkWeek: Boolean(compressedWorkWeek) }),
+    });
+    const result = await parseResponse(response);
+    selfViewState.compressedWorkWeek = result && result.workSchedule === "compressed";
+    if (result && result.gc179Profile && typeof updateStoredUserGc179Profile === "function") {
+      updateStoredUserGc179Profile(result.gc179Profile);
+    }
+    const warnings = Array.isArray(result && result.warnings) ? result.warnings.filter(Boolean) : [];
+    showToast(warnings.length > 0 ? warnings.join(" ") : t("self.compressedScheduleSaved"), warnings.length > 0 ? "warning" : "success");
+  } catch (error) {
+    selfViewState.compressedWorkWeek = previousValue;
+    showToast(t("self.compressedScheduleError", { message: error.message }), "error");
+  } finally {
+    selfViewState.workScheduleSaving = false;
+    syncSelfWorkScheduleControl();
+  }
+}
 
 function getDefaultSelfMonthKey(entries) {
   return window.Saphir.calendarMonths.resolveActiveMonth(entries, selfViewState.currentMonthKey, {
@@ -436,7 +499,7 @@ function renderSelfStats(entries) {
   summaryContainer.innerHTML = summaryCards.map(card => `
     <article class="self-stat-card">
       <span class="metric-label">${escapeHtml(card.label)}</span>
-      <strong class="metric-value mono">${escapeHtml(card.value)}</strong>
+      <strong class="metric-value">${escapeHtml(card.value)}</strong>
       <span class="metric-hint">${escapeHtml(card.hint)}</span>
     </article>
   `).join("");
@@ -465,7 +528,7 @@ function renderSelfStats(entries) {
                 <div class="self-project-stat-title d-flex align-items-center gap-2">${project.projectCode === "__NO_PROJECT__" ? "" : renderProjectColorDot(project)}<span>${escapeHtml(project.projectCode === "__NO_PROJECT__" ? t("shared.noProject") : project.projectCode)}</span></div>
                 <div class="worklog-secondary">${escapeHtml(project.projectName || project.projectCode)}</div>
               </div>
-              <span class="inline-code-pill">${escapeHtml(secondsToDurationLabel(project.seconds))}</span>
+              <span class="inline-code-pill duration-value">${escapeHtml(secondsToDurationLabel(project.seconds))}</span>
             </div>
             <div class="self-project-stat-grid">
               <span><strong>${escapeHtml(String(project.count))}</strong> ${escapeHtml(t("self.statsEntries"))}</span>
@@ -674,7 +737,7 @@ function renderSelfEntries(entries) {
         <div class="calendar-entry">
           <div class="calendar-entry-main">
             <span class="calendar-entry-time">${getEntryRoundedTimeRangeMarkup(entry)}</span>
-            <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
+            <span class="calendar-entry-badges"><span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>${renderEntryWorkScheduleBadge(entry)}</span>
           </div>
           <div class="calendar-entry-meta project-entry-context">${projectIdentity}${projectIdentity ? `<span>${escapeHtml([entry.overtimeCode, entry.paymentOption ? formatPaymentOptionValue(entry.paymentOption) : "", entry.reasonCode].filter(Boolean).join(" | "))}</span>` : escapeHtml(getEntryContextLabel(entry))}</div>
           ${exactTimeLabel ? `<div class="calendar-entry-meta">${escapeHtml(exactTimeLabel)}</div>` : ""}
@@ -702,7 +765,7 @@ function renderSelfEntries(entries) {
           <article class="calendar-live-card">
             <div class="calendar-entry-main">
               <span class="calendar-entry-time">${escapeHtml(formatDateLabel(entry.date))} | ${buildTimeRangeMarkup(formatTimeString(getEntryExactPunchIn(entry)), t("shared.inProgress"))}</span>
-              <span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>
+              <span class="calendar-entry-badges"><span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>${renderEntryWorkScheduleBadge(entry)}</span>
             </div>
             <div class="calendar-entry-meta project-entry-context">${!isDiverseEntry(entry) && entry.projectCode ? renderProjectIdentityPill(getSelfProjectByCode(entry.projectCode) || entry.projectCode, entry.projectCode) : escapeHtml(getEntryContextLabel(entry))}</div>
             <div class="calendar-entry-meta">${escapeHtml(secondsToDurationLabel(getEntryDurationSeconds(entry)))}</div>
@@ -752,6 +815,7 @@ function renderSelfState(entries) {
   updateSelfStatus(allEntries);
   renderSelfStats(allEntries);
   renderSelfEntries(allEntries);
+  syncSelfWorkScheduleControl();
 }
 
 async function refreshSelfView() {
@@ -872,6 +936,10 @@ async function submitSelfPunch(type) {
 document.getElementById("selfPrimaryPunchButton").addEventListener("click", event => {
   const type = event.currentTarget.getAttribute("data-punch-type") || "in";
   submitSelfPunch(type);
+});
+
+document.getElementById("selfCompressedScheduleToggle").addEventListener("change", event => {
+  saveSelfWorkSchedule(Boolean(event.currentTarget.checked));
 });
 
 document.getElementById("selfProjectCodeSelect").addEventListener("change", event => {

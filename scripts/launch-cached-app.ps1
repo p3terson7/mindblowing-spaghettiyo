@@ -1,5 +1,6 @@
 param(
     [switch]$Force,
+    [switch]$Repair,
     [switch]$NoBrowser,
     [switch]$NonInteractive,
     [string]$DistributionRoot = ""
@@ -209,7 +210,7 @@ try {
     . $serverControlLibrary
 
     $cacheRoot = Get-SaphirLocalAppRoot
-    if (-not $Force) {
+    if (-not $Force -and -not $Repair) {
         $warmRelease = Get-SaphirActiveRelease -CacheRoot $cacheRoot
         if ($null -ne $warmRelease) {
             $warmFrontendUrl = "http://localhost:8081/"
@@ -235,6 +236,9 @@ try {
 
     $mutex = Enter-SaphirCacheMutex -CacheRoot $cacheRoot
     Repair-SaphirInterruptedCacheOperations -CacheRoot $cacheRoot
+    if ($Repair) {
+        Remove-SaphirFailedRelease -CacheRoot $cacheRoot
+    }
     $previousRelease = Get-SaphirActiveRelease -CacheRoot $cacheRoot
     $release = $null
     $usedPreviousRelease = $false
@@ -244,7 +248,7 @@ try {
     }
     catch {
         $manifestError = $_
-        if ($null -ne $previousRelease -and (Test-Path -LiteralPath $previousRelease.LaunchScript -PathType Leaf)) {
+        if (-not $Repair -and $null -ne $previousRelease -and (Test-Path -LiteralPath $previousRelease.LaunchScript -PathType Leaf)) {
             Write-Warning "The network release information is unavailable. Starting the previous local SAPHIR version."
             Invoke-SaphirReleaseLaunch -LaunchScript $previousRelease.LaunchScript -ForceRestart ([bool]$Force) -SuppressBrowser ([bool]$NoBrowser)
             Set-SaphirActiveRelease -CacheRoot $cacheRoot -Release $previousRelease
@@ -265,7 +269,7 @@ try {
             $null -ne $previousRelease -and
             [string]$previousRelease.ReleaseId -ne [string]$targetManifest.ReleaseId
 
-        if ($skipKnownFailedRelease) {
+        if ($skipKnownFailedRelease -and -not $Repair) {
             Write-Warning "SAPHIR is using the previous local version because the current network release already failed on this computer."
             Invoke-SaphirReleaseLaunch -LaunchScript $previousRelease.LaunchScript -ForceRestart ([bool]$Force) -SuppressBrowser ([bool]$NoBrowser)
             Set-SaphirActiveRelease -CacheRoot $cacheRoot -Release $previousRelease
@@ -274,7 +278,7 @@ try {
         }
         else {
             try {
-                $release = Install-SaphirCachedRelease -Manifest $targetManifest -CacheRoot $cacheRoot
+                $release = Install-SaphirCachedRelease -Manifest $targetManifest -CacheRoot $cacheRoot -ForceReinstall:$Repair
                 try {
                     # A newly installed or repaired release must replace any
                     # process still running from files at the same path. Warm

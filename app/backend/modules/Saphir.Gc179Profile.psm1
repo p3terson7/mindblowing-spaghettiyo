@@ -190,23 +190,55 @@ function ConvertTo-Gc179HeaderCodeText {
 function ConvertTo-Gc179GroupText {
     param([AllowNull()][string]$Value)
 
-    # The GC179 Group field accepts up to six characters. Codes vary by
-    # employee (for example CR4, AS-03, or STS), so do not use an allowlist.
-    return (ConvertTo-Gc179HeaderCodeText -Value $Value -MaximumLength 6)
+    # Group is the alphabetic part of the classification (for example CR or
+    # AS). Removing legacy separators/digits also migrates values such as
+    # CR4 and AS-03 without requiring a manual shared-data conversion.
+    $normalized = ([string]$Value).Trim().ToUpperInvariant()
+    $normalized = [System.Text.RegularExpressions.Regex]::Replace($normalized, "[^A-Z]", "")
+    if ($normalized.Length -gt 6) {
+        $normalized = $normalized.Substring(0, 6)
+    }
+
+    return $normalized
 }
 
 function ConvertTo-Gc179SubGroupText {
     param([AllowNull()][string]$Value)
 
-    # The GC179 Sub-Group field accepts up to ten characters.
-    return (ConvertTo-Gc179HeaderCodeText -Value $Value -MaximumLength 10)
+    # Sub-Group is always two digits. A one-digit legacy value is padded and
+    # decorated legacy values such as SUF-00 or CR/01 are migrated safely.
+    $digits = ([string]$Value) -replace "\D", ""
+    if ([string]::IsNullOrWhiteSpace($digits)) {
+        return ""
+    }
+    $digits = $digits.TrimStart("0")
+    if ([string]::IsNullOrWhiteSpace($digits)) {
+        $digits = "0"
+    }
+    if ($digits.Length -gt 2) {
+        $digits = $digits.Substring(0, 2)
+    }
+
+    return $digits.PadLeft(2, "0")
 }
 
 function ConvertTo-Gc179LevelText {
     param([AllowNull()][string]$Value)
 
-    # Level/Niveau is a distinct ten-character field in the GC179 header.
-    return (ConvertTo-Gc179HeaderCodeText -Value $Value -MaximumLength 10)
+    # Level/Niveau uses the same two-digit shape as Sub-Group.
+    $digits = ([string]$Value) -replace "\D", ""
+    if ([string]::IsNullOrWhiteSpace($digits)) {
+        return ""
+    }
+    $digits = $digits.TrimStart("0")
+    if ([string]::IsNullOrWhiteSpace($digits)) {
+        $digits = "0"
+    }
+    if ($digits.Length -gt 2) {
+        $digits = $digits.Substring(0, 2)
+    }
+
+    return $digits.PadLeft(2, "0")
 }
 
 function ConvertTo-Gc179PositionText {
@@ -303,7 +335,7 @@ function ConvertTo-Gc179ProfileObject {
 
     $normalizedSubGroup = ConvertTo-Gc179SubGroupText -Value $subGroup
     if ([string]::IsNullOrWhiteSpace($normalizedSubGroup)) {
-        $normalizedSubGroup = "SUF-00"
+        $normalizedSubGroup = "00"
     }
 
     return [PSCustomObject]@{

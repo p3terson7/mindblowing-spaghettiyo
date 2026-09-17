@@ -491,6 +491,11 @@ async function openEmployeeEditorModal(mode, employee) {
 
 async function submitEmployeeEditor() {
   setEmployeeEditorMessage("");
+  const classificationError = getGc179ClassificationFormError("employeeEditorGc179");
+  if (classificationError) {
+    setEmployeeEditorMessage(classificationError, "danger");
+    return;
+  }
 
   const mode = document.getElementById("employeeEditorMode").value;
   const employeeCode = document.getElementById("employeeEditorCodeInput").value.trim();
@@ -1172,12 +1177,12 @@ function renderGc179ImportPreview(preview, { initializeSelection = true } = {}) 
       </td>
       <td class="mono">${sourceRow + 1}</td>
       <td>${escapeHtml(formatDateLabel(entry.date))}</td>
-      <td class="mono">${escapeHtml(formatTimeString(entry.punchIn))} ${timeRangeArrowText()} ${escapeHtml(formatTimeString(entry.punchOut))}</td>
+      <td class="time-value">${escapeHtml(formatTimeString(entry.punchIn))} ${timeRangeArrowText()} ${escapeHtml(formatTimeString(entry.punchOut))}</td>
       <td><span class="inline-code-pill">${escapeHtml(entry.reasonCode || "-")}</span></td>
       <td><span class="inline-code-pill">${escapeHtml(entry.overtimeCode || "-")}</span></td>
       <td>${escapeHtml(entry.paymentOption || "-")}</td>
       <td class="mono">${escapeHtml(rateLabel)}</td>
-      <td class="mono">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(entry.overtime)))}</td>
+      <td class="duration-value">${escapeHtml(secondsToDurationLabel(timeStringToSeconds(entry.overtime)))}</td>
       <td>
         <span class="gc179-import-row-status ${duplicate ? "duplicate" : importable ? "ready" : "invalid"}">${escapeHtml(t(rowStatusKey))}</span>
         ${entryErrors.length > 0 ? `<div class="gc179-import-row-errors">${entryErrors.map(error => escapeHtml(error)).join("; ")}</div>` : ""}
@@ -2285,6 +2290,7 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
       const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
       const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
       const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
+      const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}"`;
       const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
       const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
       const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
@@ -2303,7 +2309,7 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
         : "";
       const manageButtons = canModify
         ? `
-          <button type="button" class="btn btn-outline-secondary btn-sm action-btn people-project-entry-action people-calendar-edit"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
+          <button type="button" class="btn btn-outline-secondary btn-sm action-btn people-project-entry-action people-calendar-edit"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${workScheduleAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
             <i class="fa-solid fa-pen"></i>
           </button>
           <button type="button" class="btn btn-outline-secondary btn-sm action-btn people-project-entry-action people-calendar-delete"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
@@ -2318,7 +2324,7 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
         <article class="people-project-entry-row">
           <div class="people-project-entry-date">${escapeHtml(formatDateLabel(entry.date))}</div>
           <div class="people-project-entry-main">
-            <div class="people-project-entry-time mono">${getEntryRoundedTimeRangeMarkup(entry)}</div>
+            <div class="people-project-entry-time time-value">${getEntryRoundedTimeRangeMarkup(entry)}</div>
             ${exactTimeLabel ? `<div class="panel-note">${escapeHtml(exactTimeLabel)}</div>` : ""}
             <div class="people-project-entry-context">${escapeHtml(getPeopleProjectEntryContext(entry))}</div>
             ${renderEntryNotesPreview(entry)}
@@ -2326,6 +2332,7 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
           <div class="people-project-entry-side">
             <span class="inline-code-pill">${escapeHtml(duration)}</span>
             <span class="status-badge ${escapeHtml(getStatusTone(entry))}">${escapeHtml(getEntryStatusLabel(entry))}</span>
+            ${renderEntryWorkScheduleBadge(entry)}
           </div>
           <div class="people-project-entry-actions">
             ${reviewButtons}
@@ -2522,8 +2529,8 @@ function buildEmployeeDetailedStatsMarkup(entries, employeeCode) {
   const summaryCards = [
     { label: t("self.statsTotal"), value: secondsToDurationLabel(model.totals.seconds), hint: t("self.statsFilteredSummary", { count: model.totals.count, duration: secondsToDurationLabel(model.totals.seconds) }) },
     { label: t("self.statsApproved"), value: secondsToDurationLabel(model.totals.approvedSeconds), hint: t("status.approved") },
+    { label: t("employees.statsRejectedTime"), value: secondsToDurationLabel(model.totals.rejectedSeconds), hint: t("employees.statsRejectedEntries", { count: model.totals.rejected }), tone: "rejected", action: model.totals.rejected > 0 },
     { label: t("self.statsAverage"), value: secondsToDurationLabel(averageSeconds), hint: t("self.statsMax") + " " + secondsToDurationLabel(model.totals.maxSeconds) },
-    { label: t("self.statsPendingRejected"), value: `${model.totals.pending} / ${model.totals.rejected}`, hint: `${t("self.statsLive")}: ${model.totals.live}` },
     { label: t("self.statsTopCode"), value: topCodeLabel, hint: `${t("self.statsSupervisorNotes")}: ${model.totals.notes}` },
   ];
 
@@ -2545,7 +2552,7 @@ function buildEmployeeDetailedStatsMarkup(entries, employeeCode) {
                   <div class="self-project-stat-title">${project.projectCode === "__NO_PROJECT__" ? escapeHtml(t("shared.noProject")) : renderProjectIdentityPill(project, project.projectCode)}</div>
                   <div class="worklog-secondary">${escapeHtml(project.projectName || project.projectCode)}</div>
                 </div>
-                <span class="inline-code-pill">${escapeHtml(secondsToDurationLabel(project.seconds))}</span>
+                <span class="inline-code-pill duration-value">${escapeHtml(secondsToDurationLabel(project.seconds))}</span>
               </div>
               <div class="self-project-stat-grid">
                 <span><strong>${escapeHtml(String(project.count))}</strong> ${escapeHtml(t("self.statsEntries"))}</span>
@@ -2580,13 +2587,17 @@ function buildEmployeeDetailedStatsMarkup(entries, employeeCode) {
   return `
     <div class="employee-detail-section employee-stats-section">
       <div class="self-stats-summary">
-        ${summaryCards.map(card => `
-          <article class="self-stat-card">
+        ${summaryCards.map(card => {
+          const content = `
             <span class="metric-label">${escapeHtml(card.label)}</span>
-            <strong class="metric-value mono">${escapeHtml(card.value)}</strong>
+            <strong class="metric-value duration-value">${escapeHtml(card.value)}</strong>
             <span class="metric-hint">${escapeHtml(card.hint)}</span>
-          </article>
-        `).join("")}
+          `;
+          const classes = `self-stat-card${card.tone ? ` self-stat-card-${escapeHtml(card.tone)}` : ""}${card.action ? " self-stat-card-action employee-rejected-time-action" : ""}`;
+          return card.action
+            ? `<button type="button" class="${classes}" data-employee-code="${escapeHtml(employeeCode)}" aria-label="${escapeHtml(t("employees.viewRejectedEntries"))}">${content}</button>`
+            : `<article class="${classes}">${content}</article>`;
+        }).join("")}
       </div>
       <div class="self-project-stats">
         <div class="self-project-stats-header">
@@ -2755,6 +2766,7 @@ function renderEmployeeDetail(employee) {
       const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
       const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
       const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
+      const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}"`;
       const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
       const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
       const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
@@ -2772,17 +2784,17 @@ function renderEmployeeDetail(employee) {
         : "";
 
       return `
-        <div class="calendar-entry">
+        <div class="calendar-entry" data-entryid="${escapeHtml(entry.entryId || "")}" data-entry-status="${escapeHtml(String(entry.status || "pending").toLowerCase())}">
           <div class="calendar-entry-main">
             <span class="calendar-entry-time">${getEntryRoundedTimeRangeMarkup(entry)}</span>
-            <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
+            <span class="calendar-entry-badges"><span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>${renderEntryWorkScheduleBadge(entry)}</span>
           </div>
           <div class="calendar-entry-meta project-entry-context">${calendarContext}</div>
           ${renderEntryNotesPreview(entry)}
           ${reviewButtons ? `<div class="calendar-entry-actions calendar-entry-actions-review">${reviewButtons}</div>` : ""}
           <div class="calendar-entry-actions calendar-entry-actions-manage">
             ${canModify ? `
-              <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
+              <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${workScheduleAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
                 <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
               </button>
               <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
@@ -2799,7 +2811,7 @@ function renderEmployeeDetail(employee) {
       <div class="calendar-day${isCurrentMonth ? "" : " is-muted"}${dayEntries.length > 0 ? " has-entries" : ""}">
         <div class="calendar-day-header">
           <span class="calendar-day-number">${day.dayNumber}</span>
-          ${dayEntries.length > 0 ? `<span class="calendar-day-total">${escapeHtml(secondsToDurationLabel(totalDaySeconds))}</span>` : ""}
+                ${dayEntries.length > 0 ? `<span class="calendar-day-total duration-value">${escapeHtml(secondsToDurationLabel(totalDaySeconds))}</span>` : ""}
         </div>
         <div class="calendar-day-body">
           ${entryPreview}
@@ -2820,6 +2832,7 @@ function renderEmployeeDetail(employee) {
           const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
           const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
           const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
+          const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}"`;
           const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
           const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
           const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
@@ -2831,12 +2844,12 @@ function renderEmployeeDetail(employee) {
             <article class="calendar-live-card">
               <div class="calendar-entry-main">
                 <span class="calendar-entry-time">${escapeHtml(formatDateLabel(entry.date))} | ${buildTimeRangeMarkup(formatTimeString(getEntryExactPunchIn(entry)), t("shared.inProgress"))}</span>
-                <span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>
+                <span class="calendar-entry-badges"><span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>${renderEntryWorkScheduleBadge(entry)}</span>
               </div>
               <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
               <div class="calendar-entry-actions calendar-entry-actions-manage">
                 ${canModify ? `
-                  <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
+                  <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${workScheduleAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
                     <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
                   </button>
                   <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
@@ -2844,7 +2857,7 @@ function renderEmployeeDetail(employee) {
                   </button>
                 ` : ""}
                 ${permissionBadge}
-                <span class="inline-code-pill">${escapeHtml(secondsToDurationLabel(elapsedSeconds))}</span>
+                <span class="inline-code-pill duration-value">${escapeHtml(secondsToDurationLabel(elapsedSeconds))}</span>
               </div>
             </article>
           `;
@@ -3248,6 +3261,23 @@ document.getElementById("employeeDetailContainer").addEventListener("toggle", ev
 }, true);
 
 document.getElementById("employeeDetailContainer").addEventListener("click", async event => {
+  const rejectedTimeButton = event.target.closest(".employee-rejected-time-action");
+  if (rejectedTimeButton) {
+    const employeeCode = String(rejectedTimeButton.getAttribute("data-employee-code") || "").trim();
+    const rejectedEntries = sortEntriesByDateTime(
+      getVisibleEmployeeEntries(employeeCode).filter(entry => String(entry.status || "").toLowerCase() === "rejected"),
+      true,
+    );
+    const latestRejectedEntry = rejectedEntries[0];
+    if (latestRejectedEntry) {
+      employeesViewState.currentMonthByEmployee[employeeCode] = toCalendarMonthKey(latestRejectedEntry.date);
+      employeesViewState.focusEntryId = String(latestRejectedEntry.entryId || "");
+      renderEmployeeDetail(getEmployeeByCode(employeeCode));
+      focusEmployeeEntry(employeesViewState.focusEntryId);
+    }
+    return;
+  }
+
   const gc179Button = event.target.closest(".people-gc179-fdf-button");
   if (gc179Button) {
     const employeeCode = gc179Button.getAttribute("data-employee-code");
@@ -3412,9 +3442,10 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
   if (addEntryButton) {
     const employeeCode = addEntryButton.getAttribute("data-employee-code");
     if (employeeCode && typeof openAddEntryModal === "function") {
+      const employee = getEmployeeByCode(employeeCode);
       employeesViewState.selectedEmployeeCode = employeeCode;
       setDashboardEmployeeContext(employeeCode);
-      await openAddEntryModal(employeeCode, addEntryButton).catch(error => {
+      await openAddEntryModal(employeeCode, addEntryButton, employee).catch(error => {
         console.error("Error opening add entry modal from People:", error);
         showToast(t("dashboard.entryOptionsError"), "error");
       });

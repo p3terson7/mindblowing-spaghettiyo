@@ -220,9 +220,18 @@ code {
 .hero-status,
 .status-value,
 .session-chip,
-.count-chip {
+.count-chip,
+.time-value,
+.duration-value,
+.calendar-entry-time,
+.people-project-entry-time,
+.project-workspace-entry-duration {
   font-family: inherit;
   font-variant-numeric: tabular-nums;
+}
+
+.inline-code-pill.duration-value {
+  font-family: inherit;
 }
 
 /* Application chrome */
@@ -1368,6 +1377,159 @@ code {
   box-shadow: 0 5px 13px color-mix(in srgb, var(--live) 22%, transparent) !important;
 }
 
+.self-work-schedule-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: min(100%, 520px);
+  margin-top: 14px;
+  padding: 11px 12px;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-secondary) 88%, transparent);
+  transition: border-color 160ms ease, background-color 160ms ease, opacity 160ms ease;
+}
+
+.self-work-schedule-control.is-compressed {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--separator));
+  background: color-mix(in srgb, var(--accent-soft) 64%, var(--surface-secondary));
+}
+
+.self-work-schedule-control.is-saving {
+  opacity: 0.72;
+}
+
+.self-work-schedule-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.self-work-schedule-title {
+  color: var(--label-primary);
+  font-size: 0.86rem;
+  font-weight: 760;
+}
+
+.self-work-schedule-hint {
+  color: var(--label-secondary);
+  font-size: 0.73rem;
+  line-height: 1.35;
+}
+
+.self-work-schedule-switch {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--label-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.self-work-schedule-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.self-work-schedule-track {
+  width: 38px;
+  height: 22px;
+  padding: 3px;
+  border: 1px solid var(--separator-strong);
+  border-radius: 999px;
+  background: var(--surface-tertiary);
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.self-work-schedule-track span {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--label-secondary);
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+
+.self-work-schedule-switch input:checked + .self-work-schedule-track {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.self-work-schedule-switch input:checked + .self-work-schedule-track span {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+.self-work-schedule-switch input:focus-visible + .self-work-schedule-track {
+  outline: 3px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  outline-offset: 2px;
+}
+
+.self-work-schedule-switch input:disabled + .self-work-schedule-track {
+  cursor: wait;
+}
+
+.self-work-schedule-switch strong {
+  font-size: 0.76rem;
+  font-weight: 760;
+}
+
+.work-schedule-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid var(--separator);
+  border-radius: 999px;
+  background: var(--surface-secondary);
+  color: var(--label-secondary);
+  font-size: 0.68rem;
+  font-weight: 720;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.work-schedule-badge.compressed {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--separator));
+  background: color-mix(in srgb, var(--accent-soft) 68%, var(--surface-secondary));
+  color: var(--accent-strong);
+}
+
+.work-schedule-badge.unconfirmed {
+  border-color: color-mix(in srgb, var(--warning) 38%, var(--separator));
+  background: color-mix(in srgb, var(--warning-soft) 66%, var(--surface-secondary));
+  color: var(--warning);
+}
+
+.calendar-entry-badges,
+.project-workspace-entry-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.entry-state-stack {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+}
+
+@media (max-width: 640px) {
+  .self-work-schedule-control {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 9px;
+  }
+}
+
 .self-stats-summary {
   gap: 10px;
 }
@@ -1378,6 +1540,32 @@ code {
   background: var(--surface-secondary);
   border-color: var(--separator);
   border-radius: 11px;
+}
+
+.self-stat-card-rejected {
+  border-color: color-mix(in srgb, var(--danger) 24%, var(--separator));
+  background: color-mix(in srgb, var(--danger-soft) 45%, var(--surface-secondary));
+}
+
+.self-stat-card-rejected .metric-value {
+  color: var(--danger);
+}
+
+.self-stat-card-action {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.self-stat-card-action:hover {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--separator));
+  transform: translateY(-1px);
+}
+
+.self-project-stat-grid strong {
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
 }
 
 .self-project-stat-card {

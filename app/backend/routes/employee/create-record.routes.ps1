@@ -75,6 +75,9 @@
                     warnings           = @($postCommitWarnings.ToArray())
                 }) | ConvertTo-Json -Depth 6)
             }
+            catch [System.ArgumentException] {
+                respondWithError $response 400 $_.Exception.Message
+            }
             catch {
                 Rethrow-HttpStatusException -Exception $_.Exception
                 Write-Warning ("Unable to create employee: {0}" -f $_.Exception.Message)

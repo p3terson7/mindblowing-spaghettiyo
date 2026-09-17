@@ -351,6 +351,15 @@ Les trois champs sont envoyés séparément dans le formulaire : `Groupe` vers
 profils qui contiennent seulement Poste et Échelon restent compatibles : ils
 sont lus comme Groupe et Sous-groupe, sans inventer de Niveau.
 
+Le format est maintenant uniforme : le groupe contient seulement des lettres
+majuscules (`CR`, `AS`), tandis que le sous-groupe et le niveau contiennent
+exactement deux chiffres (`04`, `01`). L'interface bloque les autres caractères
+et ajoute le zéro devant une valeur à un chiffre. Chaque ancien champ est
+nettoyé séparément : `CR4` ou `AS-03` deviennent `CR` ou `AS` dans Groupe,
+`SUF-04` devient `04` dans Sous-groupe et `1` devient `01` dans Niveau. Cette
+conversion se fait en mémoire pour l'affichage et l'export; ouvrir un profil ne
+réécrit pas tout seul les données du disque partagé.
+
 L’export prépare les données du mois choisi et ouvre le formulaire local. Les
 entrées rejetées, ouvertes et `Divers` ne sont pas envoyées dans la GC179.
 

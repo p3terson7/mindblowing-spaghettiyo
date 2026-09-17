@@ -399,7 +399,7 @@ function Get-SaphirLauncherDeploymentSnapshot {
         $bootstrapLogPath = Join-Path -Path $CacheRoot -ChildPath "runtime/logs/bootstrap.log"
         $snapshot.State = "PreviouslyFailed"
         $snapshot.Issue = "TargetPreviouslyFailed"
-        $snapshot.Error = "Release '$($snapshot.TargetReleaseId)' is published, but the same package previously failed on this computer. Reinstall the current SAPHIR launcher from the distribution to unlock a release rejected by an older launcher. If it still fails, review $bootstrapLogPath and publish a corrected package with a new ReleaseId."
+        $snapshot.Error = "Release '$($snapshot.TargetReleaseId)' is published, but the same package previously failed on this computer. Use Repair SAPHIR to download and validate it again. If it still fails, review $bootstrapLogPath and publish a corrected package with a new ReleaseId."
         return [PSCustomObject]$snapshot
     }
 
@@ -565,6 +565,15 @@ function Get-SaphirLauncherStatus {
         ($state -eq "Unresponsive" -and -not $isExpectedInstance)) -and
         $launchAvailable
     $canStop = $isManaged -and ($state -eq "Online" -or $state -eq "Unresponsive")
+    $canUpdate = [bool]$deployment.UpdateAvailable -and
+        -not [bool]$deployment.TargetPreviouslyFailed -and
+        [string]$deployment.State -eq "Ready" -and
+        ($state -eq "Offline" -or ($isManaged -and ($state -eq "Online" -or $state -eq "Unresponsive")))
+    $canRepair = [bool]$deployment.ManifestValid -and
+        [bool]$deployment.PackageAvailable -and
+        [bool]$deployment.TargetDataAvailable -and
+        $state -ne "PortConflict" -and
+        ($state -eq "Offline" -or $isManaged)
 
     $stdoutLog = Join-Path -Path $logsPath -ChildPath "app.stdout.log"
     $stderrLog = Join-Path -Path $logsPath -ChildPath "app.stderr.log"
@@ -593,6 +602,8 @@ function Get-SaphirLauncherStatus {
         CanOpen             = [bool]$canOpen
         CanRestart          = [bool]$canRestart
         CanStop             = [bool]$canStop
+        CanUpdate           = [bool]$canUpdate
+        CanRepair           = [bool]$canRepair
         FrontendUrl         = $frontendUrl
         LogsPath            = $logsPath
         StdOutLog           = $stdoutLog
@@ -671,6 +682,7 @@ function Invoke-SaphirLauncherScriptProcess {
         [Parameter(Mandatory = $true)][string]$ScriptPath,
         [string]$DistributionRoot = "",
         [switch]$Force,
+        [switch]$Repair,
         [int]$TimeoutSeconds = 180
     )
 
@@ -691,6 +703,9 @@ function Invoke-SaphirLauncherScriptProcess {
     }
     if ($Force -and $command.Parameters.ContainsKey("Force")) {
         $optionalArguments += "-Force"
+    }
+    if ($Repair -and $command.Parameters.ContainsKey("Repair")) {
+        $optionalArguments += "-Repair"
     }
     if (-not [string]::IsNullOrWhiteSpace($DistributionRoot) -and
         $command.Parameters.ContainsKey("DistributionRoot")) {
@@ -754,7 +769,7 @@ function Invoke-SaphirLauncherScriptProcess {
 function Invoke-SaphirLauncherAction {
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("Start", "Restart", "Stop")]
+        [ValidateSet("Start", "Restart", "Stop", "Update", "Repair")]
         [string]$Action,
         [Parameter(Mandatory = $true)][string]$DistributionRoot,
         [string]$CacheRoot = "",
@@ -772,6 +787,50 @@ function Invoke-SaphirLauncherAction {
             -CacheRoot $CacheRoot `
             -RuntimeRoot $RuntimeRoot `
             -Quiet)
+        return (Get-SaphirLauncherStatus `
+            -DistributionRoot $DistributionRoot `
+            -CacheRoot $CacheRoot `
+            -RuntimeRoot $RuntimeRoot)
+    }
+
+    if ($Action -eq "Update" -or $Action -eq "Repair") {
+        $allowed = if ($Action -eq "Update") { [bool]$status.CanUpdate } else { [bool]$status.CanRepair }
+        if (-not $allowed) {
+            throw "SAPHIR cannot complete $($Action.ToLowerInvariant()) from its current state."
+        }
+
+        if ($status.State -ne "Offline") {
+            [void](Stop-SaphirLauncherApp `
+                -DistributionRoot $DistributionRoot `
+                -CacheRoot $CacheRoot `
+                -RuntimeRoot $RuntimeRoot `
+                -Quiet)
+        }
+
+        if ($Action -eq "Repair") {
+            if ([string]::IsNullOrWhiteSpace($CacheRoot)) {
+                $CacheRoot = Get-SaphirLocalAppRoot
+            }
+            Remove-SaphirFailedRelease -CacheRoot $CacheRoot
+        }
+
+        $adjacentBootstrapScript = Get-SaphirLauncherAdjacentBootstrapPath
+        $distributionBootstrapScript = Join-Path -Path $DistributionRoot -ChildPath "scripts/launch-cached-app.ps1"
+        $launchScript = if (Test-Path -LiteralPath $adjacentBootstrapScript -PathType Leaf) {
+            $adjacentBootstrapScript
+        }
+        elseif (Test-Path -LiteralPath $distributionBootstrapScript -PathType Leaf) {
+            $distributionBootstrapScript
+        }
+        else {
+            [string]$status.LaunchScript
+        }
+        Invoke-SaphirLauncherScriptProcess `
+            -ScriptPath $launchScript `
+            -DistributionRoot $DistributionRoot `
+            -Force:($Action -eq "Repair") `
+            -Repair:($Action -eq "Repair")
+
         return (Get-SaphirLauncherStatus `
             -DistributionRoot $DistributionRoot `
             -CacheRoot $CacheRoot `

@@ -135,6 +135,22 @@ try {
     Assert-True (-not ($payload.facts[0].PSObject.Properties.Name -contains "employeeCode")) "HRMIS/SIGRH leaked into the report facts."
     Assert-Equal "" $payload.meta.defaultProject "The department-wide HTTP report must not acquire a default project."
 
+    $departmentDownload = Invoke-TestRequest "GET" "$baseUri/stats/analytics-export?startDate=2026-07-01&endDate=2026-07-31&locale=fr&reportMode=department" $adminToken
+    Assert-Equal 200 $departmentDownload.StatusCode "Authenticated department analytics export failed."
+    Assert-True ([string]$departmentDownload.Headers["Content-Disposition"] -like "*saphir-analytics-department-2026-07-01_2026-07-31-fr.html*") "Department analytics download filename is incorrect."
+    Assert-True (-not $departmentDownload.Body.Contains("Élodie Test")) "The department report HTML leaked an employee name."
+    $departmentPayloadMatch = [regex]::Match($departmentDownload.Body, '<script id="reportData" type="application/octet-stream">([^<]+)</script>')
+    Assert-True $departmentPayloadMatch.Success "The downloaded department report payload is missing."
+    $departmentPayloadJson = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($departmentPayloadMatch.Groups[1].Value))
+    $departmentPayload = $departmentPayloadJson | ConvertFrom-Json
+    Assert-Equal "department" $departmentPayload.meta.reportMode "The HTTP department report did not retain its report mode."
+    Assert-Equal 7200 $departmentPayload.summary.approvedSeconds "The HTTP department report calculated the wrong approved duration."
+    Assert-True (-not ($departmentPayload.PSObject.Properties.Name -contains "employees")) "The HTTP department report payload contains an employee collection."
+    Assert-True (-not ($departmentPayload.PSObject.Properties.Name -contains "facts")) "The HTTP department report payload contains raw entry facts."
+    foreach ($sensitiveMarker in @("employeeRef", "reportEmployeeId", "Élodie Test")) {
+        Assert-True (-not $departmentPayloadJson.Contains($sensitiveMarker)) "The HTTP department report payload leaked '$sensitiveMarker'."
+    }
+
     $projectDownload = Invoke-TestRequest "GET" "$baseUri/stats/analytics-export?startDate=2026-07-01&endDate=2026-07-31&locale=fr&projectCode=P1" $adminToken
     Assert-Equal 200 $projectDownload.StatusCode "Authenticated project analytics export failed."
     Assert-True ([string]$projectDownload.Headers["Content-Disposition"] -like "*saphir-analytics-P1-2026-07-01_2026-07-31-fr.html*") "Project analytics download filename is incorrect."
@@ -145,6 +161,8 @@ try {
 
     $invalid = Invoke-TestRequest "GET" "$baseUri/stats/analytics-export?startDate=bad&locale=fr" $adminToken
     Assert-Equal 400 $invalid.StatusCode "Invalid analytics dates must return HTTP 400."
+    $invalidReportMode = Invoke-TestRequest "GET" "$baseUri/stats/analytics-export?reportMode=employee&locale=fr" $adminToken
+    Assert-Equal 400 $invalidReportMode.StatusCode "Invalid analytics report modes must return HTTP 400."
     $invalidProject = Invoke-TestRequest "GET" "$baseUri/stats/analytics-export?projectCode=..%2FP1&locale=fr" $adminToken
     Assert-Equal 400 $invalidProject.StatusCode "Invalid analytics project codes must return HTTP 400."
     $missingProject = Invoke-TestRequest "GET" "$baseUri/stats/analytics-export?projectCode=UNKNOWN&locale=fr" $adminToken

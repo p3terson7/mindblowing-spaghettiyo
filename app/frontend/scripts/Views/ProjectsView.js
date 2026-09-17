@@ -19,6 +19,7 @@ const PROJECT_OTHER_CHART_BORDER_DASH = Object.freeze([3, 5]);
 const PROJECT_TREND_LINE_WIDTH = 3;
 const PROJECT_TREND_FOCUSED_LINE_WIDTH = 3.75;
 const PROJECT_TREND_MUTED_LINE_WIDTH = 1.5;
+const PROJECT_BUDGET_PERIOD_IDS = Object.freeze(["P1", "P2", "P3", "P4"]);
 const projectInsightChartInstances = {};
 const projectPalette = ["#0868d7", "#16865a", "#7558d8", "#008994", "#c27a00", "#c43840", "#c94f8a", "#4f72d8", "#7f6b52", "#0f8f7a"];
 const projectsViewState = {
@@ -38,6 +39,12 @@ const projectsViewState = {
   portfolioSearch: "",
   portfolioScope: "active",
   portfolioSort: "activity",
+  budgetComparison: {
+    payload: null,
+    selectedIds: new Set(),
+    initialized: false,
+    tableExpanded: false,
+  },
   workspaceOpen: false,
   workspaceEntriesExpanded: false,
   workspaceOpener: null,
@@ -47,6 +54,245 @@ const projectsViewState = {
     direction: "desc",
   },
 };
+
+function getProjectBudgetComparisonElements() {
+  return {
+    cycleLabel: document.getElementById("projectBudgetCycleLabel"),
+    controls: document.getElementById("projectBudgetComparisonControls"),
+    summary: document.getElementById("projectBudgetComparisonSummary"),
+    table: document.getElementById("projectBudgetComparisonTable"),
+  };
+}
+
+function normalizeProjectBudgetComparisonPayload(payload) {
+  const sourcePeriods = payload && Array.isArray(payload.periods) ? payload.periods : [];
+  const periodsById = new Map(sourcePeriods.map(period => [String(period && period.id || "").trim().toUpperCase(), period]));
+  return {
+    cycleLabel: String(payload && payload.cycleLabel || "").trim(),
+    periods: PROJECT_BUDGET_PERIOD_IDS.map(id => {
+      const source = periodsById.get(id) || {};
+      return {
+        id,
+        configured: Boolean(source.configured && source.startDate && source.endDate),
+        startDate: String(source.startDate || ""),
+        endDate: String(source.endDate || ""),
+        approvedSeconds: Math.max(0, Number(source.approvedSeconds) || 0),
+        approvedEntryCount: Math.max(0, Number(source.approvedEntryCount) || 0),
+        projectsWithOvertimeCount: Math.max(0, Number(source.projectsWithOvertimeCount) || 0),
+        projects: Array.isArray(source.projects) ? source.projects : [],
+      };
+    }),
+  };
+}
+
+function formatProjectBudgetPeriodRange(period) {
+  if (!period || !period.configured) {
+    return t("projects.budgetNotConfigured");
+  }
+  return `${formatDateLabel(period.startDate)} – ${formatDateLabel(period.endDate)}`;
+}
+
+function setProjectBudgetComparisonLoading() {
+  const elements = getProjectBudgetComparisonElements();
+  if (elements.controls) {
+    elements.controls.innerHTML = PROJECT_BUDGET_PERIOD_IDS.map(id => `<span class="budget-period-choice is-loading"><strong>${id}</strong></span>`).join("");
+  }
+  if (elements.summary) {
+    elements.summary.innerHTML = createLoadingState("grid", 4);
+  }
+  if (elements.table) {
+    elements.table.innerHTML = createLoadingState("table", 1);
+  }
+}
+
+function getSelectedProjectBudgetPeriods(payload = projectsViewState.budgetComparison.payload) {
+  const periods = payload && Array.isArray(payload.periods) ? payload.periods : [];
+  return periods.filter(period => period.configured && projectsViewState.budgetComparison.selectedIds.has(period.id));
+}
+
+function getBudgetComparisonProjectRows(periods) {
+  const projectRows = new Map();
+  periods.forEach(period => {
+    period.projects.forEach(project => {
+      const projectCode = String(project && project.projectCode || "").trim();
+      if (!projectCode) {
+        return;
+      }
+      if (!projectRows.has(projectCode)) {
+        projectRows.set(projectCode, {
+          projectCode,
+          projectName: String(project.projectName || projectCode),
+          project,
+          values: new Map(),
+        });
+      }
+      projectRows.get(projectCode).values.set(period.id, project);
+    });
+  });
+
+  return Array.from(projectRows.values())
+    .filter(row => periods.some(period => Number(row.values.get(period.id)?.totalSeconds || 0) > 0))
+    .sort((left, right) => {
+      const leftTotal = periods.reduce((sum, period) => sum + Number(left.values.get(period.id)?.totalSeconds || 0), 0);
+      const rightTotal = periods.reduce((sum, period) => sum + Number(right.values.get(period.id)?.totalSeconds || 0), 0);
+      if (rightTotal !== leftTotal) {
+        return rightTotal - leftTotal;
+      }
+      return left.projectCode.localeCompare(right.projectCode, typeof getCurrentLocale === "function" ? getCurrentLocale() : undefined);
+    });
+}
+
+function formatBudgetComparisonDelta(firstSeconds, lastSeconds) {
+  const delta = Number(lastSeconds || 0) - Number(firstSeconds || 0);
+  if (delta === 0) {
+    return { label: secondsToDurationLabel(0), tone: "neutral" };
+  }
+  return {
+    label: `${delta > 0 ? "+" : "−"}${secondsToDurationLabel(Math.abs(delta))}`,
+    tone: delta > 0 ? "up" : "down",
+  };
+}
+
+function renderProjectBudgetComparison() {
+  const payload = projectsViewState.budgetComparison.payload;
+  const elements = getProjectBudgetComparisonElements();
+  if (!payload || !elements.controls || !elements.summary || !elements.table) {
+    return;
+  }
+
+  if (elements.cycleLabel) {
+    elements.cycleLabel.textContent = payload.cycleLabel;
+    elements.cycleLabel.classList.toggle("d-none", !payload.cycleLabel);
+  }
+
+  elements.controls.innerHTML = payload.periods.map(period => {
+    const checked = period.configured && projectsViewState.budgetComparison.selectedIds.has(period.id);
+    return `
+      <label class="budget-period-choice${period.configured ? "" : " is-unconfigured"}">
+        <input type="checkbox" value="${period.id}"${checked ? " checked" : ""}${period.configured ? "" : " disabled"}>
+        <span class="budget-period-choice-copy">
+          <strong>${period.id}</strong>
+          <small>${escapeHtml(formatProjectBudgetPeriodRange(period))}</small>
+        </span>
+      </label>
+    `;
+  }).join("");
+
+  const configuredPeriods = payload.periods.filter(period => period.configured);
+  if (configuredPeriods.length === 0) {
+    elements.summary.innerHTML = "";
+    elements.table.innerHTML = createEmptyState(t("projects.budgetPeriodsEmpty"));
+    return;
+  }
+
+  const selectedPeriods = getSelectedProjectBudgetPeriods(payload);
+  if (selectedPeriods.length === 0) {
+    elements.summary.innerHTML = "";
+    elements.table.innerHTML = createEmptyState(t("projects.budgetSelectPeriod"));
+    return;
+  }
+
+  elements.summary.innerHTML = selectedPeriods.map(period => `
+    <article class="budget-comparison-stat">
+      <div>
+        <strong>${period.id}</strong>
+        <span>${escapeHtml(formatProjectBudgetPeriodRange(period))}</span>
+      </div>
+      <span class="metric-label">${escapeHtml(t("projects.approvedHours"))}</span>
+      <strong class="metric-value duration-value">${escapeHtml(secondsToDurationLabel(period.approvedSeconds))}</strong>
+      <small>${escapeHtml(t("projects.budgetPeriodSummary", {
+        projects: period.projectsWithOvertimeCount,
+        entries: period.approvedEntryCount,
+      }))}</small>
+    </article>
+  `).join("");
+
+  const rows = getBudgetComparisonProjectRows(selectedPeriods);
+  if (rows.length === 0) {
+    elements.table.innerHTML = createEmptyState(t("projects.budgetNoActivity"));
+    return;
+  }
+
+  const includeDelta = selectedPeriods.length > 1;
+  const visibleRows = projectsViewState.budgetComparison.tableExpanded ? rows : rows.slice(0, 10);
+  elements.table.innerHTML = `
+    <div class="budget-comparison-table-wrap" tabindex="0">
+      <table class="budget-comparison-table">
+        <caption>${escapeHtml(t("projects.budgetComparisonCaption"))}</caption>
+        <thead>
+          <tr>
+            <th scope="col">${escapeHtml(t("shared.project"))}</th>
+            ${selectedPeriods.map(period => `
+              <th scope="col">
+                <strong>${period.id}</strong>
+                <span>${escapeHtml(formatProjectBudgetPeriodRange(period))}</span>
+              </th>
+            `).join("")}
+            ${includeDelta ? `<th scope="col">${escapeHtml(t("projects.budgetChange"))}</th>` : ""}
+          </tr>
+        </thead>
+        <tbody>
+          ${visibleRows.map(row => {
+            const firstSeconds = Number(row.values.get(selectedPeriods[0].id)?.totalSeconds || 0);
+            const lastSeconds = Number(row.values.get(selectedPeriods[selectedPeriods.length - 1].id)?.totalSeconds || 0);
+            const delta = formatBudgetComparisonDelta(firstSeconds, lastSeconds);
+            return `
+              <tr>
+                <th scope="row">
+                  <span class="budget-comparison-project">${renderProjectColorDot(row.project)}<span><strong>${escapeHtml(row.projectCode)}</strong><small>${escapeHtml(row.projectName)}</small></span></span>
+                </th>
+                ${selectedPeriods.map(period => {
+                  const project = row.values.get(period.id);
+                  const seconds = Number(project && project.totalSeconds || 0);
+                  const share = Number(project && project.departmentShare && project.departmentShare.percent || 0);
+                  return `<td><strong class="duration-value">${escapeHtml(secondsToDurationLabel(seconds))}</strong><small>${escapeHtml(t("projects.budgetShareValue", { value: share.toLocaleString(typeof getCurrentLocale === "function" ? getCurrentLocale() : undefined, { maximumFractionDigits: 1 }) }))}</small></td>`;
+                }).join("")}
+                ${includeDelta ? `<td><span class="budget-comparison-delta is-${delta.tone}">${escapeHtml(delta.label)}</span></td>` : ""}
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+    ${rows.length > 10 ? `
+      <button type="button" class="btn btn-outline-secondary btn-sm budget-comparison-table-toggle" data-budget-comparison-toggle aria-expanded="${projectsViewState.budgetComparison.tableExpanded ? "true" : "false"}">
+        ${escapeHtml(projectsViewState.budgetComparison.tableExpanded
+          ? t("projects.budgetShowTopProjects")
+          : t("projects.budgetShowAllProjects", { count: rows.length }))}
+      </button>
+    ` : ""}
+  `;
+}
+
+async function loadProjectBudgetComparison() {
+  setProjectBudgetComparisonLoading();
+  try {
+    const response = await fetch(`${apiUrl}stats/budget-periods`, { cache: "no-store" });
+    const payload = normalizeProjectBudgetComparisonPayload(await parseResponse(response));
+    projectsViewState.budgetComparison.payload = payload;
+    const configuredIds = payload.periods.filter(period => period.configured).map(period => period.id);
+    const previousSelection = Array.from(projectsViewState.budgetComparison.selectedIds).filter(id => configuredIds.includes(id));
+    projectsViewState.budgetComparison.selectedIds = new Set(
+      projectsViewState.budgetComparison.initialized && previousSelection.length > 0
+        ? previousSelection
+        : configuredIds,
+    );
+    projectsViewState.budgetComparison.initialized = true;
+    renderProjectBudgetComparison();
+  } catch (error) {
+    console.error("Unable to load budget-period comparison:", error);
+    const elements = getProjectBudgetComparisonElements();
+    if (elements.controls) {
+      elements.controls.innerHTML = "";
+    }
+    if (elements.summary) {
+      elements.summary.innerHTML = "";
+    }
+    if (elements.table) {
+      elements.table.innerHTML = createEmptyState(t("projects.budgetLoadError"));
+    }
+  }
+}
 
 function getSelectedProjectEditorColorKey() {
   const selectedInput = document.querySelector('input[name="projectEditorColorKey"]:checked');
@@ -1139,22 +1385,22 @@ function renderProjectInsights(projects) {
   summaryContainer.innerHTML = `
     <div class="project-insight-stat">
       <span class="metric-label">${escapeHtml(t("projects.insightTotalOvertime"))}</span>
-      <strong class="metric-value mono">${escapeHtml(secondsToDurationLabel(totalSeconds))}</strong>
+      <strong class="metric-value duration-value">${escapeHtml(secondsToDurationLabel(totalSeconds))}</strong>
       <span class="metric-hint">${escapeHtml(t("projects.insightSelectedPeriod"))}</span>
     </div>
     <div class="project-insight-stat">
       <span class="metric-label">${escapeHtml(t("projects.insightActiveProjects"))}</span>
-      <strong class="metric-value mono">${escapeHtml(`${activeProjects.length}/${projectList.length}`)}</strong>
+      <strong class="metric-value">${escapeHtml(`${activeProjects.length}/${projectList.length}`)}</strong>
       <span class="metric-hint">${escapeHtml(t("projects.insightArchivedHint", { count: archivedProjects.length }))}</span>
     </div>
     <div class="project-insight-stat">
       <span class="metric-label">${escapeHtml(t("projects.insightSectors"))}</span>
-      <strong class="metric-value mono">${escapeHtml(Object.keys(sectorMetrics).length)}</strong>
+      <strong class="metric-value">${escapeHtml(Object.keys(sectorMetrics).length)}</strong>
       <span class="metric-hint">${escapeHtml(t("projects.insightSectorHint"))}</span>
     </div>
     <div class="project-insight-stat">
       <span class="metric-label">${escapeHtml(t("projects.insightCoverage"))}</span>
-      <strong class="metric-value mono">${escapeHtml(missingPrimaryCount + missingBackupCount)}</strong>
+      <strong class="metric-value">${escapeHtml(missingPrimaryCount + missingBackupCount)}</strong>
       <span class="metric-hint">${escapeHtml(t("projects.insightCoverageHint", { primary: missingPrimaryCount, backup: missingBackupCount }))}</span>
     </div>
   `;
@@ -1271,7 +1517,7 @@ function syncProjectWorkspaceHeader(project) {
     editButton.classList.toggle("d-none", !canManageProjects());
     editButton.setAttribute("data-project-code", String(normalizedProject.projectCode || ""));
   }
-  ["projectWorkspaceReviewButton", "projectWorkspaceEntriesButton", "projectWorkspaceExportButton"].forEach(buttonId => {
+  ["projectWorkspaceReviewButton", "projectWorkspaceEntriesButton", "projectWorkspaceExportButton", "projectWorkspaceDepartmentAnalyticsExportButton"].forEach(buttonId => {
     const button = document.getElementById(buttonId);
     if (button) {
       button.setAttribute("data-project-code", String(normalizedProject.projectCode || ""));
@@ -1446,7 +1692,13 @@ function getProjectAnalyticsExportLocale() {
     : "en";
 }
 
-function buildProjectAnalyticsExportUrl(filterPeriod = currentProjectFilter, projectCode = "") {
+function normalizeProjectAnalyticsReportMode(reportMode = "") {
+  return String(reportMode || "").trim().toLowerCase() === "department"
+    ? "department"
+    : "";
+}
+
+function buildProjectAnalyticsExportUrl(filterPeriod = currentProjectFilter, projectCode = "", reportMode = "") {
   const { startDate, endDate } = calculateDateRange(filterPeriod);
   const params = new URLSearchParams();
   if (startDate) {
@@ -1459,18 +1711,22 @@ function buildProjectAnalyticsExportUrl(filterPeriod = currentProjectFilter, pro
   if (String(projectCode || "").trim()) {
     params.set("projectCode", String(projectCode).trim());
   }
+  if (normalizeProjectAnalyticsReportMode(reportMode) === "department") {
+    params.set("reportMode", "department");
+  }
   return `${apiUrl}stats/analytics-export?${params.toString()}`;
 }
 
-function getProjectAnalyticsExportFallbackFilename(filterPeriod = currentProjectFilter, projectCode = "") {
+function getProjectAnalyticsExportFallbackFilename(filterPeriod = currentProjectFilter, projectCode = "", reportMode = "") {
   const { startDate, endDate } = calculateDateRange(filterPeriod);
+  const reportModePart = normalizeProjectAnalyticsReportMode(reportMode) === "department" ? "-department" : "";
   const projectPart = String(projectCode || "").trim()
     ? `-${String(projectCode).trim().replace(/[^A-Za-z0-9._-]+/g, "-")}`
     : "";
   if (!startDate && !endDate) {
-    return `saphir-analytics${projectPart}-all.html`;
+    return `saphir-analytics${reportModePart}${projectPart}-all.html`;
   }
-  return `saphir-analytics${projectPart}-${startDate || "start"}_${endDate || "end"}.html`;
+  return `saphir-analytics${reportModePart}${projectPart}-${startDate || "start"}_${endDate || "end"}.html`;
 }
 
 function sanitizeProjectAnalyticsExportFilename(value, fallbackFilename) {
@@ -1516,8 +1772,9 @@ function triggerProjectAnalyticsExportDownload(reportBlob, filename) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
-async function downloadProjectAnalyticsHtmlReport(filterPeriod = currentProjectFilter, projectCode = "") {
-  const response = await fetch(buildProjectAnalyticsExportUrl(filterPeriod, projectCode), {
+async function downloadProjectAnalyticsHtmlReport(filterPeriod = currentProjectFilter, projectCode = "", reportMode = "") {
+  const normalizedReportMode = normalizeProjectAnalyticsReportMode(reportMode);
+  const response = await fetch(buildProjectAnalyticsExportUrl(filterPeriod, projectCode, normalizedReportMode), {
     cache: "no-store",
     headers: {
       Accept: "text/html",
@@ -1529,10 +1786,12 @@ async function downloadProjectAnalyticsHtmlReport(filterPeriod = currentProjectF
   }
 
   const reportBlob = await response.blob();
-  const fallbackFilename = getProjectAnalyticsExportFallbackFilename(filterPeriod, projectCode);
+  const fallbackFilename = getProjectAnalyticsExportFallbackFilename(filterPeriod, projectCode, normalizedReportMode);
   const filename = getProjectAnalyticsExportFilename(response, fallbackFilename);
   triggerProjectAnalyticsExportDownload(reportBlob, filename);
-  showToast(t("projects.analyticsExportSuccess"), "success");
+  showToast(t(normalizedReportMode === "department"
+    ? "projects.departmentAnalyticsExportSuccess"
+    : "projects.analyticsExportSuccess"), "success");
   return true;
 }
 
@@ -1701,6 +1960,10 @@ async function refreshProjectsView() {
   setProjectInsightsLoadingState();
 
   try {
+    // Budget comparison is independent from the active Trends range. Start it
+    // in parallel, but do not hold back the main project workspace while the
+    // four period summaries are being assembled.
+    const budgetComparisonPromise = loadProjectBudgetComparison();
     const response = await fetch(buildProjectBootstrapUrl(currentProjectFilter, requestedProjectCode));
     const payload = await parseResponse(response);
     const summary = Array.isArray(payload && payload.summary) ? payload.summary : [];
@@ -1760,6 +2023,7 @@ async function refreshProjectsView() {
     if (detailContainer) {
       detailContainer.setAttribute("aria-busy", "false");
     }
+    await budgetComparisonPromise;
     return true;
   } catch (error) {
     console.error("Error loading project data:", error);
@@ -2145,7 +2409,7 @@ function renderProjectWorkspaceTrendTable(points) {
             ${points.map(point => `
               <tr>
                 <th scope="row">${escapeHtml(formatProjectTrendPeriodLabel(point.label))}</th>
-                <td class="mono">${escapeHtml(secondsToDurationLabel(point.seconds))}</td>
+                <td class="duration-value">${escapeHtml(secondsToDurationLabel(point.seconds))}</td>
               </tr>
             `).join("")}
           </tbody>
@@ -2334,7 +2598,7 @@ function renderProjectWorkspaceContributors(detail) {
                 <strong>${escapeHtml(contributor.employee)}</strong>
                 ${contributor.employeeCode ? `<span class="project-workspace-cell-note mono">${escapeHtml(contributor.employeeCode)}</span>` : ""}
               </td>
-              <td class="mono">${escapeHtml(secondsToDurationLabel(contributor.approvedSeconds))}</td>
+              <td class="duration-value">${escapeHtml(secondsToDurationLabel(contributor.approvedSeconds))}</td>
               <td>${escapeHtml(`${contributor.sharePercent.toLocaleString(typeof getCurrentLocale === "function" ? getCurrentLocale() : undefined, { maximumFractionDigits: 1 })}%`)}</td>
               <td>${escapeHtml(contributor.approvedEntryCount)}</td>
               <td>${contributor.pendingCount > 0 ? `<span class="status-badge pending">${escapeHtml(contributor.pendingCount)}</span>` : "0"}</td>
@@ -2374,11 +2638,11 @@ function renderProjectWorkspaceRecentEntries(detail) {
               <span>${escapeHtml(formatDateLabel(entry.date))}</span>
             </div>
             <div class="project-workspace-entry-time">
-              <span class="mono">${getEntryRoundedTimeRangeMarkup(entry)}</span>
+              <span class="time-value">${getEntryRoundedTimeRangeMarkup(entry)}</span>
               ${exactTimeLabel ? `<span class="project-workspace-cell-note">${escapeHtml(exactTimeLabel)}</span>` : ""}
             </div>
-            <span class="mono project-workspace-entry-duration">${escapeHtml(secondsToDurationLabel(getProjectWorkspaceEntrySeconds(entry)))}</span>
-            <span class="status-badge ${escapeHtml(status === "open" ? "pending" : getStatusTone(statusEntry))}">${escapeHtml(status === "open" ? t("projects.openEntry") : getEntryStatusLabel(statusEntry))}</span>
+            <span class="duration-value project-workspace-entry-duration">${escapeHtml(secondsToDurationLabel(getProjectWorkspaceEntrySeconds(entry)))}</span>
+            <div class="project-workspace-entry-state"><span class="status-badge ${escapeHtml(status === "open" ? "pending" : getStatusTone(statusEntry))}">${escapeHtml(status === "open" ? t("projects.openEntry") : getEntryStatusLabel(statusEntry))}</span>${renderEntryWorkScheduleBadge(entry)}</div>
             <div class="project-workspace-entry-notes">${renderEntryNotesPreview(entry)}</div>
             ${canOpen ? `
               <button type="button" class="btn btn-outline-secondary btn-sm project-entry-navigator" data-employee-code="${escapeHtml(entry.employeeCode)}" data-project-code="${escapeHtml(detail.projectCode)}" data-entry-id="${escapeHtml(entry.entryId)}" aria-label="${escapeHtml(t("projects.openEntryForEmployee", { name: entry.employeeName || entry.employee || entry.employeeCode }))}">
@@ -2459,17 +2723,17 @@ function renderProjectDetail(detail) {
     <section class="project-workspace-metrics" aria-label="${escapeHtml(t("projects.keyMetrics"))}">
       <article class="project-workspace-metric project-workspace-metric-primary">
         <span>${escapeHtml(t("projects.approvedHours"))}</span>
-        <strong class="mono">${escapeHtml(secondsToDurationLabel(approvedSeconds))}</strong>
+        <strong class="duration-value">${escapeHtml(secondsToDurationLabel(approvedSeconds))}</strong>
         <small>${escapeHtml(t("projects.approvedEntries", { count: approvedCount }))}</small>
       </article>
       <article class="project-workspace-metric">
         <span>${escapeHtml(t("projects.pendingHours"))}</span>
-        <strong class="mono">${escapeHtml(secondsToDurationLabel(pending.seconds))}</strong>
+        <strong class="duration-value">${escapeHtml(secondsToDurationLabel(pending.seconds))}</strong>
         <small>${escapeHtml(pending.count === 1 ? t("projects.pendingEntry") : t("projects.pendingEntries", { count: pending.count }))}</small>
       </article>
       <article class="project-workspace-metric">
         <span>${escapeHtml(t("projects.contributors"))}</span>
-        <strong class="mono">${escapeHtml(contributors.length)}</strong>
+        <strong>${escapeHtml(contributors.length)}</strong>
         <small>${escapeHtml(t("projects.selectedPeriod"))}</small>
       </article>
       <article class="project-workspace-metric project-workspace-comparison-${escapeHtml(comparison.tone)}">
@@ -3058,6 +3322,16 @@ document.getElementById("projectWorkspaceExportButton").addEventListener("click"
   });
 });
 
+document.getElementById("projectWorkspaceDepartmentAnalyticsExportButton").addEventListener("click", event => {
+  const projectCode = event.currentTarget.getAttribute("data-project-code") || currentProjectCode;
+  runButtonAction(event.currentTarget, () => downloadProjectAnalyticsHtmlReport(currentProjectFilter, projectCode, "department"), {
+    key: `project-department-analytics-html-export:${projectCode}`,
+  }).catch(error => {
+    console.error("Unable to export the department project report:", error);
+    showToast(t("projects.departmentAnalyticsExportError", { message: error.message || error }), "error");
+  });
+});
+
 document.getElementById("projectWorkspaceEditButton").addEventListener("click", event => {
   const project = getProjectByCode(event.currentTarget.getAttribute("data-project-code") || currentProjectCode);
   if (!project || !canManageProjects()) {
@@ -3110,6 +3384,37 @@ document.getElementById("projectQuickRangeButtons").addEventListener("click", ev
     showToast(t("projects.unableToLoad"), "error");
   });
 });
+document.getElementById("projectBudgetComparisonControls").addEventListener("change", event => {
+  const input = event.target.closest('input[type="checkbox"]');
+  if (!input || input.disabled) {
+    return;
+  }
+
+  const periodId = String(input.value || "").trim().toUpperCase();
+  const selectedIds = new Set(projectsViewState.budgetComparison.selectedIds);
+  if (input.checked) {
+    selectedIds.add(periodId);
+  } else {
+    selectedIds.delete(periodId);
+  }
+
+  if (selectedIds.size === 0) {
+    input.checked = true;
+    showToast(t("projects.budgetKeepOnePeriod"), "info");
+    return;
+  }
+
+  projectsViewState.budgetComparison.selectedIds = selectedIds;
+  renderProjectBudgetComparison();
+});
+document.getElementById("projectBudgetComparisonTable").addEventListener("click", event => {
+  const toggle = event.target.closest("[data-budget-comparison-toggle]");
+  if (!toggle) {
+    return;
+  }
+  projectsViewState.budgetComparison.tableExpanded = !projectsViewState.budgetComparison.tableExpanded;
+  renderProjectBudgetComparison();
+});
 document.getElementById("projectApplyCustomRangeButton").addEventListener("click", event => {
   const startDate = document.getElementById("projectStartDate").value;
   const endDate = document.getElementById("projectEndDate").value;
@@ -3145,6 +3450,14 @@ document.getElementById("projectAnalyticsExportButton").addEventListener("click"
   }).catch(error => {
     console.error("Unable to export the analytics report:", error);
     showToast(t("projects.analyticsExportError", { message: error.message || error }), "error");
+  });
+});
+document.getElementById("projectDepartmentAnalyticsExportButton").addEventListener("click", event => {
+  runButtonAction(event.currentTarget, () => downloadProjectAnalyticsHtmlReport(currentProjectFilter, "", "department"), {
+    key: "project-department-analytics-html-export",
+  }).catch(error => {
+    console.error("Unable to export the department analytics report:", error);
+    showToast(t("projects.departmentAnalyticsExportError", { message: error.message || error }), "error");
   });
 });
 document.getElementById("addProjectButton").addEventListener("click", event => {

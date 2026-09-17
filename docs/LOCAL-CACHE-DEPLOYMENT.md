@@ -28,7 +28,7 @@ This creates the stable employee folder:
 \\server\department\Applications\SAPHIR-Distribution
 ```
 
-The folder contains the graphical launcher, diagnostic launch/stop files, `Install SAPHIR Shortcut.vbs`, the Windows icon, employee guide, release pointer and current release ZIP. It does not contain production data, tests, reset scripts or source-only administration utilities. Employees use this `SAPHIR-Distribution` folder—not the source-code repository.
+The folder contains the clearly named `Installer SAPHIR sur le Bureau.vbs`, its compatibility installer, the graphical launcher, diagnostic launch/stop files, the Windows icon, employee guide, release pointer and current release ZIP. It does not contain production data, tests, reset scripts or source-only administration utilities. Employees use this `SAPHIR-Distribution` folder—not the source-code repository.
 
 If your department only exposes a mapped R: drive, use the equivalent command:
 
@@ -45,7 +45,7 @@ These permissions do not add runtime encryption or expensive security checks. Th
 
 ## First shortcut installation
 
-`SAPHIR-Distribution` is a new stable folder. Existing Desktop shortcuts do not retarget themselves, so send employees the exact new network path and ask them to run `Install SAPHIR Shortcut.vbs` once. This installs a zero-admin launcher under `%LOCALAPPDATA%\SAPHIR\launcher` and creates the **SAPHIR** Desktop shortcut. The local window opens without synchronously touching the share; network, update and data checks happen in the background. Keep the previous distribution available during the pilot, then archive it according to your normal retention process after everyone has confirmed the new shortcut. Rerun the installer only when the launcher itself changes; ordinary SAPHIR application updates remain automatic.
+`SAPHIR-Distribution` is a new stable folder. Existing Desktop shortcuts do not retarget themselves, so send employees the exact new network path and ask them to run `Installer SAPHIR sur le Bureau.vbs` once. This installs a zero-admin launcher under `%LOCALAPPDATA%\SAPHIR\launcher`, creates the **SAPHIR** Desktop shortcut and opens the launcher automatically. The local window opens before any network probe; launcher-update, application-update and data checks happen in the background. Keep the previous distribution available during the pilot, then archive it according to your normal retention process after everyone has confirmed the new shortcut. After this installation, the stable local host detects a newer launcher fingerprint and installs the new immutable launcher bundle automatically. Employees do not need to rerun the installer for later launcher or application updates. `Install SAPHIR Shortcut.vbs` remains beside it for launcher compatibility and automated background upgrades.
 
 The launcher uses Windows Script Host, Windows PowerShell 5.1 and WPF already included with supported Windows workstations. It does not require PowerShell 7, .NET SDK, an Internet download, a package manager or administrator rights.
 
@@ -74,17 +74,23 @@ application release, does not update `current.json`, does not touch DATA, and
 cannot modify launchers that are already installed in another user's AppData.
 
 Ask every employee to open `SAPHIR-Distribution` and run
-`Install SAPHIR Shortcut.vbs` again. Confirm on a pilot workstation that the
+`Installer SAPHIR sur le Bureau.vbs` again. Confirm on a pilot workstation that the
 success message shows a new launcher bundle identifier, close any launcher
 window that was already open, then reopen SAPHIR from the refreshed Desktop
 shortcut. The installer refreshes `%LOCALAPPDATA%\SAPHIR\launcher` and safely
 unlocks a release that the former launcher rejected before it understood the
-canonical layout. That release is retried on the next **Start** or **Restart**.
+canonical layout. That release is retried through **Update and start** or
+**Update and restart**.
+This is the last manual reinstall required for workstations that still use the
+old shortcut target. Once the stable host is installed, future bootstrap
+changes are detected through `launcher-version.txt` and installed in a hidden
+background check after the launcher window has opened.
 
 If the canonical release was accidentally published before this step, it does
 not need to be copied manually or assigned another identifier: publish the
 fixed bootstrap, rerun the installer, close the old launcher window, and use
-**Start** or **Restart** once. **Open** and **Refresh** do not install releases.
+**Update and start**, **Update and restart** or **Repair SAPHIR** once. **Open**
+and **Refresh** do not install releases.
 
 ### Step 2 — publish the first canonical release
 
@@ -120,7 +126,7 @@ only the normal packaging command. The publisher:
 3. copies the complete ZIP into `deployment\releases`;
 4. updates `deployment\current.json` last.
 
-Employees receive the update when they choose **Start SAPHIR** while it is stopped or **Restart** while it is running. Both actions use the versioned cache, checksum validation and automatic rollback workflow. Merely choosing **Open SAPHIR** leaves the healthy backend untouched and does not check the network release. The previous local version remains available for automatic rollback if the new version cannot start.
+Employees see **Update and start** while SAPHIR is stopped or **Update and restart** while it is running. Both actions use the versioned cache, checksum validation and automatic rollback workflow. **Repair SAPHIR** force-downloads and validates the currently published release again, without deleting or replacing DATA. Merely choosing **Open SAPHIR** leaves the healthy backend untouched. The previous local version remains available for automatic rollback if the new version cannot start.
 
 ## Recommended rollout and rollback
 
@@ -140,15 +146,16 @@ Before giving the shortcut to everyone:
 
 1. Test from an ordinary employee account, not an administrator account.
 2. Test from the actual UNC network folder or mapped R: drive used by employees.
-3. Run `Install SAPHIR Shortcut.vbs` and confirm that a **SAPHIR** shortcut with the blue logo appears on the Desktop.
-4. Confirm that the launcher opens without a console window and displays separate **Application** and **Shared data** states.
+3. Run `Installer SAPHIR sur le Bureau.vbs` and confirm that a **SAPHIR** shortcut with the blue logo appears on the Desktop.
+4. Confirm that the launcher opens automatically without a console window and displays separate **Application** and **Shared data** states.
 5. Confirm that the launcher and icon were copied under `%LOCALAPPDATA%\SAPHIR\launcher` and `%LOCALAPPDATA%\SAPHIR\assets`.
-6. With SAPHIR stopped, choose **Start SAPHIR** and confirm that `%LOCALAPPDATA%\SAPHIR\versions\<release>` is created.
+6. With SAPHIR stopped, choose **Update and start** on a first installation (or **Start SAPHIR** when no update is pending) and confirm that `%LOCALAPPDATA%\SAPHIR\versions\<release>` is created.
 7. Confirm that the cached release has no `data` folder and that **Open SAPHIR** opens the browser without changing the backend PID.
 8. Confirm that **Stop** removes the managed backend PID and changes the launcher to the offline state.
-9. Publish one test update, choose **Start SAPHIR** or **Restart**, and confirm that the backend starts on the new cached version.
-10. Disconnect only the deployment share after at least one successful installation. Confirm that the local launcher window still opens and reports the unavailable resource without freezing.
-11. Verify that an unrelated process occupying port 8081 is reported as a conflict and is never terminated by the launcher.
+9. Publish one test update, choose **Update and start** or **Update and restart**, and confirm that the backend starts on the new cached version.
+10. Publish a bootstrap-only change, open the Desktop shortcut, close the launcher, then open it again and confirm that `%LOCALAPPDATA%\SAPHIR\launcher\current.txt` identifies a newer launcher bundle without rerunning the installer.
+11. Disconnect only the deployment share after at least one successful installation. Confirm that the local launcher window still opens and reports the unavailable resource without freezing.
+12. Verify that an unrelated process occupying port 8081 is reported as a conflict and is never terminated by the launcher.
 
 This Windows pilot is mandatory: automated tests on another operating system cannot verify your organization’s SMB, antivirus, AppLocker, shortcut and PowerShell 5.1 policies.
 

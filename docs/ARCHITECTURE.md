@@ -96,8 +96,11 @@ hors de ce recalcul : leur durée déclarée est la source officielle.
 GC179 : nom, initiales, indicateurs, PRI et les trois codes d'en-tête Groupe,
 Sous-groupe et Niveau. Les douze fonctions publiques de `AuthService.ps1`
 restent des façades, dont les anciens noms Poste et Échelon, afin que les
-consommateurs actuels et les anciens profils gardent exactement leurs valeurs de
-repli. Le module reçoit un objet utilisateur déjà lu; il ne consulte ni les
+consommateurs actuels continuent de fonctionner. À la lecture, chaque ancien
+champ est ramené à sa forme canonique : `AS-03` devient `AS` pour le groupe,
+`SUF-04` devient `04` pour le sous-groupe et l'échelon `1` devient `01`, sans
+réécriture automatique du fichier partagé.
+Le module reçoit un objet utilisateur déjà lu; il ne consulte ni les
 utilisateurs, ni les sessions, ni DATA et ne persiste aucune modification.
 
 `Saphir.UserAccessProfile` centralise trois règles de compatibilité des comptes :

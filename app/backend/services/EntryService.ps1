@@ -10,6 +10,10 @@ $entryDurationModuleManifest = Join-Path -Path $PSScriptRoot -ChildPath "../modu
 Import-Module -Name $entryDurationModuleManifest -Force -ErrorAction Stop | Out-Null
 Remove-Variable -Name entryDurationModuleManifest -ErrorAction SilentlyContinue
 
+$businessRulesModuleManifest = Join-Path -Path $PSScriptRoot -ChildPath "../modules/Saphir.BusinessRules.psd1"
+Import-Module -Name $businessRulesModuleManifest -Force -ErrorAction Stop | Out-Null
+Remove-Variable -Name businessRulesModuleManifest -ErrorAction SilentlyContinue
+
 function New-EntryIdentifier {
     return ([System.Guid]::NewGuid().ToString("N"))
 }
@@ -340,11 +344,14 @@ function Convert-ToNormalizedEntryObject {
         return $null
     }
 
-    $entryType = if ($Entry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.entryType)) { ([string]$Entry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
+    $entryType = Saphir.BusinessRules\ConvertTo-SaphirEntryType -Value $(if ($Entry.PSObject.Properties.Name -contains "entryType") { [string]$Entry.entryType } else { "" })
+    $workSchedule = Saphir.BusinessRules\ConvertTo-SaphirWorkSchedule -Value $(if ($Entry.PSObject.Properties.Name -contains "workSchedule") { [string]$Entry.workSchedule } else { "" })
 
     return [PSCustomObject]@{
         entryId       = Get-EntryIdentifierValue -Entry $Entry
         entryType     = $entryType
+        workSchedule  = $workSchedule
+        workScheduleSource = if ($Entry.PSObject.Properties.Name -contains "workScheduleSource") { [string]$Entry.workScheduleSource } else { "" }
         name          = if ($null -ne $Entry.name) { [string]$Entry.name } else { "" }
         date          = if ($null -ne $Entry.date) { [string]$Entry.date } else { "" }
         punchIn       = if ($null -ne $Entry.punchIn) { [string]$Entry.punchIn } else { "" }

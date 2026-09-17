@@ -314,6 +314,49 @@ $defaultReasonCodes = @(
 )
 Initialize-JsonFileIfEmpty -Path $reasonCodesFile -Value $defaultReasonCodes -Depth 3
 
+# Compensation rates are business configuration, not backend logic. Keep the
+# shipped starting grid in a versioned template and seed the shared copy only
+# when it is absent or blank. Existing shared grids are never overwritten by a
+# release, so super-admin adjustments remain the source of truth.
+$compensationGridFile = Join-Path -Path $sharedFolder -ChildPath "compensation-grid.json"
+$compensationGridTemplateFile = Join-Path -Path $backendRoot -ChildPath "defaults/compensation-grid.v1.json"
+if (-not (Test-Path -LiteralPath $compensationGridTemplateFile -PathType Leaf)) {
+    throw "The packaged compensation grid template is missing: $compensationGridTemplateFile"
+}
+
+try {
+    $defaultCompensationGridRaw = [System.IO.File]::ReadAllText($compensationGridTemplateFile)
+    if ([string]::IsNullOrWhiteSpace($defaultCompensationGridRaw)) {
+        throw "The packaged compensation grid template is empty."
+    }
+    $defaultCompensationGrid = $defaultCompensationGridRaw | ConvertFrom-Json -ErrorAction Stop
+}
+catch {
+    throw "Unable to read the packaged compensation grid template. $($_.Exception.Message)"
+}
+Initialize-JsonFileIfEmpty -Path $compensationGridFile -Value $defaultCompensationGrid -Depth 12
+
+# Budget dates are shared business configuration. The template deliberately
+# leaves them blank: a super admin defines the department's actual P1-P4
+# calendar, and future releases preserve that shared configuration.
+$budgetPeriodsFile = Join-Path -Path $sharedFolder -ChildPath "budget-periods.json"
+$budgetPeriodsTemplateFile = Join-Path -Path $backendRoot -ChildPath "defaults/budget-periods.v1.json"
+if (-not (Test-Path -LiteralPath $budgetPeriodsTemplateFile -PathType Leaf)) {
+    throw "The packaged budget-period template is missing: $budgetPeriodsTemplateFile"
+}
+
+try {
+    $defaultBudgetPeriodsRaw = [System.IO.File]::ReadAllText($budgetPeriodsTemplateFile)
+    if ([string]::IsNullOrWhiteSpace($defaultBudgetPeriodsRaw)) {
+        throw "The packaged budget-period template is empty."
+    }
+    $defaultBudgetPeriods = $defaultBudgetPeriodsRaw | ConvertFrom-Json -ErrorAction Stop
+}
+catch {
+    throw "Unable to read the packaged budget-period template. $($_.Exception.Message)"
+}
+Initialize-JsonFileIfEmpty -Path $budgetPeriodsFile -Value $defaultBudgetPeriods -Depth 8
+
 # Ensure employeeNames mapping exists.
 $mappingFile = Join-Path -Path $sharedFolder -ChildPath "employeeNames.json"
 $demoMapping = @{

@@ -17,7 +17,7 @@ assert.match(
 );
 assert.match(
   dashboardSource,
-  /\["addWorkComment", "addManagerMessage"\]\.forEach\(id => \{[\s\S]*?\.value = ""/,
+  /\["addWorkComment", "addDiverseReason", "addDiverseSummary", "addManagerMessage"\]\.forEach\(id => \{[\s\S]*?\.value = ""/,
   "Opening a new-entry modal must clear notes left over from a cancelled creation.",
 );
 assert.match(
@@ -27,7 +27,7 @@ assert.match(
 );
 assert.match(
   dashboardSource,
-  /reasonCode,[\s\S]*?workComment,[\s\S]*?message: managerMessage,/,
+  /message: managerMessage,[\s\S]*?entryPayload\.workComment = workComment;/,
   "The creation request must send the employee comment and supervisor note using the existing API contract.",
 );
 assert(i18nSource.includes('"modal.employeeCommentOptional": "Employee comment (optional)"'), "English employee-comment copy is missing.");

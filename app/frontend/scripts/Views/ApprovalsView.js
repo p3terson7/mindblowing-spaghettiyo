@@ -235,6 +235,7 @@ function buildApprovalCard(entry, showActions) {
     `data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`,
     `data-projectcode="${escapeHtml(entry.projectCode || "")}"`,
     `data-entrytype="${escapeHtml(getEntryType(entry))}"`,
+    `data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}"`,
     `data-diversereason="${escapeHtml(entry.diverseReason || "")}"`,
     `data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`,
     `data-workcomment="${escapeHtml(entry.workComment || "")}"`,
@@ -260,7 +261,8 @@ function buildApprovalCard(entry, showActions) {
         ${!isDiverseEntry(entry) ? `<span class="meta-pill">${escapeHtml(formatPaymentOptionValue(entry.paymentOption || "cash"))}</span>` : ""}
         ${isDiverseEntry(entry) && entry.diverseReason ? `<span class="meta-pill">${escapeHtml(entry.diverseReason)}</span>` : ""}
         ${!isDiverseEntry(entry) && entry.reasonCode ? `<span class="meta-pill">${escapeHtml(entry.reasonCode)}</span>` : ""}
-        <span class="meta-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
+        <span class="meta-pill duration-value">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
+        ${renderEntryWorkScheduleBadge(entry)}
         <span class="meta-pill">EMP ${escapeHtml(entry.employeeCode)}</span>
       </div>
       ${renderReviewIssues(entry)}

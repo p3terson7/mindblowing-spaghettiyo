@@ -27,6 +27,8 @@
             $payloadWorkComment = if ($workCommentProvided) { ([string]$payload.workComment).Trim() } else { "" }
             $diverseSummaryProvided = ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "diverseSummary"))
             $payloadDiverseSummary = if ($diverseSummaryProvided) { ([string]$payload.diverseSummary).Trim() } else { "" }
+            $workScheduleProvided = ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "workSchedule"))
+            $requestedWorkSchedule = if ($workScheduleProvided) { ([string]$payload.workSchedule).Trim().ToLowerInvariant() } else { "" }
 
             if ([string]::IsNullOrWhiteSpace($date) -or ([string]::IsNullOrWhiteSpace($entryId) -and [string]::IsNullOrWhiteSpace($originalPunchIn))) {
                 respondWithError $response 400 "Missing required identifier: date and entryId/originalPunchIn are required."
@@ -64,6 +66,11 @@
 
             if (-not [string]::IsNullOrWhiteSpace($payloadEntryType) -and @("overtime", "diverse") -notcontains $payloadEntryType) {
                 respondWithError $response 400 "If provided, entryType must be overtime or diverse."
+                continue
+            }
+
+            if ($workScheduleProvided -and @("regular", "compressed") -notcontains $requestedWorkSchedule) {
+                respondWithError $response 400 "If provided, workSchedule must be regular or compressed."
                 continue
             }
 
@@ -166,6 +173,7 @@
                 $originalWorkComment = if ($workCommentExists) { ([string]$existingEntry.workComment).Trim() } else { "" }
                 $originalStatus = if ($existingEntry.status) { ([string]$existingEntry.status).ToLowerInvariant() } else { "pending" }
                 $existingEntryType = if ($existingEntry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$existingEntry.entryType)) { ([string]$existingEntry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
+                $originalWorkSchedule = if ($existingEntry.PSObject.Properties.Name -contains "workSchedule" -and ([string]$existingEntry.workSchedule).Trim().ToLowerInvariant() -in @("regular", "compressed")) { ([string]$existingEntry.workSchedule).Trim().ToLowerInvariant() } else { "unconfirmed" }
                 $originalDiverseReason = if ($existingEntry.PSObject.Properties.Name -contains "diverseReason") { [string]$existingEntry.diverseReason } else { "" }
                 $originalDiverseSummary = if ($existingEntry.PSObject.Properties.Name -contains "diverseSummary") { ([string]$existingEntry.diverseSummary).Trim() } else { "" }
 
@@ -306,6 +314,10 @@
                     $messages += "Status changed from <strong>$originalStatus</strong> to <strong>$requestedStatus</strong>."
                 }
 
+                if ($workScheduleProvided -and $originalWorkSchedule -ne $requestedWorkSchedule) {
+                    $messages += "Work schedule changed from <strong>$originalWorkSchedule</strong> to <strong>$requestedWorkSchedule</strong>."
+                }
+
                 Set-EntryPropertyValue -Entry $existingEntry -Name "date" -Value $updatedEntryDate
                 $existingEntry.punchIn = $newRoundedPunchIn
                 $existingEntry.exactPunchIn = $newExactPunchIn
@@ -345,6 +357,10 @@
                 }
                 if ($statusProvided) {
                     $existingEntry.status = $requestedStatus
+                }
+                if ($workScheduleProvided -and $originalWorkSchedule -ne $requestedWorkSchedule) {
+                    Set-EntryPropertyValue -Entry $existingEntry -Name "workSchedule" -Value $requestedWorkSchedule
+                    Set-EntryPropertyValue -Entry $existingEntry -Name "workScheduleSource" -Value "supervisor-edit"
                 }
                 Set-EntrySupervisorNote -Entry $existingEntry -Note $managerMessage -CurrentUser $currentUser | Out-Null
                 Update-EntryComputedOvertime -Entry $existingEntry

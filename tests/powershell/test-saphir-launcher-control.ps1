@@ -64,6 +64,7 @@ $script:stopCallCount = 0
 $script:lastStoppedScript = ""
 $script:launchCallCount = 0
 $script:lastLaunchForce = $false
+$script:lastLaunchRepair = $false
 $script:lastLaunchScript = ""
 $script:lastDistributionRoot = ""
 $originalCacheRoot = [string]$env:SAPHIR_APP_CACHE_ROOT
@@ -115,6 +116,9 @@ function Get-ServiceStatus {
     $trackedPath = if ($script:testStatusMode -eq "OtherVersion") {
         Join-Path -Path $testRoot -ChildPath "another-release/admin-server.ps1"
     }
+    elseif ($script:testStatusMode -eq "CachedOnline") {
+        $cachedServerScript
+    }
     else {
         $serverScript
     }
@@ -147,13 +151,14 @@ function Stop-ManagedService {
 }
 
 function Invoke-SaphirLauncherScriptProcess {
-    param([string]$ScriptPath, [string]$DistributionRoot, [switch]$Force)
+    param([string]$ScriptPath, [string]$DistributionRoot, [switch]$Force, [switch]$Repair)
 
     $script:launchCallCount += 1
     $script:lastLaunchScript = $ScriptPath
     $script:lastLaunchForce = [bool]$Force
+    $script:lastLaunchRepair = [bool]$Repair
     $script:lastDistributionRoot = $DistributionRoot
-    $script:testStatusMode = "Online"
+    $script:testStatusMode = if ($DistributionRoot -eq $sourceRoot) { "Online" } else { "CachedOnline" }
     $script:testHealthy = $true
 }
 
@@ -361,7 +366,66 @@ try {
     Assert-Equal -Expected $cachedServerScript -Actual $cachedStatus.ServerScript -Message "cached status must target the active release server"
     Assert-True -Condition $cachedStatus.CanStart -Message "an installed cached release must remain startable when the distribution is unavailable"
 
+    $cachedCacheRoot = Join-Path -Path $testRoot -ChildPath "cache"
+    $updateDataFolder = Join-Path -Path $testRoot -ChildPath "update shared data"
+    $updatePackagePath = Join-Path -Path $cachedDistribution -ChildPath "deployment/releases/SAPHIR-release-next.zip"
+    $updateManifestPath = Join-Path -Path $cachedDistribution -ChildPath "deployment/current.json"
+    New-Item -ItemType Directory -Path $updateDataFolder -Force | Out-Null
+    New-Item -ItemType Directory -Path (Split-Path -Path $updatePackagePath -Parent) -Force | Out-Null
+    Set-Content -LiteralPath $updatePackagePath -Value "next release fixture" -Encoding ASCII
+    $updateHash = (Get-FileHash -LiteralPath $updatePackagePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    [ordered]@{
+        schemaVersion  = 1
+        releaseId      = "release-next"
+        packagePath    = "deployment/releases/SAPHIR-release-next.zip"
+        sha256         = $updateHash
+        dataFolderPath = $updateDataFolder
+    } | ConvertTo-Json | Set-Content -LiteralPath $updateManifestPath -Encoding UTF8
+
+    $updateStatus = Get-SaphirLauncherStatus `
+        -DistributionRoot $cachedDistribution `
+        -CacheRoot $cachedCacheRoot `
+        -RuntimeRoot $runtimeRoot
+    Assert-True -Condition ($updateStatus.UpdateAvailable -and $updateStatus.CanUpdate) -Message "a complete newer release must expose the dedicated Update action"
+    Assert-True -Condition $updateStatus.CanRepair -Message "a complete published release must expose one-click repair"
+
+    $launchCountBeforeUpdate = $script:launchCallCount
+    $updateResult = Invoke-SaphirLauncherAction `
+        -Action Update `
+        -DistributionRoot $cachedDistribution `
+        -CacheRoot $cachedCacheRoot `
+        -RuntimeRoot $runtimeRoot
+    Assert-Equal -Expected ($launchCountBeforeUpdate + 1) -Actual $script:launchCallCount -Message "Update must invoke the cached bootstrap exactly once"
+    Assert-True -Condition (-not $script:lastLaunchForce -and -not $script:lastLaunchRepair) -Message "Update must preserve normal versioned install and rollback behavior"
+    Assert-Equal -Expected "Online" -Actual $updateResult.State -Message "Update must return a refreshed online status"
+
+    $script:testStatusMode = "Offline"
+    $script:testHealthy = $false
+    $failedMarkerPath = Join-Path -Path $cachedCacheRoot -ChildPath "failed.json"
+    [ordered]@{
+        schemaVersion = 1
+        releaseId     = "release-next"
+        sha256        = $updateHash
+    } | ConvertTo-Json | Set-Content -LiteralPath $failedMarkerPath -Encoding UTF8
+    $failedUpdateStatus = Get-SaphirLauncherStatus `
+        -DistributionRoot $cachedDistribution `
+        -CacheRoot $cachedCacheRoot `
+        -RuntimeRoot $runtimeRoot
+    Assert-True -Condition ($failedUpdateStatus.TargetPreviouslyFailed -and -not $failedUpdateStatus.CanUpdate) -Message "a previously failed package must not repeat through the normal Update action"
+    Assert-True -Condition $failedUpdateStatus.CanRepair -Message "a previously failed package must remain recoverable through Repair"
+
+    $repairResult = Invoke-SaphirLauncherAction `
+        -Action Repair `
+        -DistributionRoot $cachedDistribution `
+        -CacheRoot $cachedCacheRoot `
+        -RuntimeRoot $runtimeRoot
+    Assert-True -Condition ($script:lastLaunchForce -and $script:lastLaunchRepair) -Message "Repair must force a verified reinstall through the cached bootstrap"
+    Assert-True -Condition (-not (Test-Path -LiteralPath $failedMarkerPath)) -Message "Repair must clear the matching failed-release marker before retrying"
+    Assert-Equal -Expected "Online" -Actual $repairResult.State -Message "Repair must return a refreshed online status"
+
     $script:cachedFixture = $null
+    $script:testStatusMode = "Offline"
+    $script:testHealthy = $false
     $firstTimeOfflineRoot = Join-Path -Path $testRoot -ChildPath "first-time-offline"
     New-Item -ItemType Directory -Path $firstTimeOfflineRoot -Force | Out-Null
     $firstTimeOffline = Get-SaphirLauncherStatus `

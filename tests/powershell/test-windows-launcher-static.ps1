@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 $repoRoot = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath "../..")).Path
 $launcherEntryPath = Join-Path -Path $repoRoot -ChildPath "deploy/bootstrap/SAPHIR Launcher.vbs"
+$launcherHostPath = Join-Path -Path $repoRoot -ChildPath "deploy/bootstrap/SAPHIR Launcher Host.vbs"
 $quickLauncherPath = Join-Path -Path $repoRoot -ChildPath "deploy/bootstrap/Launch SAPHIR.vbs"
 $launcherInterfacePath = Join-Path -Path $repoRoot -ChildPath "scripts/saphir-launcher.ps1"
 $launcherControlPath = Join-Path -Path $repoRoot -ChildPath "scripts/lib/LauncherControl.ps1"
@@ -22,7 +23,7 @@ function Assert-True {
     }
 }
 
-foreach ($requiredPath in @($launcherEntryPath, $quickLauncherPath, $launcherInterfacePath, $launcherControlPath, $applicationLayoutPath)) {
+foreach ($requiredPath in @($launcherEntryPath, $launcherHostPath, $quickLauncherPath, $launcherInterfacePath, $launcherControlPath, $applicationLayoutPath)) {
     Assert-True -Condition (Test-Path -LiteralPath $requiredPath -PathType Leaf) -Message ("launcher file is missing: {0}" -f $requiredPath)
 }
 
@@ -92,6 +93,7 @@ foreach ($powerShellPath in $localLauncherPowerShellPaths) {
 }
 
 $entrySource = [System.IO.File]::ReadAllText($launcherEntryPath)
+$hostSource = [System.IO.File]::ReadAllText($launcherHostPath)
 $quickLauncherSource = [System.IO.File]::ReadAllText($quickLauncherPath)
 $interfaceSource = [System.IO.File]::ReadAllText($launcherInterfacePath)
 $controlSource = [System.IO.File]::ReadAllText($launcherControlPath)
@@ -119,6 +121,14 @@ Assert-True -Condition ($entrySource.IndexOf(' 2>&1', [System.StringComparison]:
 Assert-True -Condition ($entrySource.IndexOf('errorDetails', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "launcher entry point must show useful startup failure details"
 Assert-True -Condition ($entrySource.IndexOf('SAPHIR_LAUNCHER_VALIDATE_ONLY', [System.StringComparison]::Ordinal) -ge 0) -Message "the VBS entry point must expose the noninteractive Windows runtime smoke hook"
 Assert-True -Condition ($entrySource.IndexOf('pwsh', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) -Message "launcher entry point must not require the separately installed PowerShell 7 executable"
+Assert-True -Condition ($hostSource.IndexOf('launcher-version.txt', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "stable launcher host must detect launcher bootstrap updates"
+Assert-True -Condition ($hostSource.IndexOf('Install SAPHIR Shortcut.vbs', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "stable launcher host must invoke the trusted shared installer for an update"
+Assert-True -Condition ($hostSource.IndexOf('/silent', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "launcher self-update must remain unobtrusive"
+Assert-True -Condition ($hostSource.IndexOf('current.txt', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "stable launcher host must follow the activated immutable bundle"
+Assert-True -Condition ($hostSource.IndexOf('IsSafeBundleId', [System.StringComparison]::Ordinal) -ge 0) -Message "stable launcher host must reject an unsafe local bundle pointer"
+$hostForegroundLaunchPosition = $hostSource.IndexOf('launcherEntryPath & Chr(34), 1, False', [System.StringComparison]::Ordinal)
+$hostBackgroundCheckPosition = $hostSource.LastIndexOf('WScript.ScriptFullName & Chr(34) & " /check-update", 0, False', [System.StringComparison]::Ordinal)
+Assert-True -Condition ($hostForegroundLaunchPosition -ge 0 -and $hostBackgroundCheckPosition -gt $hostForegroundLaunchPosition) -Message "stable launcher host must open the local window before starting any network update check"
 Assert-True -Condition ($quickLauncherSource.IndexOf('app\backend\saphir-server.ps1', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "warm launch must recognize the canonical cached server path"
 Assert-True -Condition ($quickLauncherSource.IndexOf('apps\admin\backend\admin-server.ps1', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "warm launch must continue to recognize legacy cached releases"
 Assert-True -Condition ($quickLauncherSource.IndexOf('StrComp(expectedCanonicalServerPath, metadataServerPath, vbTextCompare) = 0 Or StrComp(expectedLegacyServerPath, metadataServerPath, vbTextCompare) = 0', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "warm launch must accept exactly either supported cached server path"
@@ -126,10 +136,13 @@ Assert-True -Condition ($interfaceSource.IndexOf('PresentationFramework', [Syste
 Assert-True -Condition ($interfaceSource.IndexOf('LauncherControl.ps1', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "launcher interface must keep status and action logic in its testable controller"
 Assert-True -Condition ($interfaceSource.IndexOf('[switch]$ValidateOnly', [System.StringComparison]::Ordinal) -ge 0) -Message "the WPF interface must support noninteractive runtime validation"
 Assert-True -Condition ($interfaceSource.IndexOf('Start-StatusRefresh -ShowProgress', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "manual status checks must show nonblocking progress"
+Assert-True -Condition ($interfaceSource.IndexOf('UpdateButton', [System.StringComparison]::Ordinal) -ge 0) -Message "launcher interface must expose a dedicated update action"
+Assert-True -Condition ($interfaceSource.IndexOf('RepairButton', [System.StringComparison]::Ordinal) -ge 0) -Message "launcher interface must expose a one-click repair action"
 Assert-True -Condition ($controlSource.IndexOf('PresentationFramework', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) -Message "launcher controller must remain independent of WPF so its logic can be regression-tested without opening a window"
 Assert-True -Condition ($controlSource.IndexOf('Get-SaphirLauncherAdjacentBootstrapPath', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "launcher controller must be able to start from the locally installed cached bootstrap"
 Assert-True -Condition ($controlSource.IndexOf('-DistributionRoot $DistributionRoot', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "local cached bootstrap must retain the shared distribution location for update checks"
 Assert-True -Condition ($controlSource.IndexOf('$process.WaitForExit($TimeoutSeconds * 1000)', [System.StringComparison]::Ordinal) -ge 0) -Message "launcher actions must wait for the finite bootstrap process rather than its long-lived backend process tree"
+Assert-True -Condition ($controlSource.IndexOf('[ValidateSet("Start", "Restart", "Stop", "Update", "Repair")]', [System.StringComparison]::Ordinal) -ge 0) -Message "launcher controller must explicitly support update and repair actions"
 
 $forbiddenCommands = @(
     "Install-Module",

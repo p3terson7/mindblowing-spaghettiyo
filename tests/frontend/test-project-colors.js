@@ -162,10 +162,10 @@ for (const asset of [
   "scripts/AppShell.js",
   "scripts/Views/SelfView.js",
 ]) {
-  assert(index.includes(`${asset}?v=20260824-review-attention-tab-v1`), `${asset} cache key was not bumped.`);
+  assert(index.includes(`${asset}?v=20260917-phase7-validation-v1`), `${asset} cache key was not bumped.`);
 }
 for (const view of ["EmployeesView", "DashboardView", "ApprovalsView", "ProjectsView"]) {
-  assert(shell.includes(`${view}.js?v=20260824-review-attention-tab-v1`), `${view} cache key was not bumped.`);
+  assert(shell.includes(`${view}.js?v=20260917-phase7-validation-v1`), `${view} cache key was not bumped.`);
 }
 
 console.log("Project color UI tests passed.");

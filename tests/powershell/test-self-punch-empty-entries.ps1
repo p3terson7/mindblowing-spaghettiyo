@@ -87,6 +87,22 @@ function Get-EmployeeName {
     return "Employee $EmployeeCode"
 }
 
+function Get-EmployeeUserByCode {
+    param([string]$EmployeeCode)
+    return [PSCustomObject]@{
+        username = $EmployeeCode
+        employeeCode = $EmployeeCode
+        gc179Profile = [PSCustomObject]@{
+            compressedWorkWeek = ($EmployeeCode -eq "000000101")
+        }
+    }
+}
+
+function Get-Gc179ProfileFromUserRecord {
+    param($UserRecord)
+    return $UserRecord.gc179Profile
+}
+
 function Invoke-PostCommitActionSafely {
     param([string]$Description, [scriptblock]$Action)
     try { & $Action | Out-Null; return "" } catch { return "$Description`: $($_.Exception.Message)" }
@@ -181,6 +197,8 @@ try {
     Assert-Equal -Expected 1 -Actual $storedEntries.Count -Message "First punch-in did not persist exactly one entry."
     Assert-Equal -Expected "P001" -Actual $storedEntries[0].projectCode -Message "First punch-in lost the selected project."
     Assert-Equal -Expected "pending" -Actual $storedEntries[0].status -Message "First punch-in stored the wrong status."
+    Assert-Equal -Expected "compressed" -Actual $storedEntries[0].workSchedule -Message "Punch-in did not snapshot the employee's compressed schedule."
+    Assert-Equal -Expected "employee-profile" -Actual $storedEntries[0].workScheduleSource -Message "Punch-in lost the schedule provenance."
     Assert-Equal -Expected "" -Actual ([string]$storedEntries[0].punchOut) -Message "First punch-in unexpectedly stored a punch-out time."
 
     $missingFileEmployeeCode = "000000102"
@@ -188,6 +206,7 @@ try {
     Invoke-SelfPunchRoute -EmployeeCode $missingFileEmployeeCode -PunchType "in"
     Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "First punch-in did not initialize a missing employee file."
     Assert-Equal -Expected 1 -Actual @(Read-JsonArrayFile -Path $missingFilePath).Count -Message "Initialized employee file did not contain the new punch."
+    Assert-Equal -Expected "regular" -Actual @(Read-JsonArrayFile -Path $missingFilePath)[0].workSchedule -Message "Punch-in did not snapshot a regular employee schedule."
 
     $emptyPunchOutEmployeeCode = "000000103"
     $emptyPunchOutPath = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $emptyPunchOutEmployeeCode)

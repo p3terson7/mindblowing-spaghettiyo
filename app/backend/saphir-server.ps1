@@ -15,6 +15,8 @@ $script:saphirInstanceToken = [string]$env:SAPHIR_INSTANCE_TOKEN
 . (Join-Path -Path $scriptDir -ChildPath "services/ReadModelService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/EmployeeDirectoryService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/SyncService.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "services/CompensationGridService.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "services/BudgetPeriodService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/ProjectStatsService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/HistoryService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/SeedService.ps1")

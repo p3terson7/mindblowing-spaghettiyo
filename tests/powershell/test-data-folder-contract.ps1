@@ -102,6 +102,8 @@ $projectsPath = Join-Path -Path $resolvedDataFolder -ChildPath "projects.json"
 $usersPath = Join-Path -Path $resolvedDataFolder -ChildPath "users.json"
 $sessionsPath = Join-Path -Path $resolvedDataFolder -ChildPath "sessions.json"
 $mappingPath = Join-Path -Path $resolvedDataFolder -ChildPath "employeeNames.json"
+$compensationGridPath = Join-Path -Path $resolvedDataFolder -ChildPath "compensation-grid.json"
+$budgetPeriodsPath = Join-Path -Path $resolvedDataFolder -ChildPath "budget-periods.json"
 $schemaPath = Join-Path -Path $resolvedDataFolder -ChildPath "data-schema.json"
 
 $projects = @()
@@ -127,6 +129,88 @@ if (Test-Path -LiteralPath $mappingPath -PathType Leaf) {
     if ($null -eq $mapping -or
         -not ($mapping.PSObject.TypeNames -contains "System.Management.Automation.PSCustomObject")) {
         throw "Employee-name mapping must be a JSON object: $mappingPath"
+    }
+}
+
+if (Test-Path -LiteralPath $compensationGridPath -PathType Leaf) {
+    $compensationGrid = Read-JsonStrict -Path $compensationGridPath
+    $compensationSchemaVersion = 0
+    if ($null -eq $compensationGrid -or
+        -not ($compensationGrid.PSObject.TypeNames -contains "System.Management.Automation.PSCustomObject") -or
+        -not [int]::TryParse([string]$compensationGrid.schemaVersion, [ref]$compensationSchemaVersion) -or
+        $compensationSchemaVersion -ne 1 -or
+        ([string]$compensationGrid.currency).Trim().ToUpperInvariant() -ne "CAD" -or
+        -not ($compensationGrid.PSObject.Properties.Name -contains "bands")) {
+        throw "Invalid compensation grid: $compensationGridPath"
+    }
+
+    $compensationBands = @(ConvertTo-RecordArray -Value $compensationGrid.bands -Path $compensationGridPath)
+    if ($compensationBands.Count -eq 0) {
+        throw "Compensation grid must contain at least one band: $compensationGridPath"
+    }
+    Assert-UniqueTextProperty -Records $compensationBands -PropertyName "id" -Path $compensationGridPath
+    foreach ($band in $compensationBands) {
+        foreach ($propertyName in @("group", "subGroup", "level", "effectiveFrom")) {
+            if (-not ($band.PSObject.Properties.Name -contains $propertyName) -or
+                [string]::IsNullOrWhiteSpace([string]$band.$propertyName)) {
+                throw "Compensation band in '$compensationGridPath' is missing '$propertyName'."
+            }
+        }
+
+        $annualSalaryCents = [Int64]0
+        if (-not ($band.PSObject.Properties.Name -contains "annualSalaryCents") -or
+            -not [Int64]::TryParse([string]$band.annualSalaryCents, [ref]$annualSalaryCents) -or
+            $annualSalaryCents -le 0) {
+            throw "Compensation band in '$compensationGridPath' has an invalid annualSalaryCents value."
+        }
+
+        $effectiveFrom = [DateTime]::MinValue
+        if (-not [DateTime]::TryParseExact([string]$band.effectiveFrom, "yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$effectiveFrom)) {
+            throw "Compensation band in '$compensationGridPath' has an invalid effectiveFrom date."
+        }
+        if ($band.PSObject.Properties.Name -contains "effectiveTo" -and -not [string]::IsNullOrWhiteSpace([string]$band.effectiveTo)) {
+            $effectiveTo = [DateTime]::MinValue
+            if (-not [DateTime]::TryParseExact([string]$band.effectiveTo, "yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$effectiveTo) -or $effectiveTo -lt $effectiveFrom) {
+                throw "Compensation band in '$compensationGridPath' has an invalid effectiveTo date."
+            }
+        }
+    }
+}
+
+if (Test-Path -LiteralPath $budgetPeriodsPath -PathType Leaf) {
+    $budgetConfiguration = Read-JsonStrict -Path $budgetPeriodsPath
+    $budgetSchemaVersion = 0
+    if ($null -eq $budgetConfiguration -or
+        -not ($budgetConfiguration.PSObject.TypeNames -contains "System.Management.Automation.PSCustomObject") -or
+        -not [int]::TryParse([string]$budgetConfiguration.schemaVersion, [ref]$budgetSchemaVersion) -or
+        $budgetSchemaVersion -ne 1 -or
+        -not ($budgetConfiguration.PSObject.Properties.Name -contains "periods")) {
+        throw "Invalid budget-period configuration: $budgetPeriodsPath"
+    }
+
+    $budgetPeriods = @(ConvertTo-RecordArray -Value $budgetConfiguration.periods -Path $budgetPeriodsPath)
+    Assert-UniqueTextProperty -Records $budgetPeriods -PropertyName "id" -Path $budgetPeriodsPath
+    $actualBudgetIds = @($budgetPeriods | ForEach-Object { ([string]$_.id).Trim().ToUpperInvariant() } | Sort-Object)
+    if ((@($actualBudgetIds) -join ",") -ne "P1,P2,P3,P4") {
+        throw "Budget-period configuration must contain exactly P1, P2, P3, and P4: $budgetPeriodsPath"
+    }
+    foreach ($period in $budgetPeriods) {
+        $startDate = ([string]$period.startDate).Trim()
+        $endDate = ([string]$period.endDate).Trim()
+        if ([string]::IsNullOrWhiteSpace($startDate) -xor [string]::IsNullOrWhiteSpace($endDate)) {
+            throw "Budget period '$($period.id)' must contain both dates or neither: $budgetPeriodsPath"
+        }
+        if ($startDate) {
+            $parsedStart = [DateTime]::MinValue
+            $parsedEnd = [DateTime]::MinValue
+            $culture = [System.Globalization.CultureInfo]::InvariantCulture
+            $styles = [System.Globalization.DateTimeStyles]::None
+            if (-not [DateTime]::TryParseExact($startDate, "yyyy-MM-dd", $culture, $styles, [ref]$parsedStart) -or
+                -not [DateTime]::TryParseExact($endDate, "yyyy-MM-dd", $culture, $styles, [ref]$parsedEnd) -or
+                $parsedEnd -lt $parsedStart) {
+                throw "Budget period '$($period.id)' contains an invalid date range: $budgetPeriodsPath"
+            }
+        }
     }
 }
 

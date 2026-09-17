@@ -588,27 +588,42 @@ function hasAnyOwnProperty(source, names) {
   return fieldNames.some(name => Object.prototype.hasOwnProperty.call(objectSource, name));
 }
 
-function normalizeGc179ProfileCode(value, fallback, maxLength) {
+function normalizeGc179Group(value) {
   const normalized = String(value || "")
     .trim()
     .toUpperCase()
-    .replace(/\s+/g, "")
-    .replace(/[^A-Z0-9._\/-]/g, "")
-    .slice(0, maxLength)
-    .trim();
-  return normalized || String(fallback || "").trim().toUpperCase();
+    .replace(/[^A-Z]/g, "")
+    .slice(0, 6);
+  return normalized || "STS";
 }
 
-function normalizeGc179Group(value) {
-  return normalizeGc179ProfileCode(value, "STS", 6);
+function getGc179ClassificationFormError(prefix) {
+  const group = String(document.getElementById(`${prefix}GroupInput`).value || "").trim();
+  const subGroup = String(document.getElementById(`${prefix}SubGroupInput`).value || "").trim();
+  const level = String(document.getElementById(`${prefix}LevelInput`).value || "").trim();
+  if ((group && !/^[A-Za-z]{1,6}$/.test(group))
+    || (subGroup && !/^[0-9]{1,2}$/.test(subGroup))
+    || (level && !/^[0-9]{1,2}$/.test(level))) {
+    return t("settings.compensationInvalidClassification");
+  }
+  return "";
+}
+
+function normalizeGc179TwoDigitCode(value, fallback) {
+  const rawDigits = String(value || "").replace(/\D/g, "");
+  if (!rawDigits) {
+    return String(fallback || "");
+  }
+  const digits = (rawDigits.replace(/^0+/, "") || "0").slice(0, 2);
+  return digits.padStart(2, "0");
 }
 
 function normalizeGc179SubGroup(value) {
-  return normalizeGc179ProfileCode(value, "SUF-00", 10);
+  return normalizeGc179TwoDigitCode(value, "00");
 }
 
 function normalizeGc179Level(value) {
-  return normalizeGc179ProfileCode(value, "", 10);
+  return normalizeGc179TwoDigitCode(value, "");
 }
 
 function normalizeGc179Position(value) {
@@ -619,7 +634,7 @@ function normalizeGc179Echelon(value) {
   return normalizeGc179SubGroup(value);
 }
 
-function bindGc179CodeFormatter(input, onChange) {
+function bindGc179GroupFormatter(input, onChange) {
   if (!input) {
     return;
   }
@@ -627,13 +642,44 @@ function bindGc179CodeFormatter(input, onChange) {
   input.addEventListener("input", () => {
     const selectionStart = input.selectionStart;
     const selectionEnd = input.selectionEnd;
-    const uppercaseValue = String(input.value || "").toUpperCase();
-    if (input.value !== uppercaseValue) {
-      input.value = uppercaseValue;
+    const formattedValue = String(input.value || "")
+      .toUpperCase()
+      .replace(/[^A-Z]/g, "")
+      .slice(0, 6);
+    if (input.value !== formattedValue) {
+      input.value = formattedValue;
       if (typeof input.setSelectionRange === "function" && selectionStart != null && selectionEnd != null) {
-        input.setSelectionRange(selectionStart, selectionEnd);
+        const cursor = Math.min(selectionStart, input.value.length);
+        input.setSelectionRange(cursor, Math.min(selectionEnd, input.value.length));
       }
     }
+    if (typeof onChange === "function") {
+      onChange(input.value);
+    }
+  });
+
+  input.addEventListener("blur", () => {
+    input.value = normalizeGc179Group(input.value);
+    if (typeof onChange === "function") {
+      onChange(input.value);
+    }
+  });
+}
+
+function bindGc179TwoDigitFormatter(input, normalizer, onChange) {
+  if (!input) {
+    return;
+  }
+
+  input.addEventListener("input", () => {
+    input.value = String(input.value || "").replace(/\D/g, "").slice(0, 2);
+    if (typeof onChange === "function") {
+      onChange(input.value);
+    }
+  });
+
+  input.addEventListener("blur", () => {
+    input.value = typeof normalizer === "function" ? normalizer(input.value) : normalizeGc179TwoDigitCode(input.value, "");
     if (typeof onChange === "function") {
       onChange(input.value);
     }
@@ -820,6 +866,7 @@ function toLocalDateInputValue(dateValue = new Date()) {
       count: sourceEntries.length,
       seconds: 0,
       approvedSeconds: 0,
+      rejectedSeconds: 0,
       pending: 0,
       rejected: 0,
       live: 0,
@@ -843,6 +890,7 @@ function toLocalDateInputValue(dateValue = new Date()) {
           count: 0,
           seconds: 0,
           approvedSeconds: 0,
+          rejectedSeconds: 0,
           pending: 0,
           rejected: 0,
           live: 0,
@@ -894,7 +942,9 @@ function toLocalDateInputValue(dateValue = new Date()) {
         projectBucket.pending += 1;
       } else if (status === "rejected") {
         totals.rejected += 1;
+        totals.rejectedSeconds += seconds;
         projectBucket.rejected += 1;
+        projectBucket.rejectedSeconds += seconds;
       } else if (status === "live") {
         totals.live += 1;
         projectBucket.live += 1;
@@ -1523,6 +1573,33 @@ function isEntryOpen(entry) {
 function getEntryType(entry) {
   const normalized = String(entry && entry.entryType ? entry.entryType : "overtime").trim().toLowerCase();
   return normalized === "diverse" ? "diverse" : "overtime";
+}
+
+function getEntryWorkSchedule(entry) {
+  const normalized = String(entry && entry.workSchedule || "").trim().toLowerCase();
+  if (normalized === "compressed") {
+    return "compressed";
+  }
+  if (normalized === "regular" || normalized === "standard") {
+    return "regular";
+  }
+  return "unconfirmed";
+}
+
+function getEntryWorkScheduleLabel(entry) {
+  const schedule = getEntryWorkSchedule(entry);
+  const translationKey = schedule === "compressed"
+    ? "shared.workScheduleCompressed"
+    : schedule === "regular"
+      ? "shared.workScheduleRegular"
+      : "shared.workScheduleUnconfirmed";
+  return t(translationKey);
+}
+
+function renderEntryWorkScheduleBadge(entry) {
+  const schedule = getEntryWorkSchedule(entry);
+  const label = getEntryWorkScheduleLabel(entry);
+  return `<span class="work-schedule-badge ${escapeHtml(schedule)}" title="${escapeHtml(label)}"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i><span>${escapeHtml(label)}</span></span>`;
 }
 
 function isDiverseEntry(entry) {
@@ -2281,7 +2358,7 @@ function getHistorySubjectName(entry) {
     return "";
   }
 
-  const candidates = [entry.targetEmployee, entry.subjectEmployee, entry.employee];
+  const candidates = [entry.targetEmployeeName, entry.targetEmployee, entry.subjectEmployee, entry.employee];
   const explicitAuthorName = getExplicitHistoryAuthorName(entry);
   for (const candidate of candidates) {
     const normalized = String(candidate || "").trim();
@@ -2299,19 +2376,41 @@ function getHistorySubjectName(entry) {
   return "";
 }
 
+function getHistorySubjectCode(entry) {
+  if (!entry || !isEmployeeTargetedHistoryEntry(entry)) {
+    return "";
+  }
+
+  const explicitCode = String(entry.targetEmployeeCode || entry.employeeCode || "").trim();
+  if (explicitCode) {
+    return explicitCode;
+  }
+
+  const legacySubject = String(entry.targetEmployee || entry.subjectEmployee || entry.employee || "").trim();
+  return /^\d+$/.test(legacySubject) ? legacySubject : "";
+}
+
 function renderHistorySubjectLine(entry) {
   const subjectName = getHistorySubjectName(entry);
   if (!subjectName) {
     return "";
   }
 
-  return `<div class="timeline-card-subject">${escapeHtml(t("history.concernedEmployee", { name: subjectName }))}</div>`;
+  const subjectCode = getHistorySubjectCode(entry);
+  const showCode = Boolean(subjectCode && subjectCode.toLowerCase() !== subjectName.toLowerCase());
+  return `
+    <div class="timeline-card-subject">
+      <span>${escapeHtml(t("history.concernedEmployee", { name: subjectName }))}</span>
+      ${showCode ? `<span class="timeline-card-subject-code">${escapeHtml(t("history.concernedEmployeeCode", { code: subjectCode }))}</span>` : ""}
+    </div>
+  `;
 }
 
 function getHistorySearchText(entry) {
   return [
     getHistoryAuthorName(entry),
     getHistorySubjectName(entry),
+    getHistorySubjectCode(entry),
     entry && entry.authorUsername,
     entry && entry.authorRole,
     entry && entry.employee,

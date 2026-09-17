@@ -280,56 +280,58 @@ foreach ($case in $headerCases) {
     Assert-Equal -Expected $case.Expected -Actual $actual -Message ("Header-code golden failed for {0}." -f $case.Label)
 }
 Assert-Equal -Expected "ABCDEF" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179GroupText" -Arguments @{ Value = "abcdefghijkl" }) -Message "Group no longer uses the six-character limit."
-Assert-Equal -Expected "ABCDEFGHIJ" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179SubGroupText" -Arguments @{ Value = "abcdefghijkl" }) -Message "Sub-Group no longer uses the ten-character limit."
-Assert-Equal -Expected "ABCDEFGHIJ" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179LevelText" -Arguments @{ Value = "abcdefghijkl" }) -Message "Level no longer uses the ten-character limit."
-Assert-Equal -Expected "AS-03" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179GroupText" -Arguments @{ Value = " as-03() " }) -Message "Group normalization changed."
-Assert-Equal -Expected "CR/01" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179SubGroupText" -Arguments @{ Value = " cr/01!? " }) -Message "Sub-Group normalization changed."
+Assert-Equal -Expected "" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179SubGroupText" -Arguments @{ Value = "abcdefghijkl" }) -Message "Sub-Group must reject alphabetic content."
+Assert-Equal -Expected "" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179LevelText" -Arguments @{ Value = "abcdefghijkl" }) -Message "Level must reject alphabetic content."
+Assert-Equal -Expected "AS" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179GroupText" -Arguments @{ Value = " as-03() " }) -Message "Group must retain letters only."
+Assert-Equal -Expected "01" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179SubGroupText" -Arguments @{ Value = " cr/01!? " }) -Message "Sub-Group must retain two digits only."
 Assert-Equal -Expected "02" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179LevelText" -Arguments @{ Value = " 02!? " }) -Message "Level normalization changed."
-Assert-Equal -Expected "AS-03" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179PositionText" -Arguments @{ Value = " as-03() " }) -Message "The legacy Position compatibility alias changed."
-Assert-Equal -Expected "CR/01" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179EchelonText" -Arguments @{ Value = " cr/01!? " }) -Message "The legacy Echelon compatibility alias changed."
+Assert-Equal -Expected "07" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179SubGroupText" -Arguments @{ Value = "7" }) -Message "Sub-Group must pad a one-digit value."
+Assert-Equal -Expected "01" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179LevelText" -Arguments @{ Value = "001" }) -Message "Level must migrate a legacy zero-padded value."
+Assert-Equal -Expected "AS" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179PositionText" -Arguments @{ Value = " as-03() " }) -Message "The legacy Position alias must migrate to Group."
+Assert-Equal -Expected "01" -Actual (Invoke-Gc179ProfileFunction -Name "ConvertTo-Gc179EchelonText" -Arguments @{ Value = " cr/01!? " }) -Message "The legacy Echelon alias must migrate to Sub-Group."
 
 $profileCases = @(
     [PSCustomObject]@{
         Label = "null fallback"
         Value = $null
         DisplayName = "Jane Mary Doe"
-        Expected = [PSCustomObject]@{ surname = "DOE"; givenName = "JANE MARY"; initials = "J.D"; pri = ""; group = "STS"; subGroup = "SUF-00"; level = ""; compressedWorkWeek = $false }
+        Expected = [PSCustomObject]@{ surname = "DOE"; givenName = "JANE MARY"; initials = "J.D"; pri = ""; group = "STS"; subGroup = "00"; level = ""; compressedWorkWeek = $false }
     },
     [PSCustomObject]@{
         Label = "canonical three fields"
         Value = [PSCustomObject]@{ surname = " smith "; givenName = " jane "; initials = " js "; pri = "000123456"; group = " as-03() "; subGroup = " cr/01!? "; level = " 02 "; compressedWorkWeek = " ON " }
         DisplayName = "Fallback Person"
-        Expected = [PSCustomObject]@{ surname = "SMITH"; givenName = "JANE"; initials = "JS"; pri = "000 123 456"; group = "AS-03"; subGroup = "CR/01"; level = "02"; compressedWorkWeek = $true }
+        Expected = [PSCustomObject]@{ surname = "SMITH"; givenName = "JANE"; initials = "JS"; pri = "000 123 456"; group = "AS"; subGroup = "01"; level = "02"; compressedWorkWeek = $true }
     },
     [PSCustomObject]@{
         Label = "legacy two fields"
         Value = [PSCustomObject]@{ surname = " smith "; givenName = " jane "; initials = " js "; pri = "000123456"; position = " as-03() "; level = " cr/01!? "; compressedWorkWeek = " ON " }
         DisplayName = "Fallback Person"
-        Expected = [PSCustomObject]@{ surname = "SMITH"; givenName = "JANE"; initials = "JS"; pri = "000 123 456"; group = "AS-03"; subGroup = "CR/01"; level = ""; compressedWorkWeek = $true }
+        Expected = [PSCustomObject]@{ surname = "SMITH"; givenName = "JANE"; initials = "JS"; pri = "000 123 456"; group = "AS"; subGroup = "01"; level = ""; compressedWorkWeek = $true }
     },
     [PSCustomObject]@{
         Label = "legacy aliases"
         Value = [PSCustomObject]@{ lastName = " legacy "; Given = " user "; Initials = " lu "; PRI = "12-3456-7890"; poste = " abc 12 "; Echelon = " xy / 99 "; isCompressedWorkWeek = "yes" }
         DisplayName = "Fallback Person"
-        Expected = [PSCustomObject]@{ surname = "LEGACY"; givenName = "USER"; initials = "LU"; pri = "123 456 789"; group = "ABC12"; subGroup = "XY/99"; level = ""; compressedWorkWeek = $true }
+        Expected = [PSCustomObject]@{ surname = "LEGACY"; givenName = "USER"; initials = "LU"; pri = "123 456 789"; group = "ABC"; subGroup = "99"; level = ""; compressedWorkWeek = $true }
     },
     [PSCustomObject]@{
         Label = "hashtable"
         Value = @{ lastName = "Hash"; Given = "Table"; classification = "ab 12"; level = "l-001"; compressed = "y" }
         DisplayName = "Fallback Person"
-        Expected = [PSCustomObject]@{ surname = "HASH"; givenName = "TABLE"; initials = "F.P"; pri = ""; group = "AB12"; subGroup = "L-001"; level = ""; compressedWorkWeek = $true }
+        Expected = [PSCustomObject]@{ surname = "HASH"; givenName = "TABLE"; initials = "F.P"; pri = ""; group = "AB"; subGroup = "01"; level = ""; compressedWorkWeek = $true }
     },
     [PSCustomObject]@{
         Label = "blank aliases and compressed precedence"
         Value = [PSCustomObject]@{ surname = ""; lastName = "Alias"; givenName = ""; Given = "Name"; Initials = "AN"; position = ""; classification = "zz-99"; level = ""; Echelon = "l/2"; compressedWorkWeek = ""; isCompressedWorkWeek = $true }
         DisplayName = "Fallback Person"
-        Expected = [PSCustomObject]@{ surname = "ALIAS"; givenName = "NAME"; initials = "AN"; pri = ""; group = "ZZ-99"; subGroup = "L/2"; level = ""; compressedWorkWeek = $false }
+        Expected = [PSCustomObject]@{ surname = "ALIAS"; givenName = "NAME"; initials = "AN"; pri = ""; group = "ZZ"; subGroup = "02"; level = ""; compressedWorkWeek = $false }
     },
     [PSCustomObject]@{
         Label = "one-token defaults"
         Value = [PSCustomObject]@{ unknown = "preserve nowhere" }
         DisplayName = "Prince"
-        Expected = [PSCustomObject]@{ surname = "PRINCE"; givenName = ""; initials = "P"; pri = ""; group = "STS"; subGroup = "SUF-00"; level = ""; compressedWorkWeek = $false }
+        Expected = [PSCustomObject]@{ surname = "PRINCE"; givenName = ""; initials = "P"; pri = ""; group = "STS"; subGroup = "00"; level = ""; compressedWorkWeek = $false }
     }
 )
 $profilePropertyOrder = @("surname", "givenName", "initials", "pri", "group", "subGroup", "level", "compressedWorkWeek")
@@ -343,11 +345,11 @@ foreach ($case in $profileCases) {
 }
 
 $userCases = @(
-    [PSCustomObject]@{ Label = "null user"; Value = $null; Expected = [PSCustomObject]@{ surname = ""; givenName = ""; initials = ""; pri = ""; group = "STS"; subGroup = "SUF-00"; level = ""; compressedWorkWeek = $false } },
-    [PSCustomObject]@{ Label = "display fallback"; Value = [PSCustomObject]@{ displayName = "Legacy Employee" }; Expected = [PSCustomObject]@{ surname = "EMPLOYEE"; givenName = "LEGACY"; initials = "L.E"; pri = ""; group = "STS"; subGroup = "SUF-00"; level = ""; compressedWorkWeek = $false } },
-    [PSCustomObject]@{ Label = "saved legacy profile"; Value = [PSCustomObject]@{ displayName = "Fallback Employee"; gc179Profile = [PSCustomObject]@{ surname = "Saved"; givenName = "Person"; position = "CR4"; level = "L-02"; compressedWorkWeek = $true } }; Expected = [PSCustomObject]@{ surname = "SAVED"; givenName = "PERSON"; initials = "F.E"; pri = ""; group = "CR4"; subGroup = "L-02"; level = ""; compressedWorkWeek = $true } },
-    [PSCustomObject]@{ Label = "saved three-field profile"; Value = [PSCustomObject]@{ displayName = "Fallback Employee"; gc179Profile = [PSCustomObject]@{ surname = "Saved"; givenName = "Person"; group = "CR4"; subGroup = "L-02"; level = "03"; compressedWorkWeek = $true } }; Expected = [PSCustomObject]@{ surname = "SAVED"; givenName = "PERSON"; initials = "F.E"; pri = ""; group = "CR4"; subGroup = "L-02"; level = "03"; compressedWorkWeek = $true } },
-    [PSCustomObject]@{ Label = "legacy hashtable user adapter"; Value = @{ displayName = "Hash User"; gc179Profile = @{ surname = "Ignored" } }; Expected = [PSCustomObject]@{ surname = "IGNORED"; givenName = "HASH"; initials = "H.U"; pri = ""; group = "STS"; subGroup = "SUF-00"; level = ""; compressedWorkWeek = $false } }
+    [PSCustomObject]@{ Label = "null user"; Value = $null; Expected = [PSCustomObject]@{ surname = ""; givenName = ""; initials = ""; pri = ""; group = "STS"; subGroup = "00"; level = ""; compressedWorkWeek = $false } },
+    [PSCustomObject]@{ Label = "display fallback"; Value = [PSCustomObject]@{ displayName = "Legacy Employee" }; Expected = [PSCustomObject]@{ surname = "EMPLOYEE"; givenName = "LEGACY"; initials = "L.E"; pri = ""; group = "STS"; subGroup = "00"; level = ""; compressedWorkWeek = $false } },
+    [PSCustomObject]@{ Label = "saved legacy profile"; Value = [PSCustomObject]@{ displayName = "Fallback Employee"; gc179Profile = [PSCustomObject]@{ surname = "Saved"; givenName = "Person"; position = "CR4"; level = "L-02"; compressedWorkWeek = $true } }; Expected = [PSCustomObject]@{ surname = "SAVED"; givenName = "PERSON"; initials = "F.E"; pri = ""; group = "CR"; subGroup = "02"; level = ""; compressedWorkWeek = $true } },
+    [PSCustomObject]@{ Label = "saved three-field profile"; Value = [PSCustomObject]@{ displayName = "Fallback Employee"; gc179Profile = [PSCustomObject]@{ surname = "Saved"; givenName = "Person"; group = "CR4"; subGroup = "L-02"; level = "03"; compressedWorkWeek = $true } }; Expected = [PSCustomObject]@{ surname = "SAVED"; givenName = "PERSON"; initials = "F.E"; pri = ""; group = "CR"; subGroup = "02"; level = "03"; compressedWorkWeek = $true } },
+    [PSCustomObject]@{ Label = "legacy hashtable user adapter"; Value = @{ displayName = "Hash User"; gc179Profile = @{ surname = "Ignored" } }; Expected = [PSCustomObject]@{ surname = "IGNORED"; givenName = "HASH"; initials = "H.U"; pri = ""; group = "STS"; subGroup = "00"; level = ""; compressedWorkWeek = $false } }
 )
 foreach ($case in $userCases) {
     $before = ConvertTo-ComparableJson -Value $case.Value

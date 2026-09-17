@@ -56,6 +56,87 @@ function getDashboardEmployeeByCodeValue(employeeCode) {
   return dashboardState.employees.find(employee => String(employee.code || "").trim() === normalizedCode) || null;
 }
 
+function getDashboardEmployeeTimeEntryTypes(employee) {
+  const source = Array.isArray(employee && employee.timeEntryTypes) && employee.timeEntryTypes.length > 0
+    ? employee.timeEntryTypes
+    : ["overtime"];
+  const normalizedTypes = source
+    .map(value => String(value || "").trim().toLowerCase())
+    .filter(value => value === "overtime" || value === "diverse");
+
+  return normalizedTypes.length > 0 ? Array.from(new Set(normalizedTypes)) : ["overtime"];
+}
+
+function canCreateDiverseEntryForDashboardEmployee(employee) {
+  return Boolean(
+    employee
+    && getDashboardEmployeeTimeEntryTypes(employee).includes("diverse")
+    && typeof isSuperAdminUser === "function"
+    && isSuperAdminUser(),
+  );
+}
+
+function getSelectedAddEntryType() {
+  const selectedType = document.querySelector('input[name="addEntryType"]:checked')?.value;
+  return String(selectedType || "overtime").toLowerCase() === "diverse" ? "diverse" : "overtime";
+}
+
+function setAddEntryModalType(entryType, employee, diverseAllowedOverride = null) {
+  const diverseAllowed = typeof diverseAllowedOverride === "boolean"
+    ? diverseAllowedOverride
+    : canCreateDiverseEntryForDashboardEmployee(employee);
+  const normalizedType = String(entryType || "overtime").toLowerCase() === "diverse" && diverseAllowed
+    ? "diverse"
+    : "overtime";
+  const typeField = document.getElementById("addEntryTypeField");
+  const diverseOption = document.getElementById("addEntryTypeDiverseOption");
+  const overtimeInput = document.getElementById("addEntryTypeOvertime");
+  const diverseInput = document.getElementById("addEntryTypeDiverse");
+  const addEntryForm = document.getElementById("addEntryForm");
+
+  if (addEntryForm) {
+    addEntryForm.dataset.diverseAllowed = diverseAllowed ? "true" : "false";
+  }
+
+  if (typeField) {
+    typeField.classList.toggle("d-none", !diverseAllowed);
+  }
+  if (diverseOption) {
+    diverseOption.classList.toggle("d-none", !diverseAllowed);
+  }
+  if (diverseInput) {
+    diverseInput.disabled = !diverseAllowed;
+    diverseInput.checked = normalizedType === "diverse";
+  }
+  if (overtimeInput) {
+    overtimeInput.checked = normalizedType === "overtime";
+  }
+
+  document.querySelectorAll(".add-overtime-field").forEach(element => {
+    element.classList.toggle("d-none", normalizedType === "diverse");
+  });
+  document.querySelectorAll(".add-diverse-field").forEach(element => {
+    element.classList.toggle("d-none", normalizedType !== "diverse");
+  });
+
+  const projectSelect = document.getElementById("addProjectCode");
+  const paymentSelect = document.getElementById("addPaymentOption");
+  const diverseReason = document.getElementById("addDiverseReason");
+  const diverseSummary = document.getElementById("addDiverseSummary");
+  if (projectSelect) {
+    projectSelect.required = normalizedType === "overtime";
+  }
+  if (paymentSelect) {
+    paymentSelect.required = normalizedType === "overtime";
+  }
+  if (diverseReason) {
+    diverseReason.required = normalizedType === "diverse";
+  }
+  if (diverseSummary) {
+    diverseSummary.required = normalizedType === "diverse";
+  }
+}
+
 function getDashboardEmployeeSearchText(employee) {
   return [
     employee && employee.name,
@@ -483,7 +564,8 @@ function renderDashboardApprovalQueue(entries) {
       <div class="queue-card-meta">
         ${renderDashboardEntryProjectIdentity(entry)}
         ${!isDiverseEntry(entry) && entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : ""}
-        <span class="meta-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
+        <span class="meta-pill duration-value">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
+        ${renderEntryWorkScheduleBadge(entry)}
       </div>
       ${renderEntryWorkComment(entry)}
       ${entry.message ? `
@@ -533,9 +615,10 @@ function renderDashboardActiveSessions(entries) {
           <span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>
         </div>
         <div class="queue-card-meta">
-          <span class="inline-code-pill">${escapeHtml(secondsToDurationLabel(elapsed))}</span>
+          <span class="inline-code-pill duration-value">${escapeHtml(secondsToDurationLabel(elapsed))}</span>
           ${renderDashboardEntryProjectIdentity(entry)}
           ${entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : ""}
+          ${renderEntryWorkScheduleBadge(entry)}
         </div>
         <div class="queue-card-actions">
           <button type="button" class="btn btn-outline-secondary btn-sm dashboard-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-project-code="${escapeHtml(entry.projectCode || "")}">${escapeHtml(t("action.openEmployee"))}</button>
@@ -706,6 +789,7 @@ function renderEmployeeEntries(employeeCode, entries) {
             const permissionBadge = getEntryPermissionBadgeMarkup(entry);
             const exactTimeLabel = getEntryExactTimeLabel(entry);
             const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
+            const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}"`;
             const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
             const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
             const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
@@ -748,10 +832,10 @@ function renderEmployeeEntries(employeeCode, entries) {
                   <span class="meta-pill">${escapeHtml(isDiverseEntry(entry) ? (entry.diverseReason || "-") : (entry.reasonCode || "-"))}</span>
                 </td>
                 <td class="dashboard-entry-col-duration">
-                  <span class="inline-code-pill">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.inProgress"))}</span>
+                  <span class="inline-code-pill duration-value">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.inProgress"))}</span>
                 </td>
                 <td class="dashboard-entry-col-status">
-                  <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
+                  <div class="entry-state-stack"><span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>${renderEntryWorkScheduleBadge(entry)}</div>
                 </td>
                 <td class="dashboard-entry-col-note">
                   <div class="dashboard-entry-note-tools">
@@ -767,7 +851,7 @@ function renderEmployeeEntries(employeeCode, entries) {
                   <div class="dashboard-entry-actions">
                     ${reviewButtons}
                     ${canModify ? `
-                      <button class="btn btn-outline-secondary btn-sm update-button" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("modal.updateEntry"))}">
+                      <button class="btn btn-outline-secondary btn-sm update-button" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-overtime="${escapeHtml(entry.overtime || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${workScheduleAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("modal.updateEntry"))}">
                         <i class="fa-solid fa-pen"></i> ${escapeHtml(t("action.edit"))}
                       </button>
                       <button class="btn btn-outline-secondary btn-sm delete-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
@@ -1001,7 +1085,7 @@ function setUpdateEntryModalType(entryType) {
   });
 }
 
-async function openAddEntryModal(employeeCodeOverride = "", triggerButton = null) {
+async function openAddEntryModal(employeeCodeOverride = "", triggerButton = null, employeeOverride = null) {
   const employeeCode = employeeCodeOverride || document.getElementById("employeeSelect").value;
   if (!employeeCode) {
     showToast(t("dashboard.selectEmployeeBeforeAdd"), "info");
@@ -1009,15 +1093,17 @@ async function openAddEntryModal(employeeCodeOverride = "", triggerButton = null
   }
 
   return runButtonAction(triggerButton, async () => {
+    const employee = employeeOverride || getDashboardEmployeeByCodeValue(employeeCode);
     document.getElementById("addEntryForm").dataset.employeeCode = employeeCode;
     document.getElementById("addEntryForm").dataset.refreshPeopleEmployee = employeeCodeOverride ? employeeCode : "";
     document.getElementById("addEntryDate").value = toLocalDateInputValue(new Date());
     ["addPunchInHours", "addPunchInMinutes", "addPunchOutHours", "addPunchOutMinutes"].forEach(id => {
       document.getElementById(id).value = "";
     });
-    ["addWorkComment", "addManagerMessage"].forEach(id => {
+    ["addWorkComment", "addDiverseReason", "addDiverseSummary", "addManagerMessage"].forEach(id => {
       document.getElementById(id).value = "";
     });
+    setAddEntryModalType("overtime", employee);
     await populateEntryLookups("addProjectCode", "addOvertimeCode", "", "", "addPaymentOption", "addReasonCode");
     const addModal = new bootstrap.Modal(document.getElementById("addEntryModal"));
     addModal.show();
@@ -1039,6 +1125,7 @@ async function openUpdateModal(button, refreshPeopleEmployee = "") {
   const reasonCode = button.getAttribute("data-reasoncode") || "";
   const entryStatus = String(button.getAttribute("data-status") || "pending").toLowerCase();
   const entryType = String(button.getAttribute("data-entrytype") || "overtime").toLowerCase() === "diverse" ? "diverse" : "overtime";
+  const workSchedule = String(button.getAttribute("data-workschedule") || "").toLowerCase();
   const diverseReason = button.getAttribute("data-diversereason") || "";
   const diverseSummary = button.getAttribute("data-diversesummary") || "";
   const workComment = button.getAttribute("data-workcomment") || "";
@@ -1063,6 +1150,8 @@ async function openUpdateModal(button, refreshPeopleEmployee = "") {
       document.getElementById("originalWorkComment").value = workComment;
       document.getElementById("updateEntryForm").dataset.originalExactPunchIn = exactPunchIn || "";
       document.getElementById("updateEntryForm").dataset.originalExactPunchOut = exactPunchOut || "";
+      document.getElementById("updateEntryForm").dataset.originalWorkSchedule = workSchedule;
+      document.getElementById("updateWorkSchedule").value = ["regular", "compressed"].includes(workSchedule) ? workSchedule : "";
       setUpdateEntryModalType(entryType);
 
       if (exactPunchIn) {
@@ -1319,10 +1408,23 @@ document.getElementById("addEntryButton").addEventListener("click", event => {
   });
 });
 
+document.querySelectorAll('input[name="addEntryType"]').forEach(input => {
+  input.addEventListener("change", event => {
+    const addEntryForm = document.getElementById("addEntryForm");
+    const employeeCode = addEntryForm.dataset.employeeCode || document.getElementById("employeeSelect").value;
+    setAddEntryModalType(
+      event.currentTarget.value,
+      getDashboardEmployeeByCodeValue(employeeCode),
+      addEntryForm.dataset.diverseAllowed === "true",
+    );
+  });
+});
+
 document.getElementById("saveAddEntryBtn").addEventListener("click", async event => {
   const saveButton = event.currentTarget;
   const addEntryForm = document.getElementById("addEntryForm");
   const employeeCode = addEntryForm.dataset.employeeCode || document.getElementById("employeeSelect").value;
+  const entryType = getSelectedAddEntryType();
   const date = document.getElementById("addEntryDate").value;
   if (!employeeCode || !date) {
     showToast(t("dashboard.selectEmployeeAndDate"), "error");
@@ -1338,20 +1440,39 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async event
   const paymentOption = document.getElementById("addPaymentOption").value;
   const reasonCode = document.getElementById("addReasonCode").value;
   const workComment = document.getElementById("addWorkComment").value.trim();
+  const diverseReason = document.getElementById("addDiverseReason").value.trim();
+  const diverseSummary = document.getElementById("addDiverseSummary").value.trim();
   const managerMessage = document.getElementById("addManagerMessage").value.trim();
+
+  const diverseAllowedForTarget = addEntryForm.dataset.diverseAllowed === "true";
+  if (entryType === "diverse" && (!diverseAllowedForTarget || typeof isSuperAdminUser !== "function" || !isSuperAdminUser())) {
+    showToast(t("dashboard.diversePrivilegeRequired"), "error");
+    setAddEntryModalType("overtime", null, false);
+    return;
+  }
 
   if (!punchInHours || !punchInMinutes || !punchOutHours || !punchOutMinutes) {
     showToast(t("dashboard.fillAllTimeFields"), "error");
     return;
   }
 
-  if (!projectCode) {
+  if (entryType === "overtime" && !projectCode) {
     showToast(t("dashboard.selectProject"), "error");
     return;
   }
 
-  if (!paymentOption) {
+  if (entryType === "overtime" && !paymentOption) {
     showToast(t("dashboard.selectPaymentOption"), "error");
+    return;
+  }
+
+  if (entryType === "diverse" && !diverseReason) {
+    showToast(t("self.diverseReasonRequired"), "error");
+    return;
+  }
+
+  if (entryType === "diverse" && !diverseSummary) {
+    showToast(t("self.diverseSummaryRequired"), "error");
     return;
   }
 
@@ -1370,21 +1491,28 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async event
 
   try {
     await runButtonAction(saveButton, async () => {
+      const entryPayload = {
+        entryType,
+        date,
+        punchIn: punchInTime,
+        punchOut: punchOutTime,
+        status: "pending",
+        message: managerMessage,
+      };
+      if (entryType === "diverse") {
+        entryPayload.diverseReason = diverseReason;
+        entryPayload.diverseSummary = diverseSummary;
+      } else {
+        entryPayload.projectCode = projectCode;
+        entryPayload.overtimeCode = overtimeCode;
+        entryPayload.paymentOption = paymentOption;
+        entryPayload.reasonCode = reasonCode;
+        entryPayload.workComment = workComment;
+      }
       const response = await fetch(apiUrl + "employee/add/" + employeeCode, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date,
-          punchIn: punchInTime,
-          punchOut: punchOutTime,
-          status: "pending",
-          projectCode,
-          overtimeCode,
-          paymentOption,
-          reasonCode,
-          workComment,
-          message: managerMessage,
-        }),
+        body: JSON.stringify(entryPayload),
       });
       await parseResponse(response);
       bootstrap.Modal.getInstance(document.getElementById("addEntryModal")).hide();
@@ -1395,7 +1523,7 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async event
       dashboardState.historyLoaded = false;
       showToast(t("dashboard.entryAdded"), "success");
       await refreshAfterEntryMutation(employeeCode, refreshPeopleEmployee);
-    }, { key: `entry-add:${employeeCode}:${date}:${punchInTime}` });
+    }, { key: `entry-add:${employeeCode}:${entryType}:${date}:${punchInTime}` });
   } catch (error) {
     console.error("Error adding entry:", error);
     showToast(t("dashboard.entryAddError", { message: error.message }), "error");
@@ -1426,6 +1554,9 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
   const reasonCode = document.getElementById("updateReasonCode").value;
   const originalReasonCode = document.getElementById("originalReasonCode").value;
   const entryType = document.getElementById("updateEntryType").value || "overtime";
+  const workScheduleInput = document.getElementById("updateWorkSchedule");
+  const workSchedule = workScheduleInput.value;
+  const originalWorkSchedule = document.getElementById("updateEntryForm").dataset.originalWorkSchedule || "unconfirmed";
   const diverseReason = document.getElementById("updateDiverseReason").value.trim();
   const originalDiverseReason = document.getElementById("originalDiverseReason").value;
   const diverseSummary = document.getElementById("updateDiverseSummary").value.trim();
@@ -1438,6 +1569,11 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
 
   if (!updateDateInput.checkValidity()) {
     updateDateInput.reportValidity();
+    return;
+  }
+
+  if (!workScheduleInput.checkValidity()) {
+    workScheduleInput.reportValidity();
     return;
   }
 
@@ -1483,7 +1619,7 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
   const overtimeFieldsUnchanged = projectCode === originalProjectCode && overtimeCode === originalOvertimeCode && paymentOption === originalPaymentOption && reasonCode === originalReasonCode && workComment === originalWorkComment;
   const diverseFieldsUnchanged = diverseReason === originalDiverseReason && diverseSummary === originalDiverseSummary;
   const typeSpecificFieldsUnchanged = entryType === "diverse" ? diverseFieldsUnchanged : overtimeFieldsUnchanged;
-  if (newDate === originalDate && newPunchInBackend === originalExactPunchIn && punchOutBackend === originalExactPunchOut && typeSpecificFieldsUnchanged && entryStatus === originalEntryStatus) {
+  if (newDate === originalDate && newPunchInBackend === originalExactPunchIn && punchOutBackend === originalExactPunchOut && workSchedule === originalWorkSchedule && typeSpecificFieldsUnchanged && entryStatus === originalEntryStatus) {
     showToast(t("dashboard.noChanges"), "info");
     return;
   }
@@ -1499,8 +1635,8 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(entryType === "diverse"
-          ? { entryId, entryType, date: originalDate, newDate, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, diverseReason, diverseSummary, status: entryStatus, message: managerMessage }
-          : { entryId, entryType, date: originalDate, newDate, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, paymentOption, reasonCode, workComment, status: entryStatus, message: managerMessage }),
+          ? { entryId, entryType, workSchedule, date: originalDate, newDate, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, diverseReason, diverseSummary, status: entryStatus, message: managerMessage }
+          : { entryId, entryType, workSchedule, date: originalDate, newDate, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, paymentOption, reasonCode, workComment, status: entryStatus, message: managerMessage }),
       });
       await parseResponse(response);
       const refreshPeopleEmployee = document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee || "";

@@ -54,10 +54,64 @@
                     warnings     = @($postCommitWarnings.ToArray())
                 }) | ConvertTo-Json -Depth 6)
             }
+            catch [System.ArgumentException] {
+                respondWithError $response 400 $_.Exception.Message
+            }
             catch {
                 Rethrow-HttpStatusException -Exception $_.Exception
                 Write-Warning ("Unable to update GC179 profile: {0}" -f $_.Exception.Message)
                 respondWithError $response 500 "Unable to update GC179 profile."
+            }
+            continue
+        }
+
+        if ($request.Url.AbsolutePath -eq "/self/work-schedule" -and $request.HttpMethod -eq "PUT") {
+            $currentUser = Get-AuthenticatedUserFromRequest -Request $request
+            if ($null -eq $currentUser) {
+                respondWithError $response 401 "Authentication required."
+                continue
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$currentUser.employeeCode)) {
+                respondWithError $response 403 "Employee access is required."
+                continue
+            }
+
+            try {
+                $payload = Read-JsonRequestBody -Request $request
+                if ($null -eq $payload -or
+                    -not ($payload.PSObject.Properties.Name -contains "compressedWorkWeek") -or
+                    -not ($payload.compressedWorkWeek -is [bool])) {
+                    respondWithError $response 400 "compressedWorkWeek must be true or false."
+                    continue
+                }
+
+                $employeeCode = [string]$currentUser.employeeCode
+                if (-not (Set-EmployeeUserCompressedWorkWeek -EmployeeCode $employeeCode -CompressedWorkWeek ([bool]$payload.compressedWorkWeek))) {
+                    respondWithError $response 500 "Unable to update work schedule."
+                    continue
+                }
+
+                $updatedUser = Get-EmployeeUserByCode -EmployeeCode $employeeCode
+                $updatedProfile = Get-Gc179ProfileFromUserRecord -UserRecord $updatedUser
+                $postCommitWarnings = New-Object System.Collections.ArrayList
+                $syncWarning = Invoke-PostCommitActionSafely -Description "Work schedule saved, but cross-machine refresh publication failed" -Action {
+                    Publish-DataChange -Category "auth" -Resource $employeeCode | Out-Null
+                }
+                if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
+                    [void]$postCommitWarnings.Add($syncWarning)
+                }
+
+                respondWithSuccess $response (([PSCustomObject]@{
+                    message            = "Work schedule updated successfully."
+                    workSchedule       = if ([bool]$updatedProfile.compressedWorkWeek) { "compressed" } else { "regular" }
+                    gc179Profile       = $updatedProfile
+                    warnings           = @($postCommitWarnings.ToArray())
+                }) | ConvertTo-Json -Depth 6)
+            }
+            catch {
+                Rethrow-HttpStatusException -Exception $_.Exception
+                Write-Warning ("Unable to update work schedule: {0}" -f $_.Exception.Message)
+                respondWithError $response 500 "Unable to update work schedule."
             }
             continue
         }
@@ -167,8 +221,12 @@
                 $workComment = ""
                 $diverseReason = ""
                 $diverseSummary = ""
+                $workSchedule = "unconfirmed"
 
                 if ($payload.type -eq "in") {
+                    $latestEmployeeUser = Get-EmployeeUserByCode -EmployeeCode $employeeCode
+                    $latestEmployeeProfile = Get-Gc179ProfileFromUserRecord -UserRecord $latestEmployeeUser
+                    $workSchedule = if ([bool]$latestEmployeeProfile.compressedWorkWeek) { "compressed" } else { "regular" }
                     if ($payload.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$payload.entryType)) {
                         $entryType = ([string]$payload.entryType).Trim().ToLowerInvariant()
                     }
@@ -301,6 +359,8 @@
                                 workComment = ""
                                 diverseReason = if ($entryType -eq "diverse") { $diverseReason } else { "" }
                                 diverseSummary = ""
+                                workSchedule = $workSchedule
+                                workScheduleSource = "employee-profile"
                             }
                         }
                         else {

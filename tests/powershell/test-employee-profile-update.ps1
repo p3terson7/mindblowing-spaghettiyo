@@ -131,7 +131,7 @@ try {
         initials           = "JD"
         pri                = "123456789"
         group              = "  sts  "
-        subGroup           = "  suf-00  "
+        subGroup           = "  0  "
         level              = " 02 "
         compressedWorkWeek = $true
     }
@@ -165,7 +165,7 @@ try {
     Assert-Equal -Expected "DOE" -Actual $savedTarget.gc179Profile.surname -Message "GC179 surname did not use the updated display name."
     Assert-Equal -Expected "JANE" -Actual $savedTarget.gc179Profile.givenName -Message "GC179 given name did not use the updated display name."
     Assert-Equal -Expected "STS" -Actual $savedTarget.gc179Profile.group -Message "The employee-specific GC179 Group was not normalized and persisted."
-    Assert-Equal -Expected "SUF-00" -Actual $savedTarget.gc179Profile.subGroup -Message "The employee-specific GC179 Sub-Group was not normalized and persisted."
+    Assert-Equal -Expected "00" -Actual $savedTarget.gc179Profile.subGroup -Message "The employee-specific GC179 Sub-Group was not normalized and persisted."
     Assert-Equal -Expected "02" -Actual $savedTarget.gc179Profile.level -Message "The employee-specific GC179 Level was not normalized and persisted."
     Assert-Equal -Expected "hash-1" -Actual $savedTarget.passwordHash -Message "The update changed an unrelated password field."
     Assert-Equal -Expected "Externally Updated Employee" -Actual $savedOther.displayName -Message "The update overwrote a concurrent display-name change."
@@ -176,18 +176,18 @@ try {
         subGroup = " cr/01!? "
         level    = " 03 "
     }) -DisplayName "Non Student"
-    Assert-Equal -Expected "AS-03" -Actual $nonStudentProfile.group -Message "A non-student GC179 Group code was not preserved."
-    Assert-Equal -Expected "CR/01" -Actual $nonStudentProfile.subGroup -Message "A non-student GC179 Sub-Group code was not preserved."
+    Assert-Equal -Expected "AS" -Actual $nonStudentProfile.group -Message "A GC179 Group was not normalized to letters only."
+    Assert-Equal -Expected "01" -Actual $nonStudentProfile.subGroup -Message "A GC179 Sub-Group was not normalized to two digits."
     Assert-Equal -Expected "03" -Actual $nonStudentProfile.level -Message "A non-student GC179 Level code was not preserved."
 
     $legacyProfile = ConvertTo-Gc179ProfileObject -Value $null -DisplayName "Legacy Employee"
     Assert-Equal -Expected "STS" -Actual $legacyProfile.group -Message "A legacy profile without a Group should retain the former default."
-    Assert-Equal -Expected "SUF-00" -Actual $legacyProfile.subGroup -Message "A legacy profile without a Sub-Group should retain the former default."
+    Assert-Equal -Expected "00" -Actual $legacyProfile.subGroup -Message "A legacy profile without a Sub-Group should receive the two-digit default."
     Assert-Equal -Expected "" -Actual $legacyProfile.level -Message "A legacy profile without a Level should retain a blank Level."
 
     Assert-Equal -Expected "ABCDEF" -Actual (ConvertTo-Gc179GroupText -Value "abcdefghi") -Message "GC179 Group normalization did not respect the six-character PDF limit."
-    Assert-Equal -Expected "ABCDEFGHIJ" -Actual (ConvertTo-Gc179SubGroupText -Value "abcdefghijkl") -Message "GC179 Sub-Group normalization did not respect the ten-character PDF limit."
-    Assert-Equal -Expected "ABCDEFGHIJ" -Actual (ConvertTo-Gc179LevelText -Value "abcdefghijkl") -Message "GC179 Level normalization did not respect the ten-character PDF limit."
+    Assert-Equal -Expected "07" -Actual (ConvertTo-Gc179SubGroupText -Value "7") -Message "GC179 Sub-Group did not receive a leading zero."
+    Assert-Equal -Expected "04" -Actual (ConvertTo-Gc179LevelText -Value "4") -Message "GC179 Level did not receive a leading zero."
 
     Write-Host "Employee profile update test passed: one lock, one read, one write, one cache clear."
 }

@@ -4,6 +4,12 @@ if ($null -eq (Get-Module -Name "Saphir.EntryState")) {
 }
 Remove-Variable -Name entryStateModuleManifest -ErrorAction SilentlyContinue
 
+$businessRulesModuleManifest = Join-Path -Path $PSScriptRoot -ChildPath "../modules/Saphir.BusinessRules.psd1"
+if ($null -eq (Get-Module -Name "Saphir.BusinessRules")) {
+    Import-Module -Name $businessRulesModuleManifest -ErrorAction Stop | Out-Null
+}
+Remove-Variable -Name businessRulesModuleManifest -ErrorAction SilentlyContinue
+
 if (-not $script:ReadModelCache) {
     $script:ReadModelCache = @{}
 }
@@ -116,7 +122,7 @@ function Test-ReadModelCurrentStateSupportsTargeting {
     }
 
     $category = ([string]$State.category).Trim().ToLowerInvariant()
-    if (@("history", "project", "auth") -contains $category) {
+    if (@("history", "project", "auth", "compensation", "budget-periods") -contains $category) {
         return $true
     }
 
@@ -202,7 +208,9 @@ function Clear-AllReadModelCoreFileCaches {
         $historyFile,
         $overtimeCodesFile,
         $paymentOptionsFile,
-        $reasonCodesFile
+        $reasonCodesFile,
+        $compensationGridFile,
+        $budgetPeriodsFile
     )) {
         Clear-ReadModelFileCache -Path ([string]$corePath)
     }
@@ -264,6 +272,26 @@ function Clear-ReadModelCoreCachesForChange {
             $script:EmployeeNameMapCache = $null
             if (Get-Command -Name Clear-AuthRuntimeCaches -ErrorAction SilentlyContinue) {
                 Clear-AuthRuntimeCaches
+            }
+        }
+        "compensation" {
+            # Salary bands are read only by super-admin settings for now. Keep
+            # the employee projections warm while making the shared grid
+            # immediately current on every workstation.
+            Clear-ReadModelFileCache -Path $compensationGridFile
+            Clear-ReadModelFileCache -Path $historyFile
+            if (Get-Command -Name Clear-CompensationGridRuntimeCache -ErrorAction SilentlyContinue) {
+                Clear-CompensationGridRuntimeCache
+            }
+        }
+        "budget-periods" {
+            # Budget calendars change only comparison boundaries. Keep employee
+            # entry caches warm and invalidate the shared calendar plus the
+            # audit history written by the same settings update.
+            Clear-ReadModelFileCache -Path $budgetPeriodsFile
+            Clear-ReadModelFileCache -Path $historyFile
+            if (Get-Command -Name Clear-BudgetPeriodRuntimeCache -ErrorAction SilentlyContinue) {
+                Clear-BudgetPeriodRuntimeCache
             }
         }
         default {
@@ -417,12 +445,15 @@ function New-EmployeeEntryProjection {
         [string]$EmployeeRole = "employee"
     )
 
-    $entryType = if ($Entry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.entryType)) { ([string]$Entry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
+    $entryType = Saphir.BusinessRules\ConvertTo-SaphirEntryType -Value $(if ($Entry.PSObject.Properties.Name -contains "entryType") { [string]$Entry.entryType } else { "" })
+    $workSchedule = Saphir.BusinessRules\ConvertTo-SaphirWorkSchedule -Value $(if ($Entry.PSObject.Properties.Name -contains "workSchedule") { [string]$Entry.workSchedule } else { "" })
     $reviewIssues = @(Get-EntryReviewIssues -Entry $Entry)
 
     return [PSCustomObject]@{
         entryId       = Get-EntryIdentifierValue -Entry $Entry
         entryType     = $entryType
+        workSchedule  = $workSchedule
+        workScheduleSource = if ($Entry.PSObject.Properties.Name -contains "workScheduleSource") { [string]$Entry.workScheduleSource } else { "" }
         name          = [string]$Entry.name
         date          = [string]$Entry.date
         punchIn       = [string]$Entry.punchIn
@@ -760,13 +791,77 @@ function Get-FilteredEmployeeEntriesSnapshot {
     })
 }
 
+function New-HistoryEntryReadModel {
+    param(
+        [Parameter(Mandatory = $true)]$Entry,
+        $EmployeeNameMap
+    )
+
+    $projection = [PSCustomObject]@{}
+    foreach ($property in @($Entry.PSObject.Properties)) {
+        $projection | Add-Member -NotePropertyName ([string]$property.Name) -NotePropertyValue $property.Value
+    }
+
+    $subject = ""
+    foreach ($propertyName in @("targetEmployeeName", "targetEmployee", "subjectEmployee", "employee")) {
+        if ($Entry.PSObject.Properties.Name -contains $propertyName) {
+            $candidate = ([string]$Entry.PSObject.Properties[$propertyName].Value).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+                $subject = $candidate
+                break
+            }
+        }
+    }
+
+    $employeeCode = ""
+    $employeeName = ""
+    if (-not [string]::IsNullOrWhiteSpace($subject) -and $null -ne $EmployeeNameMap) {
+        if ($EmployeeNameMap.PSObject.Properties.Name -contains $subject) {
+            $employeeCode = $subject
+            $employeeName = ([string]$EmployeeNameMap.PSObject.Properties[$subject].Value).Trim()
+        }
+        else {
+            foreach ($property in @($EmployeeNameMap.PSObject.Properties)) {
+                if ([string]::Equals(([string]$property.Value).Trim(), $subject, [StringComparison]::OrdinalIgnoreCase)) {
+                    $employeeCode = [string]$property.Name
+                    $employeeName = ([string]$property.Value).Trim()
+                    break
+                }
+            }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($employeeName)) {
+        $employeeName = $subject
+    }
+    if ([string]::IsNullOrWhiteSpace($employeeCode) -and $subject -match "^\d+$") {
+        $employeeCode = $subject
+    }
+
+    $projection | Add-Member -NotePropertyName "targetEmployeeName" -NotePropertyValue $employeeName -Force
+    $projection | Add-Member -NotePropertyName "targetEmployeeCode" -NotePropertyValue $employeeCode -Force
+    return $projection
+}
+
 function Get-HistoryEntriesSnapshot {
     return (Invoke-ReadModelCache -Key "history-entries" -Factory {
         if (-not (Test-SaphirFileExists -Path $historyFile)) {
             return @()
         }
 
-        return @(Read-JsonArrayFile -Path $historyFile)
+        $employeeNameMap = if (Get-Command -Name Get-EmployeeNameMap -ErrorAction SilentlyContinue) {
+            Get-EmployeeNameMap
+        }
+        else {
+            [PSCustomObject]@{}
+        }
+        $entries = New-Object System.Collections.ArrayList
+        foreach ($entry in @(Read-JsonArrayFile -Path $historyFile)) {
+            if ($null -ne $entry) {
+                [void]$entries.Add((New-HistoryEntryReadModel -Entry $entry -EmployeeNameMap $employeeNameMap))
+            }
+        }
+        return @($entries.ToArray())
     })
 }
 
@@ -1086,6 +1181,8 @@ function New-ProjectEntryDetailProjection {
         employeeName     = $employeeName
         employeeArchived = if ($Entry.PSObject.Properties.Name -contains "employeeArchived") { [bool]$Entry.employeeArchived } else { $false }
         entryType        = Get-ProjectEntryType -Entry $Entry
+        workSchedule     = Saphir.BusinessRules\ConvertTo-SaphirWorkSchedule -Value $(if ($Entry.PSObject.Properties.Name -contains "workSchedule") { [string]$Entry.workSchedule } else { "" })
+        workScheduleSource = if ($Entry.PSObject.Properties.Name -contains "workScheduleSource") { [string]$Entry.workScheduleSource } else { "" }
         date             = if ($Entry.PSObject.Properties.Name -contains "date") { [string]$Entry.date } else { "" }
         punchIn          = if ($Entry.PSObject.Properties.Name -contains "punchIn") { [string]$Entry.punchIn } else { "" }
         exactPunchIn     = if ($Entry.PSObject.Properties.Name -contains "exactPunchIn") { [string]$Entry.exactPunchIn } else { "" }

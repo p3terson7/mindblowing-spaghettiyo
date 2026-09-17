@@ -73,6 +73,8 @@ $expectedRouteScripts = @(
     "routes/sync.routes.ps1",
     "routes/seed.routes.ps1",
     "routes/self.routes.ps1",
+    "routes/compensation-grid.routes.ps1",
+    "routes/budget-periods.routes.ps1",
     "routes/history.routes.ps1",
     "routes/dashboard.routes.ps1",
     "routes/employee.routes.ps1",
@@ -99,6 +101,7 @@ $expectedRouteScripts = @(
     "routes/projects/delete.routes.ps1",
     "routes/project-stats.routes.ps1",
     "routes/stats/analytics-export.routes.ps1",
+    "routes/stats/budget-periods.routes.ps1",
     "routes/stats/summary.routes.ps1",
     "routes/stats/trends.routes.ps1",
     "routes/stats/detail.routes.ps1"
@@ -150,6 +153,8 @@ $topLevelCases = @(
     @("GET", "/sync/status", "routes/sync.routes.ps1"),
     @("POST", "/seed/demo-entries", "routes/seed.routes.ps1"),
     @("GET", "/self/bootstrap", "routes/self.routes.ps1"),
+    @("GET", "/compensation-grid", "routes/compensation-grid.routes.ps1"),
+    @("GET", "/budget-periods", "routes/budget-periods.routes.ps1"),
     @("GET", "/history/recent", "routes/history.routes.ps1"),
     @("GET", "/dashboard/bootstrap", "routes/dashboard.routes.ps1"),
     @("GET", "/approvals/entries", "routes/dashboard.routes.ps1"),
@@ -210,6 +215,7 @@ foreach ($case in $projectCases) {
 
 $statsCases = @(
     @("GET", "/stats/analytics-export", "routes/stats/analytics-export.routes.ps1"),
+    @("GET", "/stats/budget-periods", "routes/stats/budget-periods.routes.ps1"),
     @("GET", "/stats/projects", "routes/stats/summary.routes.ps1"),
     @("GET", "/stats/projects/", "routes/stats/summary.routes.ps1"),
     @("GET", "/stats/projects/trends", "routes/stats/trends.routes.ps1"),
@@ -242,4 +248,4 @@ Assert-Equal -Expected 1 -Actual ([regex]::Matches($adminServerSource, 'Resolve-
 $employeeAggregatorSource = [System.IO.File]::ReadAllText((Join-Path -Path $backendRoot -ChildPath "routes/employee.routes.ps1"))
 Assert-Equal -Expected 1 -Actual ([regex]::Matches($employeeAggregatorSource, 'Invoke-CachedRouteScript').Count) -Message "The employee aggregator should invoke only its resolved leaf route."
 
-Write-Host "Route dispatch test passed: the PS5.1 module, compatibility facade, ordered 34-route catalog, and all known/unknown dispatch cases agree."
+Write-Host "Route dispatch test passed: the PS5.1 module, compatibility facade, ordered 37-route catalog, and all known/unknown dispatch cases agree."

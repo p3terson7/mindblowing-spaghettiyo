@@ -557,6 +557,12 @@ function New-Gc179ImportPreview {
 
     $entries = @()
     $warnings = @()
+    $importWorkWeek = Get-Gc179ImportWorkWeek -Value (Get-Gc179ImportField -Fields $fields -Name "WorkWeek")
+    $importWorkSchedule = switch ($importWorkWeek) {
+        "compressed" { "compressed" }
+        "standard" { "regular" }
+        default { "unconfirmed" }
+    }
     $skippedRowCount = 0
     for ($rowIndex = 0; $rowIndex -lt 16; $rowIndex++) {
         $dayText = (Get-Gc179ImportField -Fields $fields -Name "DayofWeek" -RowIndex $rowIndex).Trim()
@@ -645,6 +651,8 @@ function New-Gc179ImportPreview {
             gc179RateField     = [string]$rateInfo.FieldName
             gc179DurationValue = [string]$rateInfo.Value
             gc179RateComponents = @($rateInfo.Components)
+            workSchedule       = $importWorkSchedule
+            workScheduleSource = "gc179-import"
             validationErrors   = @($rowValidationErrors)
             warnings           = @($rowWarnings)
         }
@@ -676,7 +684,7 @@ function New-Gc179ImportPreview {
             group      = Get-Gc179ImportField -Fields $fields -Name "Group"
             subGroup   = Get-Gc179ImportField -Fields $fields -Name "SubGroup"
             level      = Get-Gc179ImportField -Fields $fields -Name "Level"
-            workWeek   = Get-Gc179ImportWorkWeek -Value (Get-Gc179ImportField -Fields $fields -Name "WorkWeek")
+            workWeek   = $importWorkWeek
         }
         entryCount   = @($entries).Count
         entries      = @($entries)
@@ -1060,6 +1068,8 @@ function Import-Gc179PreviewEntries {
                 overtimeCode        = [string]$entry.overtimeCode
                 paymentOption       = [string]$entry.paymentOption
                 reasonCode          = [string]$entry.reasonCode
+                workSchedule        = [string]$entry.workSchedule
+                workScheduleSource  = "gc179-import"
                 gc179Rate           = [string]$entry.gc179Rate
                 gc179RateField      = [string]$entry.gc179RateField
                 gc179RateComponents = @($entry.gc179RateComponents)
@@ -1156,6 +1166,12 @@ function Get-Gc179ImportEntryFingerprint {
     if ($Entry.PSObject.Properties.Name -contains "workComment") {
         $workComment = [string]$Entry.workComment
         [void]$values.Add(("workComment={0}" -f $workComment.Replace("|", "%7C")))
+    }
+    foreach ($schedulePropertyName in @("workSchedule", "workScheduleSource")) {
+        if ($Entry.PSObject.Properties.Name -contains $schedulePropertyName) {
+            $schedulePropertyValue = [string]$Entry.PSObject.Properties[$schedulePropertyName].Value
+            [void]$values.Add(("{0}={1}" -f $schedulePropertyName, $schedulePropertyValue.Replace("|", "%7C")))
+        }
     }
 
     [void]$values.Add(("components={0}" -f (Get-Gc179ImportDurationSignature -Entry $Entry)))

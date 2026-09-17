@@ -6,6 +6,7 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -match "^/stats
             -EndDate ([string]$query["endDate"]) `
             -Locale ([string]$query["locale"]) `
             -ProjectCode ([string]$query["projectCode"]) `
+            -ReportMode ([string]$query["reportMode"]) `
             -CurrentUser $currentUser
         $bytes = [System.Text.Encoding]::UTF8.GetBytes([string]$report.Html)
         respondWithDownload `

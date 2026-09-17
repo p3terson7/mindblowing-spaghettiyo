@@ -120,12 +120,18 @@ textarea {
 }
 
 .mono,
-code,
+code {
+  font-family: var(--mono-font);
+}
+
+.time-value,
+.duration-value,
 .metric-value,
 .hero-status,
 .status-value,
 .session-chip {
-  font-family: var(--mono-font);
+  font-family: var(--sans-font);
+  font-variant-numeric: tabular-nums;
 }
 
 .app-root {
@@ -444,6 +450,95 @@ code,
 
 .settings-health-check.is-warning i {
   color: var(--warning);
+}
+
+.compensation-grid-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+}
+
+.compensation-grid-table {
+  min-width: 760px;
+}
+
+.compensation-grid-table th,
+.compensation-grid-table td {
+  padding: 8px 7px;
+  vertical-align: middle;
+}
+
+.compensation-grid-table .form-control {
+  min-width: 90px;
+}
+
+.compensation-grid-table .compensation-grid-salary-input {
+  min-width: 126px;
+}
+
+.compensation-grid-table .compensation-grid-date-input {
+  min-width: 138px;
+}
+
+.compensation-grid-table .compensation-grid-remove-button {
+  min-width: 34px;
+}
+
+.compensation-grid-empty td {
+  padding: 15px 10px;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+.compensation-grid-actions {
+  justify-content: flex-end;
+}
+
+.budget-period-cycle-field {
+  max-width: 360px;
+}
+
+.budget-period-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+}
+
+.budget-period-table {
+  min-width: 500px;
+}
+
+.budget-period-table th,
+.budget-period-table td {
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+
+.budget-period-table .form-control {
+  min-width: 150px;
+}
+
+.budget-period-id {
+  display: inline-grid;
+  min-width: 42px;
+  min-height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.budget-period-empty {
+  padding: 15px 10px !important;
+  color: var(--text-muted);
+}
+
+.budget-period-actions {
+  justify-content: flex-end;
 }
 
 .gc179-workweek-options {
@@ -932,6 +1027,63 @@ code,
   gap: 6px;
 }
 
+.add-entry-type-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.entry-type-segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: var(--panel-muted);
+}
+
+.entry-type-segment {
+  position: relative;
+  margin: 0;
+  cursor: pointer;
+}
+
+.entry-type-segment input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.entry-type-segment span {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 9px;
+  color: var(--text-secondary);
+  font-weight: 700;
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.entry-type-segment:hover span {
+  color: var(--text-primary);
+}
+
+.entry-type-segment input:checked + span {
+  color: var(--text-primary);
+  background: var(--panel-bg);
+  box-shadow: 0 1px 4px rgb(15 23 42 / 12%);
+}
+
+.entry-type-segment input:focus-visible + span {
+  outline: 3px solid var(--accent-soft);
+  outline-offset: 1px;
+}
+
 .field-block-wide {
   flex: 1 1 360px;
 }
@@ -1200,7 +1352,8 @@ code,
 
 .self-project-stat-grid strong {
   color: var(--text-primary);
-  font-family: var(--mono-font);
+  font-family: var(--sans-font);
+  font-variant-numeric: tabular-nums;
 }
 
 .self-project-stat-footer {
@@ -2168,10 +2321,21 @@ button.is-async-busy::before,
 }
 
 .timeline-card-subject {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   color: var(--text-primary);
   font-size: 0.84rem;
   font-weight: 650;
   line-height: 1.25;
+}
+
+.timeline-card-subject-code {
+  color: var(--text-muted);
+  font-family: var(--mono-font);
+  font-size: 0.74rem;
+  font-weight: 600;
 }
 
 .entry-date-group {
@@ -3271,6 +3435,206 @@ button.is-async-busy::before,
   gap: 8px;
 }
 
+.project-budget-comparison-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.project-budget-comparison-header .panel-title {
+  margin: 2px 0 4px;
+  font-size: 1.15rem;
+}
+
+.budget-period-selector {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.budget-period-choice {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel-muted);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.budget-period-choice:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--panel-border));
+  background: var(--accent-soft);
+}
+
+.budget-period-choice input {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
+.budget-period-choice-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.budget-period-choice-copy strong {
+  font-size: 0.86rem;
+}
+
+.budget-period-choice-copy small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.budget-period-choice.is-unconfigured,
+.budget-period-choice.is-loading {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.budget-comparison-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.budget-comparison-stat {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel-muted);
+}
+
+.budget-comparison-stat > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.budget-comparison-stat > div > span,
+.budget-comparison-stat > small {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.budget-comparison-stat .metric-value {
+  font-size: 1.15rem;
+}
+
+.budget-comparison-table-region {
+  min-width: 0;
+}
+
+.budget-comparison-table-toggle {
+  margin-top: 10px;
+}
+
+.budget-comparison-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+}
+
+.budget-comparison-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  background: var(--panel-bg);
+}
+
+.budget-comparison-table caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.budget-comparison-table th,
+.budget-comparison-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--panel-border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.budget-comparison-table thead th {
+  background: var(--panel-muted);
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+}
+
+.budget-comparison-table thead th > span,
+.budget-comparison-table td > small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.budget-comparison-table tbody tr:last-child th,
+.budget-comparison-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.budget-comparison-project {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.budget-comparison-project > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.budget-comparison-project small {
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.budget-comparison-delta {
+  display: inline-flex;
+  min-width: 74px;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--panel-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.budget-comparison-delta.is-up {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.budget-comparison-delta.is-down {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
 .project-insight-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4329,6 +4693,11 @@ button.is-async-busy::before,
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .budget-period-selector,
+  .budget-comparison-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .employee-analytics-grid {
     grid-template-columns: minmax(300px, 520px);
   }
@@ -4523,6 +4892,8 @@ button.is-async-busy::before,
   .self-stats-summary,
   .self-project-stat-grid,
   .project-insight-summary,
+  .budget-period-selector,
+  .budget-comparison-summary,
   .employee-analytics-grid {
     grid-template-columns: 1fr;
   }

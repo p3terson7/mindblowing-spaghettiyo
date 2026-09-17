@@ -171,6 +171,8 @@ Assert-Equal -Expected "262" -Actual $firstEntry.overtimeCode -Message "The firs
 Assert-Equal -Expected "cash" -Actual $firstEntry.paymentOption -Message "The first fixture row payment option was mapped incorrectly."
 Assert-Equal -Expected "C" -Actual $firstEntry.reasonCode -Message "The first fixture row reason was mapped incorrectly."
 Assert-Equal -Expected 0 -Actual $firstEntry.sourceRow -Message "The first fixture row provenance was mapped incorrectly."
+Assert-Equal -Expected "unconfirmed" -Actual $firstEntry.workSchedule -Message "A GC179 without a WorkWeek value must remain explicitly unconfirmed."
+Assert-Equal -Expected "gc179-import" -Actual $firstEntry.workScheduleSource -Message "The GC179 preview lost schedule provenance."
 
 Assert-Equal -Expected "2026-05-21" -Actual $secondEntry.date -Message "The second fixture row date was mapped incorrectly."
 Assert-Equal -Expected "07:30:00" -Actual $secondEntry.punchIn -Message "The second fixture row start time was mapped incorrectly."
@@ -275,7 +277,7 @@ $script:RoundTripEmployee = [PSCustomObject]@{
         initials           = "JS"
         pri                = "000123456"
         group              = "STS"
-        subGroup           = "SUF-00"
+        subGroup           = "00"
         level              = "01"
         compressedWorkWeek = $false
     }
@@ -303,20 +305,22 @@ function ConvertTo-Gc179ProfileObject {
 
 function ConvertTo-Gc179GroupText {
     param([string]$Value)
-    $normalized = [System.Text.RegularExpressions.Regex]::Replace(([string]$Value).Trim().ToUpperInvariant(), "[^0-9A-Z._/-]", "")
+    $normalized = [System.Text.RegularExpressions.Regex]::Replace(([string]$Value).Trim().ToUpperInvariant(), "[^A-Z]", "")
     return $normalized.Substring(0, [math]::Min(6, $normalized.Length))
 }
 
 function ConvertTo-Gc179SubGroupText {
     param([string]$Value)
-    $normalized = [System.Text.RegularExpressions.Regex]::Replace(([string]$Value).Trim().ToUpperInvariant(), "[^0-9A-Z._/-]", "")
-    return $normalized.Substring(0, [math]::Min(10, $normalized.Length))
+    $normalized = [System.Text.RegularExpressions.Regex]::Replace(([string]$Value), "\D", "")
+    if ([string]::IsNullOrWhiteSpace($normalized)) { return "" }
+    return $normalized.Substring(0, [math]::Min(2, $normalized.Length)).PadLeft(2, "0")
 }
 
 function ConvertTo-Gc179LevelText {
     param([string]$Value)
-    $normalized = [System.Text.RegularExpressions.Regex]::Replace(([string]$Value).Trim().ToUpperInvariant(), "[^0-9A-Z._/-]", "")
-    return $normalized.Substring(0, [math]::Min(10, $normalized.Length))
+    $normalized = [System.Text.RegularExpressions.Regex]::Replace(([string]$Value), "\D", "")
+    if ([string]::IsNullOrWhiteSpace($normalized)) { return "" }
+    return $normalized.Substring(0, [math]::Min(2, $normalized.Length)).PadLeft(2, "0")
 }
 
 function ConvertTo-Gc179PriText {
@@ -353,6 +357,7 @@ $roundTripEntry = [PSCustomObject]@{
     overtimeCode  = "262"
     paymentOption = "leave"
     reasonCode    = "B"
+    workSchedule  = "regular"
 }
 $roundTripWorkedDates = @{ "2026-07-04" = $true; "2026-07-05" = $true }
 $roundTripExport = New-Gc179FdfExportPart `
@@ -375,6 +380,7 @@ $cashEntry = [PSCustomObject]@{
     overtimeCode  = "262"
     paymentOption = "cash"
     reasonCode    = "B"
+    workSchedule  = "regular"
 }
 $cashExport = New-Gc179FdfExportPart `
     -EmployeeCode "000123456" `
@@ -389,6 +395,40 @@ $mixedPaymentExport = New-Gc179FdfExportPart `
     -Entries @($cashEntry, $roundTripEntry) `
     -WorkedDateSet $roundTripWorkedDates
 Assert-Equal -Expected "000123456_SMITH_J_GC179_2026-07_TEMPS.fdf" -Actual $mixedPaymentExport.FileName -Message "A mixed GC179 containing a time-compensation request must receive the TEMPS suffix."
+
+Assert-Throws -Action {
+    $cashEntry.workSchedule = "compressed"
+    New-Gc179FdfExportPart -EmployeeCode "000123456" -MonthParts $roundTripMonth -Entries @($roundTripEntry, $cashEntry) -WorkedDateSet $roundTripWorkedDates | Out-Null
+} -MessagePattern "cannot combine regular and compressed" -Message "One GC179 form must never combine two work schedules."
+
+# WorkWeek is stored on each entry. Changing today's employee preference must
+# not rewrite the schedule of an older month during export.
+$script:ExportSetEntries = @($roundTripEntry, $cashEntry)
+function Get-Gc179ExportEntries {
+    param([string]$EmployeeCode, [string]$MonthKey)
+    return $script:ExportSetEntries
+}
+function Get-Gc179WorkedDateSet {
+    param([string]$EmployeeCode)
+    return @{}
+}
+$script:RoundTripEmployee.gc179Profile.compressedWorkWeek = $true
+$scheduleExportSet = New-Gc179FdfExportSet -EmployeeCode "000123456" -MonthKey "2026-07"
+Assert-Equal -Expected 2 -Actual @($scheduleExportSet.Exports).Count -Message "Mixed stored schedules must create separate GC179 forms."
+Assert-Equal -Expected "regular,compressed" -Actual ((@($scheduleExportSet.Exports) | ForEach-Object { $_.WorkSchedule }) -join ",") -Message "GC179 forms did not retain each entry's historical schedule."
+Assert-True -Condition ([regex]::IsMatch([string]$scheduleExportSet.Exports[0].Content, "/T \(WorkWeek\)\s*/V /1")) -Message "The regular form did not select WorkWeek 1."
+Assert-True -Condition ([regex]::IsMatch([string]$scheduleExportSet.Exports[1].Content, "/T \(WorkWeek\)\s*/V /2")) -Message "The compressed form did not select WorkWeek 2."
+$script:RoundTripEmployee.gc179Profile.compressedWorkWeek = $false
+
+$unconfirmedManualEntry = $roundTripEntry.PSObject.Copy()
+$unconfirmedManualEntry.workSchedule = "unconfirmed"
+Assert-Throws -Action {
+    New-Gc179FdfExportPart -EmployeeCode "000123456" -MonthParts $roundTripMonth -Entries @($unconfirmedManualEntry) -WorkedDateSet $roundTripWorkedDates | Out-Null
+} -MessagePattern "à confirmer" -Message "A manual legacy entry without a confirmed schedule must be blocked before GC179 export."
+
+$mixedRateExport = New-Gc179FdfExportPart -EmployeeCode "000123456" -MonthParts (ConvertTo-Gc179MonthParts -MonthKey "2026-06") -Entries @($mixedRateEntry) -WorkedDateSet @{}
+Assert-Equal -Expected "unconfirmed" -Actual $mixedRateExport.WorkSchedule -Message "An imported entry with explicit rate components must not invent a schedule."
+Assert-True -Condition ([regex]::IsMatch([string]$mixedRateExport.Content, "/T \(FirstDayTimeHalf\.0\)\s*/V \(1\.5\)")) -Message "Re-exporting an imported row lost its explicit split-rate entitlement."
 
 $accentedBaseName = Get-Gc179ExportBaseFileName `
     -EmployeeCode "000987654" `
@@ -416,7 +456,7 @@ $roundTripPreview = New-Gc179ImportPreview `
 Assert-Equal -Expected 1 -Actual $roundTripPreview.entryCount -Message "The import service could not read current export output."
 Assert-Equal -Expected "000 123 456" -Actual $roundTripPreview.header.pri -Message "The GC179 PRI header did not survive export/import."
 Assert-Equal -Expected "STS" -Actual $roundTripPreview.header.group -Message "The employee's Group was not exported into the GC179 Group field."
-Assert-Equal -Expected "SUF-00" -Actual $roundTripPreview.header.subGroup -Message "The employee's Sub-Group was not exported into the GC179 Sub-Group field."
+Assert-Equal -Expected "00" -Actual $roundTripPreview.header.subGroup -Message "The employee's two-digit Sub-Group was not exported into the GC179 Sub-Group field."
 Assert-Equal -Expected "01" -Actual $roundTripPreview.header.level -Message "The employee's Level was not exported into the distinct GC179 Level field."
 $roundTripImportedEntry = @($roundTripPreview.entries)[0]
 Assert-Equal -Expected "2026-07-05" -Actual $roundTripImportedEntry.date -Message "The round-trip entry date changed."
@@ -433,8 +473,8 @@ $script:RoundTripEmployee.gc179Profile.group = "CR4"
 $script:RoundTripEmployee.gc179Profile.subGroup = "2"
 $script:RoundTripEmployee.gc179Profile.level = "03"
 $nonStudentHeader = Get-Gc179HeaderValues -EmployeeCode "000123456" -MonthParts $roundTripMonth
-Assert-Equal -Expected "CR4" -Actual $nonStudentHeader.Group -Message "A non-student Group was not mapped to the GC179 Group field."
-Assert-Equal -Expected "2" -Actual $nonStudentHeader.SubGroup -Message "A non-student Sub-Group was not mapped to the GC179 Sub-Group field."
+Assert-Equal -Expected "CR" -Actual $nonStudentHeader.Group -Message "A Group was not normalized to letters before GC179 export."
+Assert-Equal -Expected "02" -Actual $nonStudentHeader.SubGroup -Message "A Sub-Group was not normalized to two digits before GC179 export."
 Assert-Equal -Expected "03" -Actual $nonStudentHeader.Level -Message "A non-student Level was not mapped to the GC179 Level field."
 
 $script:RoundTripEmployee.gc179Profile = [PSCustomObject]@{
@@ -446,7 +486,7 @@ $script:RoundTripEmployee.gc179Profile = [PSCustomObject]@{
 }
 $legacyHeader = Get-Gc179HeaderValues -EmployeeCode "000123456" -MonthParts $roundTripMonth
 Assert-Equal -Expected "STS" -Actual $legacyHeader.Group -Message "Legacy profiles should keep the former GC179 Group default."
-Assert-Equal -Expected "SUF-00" -Actual $legacyHeader.SubGroup -Message "Legacy profiles should keep the former GC179 Sub-Group default."
+Assert-Equal -Expected "00" -Actual $legacyHeader.SubGroup -Message "Legacy profiles should receive the two-digit GC179 Sub-Group default."
 
 $script:RoundTripEmployee.gc179Profile = [PSCustomObject]@{
     surname            = "SMITH"
@@ -454,7 +494,7 @@ $script:RoundTripEmployee.gc179Profile = [PSCustomObject]@{
     initials           = "JS"
     pri                = "000123456"
     group              = "STS"
-    subGroup           = "SUF-00"
+    subGroup           = "00"
     level              = "01"
     compressedWorkWeek = $false
 }
@@ -823,6 +863,8 @@ try {
     Assert-Equal -Expected $batchId -Actual $storedEntry.gc179ImportBatchId -Message "Stored provenance lost the import batch identifier."
     Assert-Equal -Expected $sourceHash -Actual $storedEntry.gc179SourceHash -Message "Stored provenance lost the source-file hash."
     Assert-Equal -Expected "manager" -Actual $storedEntry.gc179ImportedBy -Message "Stored provenance lost the importing administrator."
+    Assert-Equal -Expected "unconfirmed" -Actual $storedEntry.workSchedule -Message "The imported entry lost the GC179 schedule snapshot."
+    Assert-Equal -Expected "gc179-import" -Actual $storedEntry.workScheduleSource -Message "The imported entry lost schedule provenance."
     Assert-Equal -Expected "gc179-000100001-2026-05.fdf" -Actual $storedEntry.gc179SourceFile -Message "Stored provenance lost the safe source filename."
     $expectedRouteImportNote = "Import automatique de GC179 par Manager.$([Environment]::NewLine)Validated fixture"
     Assert-Equal -Expected $expectedRouteImportNote -Actual ([string]$storedEntry.message) -Message "GC179 imports must add an automatic supervisor note without losing the manual note."

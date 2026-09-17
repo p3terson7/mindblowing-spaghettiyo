@@ -96,6 +96,7 @@ $testRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("saphi
 $fixtureBackend = Join-Path -Path $testRoot -ChildPath "fixture/app/backend"
 $fixtureLib = Join-Path -Path $fixtureBackend -ChildPath "lib"
 $fixtureServices = Join-Path -Path $fixtureBackend -ChildPath "services"
+$fixtureDefaults = Join-Path -Path $fixtureBackend -ChildPath "defaults"
 $legacyFolder = Join-Path -Path $testRoot -ChildPath "legacy-data"
 $futureFolder = Join-Path -Path $testRoot -ChildPath "future-data"
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -103,6 +104,7 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 try {
     Ensure-TestDirectory -Path $fixtureLib
     Ensure-TestDirectory -Path $fixtureServices
+    Ensure-TestDirectory -Path $fixtureDefaults
     Ensure-TestDirectory -Path $legacyFolder
     Ensure-TestDirectory -Path $futureFolder
 
@@ -117,6 +119,14 @@ try {
     Copy-Item `
         -LiteralPath (Join-Path -Path $repoRoot -ChildPath "app/backend/services/DataSchemaService.ps1") `
         -Destination (Join-Path -Path $fixtureServices -ChildPath "DataSchemaService.ps1") `
+        -Force
+    Copy-Item `
+        -LiteralPath (Join-Path -Path $repoRoot -ChildPath "app/backend/defaults/compensation-grid.v1.json") `
+        -Destination (Join-Path -Path $fixtureDefaults -ChildPath "compensation-grid.v1.json") `
+        -Force
+    Copy-Item `
+        -LiteralPath (Join-Path -Path $repoRoot -ChildPath "app/backend/defaults/budget-periods.v1.json") `
+        -Destination (Join-Path -Path $fixtureDefaults -ChildPath "budget-periods.v1.json") `
         -Force
 
     $legacyProjectsPath = Join-Path -Path $legacyFolder -ChildPath "projects.json"
@@ -138,6 +148,15 @@ try {
     $schema = [System.IO.File]::ReadAllText($schemaPath) | ConvertFrom-Json -ErrorAction Stop
     Assert-Equal -Expected "SAPHIR" -Actual ([string]$schema.format) -Message "legacy adoption wrote the wrong data format"
     Assert-Equal -Expected 1 -Actual ([int]$schema.schemaVersion) -Message "legacy adoption did not select schema 1"
+    $compensationGridPath = Join-Path -Path $legacyFolder -ChildPath "compensation-grid.json"
+    Assert-True -Condition (Test-Path -LiteralPath $compensationGridPath -PathType Leaf) -Message "legacy startup did not seed the shared compensation grid"
+    $compensationGrid = [System.IO.File]::ReadAllText($compensationGridPath) | ConvertFrom-Json -ErrorAction Stop
+    Assert-Equal -Expected "CAD" -Actual ([string]$compensationGrid.currency) -Message "legacy startup seeded the wrong compensation currency"
+    Assert-Equal -Expected 10 -Actual @($compensationGrid.bands).Count -Message "legacy startup did not seed every compensation band"
+    $budgetPeriodsPath = Join-Path -Path $legacyFolder -ChildPath "budget-periods.json"
+    Assert-True -Condition (Test-Path -LiteralPath $budgetPeriodsPath -PathType Leaf) -Message "legacy startup did not seed the shared budget periods"
+    $budgetPeriods = [System.IO.File]::ReadAllText($budgetPeriodsPath) | ConvertFrom-Json -ErrorAction Stop
+    Assert-Equal -Expected 4 -Actual @($budgetPeriods.periods).Count -Message "legacy startup did not seed P1 through P4"
     Assert-Equal `
         -Expected $legacyBusinessBefore["projects.json"] `
         -Actual ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($legacyProjectsPath))) `

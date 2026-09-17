@@ -47,6 +47,7 @@ function legacySummarize(entries, options) {
     count: sourceEntries.length,
     seconds: 0,
     approvedSeconds: 0,
+    rejectedSeconds: 0,
     pending: 0,
     rejected: 0,
     live: 0,
@@ -70,6 +71,7 @@ function legacySummarize(entries, options) {
         count: 0,
         seconds: 0,
         approvedSeconds: 0,
+        rejectedSeconds: 0,
         pending: 0,
         rejected: 0,
         live: 0,
@@ -118,7 +120,9 @@ function legacySummarize(entries, options) {
       projectBucket.pending += 1;
     } else if (status === "rejected") {
       totals.rejected += 1;
+      totals.rejectedSeconds += seconds;
       projectBucket.rejected += 1;
+      projectBucket.rejectedSeconds += seconds;
     } else if (status === "live") {
       totals.live += 1;
       projectBucket.live += 1;
@@ -272,6 +276,7 @@ assert.deepEqual(plain(selfModel.totals), {
   count: 6,
   seconds: 15600,
   approvedSeconds: 9000,
+  rejectedSeconds: 1800,
   pending: 1,
   rejected: 1,
   live: 1,

@@ -181,6 +181,7 @@ try {
     $adminPassword = "Integration-Test-Password-123!"
     $adminCredential = New-TestPasswordCredential -Password $adminPassword
     $employeeCode = "000321928"
+    $diverseEmployeeCode = "000999998"
     $employeeCredential = New-TestPasswordCredential -Password "Fixture-Employee-Password-123!"
     $dataFile = Join-Path -Path $dataRoot -ChildPath ("{0}_data.json" -f $employeeCode)
     $legacyEntryText = [IO.File]::ReadAllText($dataFile)
@@ -212,6 +213,22 @@ try {
             displayName        = "Legacy Fixture Employee"
             role               = "employee"
             employeeCode       = $employeeCode
+            timeEntryTypes     = @("overtime")
+            disabled           = $false
+            mustChangePassword = $true
+            createdAtUtc       = (Get-Date).ToUniversalTime().ToString("o")
+            passwordSalt       = $employeeCredential.passwordSalt
+            passwordHash       = $employeeCredential.passwordHash
+            passwordIterations = $employeeCredential.passwordIterations
+            passwordAlgorithm  = $employeeCredential.passwordAlgorithm
+        },
+        [PSCustomObject]@{
+            username           = $diverseEmployeeCode
+            displayName        = "Diverse Fixture Employee"
+            role               = "employee"
+            employeeCode       = $diverseEmployeeCode
+            timeEntryTypes     = @("overtime", "diverse")
+            gc179Profile       = [PSCustomObject]@{ compressedWorkWeek = $true }
             disabled           = $false
             mustChangePassword = $true
             createdAtUtc       = (Get-Date).ToUniversalTime().ToString("o")
@@ -222,6 +239,7 @@ try {
         }
     )
     Write-TestJson -Path $usersPath -Value $users
+    Write-TestJson -Path (Join-Path -Path $dataRoot -ChildPath ("{0}_data.json" -f $diverseEmployeeCode)) -Value ([object[]]@())
     Write-TestJson -Path (Join-Path -Path $dataRoot -ChildPath "sessions.json") -Value ([object[]]@())
 
     $serverPath = Join-Path -Path $runtimeRoot -ChildPath "app/backend/saphir-server.ps1"
@@ -292,6 +310,63 @@ try {
     Assert-Equal -Expected $entryId -Actual ([string]$savedEntries[0].entryId) -Message "Manual addition replaced the original singleton entry."
     Assert-Equal -Expected "must-survive" -Actual ([string]$savedEntries[0].futureField) -Message "Manual addition stripped an unknown field from the original entry."
     Assert-True -Condition (-not [string]::IsNullOrWhiteSpace([string]$savedEntries[1].entryId)) -Message "The manually added entry did not receive a stable ID."
+    Assert-Equal -Expected "regular" -Actual ([string]$savedEntries[1].workSchedule) -Message "Manual creation did not snapshot the employee's regular schedule."
+    Assert-Equal -Expected "employee-profile" -Actual ([string]$savedEntries[1].workScheduleSource) -Message "Manual creation lost schedule provenance."
+
+    $manualEntryId = [string]$savedEntries[1].entryId
+    $beforeInvalidSchedule = [IO.File]::ReadAllText($dataFile)
+    $invalidScheduleUpdate = Invoke-TestHttpRequest -Method "PUT" -Uri "$baseUri/employee/$employeeCode" -Token $token -Body @{
+        entryId      = $manualEntryId
+        date         = "2026-07-18"
+        workSchedule = "hybrid"
+        message      = "Invalid schedule must not be written."
+    }
+    Assert-Equal -Expected 400 -Actual $invalidScheduleUpdate.StatusCode -Message "The entry update endpoint accepted an ambiguous work schedule."
+    Assert-Equal -Expected $beforeInvalidSchedule -Actual ([IO.File]::ReadAllText($dataFile)) -Message "A rejected work-schedule correction changed the employee file."
+
+    $scheduleUpdate = Invoke-TestHttpRequest -Method "PUT" -Uri "$baseUri/employee/$employeeCode" -Token $token -Body @{
+        entryId      = $manualEntryId
+        date         = "2026-07-18"
+        workSchedule = "compressed"
+        message      = "Corrected schedule during phase 7 validation."
+    }
+    Assert-Equal -Expected 200 -Actual $scheduleUpdate.StatusCode -Message "A supervisor could not correct an entry's work schedule."
+    $savedEntries = @([IO.File]::ReadAllText($dataFile) | ConvertFrom-Json)
+    Assert-Equal -Expected "compressed" -Actual ([string]$savedEntries[1].workSchedule) -Message "The corrected schedule was not persisted."
+    Assert-Equal -Expected "supervisor-edit" -Actual ([string]$savedEntries[1].workScheduleSource) -Message "The corrected schedule lost its supervisor provenance."
+
+    $beforeDeniedDiverse = [IO.File]::ReadAllText($dataFile)
+    $deniedDiverse = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/employee/add/$employeeCode" -Token $token -Body @{
+        entryType     = "diverse"
+        date          = "2026-07-19"
+        punchIn       = "16:00"
+        punchOut      = "17:00"
+        diverseReason = "Administrative support"
+        diverseSummary = "Prepared the monthly records."
+    }
+    Assert-Equal -Expected 403 -Actual $deniedDiverse.StatusCode -Message "Diverse creation must reject an employee without the Diverse privilege."
+    Assert-True -Condition ([string]$deniedDiverse.Json.error -like "*does not have the Diverse time privilege*") -Message "The denied Diverse response did not explain the missing employee privilege."
+    Assert-Equal -Expected $beforeDeniedDiverse -Actual ([IO.File]::ReadAllText($dataFile)) -Message "A rejected Diverse creation changed the employee data file."
+
+    $allowedDiverse = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/employee/add/$diverseEmployeeCode" -Token $token -Body @{
+        entryType      = "diverse"
+        date           = "2026-07-19"
+        punchIn        = "16:00"
+        punchOut       = "17:00"
+        diverseReason  = "Administrative support"
+        diverseSummary = "Prepared the monthly records."
+        message        = "Validated during creation."
+    }
+    Assert-Equal -Expected 200 -Actual $allowedDiverse.StatusCode -Message "A super admin could not create Diverse time for an entitled employee."
+    Assert-Equal -Expected "diverse" -Actual ([string]$allowedDiverse.Json.entryType) -Message "The Diverse creation response lost the entry type."
+    $savedDiverseEntries = @([IO.File]::ReadAllText((Join-Path -Path $dataRoot -ChildPath ("{0}_data.json" -f $diverseEmployeeCode))) | ConvertFrom-Json)
+    Assert-Equal -Expected 1 -Actual $savedDiverseEntries.Count -Message "The Diverse entry was not stored exactly once."
+    Assert-Equal -Expected "diverse" -Actual ([string]$savedDiverseEntries[0].entryType) -Message "The stored entry type is not Diverse."
+    Assert-Equal -Expected "Administrative support" -Actual ([string]$savedDiverseEntries[0].diverseReason) -Message "The Diverse reason was not stored."
+    Assert-Equal -Expected "Prepared the monthly records." -Actual ([string]$savedDiverseEntries[0].diverseSummary) -Message "The Diverse work summary was not stored."
+    Assert-Equal -Expected "compressed" -Actual ([string]$savedDiverseEntries[0].workSchedule) -Message "Diverse creation did not snapshot the employee's compressed schedule."
+    Assert-Equal -Expected "" -Actual ([string]$savedDiverseEntries[0].projectCode) -Message "A Diverse entry must not be attached to a project."
+    Assert-Equal -Expected "Integration Admin" -Actual ([string]$savedDiverseEntries[0].messageAuthorName) -Message "The Diverse supervisor note lost its author attribution."
 
     $staleMutation = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/employee/approval/$employeeCode" -Token $token -Body @{
         entryId = "missing-entry-id"

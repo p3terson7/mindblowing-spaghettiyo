@@ -39,17 +39,24 @@ for (const inputId of [...selfInputIds, ...employeeInputIds]) {
 for (const [inputId, datalistId, maximumLength] of [
   ["selfGc179GroupInput", "gc179GroupSuggestions", 6],
   ["employeeEditorGc179GroupInput", "gc179GroupSuggestions", 6],
-  ["selfGc179SubGroupInput", "gc179SubGroupSuggestions", 10],
-  ["employeeEditorGc179SubGroupInput", "gc179SubGroupSuggestions", 10],
-  ["selfGc179LevelInput", "gc179LevelSuggestions", 10],
-  ["employeeEditorGc179LevelInput", "gc179LevelSuggestions", 10],
+  ["selfGc179SubGroupInput", "gc179SubGroupSuggestions", 2],
+  ["employeeEditorGc179SubGroupInput", "gc179SubGroupSuggestions", 2],
+  ["selfGc179LevelInput", "gc179LevelSuggestions", 2],
+  ["employeeEditorGc179LevelInput", "gc179LevelSuggestions", 2],
 ]) {
   assert.match(indexSource, new RegExp(`id="${inputId}"[^>]+list="${datalistId}"`));
   assert.match(indexSource, new RegExp(`id="${inputId}"[^>]+maxlength="${maximumLength}"`));
 }
 
-for (const suggestion of ["STS", "CR4", "AS03", "AS04", "SUF-00", "CR/01", "AS/01", "1", "2", "3", "4"]) {
+for (const suggestion of ["STS", "CR", "AS", "00", "01", "02", "03", "04"]) {
   assert(indexSource.includes(`<option value="${suggestion}"></option>`), `Missing GC179 suggestion: ${suggestion}`);
+}
+for (const inputId of ["selfGc179GroupInput", "employeeEditorGc179GroupInput"]) {
+  assert.match(indexSource, new RegExp(`id="${inputId}"[^>]+pattern="\\[A-Za-z\\]\\+"`), `${inputId} must accept letters only.`);
+}
+for (const inputId of ["selfGc179SubGroupInput", "employeeEditorGc179SubGroupInput", "selfGc179LevelInput", "employeeEditorGc179LevelInput"]) {
+  assert.match(indexSource, new RegExp(`id="${inputId}"[^>]+pattern="\\[0-9\\]\\{2\\}"`), `${inputId} must require two digits.`);
+  assert.match(indexSource, new RegExp(`id="${inputId}"[^>]+inputmode="numeric"`), `${inputId} needs a numeric keyboard.`);
 }
 
 const normalizerStart = utilitiesSource.indexOf("function getFirstDefinedPropertyValue");
@@ -58,17 +65,17 @@ assert(normalizerStart >= 0 && normalizerEnd > normalizerStart, "Unable to locat
 const normalizerContext = {};
 vm.runInNewContext(utilitiesSource.slice(normalizerStart, normalizerEnd), normalizerContext);
 assert.strictEqual(normalizerContext.normalizeGc179Group(""), "STS", "A blank Group must default to STS.");
-assert.strictEqual(normalizerContext.normalizeGc179SubGroup(""), "SUF-00", "A blank Sub-Group must default to SUF-00.");
+assert.strictEqual(normalizerContext.normalizeGc179SubGroup(""), "00", "A blank Sub-Group must default to 00.");
 assert.strictEqual(normalizerContext.normalizeGc179Level(""), "", "A blank Level must remain blank.");
-assert.strictEqual(normalizerContext.normalizeGc179Group(" as-05 "), "AS-05", "Custom Group codes must retain hyphens.");
-assert.strictEqual(normalizerContext.normalizeGc179SubGroup(" suf-02 "), "SUF-02", "Custom Sub-Group codes must retain hyphens.");
-assert.strictEqual(normalizerContext.normalizeGc179Level(" cr/01!? "), "CR/01", "Level code normalization must match the other GC179 fields.");
-assert.strictEqual(normalizerContext.normalizeGc179Group("cr 7"), "CR7", "Group normalization must remove whitespace.");
+assert.strictEqual(normalizerContext.normalizeGc179Group(" as-05 "), "AS", "Group normalization must retain letters only.");
+assert.strictEqual(normalizerContext.normalizeGc179SubGroup(" suf-02 "), "02", "Sub-Group normalization must retain two digits only.");
+assert.strictEqual(normalizerContext.normalizeGc179Level(" cr/01!? "), "01", "Level normalization must retain two digits only.");
+assert.strictEqual(normalizerContext.normalizeGc179Group("cr 7"), "CR", "Group normalization must remove digits.");
 assert.strictEqual(normalizerContext.normalizeGc179Group("abcdefghi"), "ABCDEF", "GC179 Group codes must be limited to six characters.");
-assert.strictEqual(normalizerContext.normalizeGc179SubGroup("abcdefghijklm"), "ABCDEFGHIJ", "GC179 Sub-Group codes must be limited to ten characters.");
-assert.strictEqual(normalizerContext.normalizeGc179Level("abcdefghijklm"), "ABCDEFGHIJ", "GC179 Level codes must be limited to ten characters.");
-assert.strictEqual(normalizerContext.normalizeGc179Position("AS03"), "AS03", "The legacy Position normalizer must remain a Group alias.");
-assert.strictEqual(normalizerContext.normalizeGc179Echelon("SUF-00"), "SUF-00", "The legacy Echelon normalizer must remain a Sub-Group alias.");
+assert.strictEqual(normalizerContext.normalizeGc179SubGroup("7"), "07", "A one-digit Sub-Group must receive a leading zero.");
+assert.strictEqual(normalizerContext.normalizeGc179Level("4"), "04", "A one-digit Level must receive a leading zero.");
+assert.strictEqual(normalizerContext.normalizeGc179Position("AS03"), "AS", "The legacy Position normalizer must migrate to letters-only Group.");
+assert.strictEqual(normalizerContext.normalizeGc179Echelon("SUF-00"), "00", "The legacy Echelon normalizer must migrate to two-digit Sub-Group.");
 
 for (const source of [appShellSource, employeesSource]) {
   for (const normalizer of ["normalizeGc179Group(", "normalizeGc179SubGroup(", "normalizeGc179Level("]) {
@@ -84,12 +91,12 @@ for (const previewId of ["selfGc179GroupPreview", "selfGc179SubGroupPreview", "s
 assert.match(appShellSource, /function updateSelfGc179MappingPreview\(\)[\s\S]*?selfGc179GroupPreview[\s\S]*?normalizeGc179Group/);
 assert.match(appShellSource, /function updateSelfGc179MappingPreview\(\)[\s\S]*?selfGc179SubGroupPreview[\s\S]*?normalizeGc179SubGroup/);
 assert.match(appShellSource, /function updateSelfGc179MappingPreview\(\)[\s\S]*?selfGc179LevelPreview[\s\S]*?normalizeGc179Level/);
-for (const inputId of selfInputIds) {
-  assert(appShellSource.includes(`bindGc179CodeFormatter(document.getElementById("${inputId}"), updateSelfGc179MappingPreview)`), `${inputId} is missing its self-settings formatter.`);
-}
-for (const inputId of employeeInputIds) {
-  assert(appShellSource.includes(`bindGc179CodeFormatter(document.getElementById("${inputId}"))`), `${inputId} is missing its employee-editor formatter.`);
-}
+assert(appShellSource.includes('bindGc179GroupFormatter(document.getElementById("selfGc179GroupInput"), updateSelfGc179MappingPreview)'), "Self Group is missing its letters-only formatter.");
+assert(appShellSource.includes('bindGc179TwoDigitFormatter(document.getElementById("selfGc179SubGroupInput"), normalizeGc179SubGroup, updateSelfGc179MappingPreview)'), "Self Sub-Group is missing its two-digit formatter.");
+assert(appShellSource.includes('bindGc179TwoDigitFormatter(document.getElementById("selfGc179LevelInput"), normalizeGc179Level, updateSelfGc179MappingPreview)'), "Self Level is missing its two-digit formatter.");
+assert(appShellSource.includes('bindGc179GroupFormatter(document.getElementById("employeeEditorGc179GroupInput"))'), "Employee Group is missing its letters-only formatter.");
+assert(appShellSource.includes('bindGc179TwoDigitFormatter(document.getElementById("employeeEditorGc179SubGroupInput"), normalizeGc179SubGroup)'), "Employee Sub-Group is missing its two-digit formatter.");
+assert(appShellSource.includes('bindGc179TwoDigitFormatter(document.getElementById("employeeEditorGc179LevelInput"), normalizeGc179Level)'), "Employee Level is missing its two-digit formatter.");
 
 for (const [source, inputPrefix] of [[appShellSource, "selfGc179"], [employeesSource, "employeeEditorGc179"]]) {
   assert(source.includes(`group: document.getElementById("${inputPrefix}GroupInput").value`), "GC179 Group is not submitted as its own field.");
@@ -110,20 +117,22 @@ for (const copy of [
   '"employees.gc179GroupInput": "Groupe"',
   '"employees.gc179SubGroupInput": "Sous-groupe"',
   '"employees.gc179LevelInput": "Niveau"',
+  '"employees.gc179ClassificationHint": "Group uses letters only.',
+  '"employees.gc179ClassificationHint": "Le groupe contient seulement des lettres.',
 ]) {
   assert(i18nSource.includes(copy), `Missing bilingual GC179 field label: ${copy}`);
 }
 
 const gc179AssetCacheVersions = {
-  "I18n.js": "20260824-review-attention-tab-v1",
-  "Utilities.js": "20260824-review-attention-tab-v1",
-  "AppShell.js": "20260824-review-attention-tab-v1",
+  "I18n.js": "20260917-phase7-validation-v1",
+  "Utilities.js": "20260917-phase7-validation-v1",
+  "AppShell.js": "20260917-phase7-validation-v1",
 };
 for (const [asset, version] of Object.entries(gc179AssetCacheVersions)) {
   assert(indexSource.includes(`${asset}?v=${version}`), `${asset} is missing the GC179 cache buster.`);
 }
 assert(
-  appShellSource.includes("EmployeesView.js?v=20260824-review-attention-tab-v1"),
+  appShellSource.includes("EmployeesView.js?v=20260917-phase7-validation-v1"),
   "EmployeesView is missing the GC179 cache buster.",
 );
 

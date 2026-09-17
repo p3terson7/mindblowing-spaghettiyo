@@ -397,7 +397,7 @@ function Publish-DataChange {
                 $requiresEmployeeEpochReset = $true
             }
         }
-        elseif (@("history", "project", "auth") -notcontains $normalizedCategory) {
+        elseif (@("history", "project", "auth", "compensation", "budget-periods") -notcontains $normalizedCategory) {
             $requiresEmployeeEpochReset = $true
         }
 

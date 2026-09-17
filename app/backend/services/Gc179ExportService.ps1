@@ -47,7 +47,7 @@ function Get-Gc179HeaderValues {
 
     $subGroup = ConvertTo-Gc179SubGroupText -Value ([string]$profile.subGroup)
     if ([string]::IsNullOrWhiteSpace($subGroup)) {
-        $subGroup = "SUF-00"
+        $subGroup = "00"
     }
 
     $level = ConvertTo-Gc179LevelText -Value ([string]$profile.level)
@@ -328,6 +328,51 @@ function Add-Gc179RegularWorkdayFields {
     }
 }
 
+function Get-Gc179EntryWorkSchedule {
+    param($Entry)
+
+    $value = if ($null -ne $Entry -and $Entry.PSObject.Properties.Name -contains "workSchedule") { ([string]$Entry.workSchedule).Trim().ToLowerInvariant() } else { "" }
+    if ($value -in @("regular", "compressed")) { return $value }
+    return "unconfirmed"
+}
+
+function Get-Gc179ExportDurationFields {
+    param([Parameter(Mandatory = $true)]$Entry)
+
+    # A re-export must preserve the explicit entitlement columns from the form
+    # when their total still matches the entry (including split-rate rows).
+    $fields = @{}
+    $validNames = @("RegTime", "RegTimeHalf", "RegTime3Quarter", "RegTimeDouble",
+        "FirstDayRest", "FirstDayTimeHalf", "FirstDay3Quarter", "FirstDayTimeDbl",
+        "SubseqDayRest", "SubseqTimeHalf", "SubseqTime3Quarter", "SubseqTimeDbl",
+        "Holiday", "HolidayTimeHalf", "HolidayTime3quarter", "HolidayTimeDbl",
+        "CallBack", "StandbyWD", "StandbyWE", "ShiftWD_Ev", "ShiftWD_Night",
+        "ShiftSatDay", "ShiftSatEven", "ShiftSatNight", "ShiftSunDay", "ShiftSunEven", "ShiftSunNight")
+    $totalHours = 0.0
+    foreach ($component in @($Entry.gc179RateComponents)) {
+        if ($null -eq $component) { continue }
+        $field = [string]$component.field
+        $hours = 0.0
+        if ($field -notin $validNames -or $fields.ContainsKey($field) -or
+            -not [double]::TryParse([string]$component.hours, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$hours) -or
+            [double]::IsNaN($hours) -or [double]::IsInfinity($hours) -or $hours -le 0) { return @{} }
+        $fields[$field] = $hours.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)
+        $totalHours += $hours
+    }
+    $durationHours = 0.0
+    if (-not [double]::TryParse((ConvertTo-Gc179DurationText -Entry $Entry), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$durationHours) -or
+        [math]::Abs($durationHours - $totalHours) -gt (1.0 / 60)) { return @{} }
+    return $fields
+}
+
+function Assert-Gc179EntrySchedule {
+    param([Parameter(Mandatory = $true)]$Entry)
+
+    if ((Get-Gc179EntryWorkSchedule -Entry $Entry) -eq "unconfirmed" -and (Get-Gc179ExportDurationFields -Entry $Entry).Count -eq 0) {
+        throw ("L'horaire de l'entrée du {0} à {1} est à confirmer. Un superviseur doit ouvrir Modifier et choisir Horaire régulier ou Temps comprimé avant l'export GC179." -f $Entry.date, $Entry.punchIn)
+    }
+}
+
 function Test-Gc179WorkedDateEntry {
     param($Entry)
 
@@ -461,6 +506,9 @@ function New-Gc179FdfExportPart {
     )
 
     $entries = @($Entries)
+    foreach ($entry in $entries) { Assert-Gc179EntrySchedule -Entry $entry }
+    $schedules = @($entries | ForEach-Object { Get-Gc179EntryWorkSchedule -Entry $_ } | Select-Object -Unique)
+    if ($schedules.Count -gt 1) { throw "A GC179 form cannot combine regular and compressed schedules. Export separate parts." }
     $builder = New-Object System.Text.StringBuilder
     [void]$builder.AppendLine("%FDF-1.2")
     [void]$builder.AppendLine("1 0 obj")
@@ -470,6 +518,13 @@ function New-Gc179FdfExportPart {
     [void]$builder.AppendLine("/Fields [")
 
     $headerValues = Get-Gc179HeaderValues -EmployeeCode $EmployeeCode -MonthParts $MonthParts
+    if ($schedules.Count -eq 1) {
+        $headerValues.WorkWeek = switch ($schedules[0]) {
+            "regular" { "1" }
+            "compressed" { "2" }
+            default { "Off" }
+        }
+    }
     Add-Gc179FdfTextField -Builder $builder -Name "Month" -Value ([string]$headerValues.Month)
     Add-Gc179FdfTextField -Builder $builder -Name "Year" -Value ([string]$headerValues.Year)
     Add-Gc179FdfTextField -Builder $builder -Name "Department" -Value ([string]$headerValues.Department)
@@ -504,7 +559,15 @@ function New-Gc179FdfExportPart {
                 Add-Gc179FdfTextField -Builder $builder -Name ("StartTime.{0}" -f $index) -Value (ConvertTo-Gc179TimeText -TimeText ([string]$entry.punchIn))
                 Add-Gc179FdfTextField -Builder $builder -Name ("EndTime.{0}" -f $index) -Value (ConvertTo-Gc179TimeText -TimeText ([string]$entry.punchOut))
                 Add-Gc179FdfTextField -Builder $builder -Name ("OvertimeCode.{0}" -f $index) -Value ([string]$entry.overtimeCode)
-                Add-Gc179RegularWorkdayFields -Builder $builder -RowIndex $index -TargetFieldName $regularWorkdayFieldName -DurationText $durationText
+                $importedDurationFields = Get-Gc179ExportDurationFields -Entry $entry
+                if ($importedDurationFields.Count -gt 0) {
+                    foreach ($fieldName in $importedDurationFields.Keys) {
+                        Add-Gc179FdfTextField -Builder $builder -Name ("{0}.{1}" -f $fieldName, $index) -Value ([string]$importedDurationFields[$fieldName])
+                    }
+                }
+                else {
+                    Add-Gc179RegularWorkdayFields -Builder $builder -RowIndex $index -TargetFieldName $regularWorkdayFieldName -DurationText $durationText
+                }
                 Add-Gc179FdfNameField -Builder $builder -Name (Get-Gc179PaymentFieldName -RowIndex $index) -ValueName (Get-Gc179PaymentValueName -PaymentOption ([string]$entry.paymentOption))
                 continue
             }
@@ -543,6 +606,7 @@ function New-Gc179FdfExportPart {
         RowCount   = $entries.Count
         PartNumber = $PartNumber
         PartCount  = $PartCount
+        WorkSchedule = if ($schedules.Count -eq 1) { [string]$schedules[0] } else { "" }
     }
 }
 
@@ -555,23 +619,22 @@ function New-Gc179FdfExportSet {
     $monthParts = ConvertTo-Gc179MonthParts -MonthKey $MonthKey
     $entries = @(Get-Gc179ExportEntries -EmployeeCode $EmployeeCode -MonthKey $monthParts.MonthKey)
     $workedDateSet = Get-Gc179WorkedDateSet -EmployeeCode $EmployeeCode
-    $partCount = [int][math]::Ceiling($entries.Count / 16.0)
-    if ($partCount -lt 1) {
-        $partCount = 1
+    # WorkWeek is a form-level choice: never let today's profile overwrite an
+    # entry's historical schedule, and never mix schedules on a single form.
+    $chunks = New-Object System.Collections.ArrayList
+    foreach ($schedule in @("regular", "compressed", "unconfirmed")) {
+        $scheduleEntries = @($entries | Where-Object { (Get-Gc179EntryWorkSchedule -Entry $_) -eq $schedule })
+        foreach ($entry in $scheduleEntries) { Assert-Gc179EntrySchedule -Entry $entry }
+        for ($startIndex = 0; $startIndex -lt $scheduleEntries.Count; $startIndex += 16) {
+            $endIndex = [math]::Min($startIndex + 15, $scheduleEntries.Count - 1)
+            [void]$chunks.Add(@($scheduleEntries[$startIndex..$endIndex]))
+        }
     }
-
+    if ($chunks.Count -eq 0) { [void]$chunks.Add(@()) }
+    $partCount = $chunks.Count
     $exports = New-Object System.Collections.ArrayList
     for ($partIndex = 0; $partIndex -lt $partCount; $partIndex++) {
-        $chunk = New-Object System.Collections.ArrayList
-        $startIndex = $partIndex * 16
-        $endIndex = [math]::Min(($startIndex + 15), ($entries.Count - 1))
-        if ($startIndex -le $endIndex) {
-            for ($entryIndex = $startIndex; $entryIndex -le $endIndex; $entryIndex++) {
-                [void]$chunk.Add($entries[$entryIndex])
-            }
-        }
-
-        $partExport = New-Gc179FdfExportPart -EmployeeCode $EmployeeCode -MonthParts $monthParts -Entries @($chunk.ToArray()) -WorkedDateSet $workedDateSet -PartNumber ($partIndex + 1) -PartCount $partCount
+        $partExport = New-Gc179FdfExportPart -EmployeeCode $EmployeeCode -MonthParts $monthParts -Entries @($chunks[$partIndex]) -WorkedDateSet $workedDateSet -PartNumber ($partIndex + 1) -PartCount $partCount
         [void]$exports.Add($partExport)
     }
 

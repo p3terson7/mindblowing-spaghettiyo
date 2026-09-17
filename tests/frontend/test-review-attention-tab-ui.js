@@ -12,7 +12,7 @@ const i18nSource = read("app/frontend/scripts/I18n.js");
 const indexSource = read("app/frontend/index.html");
 const appShellSource = read("app/frontend/scripts/AppShell.js");
 const cssSource = read("app/frontend/assets/apple-ui.css");
-const cacheRevision = "20260824-review-attention-tab-v1";
+const cacheRevision = "20260917-phase7-validation-v1";
 
 const helperStart = approvalsSource.indexOf("const REVIEW_ISSUE_I18N_KEYS");
 const helperEnd = approvalsSource.indexOf("function renderReviewIssues", helperStart);

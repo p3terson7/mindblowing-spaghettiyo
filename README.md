@@ -335,6 +335,8 @@ Les données sont stockées dans le dossier `data/`. Les fichiers principaux son
 | `overtimeCodes.json` | Codes d’heures supplémentaires. |
 | `paymentOptions.json` | Options de paiement. |
 | `reasonCodes.json` | Codes de raison. |
+| `compensation-grid.json` | Grille salariale administrable par classification et date d’effet. |
+| `budget-periods.json` | Dates administrables des périodes budgétaires P1 à P4. |
 | `.locks/` | Fichiers de verrouillage utilisés pendant les écritures. |
 
 ### Exemple simplifié d’une entrée d’heures supplémentaires
@@ -468,7 +470,7 @@ Le script de paquetage les publie néanmoins directement à la racine du dossier
 `SAPHIR-Distribution`, afin de conserver le parcours employé et les raccourcis
 existants. Dans une distribution d'équipe, le lanceur installé consulte un petit manifeste réseau au démarrage à froid, installe automatiquement la version courante dans `%LOCALAPPDATA%\SAPHIR\versions`, puis exécute l'application localement. Si la version locale active est déjà en cours d'exécution et répond normalement, un nouveau clic rouvre seulement le navigateur sans relire le manifeste réseau. Les mises à jour sont donc détectées au prochain démarrage à froid (après **Stop SAPHIR**, un redémarrage du poste ou l'arrêt du serveur local); une version différente ou un serveur qui ne répond plus déclenche alors automatiquement un redémarrage. Il faut utiliser l’installateur fourni, et non copier manuellement un fichier VBS sur le Bureau. Voir [le guide de déploiement avec cache local](docs/LOCAL-CACHE-DEPLOYMENT.md) et [le guide de démarrage des employés](docs/EMPLOYEE-QUICK-START.md).
 
-Dans le dossier distribué, l’employé double-clique une fois sur `Install SAPHIR Shortcut.vbs`. Ce script crée `SAPHIR.lnk` sur le Bureau, copie le lanceur et son icône sous `%LOCALAPPDATA%\SAPHIR`, puis configure le raccourci pour appeler cette copie locale tout en mémorisant le chemin de la distribution réseau. Aucun exécutable compilé ni droit administrateur n’est nécessaire. Lorsqu’un bootstrap plus récent est publié, l’installateur doit être relancé pour remplacer ce petit lanceur local; les releases applicatives ordinaires restent automatiques.
+Dans le dossier distribué, l’employé double-clique une fois sur `Installer SAPHIR sur le Bureau.vbs`. Ce point d’entrée au nom explicite appelle l’installateur compatible `Install SAPHIR Shortcut.vbs`, crée `SAPHIR.lnk` sur le Bureau, copie le lanceur et son icône sous `%LOCALAPPDATA%\SAPHIR`, puis ouvre le lanceur automatiquement. Aucun exécutable compilé ni droit administrateur n’est nécessaire. Le raccourci appelle une petite entrée locale stable qui ouvre immédiatement la fenêtre, puis vérifie en arrière-plan si le lanceur lui-même a changé. Les mises à jour du lanceur et de l’application sont donc automatiques; une action **Réparer SAPHIR** permet aussi de retélécharger et vérifier la version publiée sans effacer les données partagées.
 
 Lors du passage d’une distribution historique à la topologie canonique `app/`,
 le déploiement se fait obligatoirement en deux publications : d’abord
@@ -618,6 +620,7 @@ SAPHIR/
       Launch SAPHIR.bat
       Launch SAPHIR.vbs
       Install SAPHIR Shortcut.vbs
+      Installer SAPHIR sur le Bureau.vbs
       SAPHIR Launcher.vbs
       SAPHIR.ico
       Stop SAPHIR.bat
@@ -647,6 +650,8 @@ SAPHIR/
     overtimeCodes.json
     paymentOptions.json
     reasonCodes.json
+    compensation-grid.json
+    budget-periods.json
     *_data.json
     .locks/
 
