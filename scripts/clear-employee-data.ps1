@@ -6,14 +6,14 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Get-Item -Path (Join-Path -Path $PSScriptRoot -ChildPath "..")).FullName
-$backendDir = Join-Path -Path $repoRoot -ChildPath "apps/admin/backend"
+$backendDir = Join-Path -Path $repoRoot -ChildPath "app/backend"
 
 if (-not (Test-Path -Path $backendDir)) {
     throw "Unable to locate backend folder at $backendDir"
 }
 
 $scriptDir = $backendDir
-. (Join-Path -Path $backendDir -ChildPath "lib/AdminContext.ps1")
+. (Join-Path -Path $backendDir -ChildPath "lib/AppContext.ps1")
 . (Join-Path -Path $backendDir -ChildPath "lib/FileStore.ps1")
 . (Join-Path -Path $backendDir -ChildPath "lib/CommonHelpers.ps1")
 . (Join-Path -Path $backendDir -ChildPath "services/AuthService.ps1")

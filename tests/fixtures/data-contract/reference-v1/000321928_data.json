@@ -1,0 +1,14 @@
+{
+  "entryId": "fixture-legacy-singleton-001",
+  "name": "Employée héritée",
+  "date": "2025-12-18",
+  "punchIn": "15:00:00",
+  "punchOut": "16:15:00",
+  "overtime": "01:15:00",
+  "status": "pending",
+  "message": "",
+  "projectCode": "P-ACT",
+  "overtimeCode": "260",
+  "paymentOption": "cash",
+  "reasonCode": "D"
+}

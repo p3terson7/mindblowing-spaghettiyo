@@ -9,10 +9,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$backendDir = Join-Path $repoRoot "apps/admin/backend"
+$backendDir = Join-Path $repoRoot "app/backend"
 $scriptDir = $backendDir
 
-. (Join-Path $backendDir "lib/AdminContext.ps1")
+. (Join-Path $backendDir "lib/AppContext.ps1")
 . (Join-Path $backendDir "lib/FileStore.ps1")
 . (Join-Path $backendDir "lib/CommonHelpers.ps1")
 . (Join-Path $backendDir "services/AuthService.ps1")

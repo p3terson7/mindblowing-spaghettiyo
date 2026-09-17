@@ -1,0 +1,1936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>SAPHIR — Apple-inspired design tester</title>
+  <style>
+    :root {
+      --page-bg: #e9edf4;
+      --canvas: #f5f5f7;
+      --surface: #ffffff;
+      --surface-secondary: #f7f7fa;
+      --surface-tertiary: #eff1f5;
+      --chrome: rgba(250, 250, 252, 0.78);
+      --label-primary: #1d1d1f;
+      --label-secondary: #66666d;
+      --label-tertiary: #86868b;
+      --separator: rgba(29, 29, 31, 0.1);
+      --separator-strong: rgba(29, 29, 31, 0.16);
+      --accent: #0868d7;
+      --accent-strong: #0059bd;
+      --accent-soft: #e8f2ff;
+      --live: #16865a;
+      --live-strong: #0c744b;
+      --live-soft: #e7f7ef;
+      --pending: #9a6200;
+      --pending-soft: #fff3d8;
+      --danger: #c43840;
+      --danger-soft: #fff0f1;
+      --violet: #7558d8;
+      --violet-soft: #f0ecff;
+      --teal: #008994;
+      --teal-soft: #e4f7f8;
+      --focus-ring: rgba(8, 104, 215, 0.3);
+      --shadow-window: 0 28px 70px rgba(27, 42, 67, 0.18), 0 3px 12px rgba(27, 42, 67, 0.08);
+      --shadow-card: 0 1px 2px rgba(29, 29, 31, 0.03), 0 8px 24px rgba(29, 29, 31, 0.035);
+      --radius-window: 24px;
+      --radius-card: 16px;
+      --radius-control: 10px;
+      --control-height: 42px;
+      --content-gap: 18px;
+    }
+
+    body[data-resolved-theme="dark"] {
+      --page-bg: #0c0d10;
+      --canvas: #121318;
+      --surface: #1c1d23;
+      --surface-secondary: #24252c;
+      --surface-tertiary: #2a2b33;
+      --chrome: rgba(25, 26, 31, 0.8);
+      --label-primary: #f5f5f7;
+      --label-secondary: #b3b3bc;
+      --label-tertiary: #8e8e98;
+      --separator: rgba(255, 255, 255, 0.1);
+      --separator-strong: rgba(255, 255, 255, 0.17);
+      --accent: #62aaff;
+      --accent-strong: #84bdff;
+      --accent-soft: rgba(55, 142, 245, 0.17);
+      --live: #55d39a;
+      --live-strong: #72e5af;
+      --live-soft: rgba(45, 190, 126, 0.15);
+      --pending: #f4b94f;
+      --pending-soft: rgba(235, 168, 45, 0.16);
+      --danger: #ff7b82;
+      --danger-soft: rgba(255, 92, 101, 0.15);
+      --violet: #ab94ff;
+      --violet-soft: rgba(139, 111, 240, 0.17);
+      --teal: #55d4dc;
+      --teal-soft: rgba(52, 191, 200, 0.16);
+      --focus-ring: rgba(98, 170, 255, 0.36);
+      --shadow-window: 0 30px 80px rgba(0, 0, 0, 0.46), 0 3px 14px rgba(0, 0, 0, 0.24);
+      --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.18), 0 10px 30px rgba(0, 0, 0, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-width: 320px;
+      background: var(--page-bg);
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--label-primary);
+      background:
+        radial-gradient(circle at 6% 2%, rgba(51, 141, 255, 0.18), transparent 28rem),
+        radial-gradient(circle at 94% 10%, rgba(119, 86, 216, 0.15), transparent 30rem),
+        var(--page-bg);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      transition: background-color 180ms ease, color 180ms ease;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button,
+    select,
+    input[type="checkbox"] {
+      cursor: pointer;
+    }
+
+    button:focus-visible,
+    select:focus-visible,
+    input:focus-visible {
+      outline: 3px solid var(--focus-ring);
+      outline-offset: 2px;
+    }
+
+    button:disabled {
+      cursor: default;
+      opacity: 0.62;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    .visually-hidden {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      overflow: hidden !important;
+      clip: rect(0 0 0 0) !important;
+      clip-path: inset(50%) !important;
+      white-space: nowrap !important;
+    }
+
+    .presentation-shell {
+      width: min(1520px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+
+    .presentation-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: flex-end;
+      margin-bottom: 22px;
+      padding: 0 4px;
+    }
+
+    .presentation-copy {
+      max-width: 760px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 0.76rem;
+      font-weight: 750;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 760px;
+      font-size: clamp(2rem, 4vw, 3.55rem);
+      line-height: 1.02;
+      letter-spacing: -0.045em;
+    }
+
+    .presentation-copy > p:last-child {
+      margin: 14px 0 0;
+      max-width: 68ch;
+      color: var(--label-secondary);
+      font-size: 1.02rem;
+      line-height: 1.6;
+    }
+
+    .presentation-controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 9px;
+    }
+
+    .tester-button,
+    .view-button {
+      min-height: 42px;
+      padding: 0 14px;
+      border: 1px solid var(--separator);
+      border-radius: 999px;
+      color: var(--label-primary);
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+      font-size: 0.86rem;
+      font-weight: 650;
+      box-shadow: 0 1px 2px rgba(29, 29, 31, 0.04);
+      transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+    }
+
+    .tester-button:hover,
+    .view-button:hover {
+      border-color: var(--separator-strong);
+      background: var(--surface);
+    }
+
+    .tester-button:active,
+    .view-button:active {
+      transform: scale(0.98);
+    }
+
+    .view-switcher {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--separator);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--surface-tertiary) 84%, transparent);
+    }
+
+    .view-button {
+      min-height: 34px;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .view-button[aria-selected="true"] {
+      color: #ffffff;
+      background: var(--accent);
+      box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 26%, transparent);
+    }
+
+    .design-note {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 0 4px 18px;
+      padding: 12px 15px;
+      border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--separator));
+      border-radius: 13px;
+      color: var(--label-secondary);
+      background: color-mix(in srgb, var(--accent-soft) 66%, var(--surface));
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+
+    .design-note-mark {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 28px;
+      place-items: center;
+      border-radius: 50%;
+      color: #ffffff;
+      background: var(--accent);
+      font-weight: 800;
+    }
+
+    .prototype-window {
+      min-height: 760px;
+      overflow: hidden;
+      border: 1px solid color-mix(in srgb, var(--separator) 74%, transparent);
+      border-radius: var(--radius-window);
+      background: var(--canvas);
+      box-shadow: var(--shadow-window);
+    }
+
+    .app-navigation {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: grid;
+      grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr);
+      align-items: center;
+      gap: 18px;
+      min-height: 64px;
+      padding: 9px 18px;
+      border-bottom: 1px solid var(--separator);
+      background: var(--chrome);
+      backdrop-filter: blur(22px) saturate(150%);
+      -webkit-backdrop-filter: blur(22px) saturate(150%);
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .brand-lockup img {
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
+      filter: drop-shadow(0 3px 7px rgba(0, 83, 174, 0.18));
+    }
+
+    .brand-name {
+      display: block;
+      font-size: 0.91rem;
+      font-weight: 760;
+      letter-spacing: 0.01em;
+    }
+
+    .brand-detail {
+      display: block;
+      margin-top: 1px;
+      color: var(--label-tertiary);
+      font-size: 0.69rem;
+    }
+
+    .app-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 5px;
+    }
+
+    .app-tab {
+      min-height: 38px;
+      padding: 0 13px;
+      border: 0;
+      border-radius: 10px;
+      color: var(--label-secondary);
+      background: transparent;
+      font-size: 0.82rem;
+      font-weight: 620;
+      transition: color 150ms ease, background 150ms ease;
+    }
+
+    .app-tab:hover {
+      color: var(--label-primary);
+      background: color-mix(in srgb, var(--surface-tertiary) 78%, transparent);
+    }
+
+    .app-tab.is-active {
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .app-status {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .sync-state,
+    .avatar {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--separator);
+      color: var(--label-secondary);
+      background: color-mix(in srgb, var(--surface) 82%, transparent);
+    }
+
+    .sync-state {
+      gap: 7px;
+      min-height: 34px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      white-space: nowrap;
+    }
+
+    .sync-dot,
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--live);
+      box-shadow: 0 0 0 4px var(--live-soft);
+    }
+
+    .avatar {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 34px;
+      border-radius: 50%;
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 0.75rem;
+      font-weight: 780;
+    }
+
+    .app-content {
+      max-width: 1420px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .screen-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .screen-heading h2 {
+      margin: 0;
+      font-size: clamp(1.55rem, 3vw, 2.25rem);
+      line-height: 1.08;
+      letter-spacing: -0.035em;
+    }
+
+    .screen-heading p {
+      margin: 6px 0 0;
+      color: var(--label-secondary);
+      line-height: 1.5;
+    }
+
+    .date-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 0 12px;
+      border: 1px solid var(--separator);
+      border-radius: 999px;
+      color: var(--label-secondary);
+      background: var(--surface);
+      font-size: 0.8rem;
+      white-space: nowrap;
+    }
+
+    .surface,
+    .metric-card,
+    .tracking-card,
+    .priority-card,
+    .system-card {
+      border: 1px solid var(--separator);
+      border-radius: var(--radius-card);
+      background: var(--surface);
+      box-shadow: var(--shadow-card);
+    }
+
+    .tracking-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(240px, 0.8fr) minmax(520px, 1.7fr);
+      gap: 24px;
+      overflow: hidden;
+      padding: 24px;
+      border-color: color-mix(in srgb, var(--accent) 24%, var(--separator));
+      background:
+        radial-gradient(circle at 3% 0%, color-mix(in srgb, var(--accent-soft) 90%, transparent), transparent 22rem),
+        var(--surface);
+    }
+
+    .tracking-card.is-live {
+      border-color: color-mix(in srgb, var(--live) 32%, var(--separator));
+      background:
+        radial-gradient(circle at 3% 0%, color-mix(in srgb, var(--live-soft) 92%, transparent), transparent 22rem),
+        var(--surface);
+    }
+
+    .tracking-overview {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 22px;
+      min-width: 0;
+    }
+
+    .status-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 760;
+    }
+
+    .tracking-card.is-live .status-label {
+      color: var(--live);
+    }
+
+    .tracking-card:not(.is-live) .status-dot {
+      background: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+
+    .tracking-overview h3 {
+      margin: 10px 0 4px;
+      font-size: clamp(1.45rem, 2.7vw, 2.25rem);
+      line-height: 1.1;
+      letter-spacing: -0.035em;
+    }
+
+    .tracking-overview p {
+      margin: 0;
+      max-width: 38ch;
+      color: var(--label-secondary);
+      line-height: 1.5;
+    }
+
+    .elapsed-block {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .elapsed-time,
+    .metric-value,
+    .duration,
+    .approval-hours {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .elapsed-time {
+      font-size: 1.55rem;
+      font-weight: 720;
+      letter-spacing: -0.03em;
+    }
+
+    .elapsed-caption {
+      color: var(--label-tertiary);
+      font-size: 0.78rem;
+    }
+
+    .tracking-form {
+      display: grid;
+      align-content: center;
+      gap: 16px;
+      min-width: 0;
+      padding: 18px;
+      border: 1px solid var(--separator);
+      border-radius: 13px;
+      background: color-mix(in srgb, var(--surface-secondary) 88%, transparent);
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .field label {
+      color: var(--label-secondary);
+      font-size: 0.73rem;
+      font-weight: 650;
+    }
+
+    .select-control,
+    .search-control {
+      width: 100%;
+      min-height: var(--control-height);
+      padding: 0 12px;
+      border: 1px solid var(--separator-strong);
+      border-radius: var(--radius-control);
+      color: var(--label-primary);
+      background: var(--surface);
+      box-shadow: inset 0 1px 1px rgba(29, 29, 31, 0.025);
+    }
+
+    .action-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .primary-button,
+    .secondary-button,
+    .danger-button,
+    .approve-button {
+      min-height: var(--control-height);
+      padding: 0 16px;
+      border-radius: var(--radius-control);
+      font-size: 0.86rem;
+      font-weight: 690;
+      transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+    }
+
+    .primary-button {
+      border: 1px solid var(--accent);
+      color: #ffffff;
+      background: var(--accent);
+      box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 25%, transparent);
+    }
+
+    .primary-button:hover {
+      border-color: var(--accent-strong);
+      background: var(--accent-strong);
+    }
+
+    .tracking-card.is-live .primary-button {
+      border-color: var(--live);
+      background: var(--live);
+      box-shadow: 0 5px 14px color-mix(in srgb, var(--live) 25%, transparent);
+    }
+
+    .tracking-card.is-live .primary-button:hover {
+      border-color: var(--live-strong);
+      background: var(--live-strong);
+    }
+
+    .secondary-button,
+    .approve-button {
+      border: 1px solid var(--separator-strong);
+      color: var(--label-primary);
+      background: var(--surface);
+    }
+
+    .secondary-button:hover,
+    .approve-button:hover {
+      background: var(--surface-secondary);
+    }
+
+    .danger-button {
+      border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--separator));
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .primary-button:active,
+    .secondary-button:active,
+    .danger-button:active,
+    .approve-button:active {
+      transform: scale(0.98);
+    }
+
+    .action-hint {
+      color: var(--label-tertiary);
+      font-size: 0.75rem;
+      line-height: 1.4;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--content-gap);
+      margin-top: var(--content-gap);
+    }
+
+    .metric-card {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+      padding: 18px;
+    }
+
+    .metric-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .metric-label {
+      color: var(--label-secondary);
+      font-size: 0.76rem;
+      font-weight: 630;
+    }
+
+    .metric-symbol {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border-radius: 9px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .metric-symbol.pending {
+      color: var(--pending);
+      background: var(--pending-soft);
+    }
+
+    .metric-symbol.live {
+      color: var(--live);
+      background: var(--live-soft);
+    }
+
+    .metric-value {
+      font-size: 1.65rem;
+      font-weight: 730;
+      letter-spacing: -0.035em;
+    }
+
+    .metric-detail {
+      color: var(--label-tertiary);
+      font-size: 0.74rem;
+      line-height: 1.45;
+    }
+
+    .content-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+      gap: var(--content-gap);
+      margin-top: var(--content-gap);
+    }
+
+    .surface {
+      min-width: 0;
+      padding: 20px;
+    }
+
+    .surface-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .surface-header h3,
+    .system-card h3,
+    .priority-card h3 {
+      margin: 0;
+      font-size: 1rem;
+      letter-spacing: -0.015em;
+    }
+
+    .surface-header p,
+    .system-card > p,
+    .priority-card p {
+      margin: 5px 0 0;
+      color: var(--label-tertiary);
+      font-size: 0.77rem;
+      line-height: 1.45;
+    }
+
+    .text-action {
+      min-height: 30px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 8px;
+      color: var(--accent);
+      background: transparent;
+      font-size: 0.76rem;
+      font-weight: 670;
+    }
+
+    .text-action:hover {
+      background: var(--accent-soft);
+    }
+
+    .timeline-list,
+    .project-list,
+    .activity-list,
+    .active-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .timeline-row,
+    .project-row,
+    .activity-row,
+    .active-row {
+      display: grid;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      background: var(--surface-secondary);
+      transition: border-color 150ms ease, background 150ms ease;
+    }
+
+    .timeline-row {
+      grid-template-columns: 44px minmax(0, 1fr) auto;
+    }
+
+    .timeline-row:hover,
+    .project-row:hover,
+    .active-row:hover {
+      border-color: var(--separator);
+      background: var(--surface-tertiary);
+    }
+
+    .date-block {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .date-block strong {
+      font-size: 0.96rem;
+      line-height: 1;
+    }
+
+    .date-block span {
+      margin-top: 2px;
+      font-size: 0.58rem;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .row-title,
+    .approval-person {
+      display: block;
+      overflow: hidden;
+      color: var(--label-primary);
+      font-size: 0.83rem;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .row-detail,
+    .approval-detail {
+      display: block;
+      margin-top: 3px;
+      overflow: hidden;
+      color: var(--label-tertiary);
+      font-size: 0.71rem;
+      line-height: 1.4;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .row-result {
+      display: grid;
+      justify-items: end;
+      gap: 5px;
+    }
+
+    .duration {
+      font-size: 0.87rem;
+      font-weight: 700;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 0.65rem;
+      font-weight: 690;
+    }
+
+    .status-chip::before {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+    }
+
+    .status-chip.approved {
+      color: var(--live);
+      background: var(--live-soft);
+    }
+
+    .status-chip.pending {
+      color: var(--pending);
+      background: var(--pending-soft);
+    }
+
+    .status-chip.rejected {
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .project-row {
+      grid-template-columns: 10px minmax(0, 1fr) auto;
+    }
+
+    .color-marker {
+      width: 9px;
+      height: 34px;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+
+    .color-marker.violet {
+      background: var(--violet);
+    }
+
+    .color-marker.teal {
+      background: var(--teal);
+    }
+
+    .project-hours {
+      font-size: 0.8rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .priority-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+      gap: var(--content-gap);
+    }
+
+    .priority-card {
+      position: relative;
+      overflow: hidden;
+      padding: 22px;
+    }
+
+    .priority-card.attention {
+      border-color: color-mix(in srgb, var(--pending) 30%, var(--separator));
+      background:
+        radial-gradient(circle at 98% 2%, var(--pending-soft), transparent 16rem),
+        var(--surface);
+    }
+
+    .priority-card.live-card {
+      border-color: color-mix(in srgb, var(--live) 28%, var(--separator));
+      background:
+        radial-gradient(circle at 98% 2%, var(--live-soft), transparent 15rem),
+        var(--surface);
+    }
+
+    .priority-kicker {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      color: var(--pending);
+      font-size: 0.73rem;
+      font-weight: 730;
+    }
+
+    .live-card .priority-kicker {
+      color: var(--live);
+    }
+
+    .priority-number {
+      margin-top: 7px;
+      font-size: 2.5rem;
+      font-weight: 760;
+      letter-spacing: -0.05em;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .priority-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .manager-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.5fr);
+      gap: var(--content-gap);
+      margin-top: var(--content-gap);
+    }
+
+    .approval-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .search-control {
+      width: min(230px, 34vw);
+      min-height: 36px;
+      font-size: 0.78rem;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      margin: 0 -5px;
+      padding: 0 5px;
+    }
+
+    .approval-table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+
+    .approval-table th {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--separator);
+      color: var(--label-tertiary);
+      font-size: 0.66rem;
+      font-weight: 700;
+      text-align: left;
+    }
+
+    .approval-table td {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--separator);
+      color: var(--label-secondary);
+      vertical-align: middle;
+    }
+
+    .approval-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .approval-table tr.is-approved {
+      opacity: 0.66;
+    }
+
+    .approval-table tr.is-approved .approve-button {
+      color: var(--live);
+      border-color: color-mix(in srgb, var(--live) 30%, var(--separator));
+      background: var(--live-soft);
+    }
+
+    .approval-hours {
+      color: var(--label-primary);
+      font-weight: 700;
+    }
+
+    .approve-button {
+      min-height: 32px;
+      padding: 0 10px;
+      color: var(--accent);
+      font-size: 0.72rem;
+    }
+
+    .activity-row {
+      grid-template-columns: 32px minmax(0, 1fr);
+      padding: 10px;
+      background: transparent;
+    }
+
+    .activity-icon {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border-radius: 10px;
+      color: var(--violet);
+      background: var(--violet-soft);
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .active-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .live-time {
+      color: var(--live);
+      font-size: 0.77rem;
+      font-weight: 730;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .system-intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      gap: var(--content-gap);
+      margin-bottom: var(--content-gap);
+    }
+
+    .system-card {
+      padding: 22px;
+    }
+
+    .system-card.feature {
+      border-color: color-mix(in srgb, var(--accent) 25%, var(--separator));
+      background:
+        radial-gradient(circle at 96% 5%, var(--accent-soft), transparent 20rem),
+        var(--surface);
+    }
+
+    .system-principles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .principle-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--separator);
+      border-radius: 999px;
+      color: var(--label-secondary);
+      background: var(--surface-secondary);
+      font-size: 0.7rem;
+      font-weight: 640;
+    }
+
+    .palette-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .swatch {
+      overflow: hidden;
+      border: 1px solid var(--separator);
+      border-radius: 12px;
+      background: var(--surface-secondary);
+    }
+
+    .swatch-color {
+      height: 62px;
+      background: var(--accent);
+    }
+
+    .swatch-color.live {
+      background: var(--live);
+    }
+
+    .swatch-color.pending {
+      background: var(--pending);
+    }
+
+    .swatch-color.danger {
+      background: var(--danger);
+    }
+
+    .swatch-color.violet {
+      background: var(--violet);
+    }
+
+    .swatch-color.teal {
+      background: var(--teal);
+    }
+
+    .swatch-color.canvas {
+      background: var(--canvas);
+    }
+
+    .swatch-color.label {
+      background: var(--label-primary);
+    }
+
+    .swatch-label {
+      display: grid;
+      gap: 2px;
+      padding: 9px;
+      font-size: 0.68rem;
+    }
+
+    .swatch-label strong {
+      font-size: 0.71rem;
+    }
+
+    .swatch-label span {
+      color: var(--label-tertiary);
+    }
+
+    .component-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--content-gap);
+    }
+
+    .component-stack {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      align-items: center;
+      margin-top: 18px;
+    }
+
+    .type-sample {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .type-display {
+      font-size: 2.1rem;
+      font-weight: 750;
+      letter-spacing: -0.045em;
+      line-height: 1;
+    }
+
+    .type-title {
+      font-size: 1rem;
+      font-weight: 680;
+    }
+
+    .type-body {
+      color: var(--label-secondary);
+      font-size: 0.84rem;
+      line-height: 1.55;
+    }
+
+    .numeric-sample {
+      font-size: 1.35rem;
+      font-weight: 710;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .toast {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      max-width: min(360px, calc(100vw - 48px));
+      padding: 13px 15px;
+      border: 1px solid var(--separator);
+      border-radius: 13px;
+      color: var(--label-primary);
+      background: color-mix(in srgb, var(--surface) 92%, transparent);
+      box-shadow: 0 16px 42px rgba(18, 28, 47, 0.22);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      font-size: 0.82rem;
+      font-weight: 620;
+      transform: translateY(14px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    .toast.is-visible {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toast-mark {
+      display: grid;
+      width: 26px;
+      height: 26px;
+      flex: 0 0 26px;
+      place-items: center;
+      border-radius: 50%;
+      color: #ffffff;
+      background: var(--live);
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    body[data-density="compact"] {
+      --control-height: 36px;
+      --content-gap: 12px;
+    }
+
+    body[data-density="compact"] .app-content {
+      padding: 20px;
+    }
+
+    body[data-density="compact"] .tracking-card,
+    body[data-density="compact"] .priority-card,
+    body[data-density="compact"] .system-card {
+      padding: 18px;
+    }
+
+    body[data-density="compact"] .surface,
+    body[data-density="compact"] .metric-card {
+      padding: 14px;
+    }
+
+    body[data-density="compact"] .timeline-row,
+    body[data-density="compact"] .project-row,
+    body[data-density="compact"] .active-row {
+      padding: 9px 10px;
+    }
+
+    @media (max-width: 1100px) {
+      .presentation-header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .presentation-controls {
+        justify-content: flex-start;
+      }
+
+      .app-navigation {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+      }
+
+      .brand-detail,
+      .sync-state {
+        display: none;
+      }
+
+      .app-tabs {
+        min-width: 0;
+        overflow-x: auto;
+        justify-content: flex-start;
+      }
+
+      .tracking-card,
+      .priority-grid,
+      .manager-grid,
+      .system-intro {
+        grid-template-columns: 1fr;
+      }
+
+      .component-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .presentation-shell {
+        width: min(100% - 18px, 1520px);
+        padding-top: 18px;
+      }
+
+      .presentation-header {
+        margin-bottom: 16px;
+      }
+
+      .presentation-controls,
+      .view-switcher {
+        width: 100%;
+      }
+
+      .view-button {
+        flex: 1;
+        padding: 0 8px;
+      }
+
+      .tester-button {
+        flex: 1;
+      }
+
+      .design-note {
+        align-items: flex-start;
+      }
+
+      .prototype-window {
+        min-height: 680px;
+        border-radius: 18px;
+      }
+
+      .app-navigation {
+        grid-template-columns: auto minmax(0, 1fr);
+        padding: 8px 10px;
+      }
+
+      .app-status {
+        display: none;
+      }
+
+      .brand-name {
+        display: none;
+      }
+
+      .brand-lockup img {
+        width: 32px;
+        height: 32px;
+      }
+
+      .app-tab {
+        min-height: 36px;
+        padding: 0 10px;
+      }
+
+      .app-content {
+        padding: 18px 14px;
+      }
+
+      .screen-heading {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .tracking-card {
+        padding: 17px;
+      }
+
+      .tracking-form {
+        padding: 13px;
+      }
+
+      .field-grid,
+      .metrics-grid,
+      .content-grid,
+      .component-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .action-row,
+      .priority-actions,
+      .surface-header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .primary-button,
+      .secondary-button,
+      .danger-button {
+        min-height: 44px;
+      }
+
+      .surface {
+        padding: 16px;
+      }
+
+      .palette-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .approval-toolbar {
+        width: 100%;
+      }
+
+      .search-control {
+        width: 100%;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body data-density="comfortable">
+  <main class="presentation-shell">
+    <header class="presentation-header">
+      <div class="presentation-copy">
+        <p class="eyebrow">Standalone concept tester</p>
+        <h1>Calm where you work.<br>Vibrant where it matters.</h1>
+        <p>This concept keeps SAPHIR practical and information-dense, then uses color, spacing, and subtle depth to make actions and status easier to understand.</p>
+      </div>
+
+      <div class="presentation-controls" aria-label="Prototype controls">
+        <div class="view-switcher" role="tablist" aria-label="Concept view">
+          <button class="view-button" type="button" role="tab" aria-selected="true" aria-controls="employeeScreen" data-view="employee">Employee</button>
+          <button class="view-button" type="button" role="tab" aria-selected="false" aria-controls="managerScreen" data-view="manager">Manager</button>
+          <button class="view-button" type="button" role="tab" aria-selected="false" aria-controls="systemScreen" data-view="system">Design system</button>
+        </div>
+        <button class="tester-button" type="button" id="densityToggle">Density: Comfortable</button>
+        <button class="tester-button" type="button" id="themeToggle">Theme: System</button>
+      </div>
+    </header>
+
+    <aside class="design-note">
+      <span class="design-note-mark" aria-hidden="true">i</span>
+      <span>This is an isolated presentation page. Try the Start Overtime button, approve a manager entry, switch density, and compare light and dark mode. Nothing here writes application data.</span>
+    </aside>
+
+    <section class="prototype-window" aria-label="SAPHIR redesign prototype">
+      <header class="app-navigation">
+        <div class="brand-lockup">
+          <img src="../../app/frontend/assets/saphir-logo.png" alt="">
+          <div>
+            <span class="brand-name">SAPHIR</span>
+            <span class="brand-detail">Time management</span>
+          </div>
+        </div>
+
+        <nav class="app-tabs" aria-label="Application navigation">
+          <button class="app-tab is-active" type="button" data-nav-view="employee">My Overtime</button>
+          <button class="app-tab" type="button" data-nav-view="manager">Overview</button>
+          <button class="app-tab" type="button">People</button>
+          <button class="app-tab" type="button">Review</button>
+          <button class="app-tab" type="button">Projects</button>
+        </nav>
+
+        <div class="app-status">
+          <span class="sync-state"><span class="sync-dot" aria-hidden="true"></span>Synced just now</span>
+          <span class="avatar" aria-label="Signed in as Peter Sarateanu">PS</span>
+        </div>
+      </header>
+
+      <div class="app-content">
+        <section class="screen" id="employeeScreen" data-screen="employee">
+          <div class="screen-heading">
+            <div>
+              <h2>Good afternoon, Peter</h2>
+              <p>Everything you need to track today’s overtime, without the clutter.</p>
+            </div>
+            <span class="date-chip">Thursday · July 16</span>
+          </div>
+
+          <section class="tracking-card" id="trackingCard">
+            <div class="tracking-overview">
+              <div>
+                <span class="status-label"><span class="status-dot" aria-hidden="true"></span><span id="trackingStatus">Ready to track</span></span>
+                <h3 id="trackingTitle">You’re off the clock</h3>
+                <p id="trackingDescription">Choose the work details, then start when you’re ready. SAPHIR will keep the time for you.</p>
+              </div>
+              <div class="elapsed-block">
+                <strong class="elapsed-time" id="elapsedTime">00:00</strong>
+                <span class="elapsed-caption" id="elapsedCaption">No active session</span>
+              </div>
+            </div>
+
+            <div class="tracking-form">
+              <div class="field-grid">
+                <div class="field">
+                  <label for="projectSelect">Project</label>
+                  <select class="select-control" id="projectSelect">
+                    <option>Portal Upgrade · APP-220</option>
+                    <option>Infrastructure Maintenance · INF-330</option>
+                    <option>Month-End Close · OPS-410</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="overtimeCodeSelect">Overtime code</label>
+                  <select class="select-control" id="overtimeCodeSelect">
+                    <option>Regular overtime</option>
+                    <option>Emergency call-in</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="paymentSelect">Payment</label>
+                  <select class="select-control" id="paymentSelect">
+                    <option>Compensatory leave</option>
+                    <option>Cash payment</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="reasonSelect">Reason</label>
+                  <select class="select-control" id="reasonSelect">
+                    <option>Critical delivery</option>
+                    <option>Operational requirement</option>
+                  </select>
+                </div>
+              </div>
+              <div class="action-row">
+                <button class="primary-button" type="button" id="punchButton">Start Overtime</button>
+                <span class="action-hint" id="actionHint">Your selected details will be attached to this session.</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="metrics-grid" aria-label="Monthly summary">
+            <article class="metric-card">
+              <div class="metric-topline">
+                <span class="metric-label">This month</span>
+                <span class="metric-symbol" aria-hidden="true">↗</span>
+              </div>
+              <strong class="metric-value">12 h 45</strong>
+              <span class="metric-detail">2 h 15 more than June at this point</span>
+            </article>
+            <article class="metric-card">
+              <div class="metric-topline">
+                <span class="metric-label">Pending approval</span>
+                <span class="metric-symbol pending" aria-hidden="true">3</span>
+              </div>
+              <strong class="metric-value">3 entries</strong>
+              <span class="metric-detail">Oldest entry has waited 2 days</span>
+            </article>
+            <article class="metric-card">
+              <div class="metric-topline">
+                <span class="metric-label">Approved</span>
+                <span class="metric-symbol live" aria-hidden="true">✓</span>
+              </div>
+              <strong class="metric-value">9 h 30</strong>
+              <span class="metric-detail">74% of this month’s submitted time</span>
+            </article>
+          </section>
+
+          <div class="content-grid">
+            <section class="surface">
+              <header class="surface-header">
+                <div>
+                  <h3>Recent overtime</h3>
+                  <p>Your latest entries and their current status.</p>
+                </div>
+                <button class="text-action" type="button">View timeline</button>
+              </header>
+              <div class="timeline-list">
+                <article class="timeline-row">
+                  <div class="date-block"><strong>14</strong><span>Jul</span></div>
+                  <div><strong class="row-title">Portal Upgrade</strong><span class="row-detail">18:00–20:15 · Critical delivery</span></div>
+                  <div class="row-result"><strong class="duration">2 h 15</strong><span class="status-chip approved">Approved</span></div>
+                </article>
+                <article class="timeline-row">
+                  <div class="date-block"><strong>11</strong><span>Jul</span></div>
+                  <div><strong class="row-title">Infrastructure Maintenance</strong><span class="row-detail">17:30–19:00 · Operational requirement</span></div>
+                  <div class="row-result"><strong class="duration">1 h 30</strong><span class="status-chip pending">Pending</span></div>
+                </article>
+                <article class="timeline-row">
+                  <div class="date-block"><strong>08</strong><span>Jul</span></div>
+                  <div><strong class="row-title">Month-End Close</strong><span class="row-detail">18:15–21:00 · Critical delivery</span></div>
+                  <div class="row-result"><strong class="duration">2 h 45</strong><span class="status-chip approved">Approved</span></div>
+                </article>
+              </div>
+            </section>
+
+            <section class="surface">
+              <header class="surface-header">
+                <div>
+                  <h3>Project snapshot</h3>
+                  <p>Where your overtime went this month.</p>
+                </div>
+              </header>
+              <div class="project-list">
+                <article class="project-row"><span class="color-marker"></span><div><strong class="row-title">Portal Upgrade</strong><span class="row-detail">43% of total</span></div><strong class="project-hours">5 h 30</strong></article>
+                <article class="project-row"><span class="color-marker violet"></span><div><strong class="row-title">Month-End Close</strong><span class="row-detail">33% of total</span></div><strong class="project-hours">4 h 15</strong></article>
+                <article class="project-row"><span class="color-marker teal"></span><div><strong class="row-title">Infrastructure</strong><span class="row-detail">24% of total</span></div><strong class="project-hours">3 h 00</strong></article>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="screen" id="managerScreen" data-screen="manager" hidden>
+          <div class="screen-heading">
+            <div>
+              <h2>Overview</h2>
+              <p>Actionable work first; organizational totals second.</p>
+            </div>
+            <span class="date-chip">Last refreshed · just now</span>
+          </div>
+
+          <section class="priority-grid">
+            <article class="priority-card attention">
+              <div class="priority-kicker"><span class="status-dot" style="background: var(--pending); box-shadow: 0 0 0 4px var(--pending-soft);" aria-hidden="true"></span>Needs your attention</div>
+              <h3>Pending approvals</h3>
+              <div class="priority-number">8</div>
+              <p>The oldest request has been waiting 3 days. Five entries are ready for a quick review.</p>
+              <div class="priority-actions">
+                <button class="primary-button" type="button" id="reviewQueueButton">Review queue</button>
+                <button class="secondary-button" type="button">Open filters</button>
+              </div>
+            </article>
+
+            <article class="priority-card live-card">
+              <div class="priority-kicker"><span class="status-dot" aria-hidden="true"></span>Live now</div>
+              <h3>Active sessions</h3>
+              <div class="priority-number">3</div>
+              <p>All active sessions are within their expected project scope.</p>
+              <div class="active-list" style="margin-top: 15px;">
+                <article class="active-row"><div><strong class="row-title">Camille Tremblay</strong><span class="row-detail">Portal Upgrade</span></div><strong class="live-time">01:42</strong></article>
+                <article class="active-row"><div><strong class="row-title">Marc-André Gagnon</strong><span class="row-detail">Security Audit</span></div><strong class="live-time">00:56</strong></article>
+              </div>
+            </article>
+          </section>
+
+          <section class="metrics-grid" aria-label="Organization summary">
+            <article class="metric-card"><div class="metric-topline"><span class="metric-label">Org overtime</span><span class="metric-symbol" aria-hidden="true">↗</span></div><strong class="metric-value">147 h 30</strong><span class="metric-detail">Across 31 employees this month</span></article>
+            <article class="metric-card"><div class="metric-topline"><span class="metric-label">Approval time</span><span class="metric-symbol live" aria-hidden="true">✓</span></div><strong class="metric-value">1.4 days</strong><span class="metric-detail">18% faster than last month</span></article>
+            <article class="metric-card"><div class="metric-topline"><span class="metric-label">Projects tracked</span><span class="metric-symbol" aria-hidden="true">12</span></div><strong class="metric-value">12 active</strong><span class="metric-detail">Four projects represent 68% of overtime</span></article>
+          </section>
+
+          <div class="manager-grid">
+            <section class="surface" id="approvalQueue">
+              <header class="surface-header">
+                <div>
+                  <h3>Approval queue</h3>
+                  <p>Review the exact scope before acting.</p>
+                </div>
+                <div class="approval-toolbar">
+                  <input class="search-control" type="search" aria-label="Search approvals" placeholder="Search employee or project">
+                  <button class="primary-button" type="button" id="approveSelectedButton">Approve selected</button>
+                </div>
+              </header>
+              <div class="table-wrap">
+                <table class="approval-table">
+                  <thead>
+                    <tr><th><span class="visually-hidden">Select</span></th><th>Employee</th><th>Date</th><th>Project</th><th>Duration</th><th>Status</th><th>Action</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><input type="checkbox" class="approval-check" aria-label="Select Sophie Leclerc entry"></td>
+                      <td><strong class="approval-person">Sophie Leclerc</strong><span class="approval-detail">Critical delivery</span></td>
+                      <td>Jul 15</td><td>Portal Upgrade</td><td class="approval-hours">2 h 15</td><td><span class="status-chip pending">Pending</span></td>
+                      <td><button class="approve-button" type="button">Approve</button></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" class="approval-check" aria-label="Select Nadia Bouchard entry"></td>
+                      <td><strong class="approval-person">Nadia Bouchard</strong><span class="approval-detail">Operational requirement</span></td>
+                      <td>Jul 14</td><td>Month-End Close</td><td class="approval-hours">1 h 30</td><td><span class="status-chip pending">Pending</span></td>
+                      <td><button class="approve-button" type="button">Approve</button></td>
+                    </tr>
+                    <tr>
+                      <td><input type="checkbox" class="approval-check" aria-label="Select Alexandre Roy entry"></td>
+                      <td><strong class="approval-person">Alexandre Roy</strong><span class="approval-detail">Emergency call-in</span></td>
+                      <td>Jul 13</td><td>Infrastructure</td><td class="approval-hours">3 h 00</td><td><span class="status-chip pending">Pending</span></td>
+                      <td><button class="approve-button" type="button">Approve</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="surface">
+              <header class="surface-header"><div><h3>Recent activity</h3><p>A quiet audit summary, not a competing workspace.</p></div></header>
+              <div class="activity-list">
+                <article class="activity-row"><span class="activity-icon" aria-hidden="true">✓</span><div><strong class="row-title">Camille approved 4 entries</strong><span class="row-detail">12 minutes ago · Portal Upgrade</span></div></article>
+                <article class="activity-row"><span class="activity-icon" aria-hidden="true">↗</span><div><strong class="row-title">Marc updated an entry</strong><span class="row-detail">34 minutes ago · Security Audit</span></div></article>
+                <article class="activity-row"><span class="activity-icon" aria-hidden="true">+</span><div><strong class="row-title">Nadia added an employee</strong><span class="row-detail">Yesterday · Client Services</span></div></article>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="screen" id="systemScreen" data-screen="system" hidden>
+          <div class="screen-heading">
+            <div>
+              <h2>Design system</h2>
+              <p>The reusable visual rules behind the employee and manager screens.</p>
+            </div>
+            <span class="date-chip">Concept · v1</span>
+          </div>
+
+          <div class="system-intro">
+            <article class="system-card feature">
+              <p class="eyebrow">Design north star</p>
+              <h3 style="font-size: clamp(1.45rem, 3vw, 2.15rem); letter-spacing: -0.04em;">The content stays calm.<br>The interface comes alive when meaning changes.</h3>
+              <div class="system-principles">
+                <span class="principle-chip">One primary action</span>
+                <span class="principle-chip">Semantic color</span>
+                <span class="principle-chip">Solid content surfaces</span>
+                <span class="principle-chip">Purposeful motion</span>
+                <span class="principle-chip">Comfortable density</span>
+              </div>
+            </article>
+            <article class="system-card">
+              <h3>Material strategy</h3>
+              <p>Translucency is reserved for navigation and short-lived overlays. Cards, forms, charts, and tables stay solid for legibility.</p>
+              <div class="component-stack">
+                <span class="status-chip approved">Approved</span>
+                <span class="status-chip pending">Pending</span>
+                <span class="status-chip rejected">Rejected</span>
+              </div>
+            </article>
+          </div>
+
+          <article class="system-card" style="margin-bottom: var(--content-gap);">
+            <h3>Semantic palette</h3>
+            <p>Vibrant colors have jobs. They are never used merely to decorate a large surface.</p>
+            <div class="palette-grid">
+              <div class="swatch"><div class="swatch-color"></div><div class="swatch-label"><strong>Sapphire</strong><span>Primary actions</span></div></div>
+              <div class="swatch"><div class="swatch-color live"></div><div class="swatch-label"><strong>Mint</strong><span>Live & approved</span></div></div>
+              <div class="swatch"><div class="swatch-color pending"></div><div class="swatch-label"><strong>Amber</strong><span>Needs attention</span></div></div>
+              <div class="swatch"><div class="swatch-color danger"></div><div class="swatch-label"><strong>Coral</strong><span>Rejected & destructive</span></div></div>
+              <div class="swatch"><div class="swatch-color violet"></div><div class="swatch-label"><strong>Violet</strong><span>Chart series</span></div></div>
+              <div class="swatch"><div class="swatch-color teal"></div><div class="swatch-label"><strong>Teal</strong><span>Chart series</span></div></div>
+              <div class="swatch"><div class="swatch-color canvas"></div><div class="swatch-label"><strong>Canvas</strong><span>Grouped background</span></div></div>
+              <div class="swatch"><div class="swatch-color label"></div><div class="swatch-label"><strong>Primary label</strong><span>Highest contrast</span></div></div>
+            </div>
+          </article>
+
+          <div class="component-grid">
+            <article class="system-card">
+              <h3>Typography</h3>
+              <p>Native system type, restrained weights, and tabular numerals instead of code-style metrics.</p>
+              <div class="type-sample"><span class="type-display">12 h 45</span><span class="type-title">Clear section title</span><span class="type-body">Supporting copy stays readable and quiet, with enough contrast for long work sessions.</span><span class="numeric-sample">00:42:18</span></div>
+            </article>
+            <article class="system-card">
+              <h3>Action hierarchy</h3>
+              <p>Only the most likely safe action receives saturated emphasis.</p>
+              <div class="component-stack"><button class="primary-button" type="button">Primary action</button><button class="secondary-button" type="button">Secondary</button><button class="danger-button" type="button">Destructive</button><button class="text-action" type="button">Tertiary</button></div>
+            </article>
+            <article class="system-card">
+              <h3>Form controls</h3>
+              <p>Persistent labels, visible boundaries, and comfortable targets.</p>
+              <div class="field" style="margin-top: 18px;"><label for="systemProject">Project</label><select class="select-control" id="systemProject"><option>Portal Upgrade · APP-220</option></select></div>
+              <div class="field" style="margin-top: 12px;"><label for="systemSearch">Search employees</label><input class="search-control" style="width: 100%;" id="systemSearch" type="search" placeholder="Name, code, or project"></div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <span class="toast-mark" aria-hidden="true">✓</span>
+    <span id="toastMessage">Prototype updated</span>
+  </div>
+
+  <script>
+    (() => {
+      const body = document.body;
+      const themeToggle = document.getElementById("themeToggle");
+      const densityToggle = document.getElementById("densityToggle");
+      const viewButtons = Array.from(document.querySelectorAll("[data-view]"));
+      const navButtons = Array.from(document.querySelectorAll("[data-nav-view]"));
+      const screens = Array.from(document.querySelectorAll("[data-screen]"));
+      const toast = document.getElementById("toast");
+      const toastMessage = document.getElementById("toastMessage");
+      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+      const themeModes = ["system", "light", "dark"];
+      let themeMode = "system";
+      let toastTimer = null;
+      let elapsedSeconds = 0;
+      let elapsedTimer = null;
+
+      function resolveTheme() {
+        const resolved = themeMode === "system"
+          ? (systemTheme.matches ? "dark" : "light")
+          : themeMode;
+        body.dataset.resolvedTheme = resolved;
+        themeToggle.textContent = `Theme: ${themeMode.charAt(0).toUpperCase()}${themeMode.slice(1)}`;
+      }
+
+      function showToast(message) {
+        toastMessage.textContent = message;
+        toast.classList.add("is-visible");
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => toast.classList.remove("is-visible"), 2600);
+      }
+
+      function showScreen(view) {
+        screens.forEach((screen) => {
+          screen.hidden = screen.dataset.screen !== view;
+        });
+        viewButtons.forEach((button) => {
+          button.setAttribute("aria-selected", String(button.dataset.view === view));
+        });
+        navButtons.forEach((button) => {
+          button.classList.toggle("is-active", button.dataset.navView === view);
+        });
+      }
+
+      themeToggle.addEventListener("click", () => {
+        const nextIndex = (themeModes.indexOf(themeMode) + 1) % themeModes.length;
+        themeMode = themeModes[nextIndex];
+        resolveTheme();
+      });
+
+      systemTheme.addEventListener("change", () => {
+        if (themeMode === "system") resolveTheme();
+      });
+
+      densityToggle.addEventListener("click", () => {
+        const compact = body.dataset.density !== "compact";
+        body.dataset.density = compact ? "compact" : "comfortable";
+        densityToggle.textContent = `Density: ${compact ? "Compact" : "Comfortable"}`;
+        showToast(`${compact ? "Compact" : "Comfortable"} density applied`);
+      });
+
+      viewButtons.forEach((button) => {
+        button.addEventListener("click", () => showScreen(button.dataset.view));
+      });
+
+      navButtons.forEach((button) => {
+        button.addEventListener("click", () => showScreen(button.dataset.navView));
+      });
+
+      document.querySelectorAll(".app-tab:not([data-nav-view])").forEach((button) => {
+        button.addEventListener("click", () => showToast(`${button.textContent.trim()} is outside this small tester`));
+      });
+
+      const trackingCard = document.getElementById("trackingCard");
+      const punchButton = document.getElementById("punchButton");
+      const trackingStatus = document.getElementById("trackingStatus");
+      const trackingTitle = document.getElementById("trackingTitle");
+      const trackingDescription = document.getElementById("trackingDescription");
+      const elapsedTime = document.getElementById("elapsedTime");
+      const elapsedCaption = document.getElementById("elapsedCaption");
+      const actionHint = document.getElementById("actionHint");
+
+      function renderElapsed() {
+        const hours = String(Math.floor(elapsedSeconds / 3600)).padStart(2, "0");
+        const minutes = String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, "0");
+        elapsedTime.textContent = `${hours}:${minutes}`;
+      }
+
+      punchButton.addEventListener("click", () => {
+        const isStarting = !trackingCard.classList.contains("is-live");
+        trackingCard.classList.toggle("is-live", isStarting);
+        window.clearInterval(elapsedTimer);
+
+        if (isStarting) {
+          elapsedSeconds = 8 * 60;
+          trackingStatus.textContent = "Overtime in progress";
+          trackingTitle.textContent = "You’re tracking overtime";
+          trackingDescription.textContent = "Portal Upgrade · Regular overtime · Compensatory leave";
+          elapsedCaption.textContent = "Started at 4:08 PM";
+          punchButton.textContent = "Stop Overtime";
+          actionHint.textContent = "A short review will appear before the entry is submitted.";
+          elapsedTimer = window.setInterval(() => {
+            elapsedSeconds += 1;
+            renderElapsed();
+          }, 1000);
+          showToast("Overtime tracking started");
+        } else {
+          elapsedSeconds = 0;
+          trackingStatus.textContent = "Ready to track";
+          trackingTitle.textContent = "You’re off the clock";
+          trackingDescription.textContent = "Choose the work details, then start when you’re ready. SAPHIR will keep the time for you.";
+          elapsedCaption.textContent = "No active session";
+          punchButton.textContent = "Start Overtime";
+          actionHint.textContent = "Your selected details will be attached to this session.";
+          showToast("Demo session stopped and saved");
+        }
+        renderElapsed();
+      });
+
+      function approveRow(row) {
+        const status = row.querySelector(".status-chip");
+        const button = row.querySelector(".approve-button");
+        const checkbox = row.querySelector(".approval-check");
+        row.classList.add("is-approved");
+        status.className = "status-chip approved";
+        status.textContent = "Approved";
+        button.textContent = "Approved";
+        button.disabled = true;
+        checkbox.checked = false;
+        checkbox.disabled = true;
+      }
+
+      document.querySelectorAll(".approve-button").forEach((button) => {
+        button.addEventListener("click", () => {
+          approveRow(button.closest("tr"));
+          showToast("Entry approved");
+        });
+      });
+
+      document.getElementById("approveSelectedButton").addEventListener("click", () => {
+        const selected = Array.from(document.querySelectorAll(".approval-check:checked"));
+        if (selected.length === 0) {
+          showToast("Select at least one entry first");
+          return;
+        }
+        selected.forEach((checkbox) => approveRow(checkbox.closest("tr")));
+        showToast(`${selected.length} ${selected.length === 1 ? "entry" : "entries"} approved`);
+      });
+
+      document.getElementById("reviewQueueButton").addEventListener("click", () => {
+        const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        document.getElementById("approvalQueue").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+      });
+
+      resolveTheme();
+      showScreen("employee");
+    })();
+  </script>
+</body>
+</html>
