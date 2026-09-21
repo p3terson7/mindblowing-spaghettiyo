@@ -433,6 +433,58 @@ function Read-JsonRequestBody {
     }
 }
 
+function Read-BoundedRequestBytes {
+    param(
+        [Parameter(Mandatory = $true)]$Request,
+        [int]$MaxBytes = 8388608,
+        [int]$TimeoutMs = 15000
+    )
+
+    if ($MaxBytes -lt 1) {
+        throw [System.ArgumentOutOfRangeException]::new("MaxBytes")
+    }
+    if ([Int64]$Request.ContentLength64 -gt $MaxBytes) {
+        $exception = [System.IO.InvalidDataException]::new("Request body exceeds the $MaxBytes byte limit.")
+        $exception.Data["SaphirHttpStatusCode"] = 413
+        throw $exception
+    }
+
+    $memory = New-Object System.IO.MemoryStream
+    $buffer = New-Object byte[] 8192
+    $deadlineUtc = (Get-Date).ToUniversalTime().AddMilliseconds($TimeoutMs)
+    try {
+        while ($true) {
+            $remainingMs = [int][Math]::Ceiling(($deadlineUtc - (Get-Date).ToUniversalTime()).TotalMilliseconds)
+            if ($remainingMs -le 0) {
+                $exception = [System.TimeoutException]::new("Timed out while reading the request body.")
+                $exception.Data["SaphirHttpStatusCode"] = 408
+                throw $exception
+            }
+            $readTask = $Request.InputStream.ReadAsync($buffer, 0, $buffer.Length)
+            if (-not $readTask.Wait($remainingMs)) {
+                $exception = [System.TimeoutException]::new("Timed out while reading the request body.")
+                $exception.Data["SaphirHttpStatusCode"] = 408
+                throw $exception
+            }
+            $bytesRead = [int]$readTask.Result
+            if ($bytesRead -le 0) { break }
+            $memory.Write($buffer, 0, $bytesRead)
+            if ($memory.Length -gt $MaxBytes) {
+                $exception = [System.IO.InvalidDataException]::new("Request body exceeds the $MaxBytes byte limit.")
+                $exception.Data["SaphirHttpStatusCode"] = 413
+                throw $exception
+            }
+        }
+        # Prevent PowerShell from unrolling the byte array. This also preserves
+        # an empty body as byte[0] instead of turning it into $null.
+        return ,([byte[]]$memory.ToArray())
+    }
+    finally {
+        $memory.Dispose()
+        try { $Request.InputStream.Close() } catch { }
+    }
+}
+
 # Helper: Format a time string from "HH:mm:ss" to a history-friendly format ("HHhmm")
 function Format-TimeForHistory($timeString) {
     if ($timeString -and $timeString.Length -ge 5) {

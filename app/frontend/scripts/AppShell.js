@@ -10,18 +10,18 @@ const APP_SYNC_POLL_HIDDEN_MS = 30000;
 const LEGACY_API_URL_KEYS = [PRE_SAPHIR_API_URL_KEY, "adminApiUrl", "employeeApiUrl"];
 const LEGACY_SESSION_KEYS = [PRE_SAPHIR_SESSION_KEY, "adminSession", "employeeSession"];
 const ROLE_VIEW_MAP = {
-  superAdmin: ["dashboardView", "employeesView", "adminView", "projectsView"],
-  admin: ["dashboardView", "employeesView", "adminView", "projectsView"],
-  employee: ["selfView"],
+  superAdmin: ["dashboardView", "employeesView", "adminView", "projectsView", "bugReportsView"],
+  admin: ["dashboardView", "employeesView", "adminView", "projectsView", "bugReportsView"],
+  employee: ["selfView", "bugReportsView"],
 };
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20260917-phase7-validation-v1",
-  dashboard: "scripts/Views/DashboardView.js?v=20260917-phase7-validation-v1",
-  approvals: "scripts/Views/ApprovalsView.js?v=20260917-phase7-validation-v1",
-  history: "scripts/Views/HistoryView.js?v=20260917-phase7-validation-v1",
-  projects: "scripts/Views/ProjectsView.js?v=20260917-phase7-validation-v1",
+  employees: "scripts/Views/EmployeesView.js?v=20260921-bug-reports-phase5-v1",
+  dashboard: "scripts/Views/DashboardView.js?v=20260921-bug-reports-phase5-v1",
+  approvals: "scripts/Views/ApprovalsView.js?v=20260921-bug-reports-phase5-v1",
+  history: "scripts/Views/HistoryView.js?v=20260921-bug-reports-phase5-v1",
+  projects: "scripts/Views/ProjectsView.js?v=20260921-bug-reports-phase5-v1",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
@@ -235,12 +235,15 @@ function loadScriptOnce(source) {
 }
 
 function ensureManagerAssetsForView(viewId, user = getCurrentUser()) {
-  if (MANAGER_VIEW_IDS.indexOf(viewId) < 0 || !isManagerUser(user)) {
+  const isBugReportView = viewId === "bugReportsView";
+  if (!isBugReportView && (MANAGER_VIEW_IDS.indexOf(viewId) < 0 || !isManagerUser(user))) {
     return Promise.resolve();
   }
 
   if (!appShellState.managerAssetPromisesByView[viewId]) {
-    const sources = MANAGER_VIEW_SCRIPT_SOURCES[viewId] || [];
+    const sources = isBugReportView
+      ? ["scripts/Views/BugReportsView.js?v=20260921-bug-reports-phase5-v1"]
+      : (MANAGER_VIEW_SCRIPT_SOURCES[viewId] || []);
     const viewPromise = Promise.all(sources.map(source => loadScriptOnce(source)))
       .then(() => undefined)
       .catch(error => {
@@ -340,6 +343,10 @@ function getViewsAffectedBySyncState(syncState) {
     return isManagerUser(user)
       ? ["dashboardView", "adminView"]
       : [];
+  }
+
+  if (category === "bug-reports") {
+    return ["bugReportsView"];
   }
 
   if (category === "employee-directory") {
@@ -1509,6 +1516,7 @@ function clearRoleUi() {
   setRoleScopeVisibility("employee", false);
   setRoleScopeVisibility("manager", false);
   setRoleScopeVisibility("superAdmin", false);
+  setRoleScopeVisibility("authenticated", false);
 }
 
 function getAllowedViewsForUser(user) {
@@ -1564,6 +1572,7 @@ function configureRoleUi(user) {
   setRoleScopeVisibility("manager", isManagerUser(user));
   setRoleScopeVisibility("superAdmin", isSuperAdminUser(user));
   setRoleScopeVisibility("admin", isManagerUser(user));
+  setRoleScopeVisibility("authenticated", true);
   window.allowedViewIds = getAllowedViewsForUser(user);
 
   if (typeof showView === "function") {
@@ -1629,6 +1638,10 @@ async function runViewRefresh(viewId) {
 
   if (viewId === "projectsView" && typeof refreshProjectsView === "function") {
     return refreshProjectsView();
+  }
+
+  if (viewId === "bugReportsView" && typeof refreshBugReportsView === "function") {
+    return refreshBugReportsView();
   }
 
   return true;
@@ -1811,6 +1824,7 @@ async function rerenderActiveViewForLanguageChange(user = getCurrentUser()) {
     employeesView: "rerenderEmployeesViewForLanguageChange",
     adminView: "rerenderReviewViewForLanguageChange",
     projectsView: "rerenderProjectsViewForLanguageChange",
+    bugReportsView: "rerenderBugReportsViewForLanguageChange",
   };
   const handler = window[handlerNames[activeViewId]];
   if (typeof handler === "function") {

@@ -64,6 +64,7 @@ try {
     $script:paymentOptionsFile = Join-Path -Path $tempFolder -ChildPath "paymentOptions.json"
     $script:reasonCodesFile = Join-Path -Path $tempFolder -ChildPath "reasonCodes.json"
     $script:budgetPeriodsFile = Join-Path -Path $tempFolder -ChildPath "budget-periods.json"
+    $script:bugReportsFile = Join-Path -Path $tempFolder -ChildPath "bug-reports.json"
     $script:SyncStateWatcherInitialized = $true
     $script:SyncStateValidationIntervalMs = 1
 
@@ -83,6 +84,7 @@ try {
     }
     [System.IO.File]::WriteAllText($script:mappingFile, "{}", (New-Object System.Text.UTF8Encoding($false)))
     [System.IO.File]::WriteAllText($script:budgetPeriodsFile, "{}", (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($script:bugReportsFile, "[]", (New-Object System.Text.UTF8Encoding($false)))
 
     $script:AuthRuntimeClearCount = 0
     $script:ProjectAccessClearCount = 0
@@ -163,7 +165,8 @@ try {
             $script:overtimeCodesFile,
             $script:paymentOptionsFile,
             $script:reasonCodesFile,
-            $script:budgetPeriodsFile
+            $script:budgetPeriodsFile,
+            $script:bugReportsFile
         )) {
             Read-TextFileCached -Path $corePath | Out-Null
         }
@@ -237,6 +240,20 @@ try {
     Assert-CoreFileCached -Path $script:projectsFile -Expected:$true -Message "Budget-period changes should preserve the project catalog cache."
     Assert-CoreFileCached -Path $script:usersFile -Expected:$true -Message "Budget-period changes should preserve the users cache."
 
+    # Bug-report notifications refresh only their independent sidecar and
+    # audit history. They must never evict the much larger overtime datasets.
+    Prime-CoreFileCaches
+    $beforeBugReportReadCount = $script:EmployeeJsonReadCount
+    Publish-DataChange -Category "bug-reports" -Resource "bug-0123456789abcdef0123456789abcdef" | Out-Null
+    foreach ($employeeCode in $employeeCodes) {
+        Get-EmployeeMarker -Path $employeeFiles[$employeeCode] | Out-Null
+    }
+    Assert-Equal -Expected $beforeBugReportReadCount -Actual $script:EmployeeJsonReadCount -Message "Bug-report changes should not reparse employee files."
+    Assert-CoreFileCached -Path $script:bugReportsFile -Expected:$false -Message "Bug-report changes should invalidate their shared sidecar."
+    Assert-CoreFileCached -Path $script:historyFile -Expected:$false -Message "Bug-report changes should invalidate audit history."
+    Assert-CoreFileCached -Path $script:projectsFile -Expected:$true -Message "Bug-report changes should preserve the project catalog cache."
+    Assert-CoreFileCached -Path $script:usersFile -Expected:$true -Message "Bug-report changes should preserve the users cache."
+
     # If this process misses one or more publications, the last category cannot
     # describe every changed core file. Fall back to a complete core reset.
     Prime-CoreFileCaches
@@ -253,7 +270,8 @@ try {
         $script:overtimeCodesFile,
         $script:paymentOptionsFile,
         $script:reasonCodesFile,
-        $script:budgetPeriodsFile
+        $script:budgetPeriodsFile,
+        $script:bugReportsFile
     )) {
         Assert-CoreFileCached -Path $corePath -Expected:$false -Message "A skipped sync revision should conservatively clear every core file cache."
     }

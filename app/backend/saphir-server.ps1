@@ -17,6 +17,7 @@ $script:saphirInstanceToken = [string]$env:SAPHIR_INSTANCE_TOKEN
 . (Join-Path -Path $scriptDir -ChildPath "services/SyncService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/CompensationGridService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/BudgetPeriodService.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "services/BugReportService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/ProjectStatsService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/HistoryService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/SeedService.ps1")
@@ -116,7 +117,7 @@ try {
 
             if ($request.HttpMethod -eq "OPTIONS") {
                 $response.Headers.Add("Access-Control-Allow-Methods", "GET, OPTIONS, PUT, DELETE, POST")
-                $response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                $response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization, X-SAPHIR-Expected-Revision, X-SAPHIR-File-Name")
                 respondWithSuccess $response '{}'
                 continue
             }

@@ -99,7 +99,7 @@ $normalRouteIndex = $adminServerSource.IndexOf("Resolve-AdminTopLevelRouteScript
 Assert-True -Condition ($controlResolutionIndex -ge 0) -Message "the backend request loop must invoke the control guard"
 Assert-True -Condition ($normalRouteIndex -gt $controlResolutionIndex) -Message "the independently authenticated control endpoint must be handled before normal API dispatch"
 Assert-True `
-    -Condition ($adminServerSource.IndexOf('Access-Control-Allow-Headers", "Content-Type, Authorization"', [System.StringComparison]::Ordinal) -ge 0) `
+    -Condition ($adminServerSource.IndexOf('Access-Control-Allow-Headers", "Content-Type, Authorization, X-SAPHIR-Expected-Revision, X-SAPHIR-File-Name"', [System.StringComparison]::Ordinal) -ge 0) `
     -Message "ordinary CORS preflight must not authorize the service-control token header"
 Assert-True `
     -Condition ($serverControlSource.IndexOf('[int]$TimeoutMilliseconds = 30000', [System.StringComparison]::Ordinal) -ge 0) `

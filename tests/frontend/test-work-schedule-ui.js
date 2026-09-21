@@ -46,7 +46,7 @@ assert(i18n.includes('"shared.workScheduleUnconfirmed": "Horaire à confirmer"')
 assert(styles.includes(".self-work-schedule-control"), "The dashboard schedule control has no dedicated visual treatment.");
 assert(styles.includes(".work-schedule-badge.unconfirmed"), "Unconfirmed legacy schedules have no warning treatment.");
 
-const cacheRevision = "20260917-phase7-validation-v1";
+const cacheRevision = "20260921-bug-reports-phase5-v1";
 assert(index.includes(`scripts/Views/SelfView.js?v=${cacheRevision}`), "The self dashboard cache revision was not bumped.");
 assert(appShell.includes(`ApprovalsView.js?v=${cacheRevision}`), "The Review entry labels may remain cached.");
 

@@ -111,6 +111,15 @@ ne changent pas. Le module reçoit uniquement des valeurs ou un objet utilisateu
 déjà chargé; il ne lit ni utilisateurs, ni sessions, ni projets et ne décide pas
 si une requête est autorisée.
 
+`Saphir.BugReports` définit les validations, permissions et projections pures
+du système de signalements. `BugReportService.ps1` possède la lecture et les
+écritures atomiques de `bug-reports.json`, tandis que la route HTTP ne fait que
+traduire la requête et publier le changement. Ce fichier est un sidecar : il ne
+modifie ni le schéma ni le contenu des heures. Chaque mise à jour exige la
+révision lue par le client afin d’empêcher deux postes de s’écraser
+silencieusement. Le contrat détaillé se trouve dans
+`docs/BUG-REPORTS-CONTRACT.md`.
+
 ### Règles pour les nouveaux modules PowerShell
 
 - Fournir un manifeste `.psd1` et un `RootModule` explicite.

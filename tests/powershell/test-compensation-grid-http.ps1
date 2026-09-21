@@ -44,6 +44,8 @@ function Invoke-TestRequest {
         [Parameter(Mandatory = $true)][string]$Uri,
         [string]$Token = "",
         $Body = $null,
+        [byte[]]$RawBody = $null,
+        [string]$RawContentType = "application/octet-stream",
         [hashtable]$Headers = @{}
     )
 
@@ -58,7 +60,14 @@ function Invoke-TestRequest {
     foreach ($headerName in $Headers.Keys) {
         $request.Headers[[string]$headerName] = [string]$Headers[$headerName]
     }
-    if ($null -ne $Body) {
+    if ($null -ne $RawBody) {
+        $bytes = [byte[]]$RawBody
+        $request.ContentType = $RawContentType
+        $request.ContentLength = $bytes.Length
+        $stream = $request.GetRequestStream()
+        try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+    }
+    elseif ($null -ne $Body) {
         $bytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $Body -Depth 16 -Compress))
         $request.ContentType = "application/json; charset=utf-8"
         $request.ContentLength = $bytes.Length
@@ -76,8 +85,10 @@ function Invoke-TestRequest {
     }
 
     try {
-        $reader = New-Object System.IO.StreamReader($response.GetResponseStream(), [System.Text.Encoding]::UTF8)
-        try { $text = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        $responseStream = $response.GetResponseStream()
+        $memory = New-Object System.IO.MemoryStream
+        try { $responseStream.CopyTo($memory); $responseBytes = [byte[]]$memory.ToArray() } finally { $memory.Dispose(); $responseStream.Dispose() }
+        $text = [System.Text.Encoding]::UTF8.GetString($responseBytes)
         $json = $null
         if (-not [string]::IsNullOrWhiteSpace($text)) {
             try { $json = $text | ConvertFrom-Json -ErrorAction Stop } catch { }
@@ -87,6 +98,7 @@ function Invoke-TestRequest {
             Body       = $text
             Json       = $json
             Headers    = $response.Headers
+            Bytes      = $responseBytes
         }
     }
     finally {
@@ -186,6 +198,75 @@ try {
     $superLogin = Invoke-TestRequest -Method "POST" -Uri "$baseUri/auth/login" -Body @{ username = "compensation-super"; password = $superPassword }
     Assert-Equal -Expected 200 -Actual $superLogin.StatusCode -Message "Super-admin login failed."
     $superToken = [string]$superLogin.Json.token
+
+    $anonymousBugReports = Invoke-TestRequest -Method "GET" -Uri "$baseUri/bug-reports"
+    Assert-Equal -Expected 401 -Actual $anonymousBugReports.StatusCode -Message "Anonymous users must not list bug reports."
+    $beforeBugReportSync = Invoke-TestRequest -Method "GET" -Uri "$baseUri/sync/status" -Token $employeeToken
+    $invalidBugReport = Invoke-TestRequest -Method "POST" -Uri "$baseUri/bug-reports" -Token $employeeToken -Body @{ title = ""; description = "Missing title"; category = "bug" }
+    Assert-Equal -Expected 400 -Actual $invalidBugReport.StatusCode -Message "Invalid bug reports must be rejected."
+    $createdBugReport = Invoke-TestRequest -Method "POST" -Uri "$baseUri/bug-reports" -Token $employeeToken -Body @{
+        title = "First action fails"
+        description = "The first update fails after login, then works."
+        category = "bug"
+        stepsToReproduce = "Login and approve one entry."
+        technicalContext = @{ page = "/review"; appVersion = "test" }
+    }
+    Assert-Equal -Expected 200 -Actual $createdBugReport.StatusCode -Message "Employee could not create a bug report."
+    $bugReportId = [string]$createdBugReport.Json.report.reportId
+    Assert-True -Condition ($bugReportId -match '^bug-[0-9a-f]{32}$') -Message "Created bug report returned an invalid id."
+    Assert-Equal -Expected 1 -Actual ([int]$createdBugReport.Json.report.revision) -Message "Created bug report must start at revision 1."
+    $employeeBugReports = Invoke-TestRequest -Method "GET" -Uri "$baseUri/bug-reports?scope=mine" -Token $employeeToken
+    Assert-Equal -Expected 200 -Actual $employeeBugReports.StatusCode -Message "Employee could not list their bug reports."
+    Assert-Equal -Expected 1 -Actual @($employeeBugReports.Json.reports).Count -Message "Employee bug-report list returned the wrong count."
+    Assert-True -Condition (-not ($employeeBugReports.Json.reports[0].PSObject.Properties.Name -contains "description")) -Message "Bug-report list exposed the full description."
+    $adminBugReports = Invoke-TestRequest -Method "GET" -Uri "$baseUri/bug-reports?scope=all" -Token $adminToken
+    Assert-Equal -Expected 200 -Actual $adminBugReports.StatusCode -Message "Admin could not list bug reports."
+    $adminTriage = Invoke-TestRequest -Method "PATCH" -Uri "$baseUri/bug-reports/$bugReportId" -Token $adminToken -Body @{ expectedRevision = 1; priority = "p1" }
+    Assert-Equal -Expected 403 -Actual $adminTriage.StatusCode -Message "Regular admin changed super-admin triage fields."
+    $superTriage = Invoke-TestRequest -Method "PATCH" -Uri "$baseUri/bug-reports/$bugReportId" -Token $superToken -Body @{ expectedRevision = 1; status = "acknowledged"; priority = "p1"; rank = 1; assignedTo = "compensation-super" }
+    Assert-Equal -Expected 200 -Actual $superTriage.StatusCode -Message "Super admin could not triage a bug report."
+    Assert-Equal -Expected 2 -Actual ([int]$superTriage.Json.report.revision) -Message "Triage did not advance the bug-report revision."
+    Assert-Equal -Expected "compensation-super" -Actual ([string]$superTriage.Json.report.assignedTo) -Message "Triage assignment was not persisted."
+    $reporterLateEdit = Invoke-TestRequest -Method "PATCH" -Uri "$baseUri/bug-reports/$bugReportId" -Token $employeeToken -Body @{ expectedRevision = 2; title = "Changed too late" }
+    Assert-Equal -Expected 403 -Actual $reporterLateEdit.StatusCode -Message "Reporter changed a bug report after triage started."
+    $staleTriage = Invoke-TestRequest -Method "PATCH" -Uri "$baseUri/bug-reports/$bugReportId" -Token $superToken -Body @{ expectedRevision = 1; status = "resolved" }
+    Assert-Equal -Expected 409 -Actual $staleTriage.StatusCode -Message "A stale bug-report update did not return a conflict."
+    $afterBugReportSync = Invoke-TestRequest -Method "GET" -Uri "$baseUri/sync/status" -Token $employeeToken
+    Assert-Equal -Expected "bug-reports" -Actual ([string]$afterBugReportSync.Json.category) -Message "Bug-report changes must publish their own sync category."
+    Assert-Equal -Expected ([string]$beforeBugReportSync.Json.employeeDataEpoch) -Actual ([string]$afterBugReportSync.Json.employeeDataEpoch) -Message "Bug-report changes must not invalidate every employee entry cache."
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $dataRoot -ChildPath "bug-reports.json") -PathType Leaf) -Message "Shared bug-report sidecar was not created."
+
+    $imageReport = Invoke-TestRequest -Method "POST" -Uri "$baseUri/bug-reports" -Token $employeeToken -Body @{ title = "Image upload"; description = "A visual issue with a screenshot."; category = "visual" }
+    Assert-Equal -Expected 200 -Actual $imageReport.StatusCode -Message "Image test report could not be created."
+    $imageReportId = [string]$imageReport.Json.report.reportId
+    $pngBytes = [byte[]]@(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01, 0x02, 0x03)
+    $fakeImage = Invoke-TestRequest -Method "POST" -Uri "$baseUri/bug-reports/$imageReportId/attachments" -Token $employeeToken -Headers @{ "X-SAPHIR-Expected-Revision" = "1"; "X-SAPHIR-File-Name" = "fake.png" } -RawBody ([byte[]]@(1, 2, 3)) -RawContentType "image/png"
+    Assert-Equal -Expected 400 -Actual $fakeImage.StatusCode -Message "Attachment endpoint trusted a fake image MIME type."
+    $imageUpload = Invoke-TestRequest -Method "POST" -Uri "$baseUri/bug-reports/$imageReportId/attachments" -Token $employeeToken -Headers @{ "X-SAPHIR-Expected-Revision" = "1"; "X-SAPHIR-File-Name" = [System.Uri]::EscapeDataString("capture écran.png") } -RawBody $pngBytes -RawContentType "image/png"
+    Assert-Equal -Expected 200 -Actual $imageUpload.StatusCode -Message "Employee could not upload a valid screenshot."
+    Assert-Equal -Expected 2 -Actual ([int]$imageUpload.Json.report.revision) -Message "Screenshot upload did not advance the report revision."
+    $attachmentId = [string]$imageUpload.Json.attachment.attachmentId
+    $imageDownload = Invoke-TestRequest -Method "GET" -Uri "$baseUri/bug-reports/$imageReportId/attachments/$attachmentId" -Token $employeeToken
+    Assert-Equal -Expected 200 -Actual $imageDownload.StatusCode -Message "Reporter could not download their screenshot."
+    Assert-Equal -Expected "image/png" -Actual ([string]$imageDownload.Headers["Content-Type"]) -Message "Screenshot response has the wrong content type."
+    Assert-Equal -Expected ([Convert]::ToBase64String($pngBytes)) -Actual ([Convert]::ToBase64String([byte[]]$imageDownload.Bytes)) -Message "Screenshot bytes changed over HTTP."
+    $adminImageUpload = Invoke-TestRequest -Method "POST" -Uri "$baseUri/bug-reports/$imageReportId/attachments" -Token $adminToken -Headers @{ "X-SAPHIR-Expected-Revision" = "2"; "X-SAPHIR-File-Name" = "admin.png" } -RawBody $pngBytes -RawContentType "image/png"
+    Assert-Equal -Expected 403 -Actual $adminImageUpload.StatusCode -Message "Regular admin uploaded a screenshot."
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $dataRoot -ChildPath "bug-report-attachments/$imageReportId") -PathType Container) -Message "Screenshot folder was not created separately from bug-reports.json."
+    $employeeComment = Invoke-TestRequest -Method "POST" -Uri "$baseUri/bug-reports/$imageReportId/comments" -Token $employeeToken -Body @{ expectedRevision = 2; body = "The overflow happens every time." }
+    Assert-Equal -Expected 200 -Actual $employeeComment.StatusCode -Message "Reporter could not comment on their inquiry."
+    Assert-Equal -Expected 3 -Actual ([int]$employeeComment.Json.report.revision) -Message "Comment did not advance the report revision."
+    Assert-Equal -Expected "Worker User" -Actual ([string]$employeeComment.Json.comment.createdBy.displayName) -Message "HTTP comment author was not attributed."
+    $adminComment = Invoke-TestRequest -Method "POST" -Uri "$baseUri/bug-reports/$imageReportId/comments" -Token $adminToken -Body @{ expectedRevision = 3; body = "Thanks, we can reproduce it." }
+    Assert-Equal -Expected 200 -Actual $adminComment.StatusCode -Message "Manager could not answer an inquiry."
+    Assert-Equal -Expected 2 -Actual @($adminComment.Json.report.comments).Count -Message "Comment thread did not preserve both messages."
+    $staleComment = Invoke-TestRequest -Method "POST" -Uri "$baseUri/bug-reports/$imageReportId/comments" -Token $employeeToken -Body @{ expectedRevision = 2; body = "This reply is stale." }
+    Assert-Equal -Expected 409 -Actual $staleComment.StatusCode -Message "Stale comment did not return a conflict."
+    $closedImageReport = Invoke-TestRequest -Method "PATCH" -Uri "$baseUri/bug-reports/$imageReportId" -Token $superToken -Body @{ expectedRevision = 4; status = "closed" }
+    Assert-Equal -Expected 200 -Actual $closedImageReport.StatusCode -Message "Super admin could not close the discussion."
+    $closedComment = Invoke-TestRequest -Method "POST" -Uri "$baseUri/bug-reports/$imageReportId/comments" -Token $employeeToken -Body @{ expectedRevision = 5; body = "Comment after close." }
+    Assert-Equal -Expected 409 -Actual $closedComment.StatusCode -Message "Closed inquiry accepted a comment."
+
     $initialRead = Invoke-TestRequest -Method "GET" -Uri "$baseUri/compensation-grid" -Token $superToken
     Assert-Equal -Expected 200 -Actual $initialRead.StatusCode -Message "Super admin could not read the seeded compensation grid."
     Assert-Equal -Expected 1 -Actual ([int]$initialRead.Json.schemaVersion) -Message "Compensation grid schema changed."
@@ -280,7 +361,7 @@ try {
     $unsupportedMethod = Invoke-TestRequest -Method "POST" -Uri "$baseUri/compensation-grid" -Token $superToken -Body @{}
     Assert-Equal -Expected 405 -Actual $unsupportedMethod.StatusCode -Message "Compensation grid must accept only GET and PUT."
 
-    Write-Host "Business settings HTTP integration passed: compensation and budget-period access, validation, statistics, and targeted sync are correct."
+    Write-Host "Business settings and bug-report HTTP integration passed: access, validation, revisions, statistics, and targeted sync are correct."
 }
 finally {
     $env:SAPHIR_INSTANCE_TOKEN = $previousInstanceToken

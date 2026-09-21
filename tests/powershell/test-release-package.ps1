@@ -173,6 +173,7 @@ try {
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/lib/ControlService.ps1") -PathType Leaf) -Message "runtime must include guarded backend service control"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/services/CompensationGridService.ps1") -PathType Leaf) -Message "runtime must include the compensation-grid storage service"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/services/BudgetPeriodService.ps1") -PathType Leaf) -Message "runtime must include the budget-period storage service"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/services/BugReportService.ps1") -PathType Leaf) -Message "runtime must include the bug-report storage service"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/services/RouteDispatchService.ps1") -PathType Leaf) -Message "runtime must include required untracked application files"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.Routing.psd1") -PathType Leaf) -Message "runtime must include the routing module manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.Routing.psm1") -PathType Leaf) -Message "runtime must include the pure routing module"
@@ -192,6 +193,10 @@ try {
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.BudgetPeriods.psd1") -PathType Leaf) -Message "runtime must include the budget-period module manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.BudgetPeriods.psm1") -PathType Leaf) -Message "runtime must include the pure budget-period module"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/defaults/budget-periods.v1.json") -PathType Leaf) -Message "runtime must include the budget-period seed template"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.BugReports.psd1") -PathType Leaf) -Message "runtime must include the bug-report module manifest"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.BugReports.psm1") -PathType Leaf) -Message "runtime must include the pure bug-report module"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/routes/bug-reports.routes.ps1") -PathType Leaf) -Message "runtime must include the bug-report HTTP route"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/frontend/scripts/Views/BugReportsView.js") -PathType Leaf) -Message "runtime must include the bug-report workspace"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.ProjectCatalog.psd1") -PathType Leaf) -Message "runtime must include the project catalog module manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.ProjectCatalog.psm1") -PathType Leaf) -Message "runtime must include the pure project catalog module"
     $packagedProjectCatalogManifest = Import-PowerShellDataFile -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.ProjectCatalog.psd1")

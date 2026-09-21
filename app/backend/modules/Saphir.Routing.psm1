@@ -6,6 +6,7 @@ $script:AdminRouteScriptPaths = @(
     "routes/self.routes.ps1",
     "routes/compensation-grid.routes.ps1",
     "routes/budget-periods.routes.ps1",
+    "routes/bug-reports.routes.ps1",
     "routes/history.routes.ps1",
     "routes/dashboard.routes.ps1",
     "routes/employee.routes.ps1",
@@ -59,6 +60,7 @@ function Resolve-AdminTopLevelRouteScript {
     if ($Path -match "^/self(/|$)") { return "routes/self.routes.ps1" }
     if ($Path -match "^/compensation-grid(/|$)") { return "routes/compensation-grid.routes.ps1" }
     if ($Path -match "^/budget-periods(/|$)") { return "routes/budget-periods.routes.ps1" }
+    if ($Path -match "^/bug-reports(/|$)") { return "routes/bug-reports.routes.ps1" }
     if ($Path -match "^/history(/|$)") { return "routes/history.routes.ps1" }
     if ($Path -match "^/(dashboard|approvals|review)(/|$)") { return "routes/dashboard.routes.ps1" }
     if ($Path -match "^/employees?(/|$)") { return "routes/employee.routes.ps1" }

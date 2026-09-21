@@ -357,6 +357,13 @@ catch {
 }
 Initialize-JsonFileIfEmpty -Path $budgetPeriodsFile -Value $defaultBudgetPeriods -Depth 8
 
+# Bug reports are an additive sidecar contract. Older releases safely ignore
+# this file, while current releases initialize it without touching operational
+# overtime records.
+$bugReportsFile = Join-Path -Path $sharedFolder -ChildPath "bug-reports.json"
+Initialize-JsonFileIfEmpty -Path $bugReportsFile -Value ([object[]]@()) -Depth 2
+$bugReportAttachmentsFolder = Join-Path -Path $sharedFolder -ChildPath "bug-report-attachments"
+
 # Ensure employeeNames mapping exists.
 $mappingFile = Join-Path -Path $sharedFolder -ChildPath "employeeNames.json"
 $demoMapping = @{

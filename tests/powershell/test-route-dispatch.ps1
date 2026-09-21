@@ -75,6 +75,7 @@ $expectedRouteScripts = @(
     "routes/self.routes.ps1",
     "routes/compensation-grid.routes.ps1",
     "routes/budget-periods.routes.ps1",
+    "routes/bug-reports.routes.ps1",
     "routes/history.routes.ps1",
     "routes/dashboard.routes.ps1",
     "routes/employee.routes.ps1",
@@ -155,6 +156,13 @@ $topLevelCases = @(
     @("GET", "/self/bootstrap", "routes/self.routes.ps1"),
     @("GET", "/compensation-grid", "routes/compensation-grid.routes.ps1"),
     @("GET", "/budget-periods", "routes/budget-periods.routes.ps1"),
+    @("GET", "/bug-reports", "routes/bug-reports.routes.ps1"),
+    @("POST", "/bug-reports", "routes/bug-reports.routes.ps1"),
+    @("GET", "/bug-reports/bug-0123456789abcdef0123456789abcdef", "routes/bug-reports.routes.ps1"),
+    @("PATCH", "/bug-reports/bug-0123456789abcdef0123456789abcdef", "routes/bug-reports.routes.ps1"),
+    @("POST", "/bug-reports/bug-0123456789abcdef0123456789abcdef/comments", "routes/bug-reports.routes.ps1"),
+    @("POST", "/bug-reports/bug-0123456789abcdef0123456789abcdef/attachments", "routes/bug-reports.routes.ps1"),
+    @("GET", "/bug-reports/bug-0123456789abcdef0123456789abcdef/attachments/attachment-0123456789abcdef0123456789abcdef", "routes/bug-reports.routes.ps1"),
     @("GET", "/history/recent", "routes/history.routes.ps1"),
     @("GET", "/dashboard/bootstrap", "routes/dashboard.routes.ps1"),
     @("GET", "/approvals/entries", "routes/dashboard.routes.ps1"),
@@ -248,4 +256,4 @@ Assert-Equal -Expected 1 -Actual ([regex]::Matches($adminServerSource, 'Resolve-
 $employeeAggregatorSource = [System.IO.File]::ReadAllText((Join-Path -Path $backendRoot -ChildPath "routes/employee.routes.ps1"))
 Assert-Equal -Expected 1 -Actual ([regex]::Matches($employeeAggregatorSource, 'Invoke-CachedRouteScript').Count) -Message "The employee aggregator should invoke only its resolved leaf route."
 
-Write-Host "Route dispatch test passed: the PS5.1 module, compatibility facade, ordered 37-route catalog, and all known/unknown dispatch cases agree."
+Write-Host "Route dispatch test passed: the PS5.1 module, compatibility facade, ordered 38-route catalog, and all known/unknown dispatch cases agree."

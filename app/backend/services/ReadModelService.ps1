@@ -122,7 +122,7 @@ function Test-ReadModelCurrentStateSupportsTargeting {
     }
 
     $category = ([string]$State.category).Trim().ToLowerInvariant()
-    if (@("history", "project", "auth", "compensation", "budget-periods") -contains $category) {
+    if (@("history", "project", "auth", "compensation", "budget-periods", "bug-reports") -contains $category) {
         return $true
     }
 
@@ -210,7 +210,8 @@ function Clear-AllReadModelCoreFileCaches {
         $paymentOptionsFile,
         $reasonCodesFile,
         $compensationGridFile,
-        $budgetPeriodsFile
+        $budgetPeriodsFile,
+        $bugReportsFile
     )) {
         Clear-ReadModelFileCache -Path ([string]$corePath)
     }
@@ -292,6 +293,15 @@ function Clear-ReadModelCoreCachesForChange {
             Clear-ReadModelFileCache -Path $historyFile
             if (Get-Command -Name Clear-BudgetPeriodRuntimeCache -ErrorAction SilentlyContinue) {
                 Clear-BudgetPeriodRuntimeCache
+            }
+        }
+        "bug-reports" {
+            # Bug reports are independent from overtime entries. Refresh only
+            # their sidecar and the audit history produced by the same action.
+            Clear-ReadModelFileCache -Path $bugReportsFile
+            Clear-ReadModelFileCache -Path $historyFile
+            if (Get-Command -Name Clear-BugReportRuntimeCache -ErrorAction SilentlyContinue) {
+                Clear-BugReportRuntimeCache
             }
         }
         default {

@@ -157,6 +157,9 @@ try {
     Assert-True -Condition (Test-Path -LiteralPath $budgetPeriodsPath -PathType Leaf) -Message "legacy startup did not seed the shared budget periods"
     $budgetPeriods = [System.IO.File]::ReadAllText($budgetPeriodsPath) | ConvertFrom-Json -ErrorAction Stop
     Assert-Equal -Expected 4 -Actual @($budgetPeriods.periods).Count -Message "legacy startup did not seed P1 through P4"
+    $bugReportsPath = Join-Path -Path $legacyFolder -ChildPath "bug-reports.json"
+    Assert-True -Condition (Test-Path -LiteralPath $bugReportsPath -PathType Leaf) -Message "legacy startup did not create the optional bug-report sidecar"
+    Assert-Equal -Expected 0 -Actual @([System.IO.File]::ReadAllText($bugReportsPath) | ConvertFrom-Json).Count -Message "legacy startup did not create an empty bug-report collection"
     Assert-Equal `
         -Expected $legacyBusinessBefore["projects.json"] `
         -Actual ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($legacyProjectsPath))) `

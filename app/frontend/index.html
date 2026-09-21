@@ -30,8 +30,8 @@
   <link rel="icon" type="image/png" sizes="128x128" href="assets/saphir-logo.png?v=20260715-saphir" />
   <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260603-empty-timeline" />
   <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260603-empty-timeline" />
-  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260917-phase7-validation-v1">
-  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20260917-phase7-validation-v1">
+  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260921-bug-reports-phase5-v1">
+  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20260921-bug-reports-phase5-v1">
 </head>
 <body>
   <div class="app-root">
@@ -64,6 +64,10 @@
         <a class="app-nav-link d-none" href="#" id="navProjects" data-role-scope="admin">
           <i class="fa-solid fa-chart-line"></i>
           <span data-i18n="nav.projects">Projects</span>
+        </a>
+        <a class="app-nav-link d-none" href="#" id="navBugReports" data-role-scope="authenticated">
+          <i class="fa-solid fa-bug"></i>
+          <span data-i18n="nav.bugReports">Issues</span>
         </a>
       </nav>
 
@@ -98,6 +102,10 @@
             <i class="fa-solid fa-gear"></i>
             <span data-i18n="settings.title">Settings</span>
           </button>
+          <button type="button" class="btn btn-outline-danger btn-sm d-none" id="appReportBugButton" data-role-scope="authenticated">
+            <i class="fa-solid fa-bug" aria-hidden="true"></i>
+            <span data-i18n="bugReports.reportProblem">Report a problem</span>
+          </button>
           <button type="button" class="btn btn-primary btn-sm d-none" id="appLogoutButton" data-i18n="action.logOut">Log Out</button>
         </div>
       </header>
@@ -105,6 +113,155 @@
       <div class="toast-container" id="toastContainer"></div>
 
       <main class="workspace-content">
+        <div id="bugReportsView" class="view workspace-view">
+          <section class="bug-report-create-panel panel-shell d-none" id="bugReportCreatePanel" aria-labelledby="bugReportCreateTitle">
+            <div class="panel-heading-row">
+              <div>
+                <div class="panel-kicker" data-i18n="bugReports.newKicker">New inquiry</div>
+                <h2 id="bugReportCreateTitle" data-i18n="bugReports.newTitle">Tell us what happened</h2>
+                <p class="panel-note" data-i18n="bugReports.newHint">Give enough detail to help reproduce and understand the problem.</p>
+              </div>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="bugReportCreateCloseButton">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                <span data-i18n="action.cancel">Cancel</span>
+              </button>
+            </div>
+            <div id="bugReportCreateMessage" class="alert d-none" role="alert"></div>
+            <form id="bugReportCreateForm" class="bug-report-form">
+              <div class="bug-report-form-primary">
+                <div class="field-block">
+                  <label for="bugReportTitleInput" class="form-label" data-i18n="bugReports.title">Title</label>
+                  <input type="text" class="form-control" id="bugReportTitleInput" maxlength="160" required autocomplete="off" data-i18n-placeholder="bugReports.titlePlaceholder" placeholder="Briefly summarize the problem">
+                </div>
+                <div class="field-block">
+                  <label for="bugReportCategoryInput" class="form-label" data-i18n="bugReports.category">Category</label>
+                  <select class="form-select" id="bugReportCategoryInput" required>
+                    <option value="bug" data-i18n="bugReports.categoryBug">Bug</option>
+                    <option value="performance" data-i18n="bugReports.categoryPerformance">Performance</option>
+                    <option value="visual" data-i18n="bugReports.categoryVisual">Visual</option>
+                    <option value="data" data-i18n="bugReports.categoryData">Data</option>
+                    <option value="suggestion" data-i18n="bugReports.categorySuggestion">Suggestion</option>
+                    <option value="other" data-i18n="bugReports.categoryOther">Other</option>
+                  </select>
+                </div>
+                <div class="field-block bug-report-description-field">
+                  <label for="bugReportDescriptionInput" class="form-label" data-i18n="bugReports.description">Description</label>
+                  <textarea class="form-control" id="bugReportDescriptionInput" maxlength="5000" rows="5" required data-i18n-placeholder="bugReports.descriptionPlaceholder" placeholder="What happened, and what were you trying to do?"></textarea>
+                </div>
+              </div>
+              <details class="bug-report-extra-fields">
+                <summary data-i18n="bugReports.moreDetails">Add reproduction details</summary>
+                <div class="bug-report-extra-grid">
+                  <div class="field-block">
+                    <label for="bugReportStepsInput" class="form-label" data-i18n="bugReports.steps">Steps to reproduce</label>
+                    <textarea class="form-control" id="bugReportStepsInput" maxlength="5000" rows="3"></textarea>
+                  </div>
+                  <div class="field-block">
+                    <label for="bugReportExpectedInput" class="form-label" data-i18n="bugReports.expected">Expected result</label>
+                    <textarea class="form-control" id="bugReportExpectedInput" maxlength="3000" rows="3"></textarea>
+                  </div>
+                  <div class="field-block">
+                    <label for="bugReportActualInput" class="form-label" data-i18n="bugReports.actual">Observed result</label>
+                    <textarea class="form-control" id="bugReportActualInput" maxlength="3000" rows="3"></textarea>
+                  </div>
+                </div>
+              </details>
+              <div class="bug-report-attachments-field">
+                <div class="bug-report-attachments-heading">
+                  <div>
+                    <label class="form-label" data-i18n="bugReports.images">Screenshots</label>
+                    <p class="panel-note" data-i18n="bugReports.imagesHint">Drop up to 5 PNG, JPEG, GIF, or WebP images here (8 MB maximum each).</p>
+                  </div>
+                  <span class="bug-report-attachment-counter" id="bugReportAttachmentCounter">0 / 5</span>
+                </div>
+                <input class="visually-hidden" type="file" id="bugReportAttachmentInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
+                <button type="button" class="bug-report-drop-zone" id="bugReportDropZone" aria-describedby="bugReportAttachmentCounter">
+                  <i class="fa-regular fa-images" aria-hidden="true"></i>
+                  <span><strong data-i18n="bugReports.dropImages">Drop screenshots here</strong><small data-i18n="bugReports.browseImages">or click to choose images</small></span>
+                </button>
+                <div class="bug-report-pending-attachments" id="bugReportPendingAttachments" aria-live="polite"></div>
+              </div>
+              <div class="bug-report-form-actions">
+                <span class="panel-note" data-i18n="bugReports.contextCaptured">The page and application version are added automatically.</span>
+                <button type="submit" class="btn btn-primary" id="bugReportCreateSubmitButton">
+                  <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+                  <span data-i18n="bugReports.submit">Send inquiry</span>
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section class="bug-report-overview">
+            <div class="bug-report-toolbar panel-shell">
+              <div class="panel-heading-row">
+                <div>
+                  <div class="panel-kicker" data-i18n="bugReports.queueKicker">Inquiry tracking</div>
+                  <h2 data-i18n="bugReports.queueTitle">Current inquiries</h2>
+                  <p class="panel-note" id="bugReportQueueSummary" data-i18n="bugReports.queueHint">Follow progress without contacting the administrator separately.</p>
+                </div>
+                <div class="bug-report-toolbar-actions">
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="bugReportRefreshButton" data-i18n-title="action.refresh" title="Refresh">
+                    <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                    <span data-i18n="action.refresh">Refresh</span>
+                  </button>
+                  <button type="button" class="btn btn-primary btn-sm" id="bugReportOpenCreateButton">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    <span data-i18n="bugReports.newButton">New inquiry</span>
+                  </button>
+                </div>
+              </div>
+              <div class="bug-report-filters" aria-label="Inquiry filters" data-i18n-aria-label="bugReports.filters">
+                <label>
+                  <span data-i18n="bugReports.status">Status</span>
+                  <select class="form-select form-select-sm" id="bugReportStatusFilter">
+                    <option value="" data-i18n="bugReports.allStatuses">All statuses</option>
+                    <option value="new" data-i18n="bugReports.statusNew">New</option>
+                    <option value="acknowledged" data-i18n="bugReports.statusAcknowledged">Acknowledged</option>
+                    <option value="inProgress" data-i18n="bugReports.statusInProgress">In progress</option>
+                    <option value="waitingForUser" data-i18n="bugReports.statusWaitingForUser">Waiting for user</option>
+                    <option value="resolved" data-i18n="bugReports.statusResolved">Resolved</option>
+                    <option value="closed" data-i18n="bugReports.statusClosed">Closed</option>
+                  </select>
+                </label>
+                <label>
+                  <span data-i18n="bugReports.priority">Priority</span>
+                  <select class="form-select form-select-sm" id="bugReportPriorityFilter">
+                    <option value="" data-i18n="bugReports.allPriorities">All priorities</option>
+                    <option value="unranked" data-i18n="bugReports.priorityUnranked">Not ranked</option>
+                    <option value="p1">P1</option>
+                    <option value="p2">P2</option>
+                    <option value="p3">P3</option>
+                    <option value="p4">P4</option>
+                  </select>
+                </label>
+                <label>
+                  <span data-i18n="bugReports.category">Category</span>
+                  <select class="form-select form-select-sm" id="bugReportCategoryFilter">
+                    <option value="" data-i18n="bugReports.allCategories">All categories</option>
+                    <option value="bug" data-i18n="bugReports.categoryBug">Bug</option>
+                    <option value="performance" data-i18n="bugReports.categoryPerformance">Performance</option>
+                    <option value="visual" data-i18n="bugReports.categoryVisual">Visual</option>
+                    <option value="data" data-i18n="bugReports.categoryData">Data</option>
+                    <option value="suggestion" data-i18n="bugReports.categorySuggestion">Suggestion</option>
+                    <option value="other" data-i18n="bugReports.categoryOther">Other</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div class="bug-report-workspace-grid">
+              <div class="bug-report-list panel-shell" id="bugReportList" aria-live="polite" aria-busy="false"></div>
+              <aside class="bug-report-detail panel-shell" id="bugReportDetail" aria-live="polite" aria-busy="false">
+                <div class="bug-report-detail-empty">
+                  <i class="fa-regular fa-message" aria-hidden="true"></i>
+                  <strong data-i18n="bugReports.selectTitle">Select an inquiry</strong>
+                  <span data-i18n="bugReports.selectHint">Its full description and latest status will appear here.</span>
+                </div>
+              </aside>
+            </div>
+          </section>
+        </div>
+
         <div id="selfView" class="view workspace-view">
           <section class="panel-shell action-strip" id="selfTrackingCard">
             <div class="self-action-intro">
@@ -1512,10 +1669,10 @@
       ? window.location.origin + "/"
       : "http://localhost:8081/";
   </script>
-  <script src="scripts/I18n.js?v=20260917-phase7-validation-v1"></script>
-  <script src="scripts/Utilities.js?v=20260917-phase7-validation-v1"></script>
-  <script src="scripts/AppShell.js?v=20260917-phase7-validation-v1"></script>
-  <script src="scripts/Views/ViewSwitching.js?v=20260917-phase7-validation-v1"></script>
-  <script src="scripts/Views/SelfView.js?v=20260917-phase7-validation-v1"></script>
+  <script src="scripts/I18n.js?v=20260921-bug-reports-phase5-v1"></script>
+  <script src="scripts/Utilities.js?v=20260921-bug-reports-phase5-v1"></script>
+  <script src="scripts/AppShell.js?v=20260921-bug-reports-phase5-v1"></script>
+  <script src="scripts/Views/ViewSwitching.js?v=20260921-bug-reports-phase5-v1"></script>
+  <script src="scripts/Views/SelfView.js?v=20260921-bug-reports-phase5-v1"></script>
 </body>
 </html>

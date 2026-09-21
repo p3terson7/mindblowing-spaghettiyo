@@ -206,10 +206,10 @@ for (const text of [
 }
 
 const workCommentViewCacheVersions = {
-  EmployeesView: "20260917-phase7-validation-v1",
-  DashboardView: "20260917-phase7-validation-v1",
-  ApprovalsView: "20260917-phase7-validation-v1",
-  ProjectsView: "20260917-phase7-validation-v1",
+  EmployeesView: "20260921-bug-reports-phase5-v1",
+  DashboardView: "20260921-bug-reports-phase5-v1",
+  ApprovalsView: "20260921-bug-reports-phase5-v1",
+  ProjectsView: "20260921-bug-reports-phase5-v1",
 };
 for (const [view, version] of Object.entries(workCommentViewCacheVersions)) {
   assert(
@@ -218,11 +218,11 @@ for (const [view, version] of Object.entries(workCommentViewCacheVersions)) {
   );
 }
 const workCommentAssetCacheVersions = {
-  "apple-ui.css": "20260917-phase7-validation-v1",
-  "I18n.js": "20260917-phase7-validation-v1",
-  "Utilities.js": "20260917-phase7-validation-v1",
-  "AppShell.js": "20260917-phase7-validation-v1",
-  "SelfView.js": "20260917-phase7-validation-v1",
+  "apple-ui.css": "20260921-bug-reports-phase5-v1",
+  "I18n.js": "20260921-bug-reports-phase5-v1",
+  "Utilities.js": "20260921-bug-reports-phase5-v1",
+  "AppShell.js": "20260921-bug-reports-phase5-v1",
+  "SelfView.js": "20260921-bug-reports-phase5-v1",
 };
 for (const [asset, version] of Object.entries(workCommentAssetCacheVersions)) {
   assert(indexSource.includes(`${asset}?v=${version}`), `${asset} is missing its work-comment cache buster.`);

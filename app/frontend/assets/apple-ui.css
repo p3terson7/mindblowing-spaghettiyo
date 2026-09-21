@@ -234,6 +234,907 @@ code {
   font-family: inherit;
 }
 
+/* Bug-report workspace */
+
+#bugReportsView.view.active {
+  display: grid;
+  gap: 18px;
+}
+
+.bug-report-create-panel,
+.bug-report-toolbar,
+.bug-report-list,
+.bug-report-detail {
+  border-color: color-mix(in srgb, var(--separator-strong) 72%, transparent);
+}
+
+.bug-report-create-panel,
+.bug-report-toolbar {
+  padding: 22px;
+}
+
+.bug-report-create-panel {
+  scroll-margin-top: 78px;
+  box-shadow: 0 18px 45px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.bug-report-create-panel > .panel-heading-row,
+.bug-report-toolbar > .panel-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.bug-report-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.bug-report-form-primary {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(180px, 0.8fr);
+  gap: 14px;
+}
+
+.bug-report-description-field {
+  grid-column: 1 / -1;
+}
+
+.bug-report-form textarea {
+  resize: vertical;
+}
+
+.bug-report-extra-fields {
+  padding: 13px 15px;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-secondary) 72%, transparent);
+}
+
+.bug-report-extra-fields summary {
+  color: var(--label-primary);
+  cursor: pointer;
+  font-weight: 680;
+}
+
+.bug-report-extra-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.bug-report-attachments-field {
+  display: grid;
+  gap: 10px;
+  padding: 15px;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-secondary) 58%, transparent);
+}
+
+.bug-report-attachments-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.bug-report-attachments-heading .form-label,
+.bug-report-attachments-heading .panel-note {
+  margin: 0;
+}
+
+.bug-report-attachment-counter {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  color: var(--label-secondary);
+  font-size: 0.72rem;
+  font-weight: 720;
+  border: 1px solid var(--separator);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.bug-report-drop-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 104px;
+  padding: 18px;
+  color: var(--label-secondary);
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 44%, var(--separator));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.bug-report-drop-zone:hover,
+.bug-report-drop-zone.is-dragging {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.bug-report-drop-zone.is-dragging {
+  transform: scale(1.005);
+}
+
+.bug-report-drop-zone > i {
+  font-size: 1.45rem;
+}
+
+.bug-report-drop-zone > span {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.bug-report-drop-zone strong {
+  color: var(--label-primary);
+}
+
+.bug-report-drop-zone small {
+  color: var(--label-tertiary);
+}
+
+.bug-report-pending-attachments {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.bug-report-pending-attachment {
+  position: relative;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--separator);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.bug-report-pending-attachment.is-uploading {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--separator));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.bug-report-pending-attachment > img {
+  width: 46px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: 7px;
+  background: var(--surface-tertiary);
+}
+
+.bug-report-pending-attachment-info {
+  display: grid;
+  min-width: 0;
+}
+
+.bug-report-pending-attachment-info strong {
+  overflow: hidden;
+  color: var(--label-primary);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bug-report-pending-attachment-info small {
+  color: var(--label-tertiary);
+  font-size: 0.67rem;
+}
+
+.bug-report-remove-attachment {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  color: var(--label-secondary);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.bug-report-remove-attachment:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.bug-report-upload-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: bug-report-spin 0.75s linear infinite;
+}
+
+@keyframes bug-report-spin {
+  to { transform: rotate(360deg); }
+}
+
+.bug-report-form-actions,
+.bug-report-toolbar-actions,
+.bug-report-card-topline,
+.bug-report-card-meta,
+.bug-report-detail-badges,
+.bug-report-detail-footer {
+  display: flex;
+  align-items: center;
+}
+
+.bug-report-form-actions {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bug-report-toolbar-actions {
+  gap: 8px;
+}
+
+.bug-report-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 220px));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.bug-report-filters label {
+  display: grid;
+  gap: 6px;
+  color: var(--label-secondary);
+  font-size: 0.76rem;
+  font-weight: 680;
+}
+
+.bug-report-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.35fr);
+  gap: 16px;
+  margin-top: 16px;
+  align-items: start;
+}
+
+.bug-report-list {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.bug-report-card {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 15px;
+  color: var(--label-primary);
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+}
+
+.bug-report-card:hover {
+  background: var(--surface-secondary);
+  border-color: var(--separator);
+}
+
+.bug-report-card.is-selected {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--separator));
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.bug-report-card-topline {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bug-report-status,
+.bug-report-priority,
+.bug-report-revision {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 720;
+  line-height: 1;
+}
+
+.bug-report-status {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.bug-report-status-inprogress,
+.bug-report-status-acknowledged {
+  color: var(--pending);
+  background: var(--warning-soft);
+}
+
+.bug-report-status-waitingforuser {
+  color: var(--violet);
+  background: color-mix(in srgb, var(--violet) 13%, transparent);
+}
+
+.bug-report-status-resolved,
+.bug-report-status-closed {
+  color: var(--live);
+  background: var(--success-soft);
+}
+
+.bug-report-priority,
+.bug-report-revision {
+  color: var(--label-secondary);
+  background: var(--surface-tertiary);
+  border: 1px solid var(--separator);
+}
+
+.bug-report-priority-p1 {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--separator));
+}
+
+.bug-report-priority-p2 {
+  color: var(--pending);
+  background: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--pending) 30%, var(--separator));
+}
+
+.bug-report-priority-p3 {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--separator));
+}
+
+.bug-report-priority-p4 {
+  color: var(--label-secondary);
+  background: var(--surface-secondary);
+}
+
+.bug-report-card-title {
+  font-size: 0.98rem;
+  line-height: 1.25;
+}
+
+.bug-report-card-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--label-secondary);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.bug-report-card-meta {
+  flex-wrap: wrap;
+  gap: 7px 13px;
+  color: var(--label-tertiary);
+  font-size: 0.72rem;
+}
+
+.bug-report-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.bug-report-detail {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  min-height: 330px;
+  padding: 22px;
+  scrollbar-gutter: stable;
+}
+
+.bug-report-detail-empty,
+.bug-report-empty-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 280px;
+  padding: 28px;
+  color: var(--label-secondary);
+  text-align: center;
+}
+
+.bug-report-detail-empty i,
+.bug-report-empty-state i {
+  color: var(--accent);
+  font-size: 1.6rem;
+}
+
+.bug-report-empty-state.is-error i {
+  color: var(--danger);
+}
+
+.bug-report-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bug-report-detail-header h3 {
+  margin: 10px 0 0;
+  color: var(--label-primary);
+  font-size: 1.25rem;
+}
+
+.bug-report-detail-badges,
+.bug-report-detail-footer {
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.bug-report-detail-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.bug-report-detail-meta div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-secondary);
+}
+
+.bug-report-detail-meta dt {
+  color: var(--label-tertiary);
+  font-size: 0.68rem;
+  font-weight: 720;
+  text-transform: uppercase;
+  letter-spacing: 0.055em;
+}
+
+.bug-report-detail-meta dd {
+  margin: 3px 0 0;
+  color: var(--label-primary);
+  overflow-wrap: anywhere;
+}
+
+.bug-report-detail-section {
+  padding: 15px 0;
+  border-top: 1px solid var(--separator);
+}
+
+.bug-report-triage-panel {
+  display: grid;
+  gap: 13px;
+  margin: 4px 0 18px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--separator));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-secondary));
+  box-shadow: 0 7px 22px color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.bug-report-triage-heading,
+.bug-report-triage-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.bug-report-triage-heading h4 {
+  margin: 2px 0 3px;
+  color: var(--label-primary);
+  font-size: 1rem;
+}
+
+.bug-report-triage-heading p {
+  margin: 0;
+  color: var(--label-secondary);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.bug-report-triage-revision {
+  flex: 0 0 auto;
+  color: var(--label-tertiary);
+  font-size: 0.68rem;
+}
+
+.bug-report-triage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.bug-report-triage-grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--label-secondary);
+  font-size: 0.72rem;
+  font-weight: 680;
+}
+
+.bug-report-priority-guidance {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 10px;
+  color: var(--label-secondary);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.bug-report-priority-guidance i {
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.bug-report-triage-actions {
+  align-items: center;
+}
+
+.bug-report-triage-message {
+  color: var(--label-tertiary);
+  font-size: 0.72rem;
+}
+
+.bug-report-triage-message.is-error {
+  color: var(--danger);
+}
+
+.bug-report-history-section {
+  padding-bottom: 0;
+}
+
+.bug-report-history-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bug-report-history-event {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  padding: 0 0 16px;
+}
+
+.bug-report-history-event:not(:last-child)::before {
+  position: absolute;
+  top: 10px;
+  bottom: -2px;
+  left: 5px;
+  width: 1px;
+  content: "";
+  background: var(--separator-strong);
+}
+
+.bug-report-history-marker {
+  position: relative;
+  z-index: 1;
+  width: 11px;
+  height: 11px;
+  margin-top: 4px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, var(--separator));
+}
+
+.bug-report-history-event > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bug-report-history-event > div > strong {
+  color: var(--label-primary);
+  font-size: 0.77rem;
+}
+
+.bug-report-history-event > div > span {
+  color: var(--label-tertiary);
+  font-size: 0.68rem;
+}
+
+.bug-report-history-event ul {
+  display: grid;
+  gap: 3px;
+  margin: 5px 0 0;
+  padding: 7px 9px;
+  color: var(--label-secondary);
+  font-size: 0.69rem;
+  list-style: none;
+  border-radius: 8px;
+  background: var(--surface-secondary);
+}
+
+.bug-report-comments-section {
+  display: grid;
+  gap: 12px;
+}
+
+.bug-report-comments-heading,
+.bug-report-comment-actions,
+.bug-report-comment header {
+  display: flex;
+  align-items: center;
+}
+
+.bug-report-comments-heading {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bug-report-comments-heading h4,
+.bug-report-detail-section .bug-report-comments-heading p {
+  margin: 0;
+}
+
+.bug-report-comments-heading p {
+  margin-top: 3px;
+  color: var(--label-tertiary);
+  font-size: 0.71rem;
+  line-height: 1.4;
+}
+
+.bug-report-comments-heading > span {
+  flex: 0 0 auto;
+  color: var(--label-tertiary);
+  font-size: 0.7rem;
+}
+
+.bug-report-comment-thread {
+  display: grid;
+  gap: 9px;
+}
+
+.bug-report-comment {
+  display: grid;
+  gap: 7px;
+  padding: 11px 12px;
+  border: 1px solid var(--separator);
+  border-radius: 11px;
+  background: var(--surface-secondary);
+}
+
+.bug-report-comment.is-manager {
+  border-color: color-mix(in srgb, var(--accent) 27%, var(--separator));
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-secondary));
+}
+
+.bug-report-comment.is-own {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 62%, transparent);
+}
+
+.bug-report-comment header {
+  flex-wrap: wrap;
+  gap: 5px 8px;
+}
+
+.bug-report-comment header strong {
+  color: var(--label-primary);
+  font-size: 0.76rem;
+}
+
+.bug-report-comment header time {
+  margin-left: auto;
+  color: var(--label-tertiary);
+  font-size: 0.66rem;
+}
+
+.bug-report-comment-role {
+  padding: 2px 6px;
+  color: var(--accent-strong);
+  font-size: 0.61rem;
+  font-weight: 720;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.bug-report-detail-section .bug-report-comment p {
+  margin: 0;
+  color: var(--label-primary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bug-report-comments-empty,
+.bug-report-comments-closed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 62px;
+  padding: 12px;
+  color: var(--label-tertiary);
+  font-size: 0.75rem;
+  text-align: center;
+  border: 1px dashed var(--separator-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-secondary) 64%, transparent);
+}
+
+.bug-report-comments-closed {
+  min-height: auto;
+  border-style: solid;
+}
+
+.bug-report-comment-form {
+  display: grid;
+  gap: 7px;
+  padding-top: 3px;
+}
+
+.bug-report-comment-form > label {
+  color: var(--label-secondary);
+  font-size: 0.73rem;
+  font-weight: 680;
+}
+
+.bug-report-comment-form textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.bug-report-comment-actions {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bug-report-comment-actions > span,
+.bug-report-comment-message {
+  color: var(--label-tertiary);
+  font-size: 0.68rem;
+}
+
+.bug-report-comment-message {
+  min-height: 1em;
+}
+
+.bug-report-comment-message.is-error {
+  color: var(--danger);
+}
+
+.bug-report-detail-section h4 {
+  margin: 0 0 7px;
+  color: var(--label-secondary);
+  font-size: 0.78rem;
+  font-weight: 720;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.bug-report-detail-section p {
+  margin: 0;
+  color: var(--label-primary);
+  line-height: 1.55;
+}
+
+.bug-report-attachment-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.bug-report-attachment-preview {
+  position: relative;
+  display: grid;
+  align-content: center;
+  min-height: 112px;
+  overflow: hidden;
+  color: var(--label-secondary);
+  text-decoration: none;
+  border: 1px solid var(--separator);
+  border-radius: 10px;
+  background: var(--surface-secondary);
+}
+
+.bug-report-attachment-preview > img {
+  width: 100%;
+  height: 92px;
+  object-fit: cover;
+}
+
+.bug-report-attachment-preview > span:last-child {
+  overflow: hidden;
+  padding: 7px 9px;
+  font-size: 0.69rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bug-report-attachment-preview.is-loading,
+.bug-report-attachment-preview.is-error {
+  place-items: center;
+  gap: 8px;
+  padding: 14px;
+  text-align: center;
+}
+
+.bug-report-attachment-preview.is-error > i {
+  color: var(--danger);
+}
+
+.bug-report-detail-footer {
+  padding-top: 16px;
+  color: var(--label-tertiary);
+  border-top: 1px solid var(--separator);
+  font-size: 0.76rem;
+}
+
+.bug-report-detail-footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 980px) {
+  .bug-report-workspace-grid,
+  .bug-report-form-primary,
+  .bug-report-extra-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bug-report-description-field {
+    grid-column: auto;
+  }
+
+  .bug-report-detail {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 680px) {
+  .bug-report-filters,
+  .bug-report-detail-meta,
+  .bug-report-triage-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bug-report-form-actions,
+  .bug-report-attachments-heading,
+  .bug-report-detail-header,
+  .bug-report-create-panel > .panel-heading-row,
+  .bug-report-toolbar > .panel-heading-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .bug-report-triage-heading,
+  .bug-report-triage-actions,
+  .bug-report-comments-heading,
+  .bug-report-comment-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 /* Application chrome */
 
 .app-sidebar {

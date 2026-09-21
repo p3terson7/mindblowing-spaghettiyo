@@ -4,6 +4,7 @@ const NAV_VIEW_MAP = {
   navEmployees: "employeesView",
   navAdmin: "adminView",
   navProjects: "projectsView",
+  navBugReports: "bugReportsView",
 };
 
 const VIEW_METADATA = {
@@ -30,6 +31,11 @@ const VIEW_METADATA = {
   projectsView: {
     kickerKey: "workspace.admin",
     titleKey: "workspace.projects",
+    subtitle: "",
+  },
+  bugReportsView: {
+    kickerKey: "workspace.support",
+    titleKey: "workspace.bugReports",
     subtitle: "",
   },
 };
@@ -136,6 +142,23 @@ function bindNavigation(navId) {
 }
 
 Object.keys(NAV_VIEW_MAP).forEach(bindNavigation);
+
+const reportBugButton = document.getElementById("appReportBugButton");
+if (reportBugButton) {
+  reportBugButton.addEventListener("click", () => {
+    runButtonAction(reportBugButton, async () => {
+      showView("bugReportsView");
+      if (typeof window.refreshAppViewById === "function") {
+        await window.refreshAppViewById("bugReportsView");
+      }
+      if (typeof window.openBugReportCreatePanel === "function") {
+        window.openBugReportCreatePanel();
+      }
+    }, { key: "open-bug-report" }).catch(error => {
+      console.error("Unable to open bug-report form:", error);
+    });
+  });
+}
 window.updateWorkspaceHeading = updateWorkspaceHeading;
 
 window.addEventListener("load", () => {
