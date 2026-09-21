@@ -2736,6 +2736,22 @@ function renderEmployeeDetail(employee) {
   employeesViewState.currentMonthByEmployee[employee.code] = activeMonthKey;
 
   const monthEntries = entries.filter(entry => toCalendarMonthKey(entry.date) === activeMonthKey);
+  const unconfirmedMonthEntries = monthEntries.filter(entry => getEntryWorkSchedule(entry) === "unconfirmed" && canModifyEntry(entry));
+  const monthlyScheduleControl = unconfirmedMonthEntries.length > 0
+    ? `
+      <div class="employee-month-schedule-control">
+        <label class="visually-hidden" for="employeeMonthScheduleSelect">${escapeHtml(t("employees.monthScheduleLabel"))}</label>
+        <select id="employeeMonthScheduleSelect" class="form-select form-select-sm people-month-schedule-select" data-employee-code="${escapeHtml(employee.code)}" data-month-key="${escapeHtml(activeMonthKey)}">
+          <option value="">${escapeHtml(t("employees.monthScheduleChoose"))}</option>
+          <option value="regular">${escapeHtml(t("shared.workScheduleRegular"))}</option>
+          <option value="compressed">${escapeHtml(t("shared.workScheduleCompressed"))}</option>
+        </select>
+        <button type="button" class="btn btn-warning btn-sm people-month-schedule-apply" data-employee-code="${escapeHtml(employee.code)}" data-month-key="${escapeHtml(activeMonthKey)}" data-entry-count="${unconfirmedMonthEntries.length}" disabled>
+          ${escapeHtml(t("employees.monthScheduleApply", { count: unconfirmedMonthEntries.length }))}
+        </button>
+      </div>
+    `
+    : "";
   const monthTotalSeconds = monthEntries.reduce((accumulator, entry) => accumulator + getEntryDurationSeconds(entry), 0);
   const employeeInsightsMarkup = buildEmployeeInsightMarkup(entries, monthEntries);
   const employeeDetailedStatsMarkup = buildEmployeeDetailedStatsMarkup(entries, employee.code);
@@ -2879,6 +2895,7 @@ function renderEmployeeDetail(employee) {
         </div>
         <div class="employee-calendar-actions">
           <div class="employee-calendar-summary">${escapeHtml(t("employees.calendarSummary", { count: monthEntries.length, duration: secondsToDurationLabel(monthTotalSeconds) }))}</div>
+          ${monthlyScheduleControl}
           <button type="button" class="btn btn-outline-secondary btn-sm people-gc179-fdf-button" data-employee-code="${escapeHtml(employee.code)}" data-export-month="${escapeHtml(activeMonthKey)}">
             <i class="fa-solid fa-file-export"></i> ${escapeHtml(t("export.downloadGc179Fdf"))}
           </button>
@@ -3260,6 +3277,18 @@ document.getElementById("employeeDetailContainer").addEventListener("toggle", ev
   }
 }, true);
 
+document.getElementById("employeeDetailContainer").addEventListener("change", event => {
+  const scheduleSelect = event.target.closest(".people-month-schedule-select");
+  if (!scheduleSelect) {
+    return;
+  }
+  const control = scheduleSelect.closest(".employee-month-schedule-control");
+  const applyButton = control && control.querySelector(".people-month-schedule-apply");
+  if (applyButton) {
+    applyButton.disabled = !["regular", "compressed"].includes(scheduleSelect.value);
+  }
+});
+
 document.getElementById("employeeDetailContainer").addEventListener("click", async event => {
   const rejectedTimeButton = event.target.closest(".employee-rejected-time-action");
   if (rejectedTimeButton) {
@@ -3275,6 +3304,49 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
       renderEmployeeDetail(getEmployeeByCode(employeeCode));
       focusEmployeeEntry(employeesViewState.focusEntryId);
     }
+    return;
+  }
+
+  const monthlyScheduleButton = event.target.closest(".people-month-schedule-apply");
+  if (monthlyScheduleButton) {
+    const control = monthlyScheduleButton.closest(".employee-month-schedule-control");
+    const scheduleSelect = control && control.querySelector(".people-month-schedule-select");
+    const employeeCode = monthlyScheduleButton.getAttribute("data-employee-code");
+    const monthKey = monthlyScheduleButton.getAttribute("data-month-key");
+    const entryCount = Number(monthlyScheduleButton.getAttribute("data-entry-count") || 0);
+    const workSchedule = scheduleSelect ? scheduleSelect.value : "";
+    if (!employeeCode || !monthKey || !["regular", "compressed"].includes(workSchedule)) {
+      return;
+    }
+    if (!window.confirm(t("employees.monthScheduleConfirm", {
+      count: entryCount,
+      month: monthKey,
+      schedule: t(workSchedule === "compressed" ? "shared.workScheduleCompressed" : "shared.workScheduleRegular"),
+    }))) {
+      return;
+    }
+
+    await runButtonAction(monthlyScheduleButton, async () => {
+      try {
+        const response = await fetch(`${apiUrl}employee/${encodeURIComponent(employeeCode)}/work-schedule/month`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ month: monthKey, workSchedule }),
+        });
+        const result = await parseResponse(response);
+        const updatedCount = Number(result && result.updatedCount || 0);
+        showToast(t(updatedCount > 0 ? "employees.monthScheduleSuccess" : "employees.monthScheduleNoChanges", { count: updatedCount }), updatedCount > 0 ? "success" : "warning");
+        const warnings = Array.isArray(result && result.warnings) ? result.warnings.filter(Boolean) : [];
+        if (warnings.length > 0) {
+          showToast(warnings.join(" "), "warning");
+        }
+        await refreshPeopleEmployeeDetail(employeeCode);
+        markEntryRelatedViewsStaleFromPeople();
+      } catch (error) {
+        console.error("Unable to update monthly work schedules:", error);
+        showToast(error.message || t("employees.monthScheduleError"), "error");
+      }
+    }, { key: `people-month-schedule:${employeeCode}:${monthKey}` });
     return;
   }
 

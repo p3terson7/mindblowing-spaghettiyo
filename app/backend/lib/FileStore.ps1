@@ -14,12 +14,20 @@ if (-not $script:PreparedLockFolderPath) {
     $script:PreparedLockFolderPath = ""
 }
 
+if (-not $script:HeldResourceLocks) {
+    $script:HeldResourceLocks = @{}
+}
+
 if (-not $script:SharedDataReadRetryCount) {
-    $script:SharedDataReadRetryCount = 3
+    $configuredReadRetryCount = 0
+    [int]::TryParse([string]$env:SAPHIR_SHARED_DATA_RETRY_COUNT, [ref]$configuredReadRetryCount) | Out-Null
+    $script:SharedDataReadRetryCount = if ($configuredReadRetryCount -gt 0) { $configuredReadRetryCount } else { 6 }
 }
 
 if (-not $script:SharedDataRetryDelayMs) {
-    $script:SharedDataRetryDelayMs = 75
+    $configuredRetryDelayMs = 0
+    [int]::TryParse([string]$env:SAPHIR_SHARED_DATA_RETRY_DELAY_MS, [ref]$configuredRetryDelayMs) | Out-Null
+    $script:SharedDataRetryDelayMs = if ($configuredRetryDelayMs -gt 0) { $configuredRetryDelayMs } else { 125 }
 }
 
 function New-SharedDataUnavailableException {
@@ -68,8 +76,17 @@ function Test-PathNotFoundError {
 function Start-SharedDataRetryDelay {
     param([int]$Attempt)
 
-    $multiplier = [Math]::Max(1, $Attempt)
+    $multiplier = [Math]::Max(1, [Math]::Min(4, $Attempt))
     Start-Sleep -Milliseconds ($script:SharedDataRetryDelayMs * $multiplier)
+}
+
+function Get-HeldResourceLockCount {
+    param([Parameter(Mandatory = $true)][string]$ResourcePath)
+
+    if ($script:HeldResourceLocks.ContainsKey($ResourcePath)) {
+        return [int]$script:HeldResourceLocks[$ResourcePath]
+    }
+    return 0
 }
 
 function Get-FileItemWithRetry {
@@ -90,7 +107,12 @@ function Get-FileItemWithRetry {
                 try {
                     $parentItem = Get-Item -LiteralPath $parentPath -ErrorAction Stop
                     if ($null -ne $parentItem -and [bool]$parentItem.PSIsContainer) {
-                        if ($attempt -lt $script:SharedDataReadRetryCount) {
+                        # Two observations with a reachable parent are enough
+                        # to classify a genuinely absent optional file. Using
+                        # the full outage retry budget here delays startup for
+                        # every file that a new data folder has not created yet.
+                        $missingFileConfirmationAttempts = [Math]::Min(2, $script:SharedDataReadRetryCount)
+                        if ($attempt -lt $missingFileConfirmationAttempts) {
                             Start-SharedDataRetryDelay -Attempt $attempt
                             continue
                         }
@@ -223,7 +245,23 @@ function Get-FileMetadataSnapshot {
 
     # A failed SMB probe must never be cached as a missing file. The retrying
     # lookup confirms that the parent is reachable before returning null.
-    $item = Get-FileItemWithRetry -Path $Path
+    try {
+        $item = Get-FileItemWithRetry -Path $Path
+    }
+    catch {
+        # A previously successful read is safer than turning a momentary SMB
+        # metadata outage into an application-wide 503. Mutation paths clear
+        # this cache after acquiring their writer lock, so they still fail
+        # closed instead of writing from a stale snapshot.
+        $isSharedDataFailure = $null -ne $_.Exception.Data -and
+            $_.Exception.Data.Contains("SaphirHttpStatusCode") -and
+            [int]$_.Exception.Data["SaphirHttpStatusCode"] -eq 503
+        if ($isSharedDataFailure -and $cacheEntry -and $cacheEntry.Metadata) {
+            $cacheEntry.ValidatedAtUtc = $nowUtc
+            return $cacheEntry.Metadata
+        }
+        throw
+    }
     if ($null -eq $item -or [bool]$item.PSIsContainer) {
         return $null
     }
@@ -273,6 +311,14 @@ function Clear-FileMetadataValidationCache {
 
 function Read-TextFileCached {
     param([Parameter(Mandatory = $true)][string]$Path)
+
+    # The writer lock already proves that this resource must be read from the
+    # share again. Avoid a redundant directory-metadata probe here: Windows
+    # SMB can briefly report stale metadata immediately after lock creation,
+    # even though opening the business file itself works normally.
+    if ((Get-HeldResourceLockCount -ResourcePath $Path) -gt 0) {
+        return (Read-TextFileWithRetry -Path $Path)
+    }
 
     $lastError = $null
     for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
@@ -461,10 +507,14 @@ function Acquire-ResourceLock {
                 # before a read-modify-write transaction starts.
                 Clear-CachedFileContent -Path $ResourcePath
 
+                $heldCount = Get-HeldResourceLockCount -ResourcePath $ResourcePath
+                $script:HeldResourceLocks[$ResourcePath] = $heldCount + 1
+
                 return [PSCustomObject]@{
-                    Path   = $lockPath
-                    Stream = $stream
-                    Writer = $writer
+                    Path         = $lockPath
+                    ResourcePath = $ResourcePath
+                    Stream       = $stream
+                    Writer       = $writer
                 }
             }
             catch {
@@ -536,6 +586,17 @@ function Release-ResourceLock {
         if ($LockHandle.Stream) { $LockHandle.Stream.Dispose() }
     }
     catch { }
+
+    $resourcePath = if ($LockHandle.PSObject.Properties.Name -contains "ResourcePath") { [string]$LockHandle.ResourcePath } else { "" }
+    if (-not [string]::IsNullOrWhiteSpace($resourcePath) -and $script:HeldResourceLocks.ContainsKey($resourcePath)) {
+        $remaining = [int]$script:HeldResourceLocks[$resourcePath] - 1
+        if ($remaining -gt 0) {
+            $script:HeldResourceLocks[$resourcePath] = $remaining
+        }
+        else {
+            $script:HeldResourceLocks.Remove($resourcePath) | Out-Null
+        }
+    }
 }
 
 function Write-TextAtomic {

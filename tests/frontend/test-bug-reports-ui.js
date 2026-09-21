@@ -12,7 +12,7 @@ const switchingSource = read("app/frontend/scripts/Views/ViewSwitching.js");
 const viewSource = read("app/frontend/scripts/Views/BugReportsView.js");
 const i18nSource = read("app/frontend/scripts/I18n.js");
 const stylesSource = read("app/frontend/assets/apple-ui.css");
-const cacheKey = "20260921-bug-reports-phase5-v1";
+const cacheKey = "20260921-schedule-gc179-fixes-v2";
 
 assert(indexSource.includes('id="navBugReports" data-role-scope="authenticated"'), "Authenticated users need an Issues navigation link.");
 assert(indexSource.includes('id="appReportBugButton" data-role-scope="authenticated"'), "The global Report a problem shortcut is missing.");

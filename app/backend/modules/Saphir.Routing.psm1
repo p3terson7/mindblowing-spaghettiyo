@@ -19,6 +19,7 @@ $script:AdminRouteScriptPaths = @(
     "routes/employee/get.routes.ps1",
     "routes/employee/add.routes.ps1",
     "routes/employee/gc179-import.routes.ps1",
+    "routes/employee/work-schedule.routes.ps1",
     "routes/employee/update.routes.ps1",
     "routes/employee/batch-approval.routes.ps1",
     "routes/employee/approval.routes.ps1",
@@ -103,6 +104,9 @@ function Resolve-EmployeeRouteScript {
     }
     if ($Method -eq "POST" -and ($Path -eq "/employee/gc179-import/preview" -or $Path -eq "/employee/gc179-import/commit" -or $Path -eq "/employee/gc179-import/undo")) {
         return "routes/employee/gc179-import.routes.ps1"
+    }
+    if ($Method -eq "PUT" -and $Path -match "^/employee/\d+/work-schedule/month$") {
+        return "routes/employee/work-schedule.routes.ps1"
     }
     if ($Method -eq "PUT" -and $Path -match "^/employee/\d+$") {
         return "routes/employee/update.routes.ps1"

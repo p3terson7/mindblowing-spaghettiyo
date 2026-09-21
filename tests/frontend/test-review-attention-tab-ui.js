@@ -12,7 +12,7 @@ const i18nSource = read("app/frontend/scripts/I18n.js");
 const indexSource = read("app/frontend/index.html");
 const appShellSource = read("app/frontend/scripts/AppShell.js");
 const cssSource = read("app/frontend/assets/apple-ui.css");
-const cacheRevision = "20260921-bug-reports-phase5-v1";
+const cacheRevision = "20260921-schedule-gc179-fixes-v2";
 
 const helperStart = approvalsSource.indexOf("const REVIEW_ISSUE_I18N_KEYS");
 const helperEnd = approvalsSource.indexOf("function renderReviewIssues", helperStart);

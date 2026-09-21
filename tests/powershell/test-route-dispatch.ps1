@@ -88,6 +88,7 @@ $expectedRouteScripts = @(
     "routes/employee/get.routes.ps1",
     "routes/employee/add.routes.ps1",
     "routes/employee/gc179-import.routes.ps1",
+    "routes/employee/work-schedule.routes.ps1",
     "routes/employee/update.routes.ps1",
     "routes/employee/batch-approval.routes.ps1",
     "routes/employee/approval.routes.ps1",
@@ -193,6 +194,7 @@ $employeeCases = @(
     @("POST", "/employee/gc179-import/preview", "routes/employee/gc179-import.routes.ps1"),
     @("POST", "/employee/gc179-import/commit", "routes/employee/gc179-import.routes.ps1"),
     @("POST", "/employee/gc179-import/undo", "routes/employee/gc179-import.routes.ps1"),
+    @("PUT", "/employee/000000001/work-schedule/month", "routes/employee/work-schedule.routes.ps1"),
     @("PUT", "/employee/000000001", "routes/employee/update.routes.ps1"),
     @("POST", "/employee/approval/batch", "routes/employee/batch-approval.routes.ps1"),
     @("POST", "/employee/approval/000000001", "routes/employee/approval.routes.ps1"),
@@ -256,4 +258,4 @@ Assert-Equal -Expected 1 -Actual ([regex]::Matches($adminServerSource, 'Resolve-
 $employeeAggregatorSource = [System.IO.File]::ReadAllText((Join-Path -Path $backendRoot -ChildPath "routes/employee.routes.ps1"))
 Assert-Equal -Expected 1 -Actual ([regex]::Matches($employeeAggregatorSource, 'Invoke-CachedRouteScript').Count) -Message "The employee aggregator should invoke only its resolved leaf route."
 
-Write-Host "Route dispatch test passed: the PS5.1 module, compatibility facade, ordered 38-route catalog, and all known/unknown dispatch cases agree."
+Write-Host "Route dispatch test passed: the PS5.1 module, compatibility facade, ordered 39-route catalog, and all known/unknown dispatch cases agree."

@@ -10,6 +10,9 @@ const read = relativePath => fs.readFileSync(path.join(repoRoot, relativePath), 
 const indexSource = read("app/frontend/index.html");
 const appShellSource = read("app/frontend/scripts/AppShell.js");
 const i18nSource = read("app/frontend/scripts/I18n.js");
+
+assert(!i18nSource.includes("Group uses letters; sub-group and level use two digits."), "Settings still shows classification-format filler text in English.");
+assert(!i18nSource.includes("Le groupe contient des lettres; le sous-groupe et le niveau contiennent deux chiffres."), "Settings still shows classification-format filler text in French.");
 const stylesSource = read("app/frontend/assets/styles.css");
 
 assert.match(indexSource, /id="compensationGridSettingsSection"[^>]+data-role-scope="superAdmin"/, "The compensation grid must be limited to super admins in the Settings modal.");

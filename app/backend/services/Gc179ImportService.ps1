@@ -263,6 +263,21 @@ function ConvertFrom-Gc179ImportFdfValue {
         return ConvertFrom-Gc179ImportFdfLiteral -Value $trimmed
     }
 
+    if ($trimmed.StartsWith("<") -and $trimmed.EndsWith(">")) {
+        $hex = [regex]::Replace($trimmed.Substring(1, $trimmed.Length - 2), "\s", "")
+        if ($hex.Length % 2 -ne 0 -or $hex -notmatch "^[0-9A-Fa-f]*$") {
+            return ""
+        }
+        $bytes = New-Object byte[] ($hex.Length / 2)
+        for ($index = 0; $index -lt $bytes.Length; $index++) {
+            $bytes[$index] = [Convert]::ToByte($hex.Substring($index * 2, 2), 16)
+        }
+        if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF) {
+            return [System.Text.Encoding]::BigEndianUnicode.GetString($bytes, 2, $bytes.Length - 2)
+        }
+        return [System.Text.Encoding]::UTF8.GetString($bytes)
+    }
+
     if ($trimmed.StartsWith("/")) {
         return ConvertFrom-Gc179ImportFdfName -Value $trimmed
     }
@@ -274,7 +289,7 @@ function Read-Gc179ImportFdfFields {
     param([Parameter(Mandatory = $true)][string]$FdfContent)
 
     $fields = @{}
-    $fieldPattern = "(?s)/T\s*(?<name>\((\\.|[^\\)])*\)|/[^\s<>\[\]]+).*?/V\s*(?<value>\((\\.|[^\\)])*\)|/[^\s<>\[\]]+|[^\s<>\[\]]+)"
+    $fieldPattern = "(?s)/T\s*(?<name>\((\\.|[^\\)])*\)|<[0-9A-Fa-f\s]*>|/[^\s<>\[\]]+).*?/V\s*(?<value>\((\\.|[^\\)])*\)|<[0-9A-Fa-f\s]*>|/[^\s<>\[\]]+|[^\s<>\[\]]+)"
     foreach ($match in [regex]::Matches([string]$FdfContent, $fieldPattern)) {
         $name = ConvertFrom-Gc179ImportFdfValue -Value $match.Groups["name"].Value
         $value = ConvertFrom-Gc179ImportFdfValue -Value $match.Groups["value"].Value
@@ -287,7 +302,7 @@ function Read-Gc179ImportFdfFields {
     # <</Kids[<</T(0)/V(11)>><</T(1)/V(15)>>]/T(DayofWeek)>>
     # Internally SAPHIR uses the generated FDF naming style DayofWeek.0, so
     # normalize Acrobat's structure to the same flat keys.
-    $kidsPattern = "(?s)/Kids\s*\[(?<kids>.*?)\]\s*/T\s*(?<parent>\((\\.|[^\\)])*\)|/[^\s<>\[\]]+)"
+    $kidsPattern = "(?s)/Kids\s*\[(?<kids>.*?)\]\s*/T\s*(?<parent>\((\\.|[^\\)])*\)|<[0-9A-Fa-f\s]*>|/[^\s<>\[\]]+)"
     foreach ($groupMatch in [regex]::Matches([string]$FdfContent, $kidsPattern)) {
         $parentName = ConvertFrom-Gc179ImportFdfValue -Value $groupMatch.Groups["parent"].Value
         if ([string]::IsNullOrWhiteSpace($parentName)) {
@@ -295,7 +310,7 @@ function Read-Gc179ImportFdfFields {
         }
 
         $kidsContent = $groupMatch.Groups["kids"].Value
-        $childPattern = "(?s)<<\s*/T\s*(?<child>\((\\.|[^\\)])*\)|/[^\s<>\[\]]+)(\s*/V\s*(?<value>\((\\.|[^\\)])*\)|/[^\s<>\[\]]+|[^\s<>\[\]]+))?"
+        $childPattern = "(?s)<<\s*/T\s*(?<child>\((\\.|[^\\)])*\)|<[0-9A-Fa-f\s]*>|/[^\s<>\[\]]+)(\s*/V\s*(?<value>\((\\.|[^\\)])*\)|<[0-9A-Fa-f\s]*>|/[^\s<>\[\]]+|[^\s<>\[\]]+))?"
         foreach ($childMatch in [regex]::Matches($kidsContent, $childPattern)) {
             $childName = ConvertFrom-Gc179ImportFdfValue -Value $childMatch.Groups["child"].Value
             if ([string]::IsNullOrWhiteSpace($childName)) {

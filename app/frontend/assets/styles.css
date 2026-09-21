@@ -3171,6 +3171,22 @@ button.is-async-busy::before,
   min-width: 0;
 }
 
+.employee-month-schedule-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, var(--separator));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning-soft) 60%, var(--surface-primary));
+}
+
+.employee-month-schedule-control .form-select {
+  width: auto;
+  min-width: 158px;
+}
+
 .employee-month-board-shell {
   display: grid;
   gap: 8px;
@@ -3285,13 +3301,35 @@ button.is-async-busy::before,
   border-radius: 4px;
   background: var(--panel-muted);
   border: 1px solid rgba(31, 35, 41, 0.06);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .calendar-entry-main {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.calendar-entry .calendar-entry-badges {
+  min-width: 0;
+  max-width: 100%;
+  justify-content: flex-start;
+}
+
+.calendar-entry .work-schedule-badge {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.calendar-entry .work-schedule-badge > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .calendar-entry-time {

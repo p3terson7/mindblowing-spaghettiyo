@@ -782,7 +782,7 @@ function getBugReportCreatePayload() {
     expectedBehavior: String(document.getElementById("bugReportExpectedInput")?.value || "").trim(),
     actualBehavior: String(document.getElementById("bugReportActualInput")?.value || "").trim(),
     technicalContext: {
-      appVersion: "20260921-bug-reports-phase5-v1",
+      appVersion: "20260921-schedule-gc179-fixes-v2",
       page: String(window.location && window.location.hash || "") || String(typeof window.getActiveAppViewId === "function" ? window.getActiveAppViewId() : "bugReportsView"),
       browser: String(navigator.userAgent || "").slice(0, 500),
       operatingSystem: String(navigator.platform || "").slice(0, 300),

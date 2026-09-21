@@ -224,6 +224,61 @@ try {
     Assert-True -Condition ($null -ne $failedInitializationException) -Message "A failed lock initialization unexpectedly succeeded."
     Assert-True -Condition (-not [System.IO.File]::Exists($failedInitializationPath)) -Message "A failed lock initialization stranded its ownership path."
 
+    # A read-modify-write transaction already owns the resource lock and has
+    # invalidated its local cache. Reading the authoritative file must not add
+    # a separate directory metadata probe, which is a common source of false
+    # negatives on Windows SMB immediately after lock creation.
+    $lockedReadResource = Join-Path -Path $tempFolder -ChildPath "locked-read.json"
+    [System.IO.File]::WriteAllText($lockedReadResource, '[{"value":"fresh"}]')
+    $lockedReadHandle = Acquire-ResourceLock -ResourcePath $lockedReadResource
+    $script:OriginalGetFileMetadataSnapshot = ${function:Get-FileMetadataSnapshot}
+    $script:LockedReadMetadataProbeCount = 0
+    function Get-FileMetadataSnapshot {
+        param([Parameter(Mandatory = $true)][string]$Path)
+        if ($Path -eq $script:lockedReadResource) {
+            $script:LockedReadMetadataProbeCount++
+            throw "A lock-owned read performed a redundant metadata probe."
+        }
+        return (& $script:OriginalGetFileMetadataSnapshot -Path $Path)
+    }
+    $script:lockedReadResource = $lockedReadResource
+    try {
+        $lockedEntries = @(Read-JsonArrayFile -Path $lockedReadResource)
+    }
+    finally {
+        Microsoft.PowerShell.Management\Remove-Item -Path Function:\Get-FileMetadataSnapshot -ErrorAction SilentlyContinue
+        Set-Item -Path Function:\Get-FileMetadataSnapshot -Value $script:OriginalGetFileMetadataSnapshot
+        Release-ResourceLock -LockHandle $lockedReadHandle
+    }
+    Assert-Equal -Expected 0 -Actual $script:LockedReadMetadataProbeCount -Message "A lock-owned read still probed SMB metadata."
+    Assert-Equal -Expected "fresh" -Actual ([string]$lockedEntries[0].value) -Message "The lock-owned direct read returned the wrong content."
+    Assert-Equal -Expected 0 -Actual (Get-HeldResourceLockCount -ResourcePath $lockedReadResource) -Message "The released resource remained marked as locally locked."
+
+    # Once a read model has a known-good snapshot, a brief metadata-only SMB
+    # outage may reuse it. The next mutation cannot take this path because
+    # acquiring its resource lock clears the metadata and content cache.
+    $cachedReadResource = Join-Path -Path $tempFolder -ChildPath "cached-read.json"
+    [System.IO.File]::WriteAllText($cachedReadResource, '[{"value":"cached"}]')
+    $initialMetadata = Get-FileMetadataSnapshot -Path $cachedReadResource
+    $script:FileMetadataCache[$cachedReadResource].ValidatedAtUtc = (Get-Date).ToUniversalTime().AddMinutes(-1)
+    $script:OriginalGetFileItemWithRetry = ${function:Get-FileItemWithRetry}
+    function Get-FileItemWithRetry {
+        param([Parameter(Mandatory = $true)][string]$Path)
+        if ($Path -eq $script:cachedReadResource) {
+            throw (New-SharedDataUnavailableException -Operation "read metadata" -Path $Path)
+        }
+        return (& $script:OriginalGetFileItemWithRetry -Path $Path)
+    }
+    $script:cachedReadResource = $cachedReadResource
+    try {
+        $fallbackMetadata = Get-FileMetadataSnapshot -Path $cachedReadResource
+    }
+    finally {
+        Microsoft.PowerShell.Management\Remove-Item -Path Function:\Get-FileItemWithRetry -ErrorAction SilentlyContinue
+        Set-Item -Path Function:\Get-FileItemWithRetry -Value $script:OriginalGetFileItemWithRetry
+    }
+    Assert-Equal -Expected ([string]$initialMetadata.LastWriteTicks) -Actual ([string]$fallbackMetadata.LastWriteTicks) -Message "A metadata-only outage discarded the known-good read snapshot."
+
     # A persistent shared-storage failure is retryable service unavailability,
     # not a missing business record. Inject a real metadata outage through the
     # retry boundary and verify the exception consumed by the server catch.
@@ -283,6 +338,8 @@ finally {
     }
     Remove-Item -Path Function:\Remove-Item -ErrorAction SilentlyContinue
     Remove-Item -Path Function:\Get-Item -ErrorAction SilentlyContinue
+    Remove-Item -Path Function:\Get-FileMetadataSnapshot -ErrorAction SilentlyContinue
+    Remove-Item -Path Function:\Get-FileItemWithRetry -ErrorAction SilentlyContinue
     Remove-Item -Path Function:\Write-Warning -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $tempFolder) {
         Microsoft.PowerShell.Management\Remove-Item -LiteralPath $tempFolder -Recurse -Force

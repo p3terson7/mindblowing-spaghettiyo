@@ -313,6 +313,27 @@ try {
     Assert-Equal -Expected "regular" -Actual ([string]$savedEntries[1].workSchedule) -Message "Manual creation did not snapshot the employee's regular schedule."
     Assert-Equal -Expected "employee-profile" -Actual ([string]$savedEntries[1].workScheduleSource) -Message "Manual creation lost schedule provenance."
 
+    $legacyMonth = ([string]$legacyEntry.date).Substring(0, 7)
+    $bulkScheduleUpdate = Invoke-TestHttpRequest -Method "PUT" -Uri "$baseUri/employee/$employeeCode/work-schedule/month" -Token $token -Body @{
+        month        = $legacyMonth
+        workSchedule = "regular"
+    }
+    Assert-Equal -Expected 200 -Actual $bulkScheduleUpdate.StatusCode -Message "The monthly schedule endpoint failed."
+    Assert-Equal -Expected 1 -Actual ([int]$bulkScheduleUpdate.Json.updatedCount) -Message "The monthly schedule endpoint did not update exactly the unresolved legacy entry."
+    $savedEntries = @([IO.File]::ReadAllText($dataFile) | ConvertFrom-Json)
+    Assert-Equal -Expected "regular" -Actual ([string]$savedEntries[0].workSchedule) -Message "The monthly schedule was not persisted on the legacy entry."
+    Assert-Equal -Expected "supervisor-month-bulk" -Actual ([string]$savedEntries[0].workScheduleSource) -Message "The monthly schedule update lost its bulk supervisor provenance."
+    Assert-Equal -Expected "must-survive" -Actual ([string]$savedEntries[0].futureField) -Message "The monthly schedule update stripped an unknown entry field."
+
+    $repeatBulkScheduleUpdate = Invoke-TestHttpRequest -Method "PUT" -Uri "$baseUri/employee/$employeeCode/work-schedule/month" -Token $token -Body @{
+        month        = $legacyMonth
+        workSchedule = "compressed"
+    }
+    Assert-Equal -Expected 200 -Actual $repeatBulkScheduleUpdate.StatusCode -Message "Repeating a monthly schedule update failed."
+    Assert-Equal -Expected 0 -Actual ([int]$repeatBulkScheduleUpdate.Json.updatedCount) -Message "The monthly schedule endpoint overwrote an already confirmed entry."
+    $savedEntries = @([IO.File]::ReadAllText($dataFile) | ConvertFrom-Json)
+    Assert-Equal -Expected "regular" -Actual ([string]$savedEntries[0].workSchedule) -Message "A repeated bulk update overwrote the confirmed legacy schedule."
+
     $manualEntryId = [string]$savedEntries[1].entryId
     $beforeInvalidSchedule = [IO.File]::ReadAllText($dataFile)
     $invalidScheduleUpdate = Invoke-TestHttpRequest -Method "PUT" -Uri "$baseUri/employee/$employeeCode" -Token $token -Body @{

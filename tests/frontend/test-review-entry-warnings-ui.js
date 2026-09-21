@@ -98,8 +98,8 @@ for (const expectedCopy of [
 assert.match(cssSource, /\.review-card-attention\s*\{/, "The Review attention section needs a dedicated visual treatment.");
 assert.match(cssSource, /\.review-card-attention-title\s*\{/, "The attention label needs a dedicated style.");
 assert.match(cssSource, /\.review-card-attention-list\s*\{/, "The issue list needs a dedicated style.");
-assert(indexSource.includes("assets/apple-ui.css?v=20260921-bug-reports-phase5-v1"), "The Review attention styles are missing a cache-busting revision.");
-assert(indexSource.includes("scripts/I18n.js?v=20260921-bug-reports-phase5-v1"), "The Review attention copy is missing a cache-busting revision.");
-assert(appShellSource.includes("ApprovalsView.js?v=20260921-bug-reports-phase5-v1"), "The lazy Review view is missing a cache-busting revision.");
+assert(indexSource.includes("assets/apple-ui.css?v=20260921-schedule-gc179-fixes-v2"), "The Review attention styles are missing a cache-busting revision.");
+assert(indexSource.includes("scripts/I18n.js?v=20260921-schedule-gc179-fixes-v2"), "The Review attention copy is missing a cache-busting revision.");
+assert(appShellSource.includes("ApprovalsView.js?v=20260921-schedule-gc179-fixes-v2"), "The lazy Review view is missing a cache-busting revision.");
 
 console.log("Review entry warning UI tests passed.");

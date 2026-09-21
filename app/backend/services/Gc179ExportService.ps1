@@ -53,7 +53,7 @@ function Get-Gc179HeaderValues {
     $level = ConvertTo-Gc179LevelText -Value ([string]$profile.level)
 
     return [PSCustomObject]@{
-        Month     = [string]$MonthParts.Month
+        Month     = ([int]$MonthParts.Month).ToString("00", [System.Globalization.CultureInfo]::InvariantCulture)
         Year      = [string]$MonthParts.Year
         Department = "GRC-RCMP"
         # Official GC179 organizational branch code; this is form data, not the application name.
@@ -81,6 +81,19 @@ function ConvertTo-Gc179FdfLiteral {
     $text = $text.Replace("`r", "\r")
     $text = $text.Replace("`n", "\r")
     return $text
+}
+
+function ConvertTo-Gc179FdfStringToken {
+    param([AllowNull()][string]$Value)
+
+    $text = if ($null -eq $Value) { "" } else { [string]$Value }
+    if ($text -notmatch "[^\x00-\x7F]") {
+        return "($(ConvertTo-Gc179FdfLiteral -Value $text))"
+    }
+
+    $bytes = [System.Text.Encoding]::BigEndianUnicode.GetBytes($text)
+    $hex = "FEFF" + ([System.BitConverter]::ToString($bytes)).Replace("-", "")
+    return "<$hex>"
 }
 
 function ConvertTo-Gc179FileNameToken {
@@ -158,7 +171,7 @@ function Add-Gc179FdfTextField {
 
     [void]$Builder.AppendLine("<<")
     [void]$Builder.AppendLine("/T ($Name)")
-    [void]$Builder.AppendLine("/V ($(ConvertTo-Gc179FdfLiteral -Value $Value))")
+    [void]$Builder.AppendLine("/V $(ConvertTo-Gc179FdfStringToken -Value $Value)")
     [void]$Builder.AppendLine(">>")
 }
 
@@ -514,7 +527,7 @@ function New-Gc179FdfExportPart {
     [void]$builder.AppendLine("1 0 obj")
     [void]$builder.AppendLine("<<")
     [void]$builder.AppendLine("/FDF <<")
-    [void]$builder.AppendLine("/F ($(ConvertTo-Gc179FdfLiteral -Value "GC179.pdf"))")
+    [void]$builder.AppendLine("/F $(ConvertTo-Gc179FdfStringToken -Value "GC179.pdf")")
     [void]$builder.AppendLine("/Fields [")
 
     $headerValues = Get-Gc179HeaderValues -EmployeeCode $EmployeeCode -MonthParts $MonthParts
@@ -683,6 +696,19 @@ function ConvertTo-Gc179FdfLiteral {
     return $text
 }
 
+function ConvertTo-Gc179FdfStringToken {
+    param([AllowNull()][string]$Value)
+
+    $text = if ($null -eq $Value) { "" } else { [string]$Value }
+    if ($text -notmatch "[^\x00-\x7F]") {
+        return "($(ConvertTo-Gc179FdfLiteral -Value $text))"
+    }
+
+    $bytes = [System.Text.Encoding]::BigEndianUnicode.GetBytes($text)
+    $hex = "FEFF" + ([System.BitConverter]::ToString($bytes)).Replace("-", "")
+    return "<$hex>"
+}
+
 function Get-Gc179FullPath {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -707,12 +733,12 @@ function New-Gc179LaunchFdf {
     else {
         $TemplatePath
     }
-    $templateLiteral = ConvertTo-Gc179FdfLiteral -Value (Get-Gc179FullPath -Path $effectiveTemplatePath)
-    $fieldReference = "/F ($templateLiteral)"
+    $templateToken = ConvertTo-Gc179FdfStringToken -Value (Get-Gc179FullPath -Path $effectiveTemplatePath)
+    $fieldReference = "/F $templateToken"
 
-    if ($fdfText -match "/F\s*\([^)]*\)") {
+    if ($fdfText -match "/F\s*(?:\((?:\\.|[^)])*\)|<[0-9A-Fa-f\s]+>)") {
         $safeReplacement = $fieldReference.Replace('$', '$$')
-        $fdfText = [System.Text.RegularExpressions.Regex]::Replace($fdfText, "/F\s*\([^)]*\)", $safeReplacement, 1)
+        $fdfText = [System.Text.RegularExpressions.Regex]::Replace($fdfText, "/F\s*(?:\((?:\\.|[^)])*\)|<[0-9A-Fa-f\s]+>)", $safeReplacement, 1)
     }
     else {
         $fdfText = $fdfText -replace "/FDF\s*<<", ("/FDF <<" + [Environment]::NewLine + $fieldReference)

@@ -369,6 +369,7 @@ $roundTripExport = New-Gc179FdfExportPart `
 Assert-Equal -Expected "000123456_SMITH_J_GC179_2026-07_TEMPS.fdf" -Actual $roundTripExport.FileName -Message "A time-compensation GC179 does not follow the HRMIS_NAME_INITIAL_GC179_YYYY-MM_TEMPS contract."
 Assert-Equal -Expected "000123456" -Actual (Get-Gc179ImportFileEmployeeCode -FileName $roundTripExport.FileName) -Message "The GC179 importer no longer recognizes the employee code in the new TEMPS filename."
 Assert-True -Condition ([string]$roundTripExport.Content).StartsWith("%FDF-1.2") -Message "The export service must still produce FDF 1.2 content."
+Assert-True -Condition ([regex]::IsMatch([string]$roundTripExport.Content, "/T \(Month\)\s*/V \(07\)")) -Message "The GC179 Month field must contain the visible two-digit month number."
 
 $cashEntry = [PSCustomObject]@{
     entryType     = "overtime"
@@ -435,6 +436,25 @@ $accentedBaseName = Get-Gc179ExportBaseFileName `
     -HeaderValues ([PSCustomObject]@{ Surname = " GAGNÉ-LÉVESQUE "; Given = " Élodie Marie " }) `
     -MonthParts $roundTripMonth
 Assert-Equal -Expected "000987654_GAGNE_LEVESQUE_E_GC179_2026-07" -Actual $accentedBaseName -Message "GC179 filenames must safely normalize accents and use only the given-name initial."
+
+$originalProfile = $script:RoundTripEmployee.gc179Profile
+$script:RoundTripEmployee.gc179Profile = [PSCustomObject]@{
+    surname            = "GAGNÉ-LÉVESQUE"
+    givenName          = "ÉLODIE"
+    initials           = "ÉL"
+    pri                = "000123456"
+    group              = "STS"
+    subGroup           = "00"
+    level              = "01"
+    compressedWorkWeek = $false
+}
+$accentedExport = New-Gc179FdfExportPart -EmployeeCode "000123456" -MonthParts $roundTripMonth -Entries @($cashEntry) -WorkedDateSet $roundTripWorkedDates
+Assert-True -Condition ([string]$accentedExport.Content -notmatch "GAGN\?-L\?VESQUE|\?LODIE") -Message "GC179 export replaced French accents with question marks."
+Assert-True -Condition ([string]$accentedExport.Content -match "/T \(Surname\)\s*/V <FEFF") -Message "Accented GC179 text must use a Unicode PDF string token."
+$accentedFields = Read-Gc179ImportFdfFields -FdfContent ([string]$accentedExport.Content)
+Assert-Equal -Expected "GAGNÉ-LÉVESQUE" -Actual ([string]$accentedFields["Surname"]) -Message "The accented surname did not survive GC179 export/import."
+Assert-Equal -Expected "ÉLODIE" -Actual ([string]$accentedFields["Given"]) -Message "The accented given name did not survive GC179 export/import."
+$script:RoundTripEmployee.gc179Profile = $originalProfile
 
 $multipartTimeBaseName = Get-Gc179ExportBaseFileName `
     -EmployeeCode "000123456" `

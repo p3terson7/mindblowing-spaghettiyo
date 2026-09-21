@@ -160,7 +160,7 @@ Assert-SequenceEqual -Expected $firstCatalog -Actual $secondCatalog -Message "Re
 Assert-Equal -Expected ($firstProbe | ConvertTo-Json -Compress) -Actual ($secondProbe | ConvertTo-Json -Compress) -Message "Repeated routing imports changed routing decisions."
 Assert-True -Condition (@(Get-Module -Name "Saphir.Routing").Count -eq 1) -Message "Repeated imports left more than one Saphir.Routing module loaded."
 
-Assert-True -Condition ($firstCatalog.Count -eq 38) -Message ("The routing catalog must contain the 38 current route scripts; found {0}." -f $firstCatalog.Count)
+Assert-True -Condition ($firstCatalog.Count -eq 39) -Message ("The routing catalog must contain the 39 current route scripts; found {0}." -f $firstCatalog.Count)
 $catalogDuplicates = @(Get-CaseInsensitiveDuplicates -Values $firstCatalog)
 Assert-True -Condition ($catalogDuplicates.Count -eq 0) -Message ("The routing catalog contains duplicate path(s): {0}" -f ($catalogDuplicates -join ", "))
 

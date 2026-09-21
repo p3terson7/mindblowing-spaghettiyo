@@ -20,6 +20,10 @@ const addRoute = read("app/backend/routes/employee/add.routes.ps1");
 const updateRoute = read("app/backend/routes/employee/update.routes.ps1");
 const importService = read("app/backend/services/Gc179ImportService.ps1");
 const dashboardView = read("app/frontend/scripts/Views/DashboardView.js");
+const employeesView = read("app/frontend/scripts/Views/EmployeesView.js");
+const layoutStyles = read("app/frontend/assets/styles.css");
+const routingModule = read("app/backend/modules/Saphir.Routing.psm1");
+const bulkScheduleRoute = read("app/backend/routes/employee/work-schedule.routes.ps1");
 
 assert(index.includes('id="selfCompressedScheduleToggle"'), "The employee dashboard does not expose the global compressed-schedule switch.");
 assert(index.includes('role="switch"'), "The compressed-schedule control is not exposed as an accessible switch.");
@@ -45,8 +49,16 @@ assert(i18n.includes('"shared.workScheduleCompressed": "Temps comprimé"'), "The
 assert(i18n.includes('"shared.workScheduleUnconfirmed": "Horaire à confirmer"'), "The legacy schedule warning is not localized in French.");
 assert(styles.includes(".self-work-schedule-control"), "The dashboard schedule control has no dedicated visual treatment.");
 assert(styles.includes(".work-schedule-badge.unconfirmed"), "Unconfirmed legacy schedules have no warning treatment.");
+assert(employeesView.includes("people-month-schedule-apply"), "People view has no monthly schedule bulk action.");
+assert(employeesView.includes("/work-schedule/month"), "The monthly schedule action is not connected to the backend endpoint.");
+assert(employeesView.includes('getEntryWorkSchedule(entry) === "unconfirmed" && canModifyEntry(entry)'), "The monthly schedule action must count only unresolved entries the supervisor can modify.");
+assert(routingModule.includes('routes/employee/work-schedule.routes.ps1'), "The monthly schedule route is not registered.");
+assert(bulkScheduleRoute.includes('workScheduleSource" -Value "supervisor-month-bulk"'), "Bulk schedule changes do not retain their provenance.");
+assert(bulkScheduleRoute.includes('$storedSchedule -in @("regular", "compressed")'), "Bulk schedule changes can overwrite already confirmed entries.");
+assert(layoutStyles.includes(".calendar-entry .work-schedule-badge > span"), "Calendar schedule badges are not constrained against overflow.");
+assert(layoutStyles.includes("text-overflow: ellipsis"), "Overflowing calendar schedule text is not truncated.");
 
-const cacheRevision = "20260921-bug-reports-phase5-v1";
+const cacheRevision = "20260921-schedule-gc179-fixes-v2";
 assert(index.includes(`scripts/Views/SelfView.js?v=${cacheRevision}`), "The self dashboard cache revision was not bumped.");
 assert(appShell.includes(`ApprovalsView.js?v=${cacheRevision}`), "The Review entry labels may remain cached.");
 
