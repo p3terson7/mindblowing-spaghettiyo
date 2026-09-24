@@ -226,20 +226,20 @@ async function main() {
     assert(source.includes("runButtonAction("), `${name} has no protected backend action.`);
   }
   for (const asset of [
-    "assets/styles.css?v=20260921-schedule-gc179-fixes-v2",
-    "scripts/Utilities.js?v=20260921-schedule-gc179-fixes-v2",
-    "scripts/AppShell.js?v=20260921-schedule-gc179-fixes-v2",
-    "scripts/Views/ViewSwitching.js?v=20260921-schedule-gc179-fixes-v2",
-    "scripts/Views/SelfView.js?v=20260921-schedule-gc179-fixes-v2",
+    "assets/styles.css?v=20260924-bug-report-minimal-v3",
+    "scripts/Utilities.js?v=20260924-bug-report-minimal-v3",
+    "scripts/AppShell.js?v=20260924-bug-report-minimal-v3",
+    "scripts/Views/ViewSwitching.js?v=20260924-bug-report-minimal-v3",
+    "scripts/Views/SelfView.js?v=20260924-bug-report-minimal-v3",
   ]) {
     assert(indexSource.includes(asset), `The busy-state asset cache key was not updated: ${asset}`);
   }
   const managerViewCacheVersions = {
-    DashboardView: "20260921-schedule-gc179-fixes-v2",
-    EmployeesView: "20260921-schedule-gc179-fixes-v2",
-    ApprovalsView: "20260921-schedule-gc179-fixes-v2",
-    HistoryView: "20260921-schedule-gc179-fixes-v2",
-    ProjectsView: "20260921-schedule-gc179-fixes-v2",
+    DashboardView: "20260924-bug-report-minimal-v3",
+    EmployeesView: "20260924-bug-report-minimal-v3",
+    ApprovalsView: "20260924-bug-report-minimal-v3",
+    HistoryView: "20260924-bug-report-minimal-v3",
+    ProjectsView: "20260924-bug-report-minimal-v3",
   };
   for (const managerView of Object.keys(managerViewSources)) {
     assert(

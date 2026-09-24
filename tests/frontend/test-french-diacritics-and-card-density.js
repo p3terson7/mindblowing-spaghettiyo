@@ -122,10 +122,10 @@ assert.match(cssSource, /\.project-portfolio-sort-hint\s*\{[\s\S]*?margin:\s*-6p
 assert.match(cssSource, /\.project-portfolio-panel\s*>\s*\.projects-grid\s*\{[\s\S]*?padding-top:\s*2px;[\s\S]*?scroll-padding-top:\s*2px;/, "The lifted first project card can still have its top border clipped by the scrollport.");
 
 for (const asset of [
-  "assets/apple-ui.css?v=20260921-schedule-gc179-fixes-v2",
-  "scripts/I18n.js?v=20260921-schedule-gc179-fixes-v2",
-  "scripts/Utilities.js?v=20260921-schedule-gc179-fixes-v2",
-  "scripts/AppShell.js?v=20260921-schedule-gc179-fixes-v2",
+  "assets/apple-ui.css?v=20260924-bug-report-minimal-v3",
+  "scripts/I18n.js?v=20260924-bug-report-minimal-v3",
+  "scripts/Utilities.js?v=20260924-bug-report-minimal-v3",
+  "scripts/AppShell.js?v=20260924-bug-report-minimal-v3",
 ]) {
   assert(indexSource.includes(asset), `Updated UI asset is missing its cache buster: ${asset}`);
 }

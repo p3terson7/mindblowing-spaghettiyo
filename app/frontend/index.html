@@ -30,8 +30,8 @@
   <link rel="icon" type="image/png" sizes="128x128" href="assets/saphir-logo.png?v=20260715-saphir" />
   <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260603-empty-timeline" />
   <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260603-empty-timeline" />
-  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260921-schedule-gc179-fixes-v2">
-  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20260921-schedule-gc179-fixes-v2">
+  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20260924-bug-report-minimal-v3">
+  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20260924-bug-report-minimal-v3">
 </head>
 <body>
   <div class="app-root">
@@ -67,7 +67,7 @@
         </a>
         <a class="app-nav-link d-none" href="#" id="navBugReports" data-role-scope="authenticated">
           <i class="fa-solid fa-bug"></i>
-          <span data-i18n="nav.bugReports">Issues</span>
+          <span data-i18n="nav.bugReports">Bugs</span>
         </a>
       </nav>
 
@@ -117,9 +117,7 @@
           <section class="bug-report-create-panel panel-shell d-none" id="bugReportCreatePanel" aria-labelledby="bugReportCreateTitle">
             <div class="panel-heading-row">
               <div>
-                <div class="panel-kicker" data-i18n="bugReports.newKicker">New inquiry</div>
-                <h2 id="bugReportCreateTitle" data-i18n="bugReports.newTitle">Tell us what happened</h2>
-                <p class="panel-note" data-i18n="bugReports.newHint">Give enough detail to help reproduce and understand the problem.</p>
+                <h2 id="bugReportCreateTitle" data-i18n="bugReports.newTitle">New bug</h2>
               </div>
               <button type="button" class="btn btn-outline-secondary btn-sm" id="bugReportCreateCloseButton">
                 <i class="fa-solid fa-xmark" aria-hidden="true"></i>
@@ -170,7 +168,7 @@
                 <div class="bug-report-attachments-heading">
                   <div>
                     <label class="form-label" data-i18n="bugReports.images">Screenshots</label>
-                    <p class="panel-note" data-i18n="bugReports.imagesHint">Drop up to 5 PNG, JPEG, GIF, or WebP images here (8 MB maximum each).</p>
+                    <p class="panel-note" data-i18n="bugReports.imagesHint">PNG, JPEG, GIF or WebP · 5 max · 8 MB each</p>
                   </div>
                   <span class="bug-report-attachment-counter" id="bugReportAttachmentCounter">0 / 5</span>
                 </div>
@@ -182,10 +180,9 @@
                 <div class="bug-report-pending-attachments" id="bugReportPendingAttachments" aria-live="polite"></div>
               </div>
               <div class="bug-report-form-actions">
-                <span class="panel-note" data-i18n="bugReports.contextCaptured">The page and application version are added automatically.</span>
                 <button type="submit" class="btn btn-primary" id="bugReportCreateSubmitButton">
                   <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
-                  <span data-i18n="bugReports.submit">Send inquiry</span>
+                  <span data-i18n="bugReports.submit">Send</span>
                 </button>
               </div>
             </form>
@@ -195,9 +192,8 @@
             <div class="bug-report-toolbar panel-shell">
               <div class="panel-heading-row">
                 <div>
-                  <div class="panel-kicker" data-i18n="bugReports.queueKicker">Inquiry tracking</div>
-                  <h2 data-i18n="bugReports.queueTitle">Current inquiries</h2>
-                  <p class="panel-note" id="bugReportQueueSummary" data-i18n="bugReports.queueHint">Follow progress without contacting the administrator separately.</p>
+                  <h2 data-i18n="bugReports.queueTitle">Bugs</h2>
+                  <p class="panel-note" id="bugReportQueueSummary">0 bugs</p>
                 </div>
                 <div class="bug-report-toolbar-actions">
                   <button type="button" class="btn btn-outline-secondary btn-sm" id="bugReportRefreshButton" data-i18n-title="action.refresh" title="Refresh">
@@ -206,11 +202,11 @@
                   </button>
                   <button type="button" class="btn btn-primary btn-sm" id="bugReportOpenCreateButton">
                     <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                    <span data-i18n="bugReports.newButton">New inquiry</span>
+                    <span data-i18n="bugReports.newButton">New</span>
                   </button>
                 </div>
               </div>
-              <div class="bug-report-filters" aria-label="Inquiry filters" data-i18n-aria-label="bugReports.filters">
+              <div class="bug-report-filters" aria-label="Filters" data-i18n-aria-label="bugReports.filters">
                 <label>
                   <span data-i18n="bugReports.status">Status</span>
                   <select class="form-select form-select-sm" id="bugReportStatusFilter">
@@ -224,14 +220,13 @@
                   </select>
                 </label>
                 <label>
-                  <span data-i18n="bugReports.priority">Priority</span>
-                  <select class="form-select form-select-sm" id="bugReportPriorityFilter">
-                    <option value="" data-i18n="bugReports.allPriorities">All priorities</option>
-                    <option value="unranked" data-i18n="bugReports.priorityUnranked">Not ranked</option>
-                    <option value="p1">P1</option>
-                    <option value="p2">P2</option>
-                    <option value="p3">P3</option>
-                    <option value="p4">P4</option>
+                  <span data-i18n="bugReports.colorCode">Color code</span>
+                  <select class="form-select form-select-sm bug-report-color-select" id="bugReportColorCodeFilter">
+                    <option value="" data-i18n="bugReports.allColorCodes">All color codes</option>
+                    <option value="p1" data-i18n="bugReports.colorRed">Red</option>
+                    <option value="p2" data-i18n="bugReports.colorOrange">Orange</option>
+                    <option value="p3" data-i18n="bugReports.colorYellow">Yellow</option>
+                    <option value="p4" data-i18n="bugReports.colorBlue">Blue</option>
                   </select>
                 </label>
                 <label>
@@ -254,8 +249,7 @@
               <aside class="bug-report-detail panel-shell" id="bugReportDetail" aria-live="polite" aria-busy="false">
                 <div class="bug-report-detail-empty">
                   <i class="fa-regular fa-message" aria-hidden="true"></i>
-                  <strong data-i18n="bugReports.selectTitle">Select an inquiry</strong>
-                  <span data-i18n="bugReports.selectHint">Its full description and latest status will appear here.</span>
+                  <strong data-i18n="bugReports.selectTitle">Select a bug</strong>
                 </div>
               </aside>
             </div>
@@ -1669,10 +1663,10 @@
       ? window.location.origin + "/"
       : "http://localhost:8081/";
   </script>
-  <script src="scripts/I18n.js?v=20260921-schedule-gc179-fixes-v2"></script>
-  <script src="scripts/Utilities.js?v=20260921-schedule-gc179-fixes-v2"></script>
-  <script src="scripts/AppShell.js?v=20260921-schedule-gc179-fixes-v2"></script>
-  <script src="scripts/Views/ViewSwitching.js?v=20260921-schedule-gc179-fixes-v2"></script>
-  <script src="scripts/Views/SelfView.js?v=20260921-schedule-gc179-fixes-v2"></script>
+  <script src="scripts/I18n.js?v=20260924-bug-report-minimal-v3"></script>
+  <script src="scripts/Utilities.js?v=20260924-bug-report-minimal-v3"></script>
+  <script src="scripts/AppShell.js?v=20260924-bug-report-minimal-v3"></script>
+  <script src="scripts/Views/ViewSwitching.js?v=20260924-bug-report-minimal-v3"></script>
+  <script src="scripts/Views/SelfView.js?v=20260924-bug-report-minimal-v3"></script>
 </body>
 </html>

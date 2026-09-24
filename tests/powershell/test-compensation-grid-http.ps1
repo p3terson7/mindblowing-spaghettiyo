@@ -223,10 +223,10 @@ try {
     Assert-Equal -Expected 200 -Actual $adminBugReports.StatusCode -Message "Admin could not list bug reports."
     $adminTriage = Invoke-TestRequest -Method "PATCH" -Uri "$baseUri/bug-reports/$bugReportId" -Token $adminToken -Body @{ expectedRevision = 1; priority = "p1" }
     Assert-Equal -Expected 403 -Actual $adminTriage.StatusCode -Message "Regular admin changed super-admin triage fields."
-    $superTriage = Invoke-TestRequest -Method "PATCH" -Uri "$baseUri/bug-reports/$bugReportId" -Token $superToken -Body @{ expectedRevision = 1; status = "acknowledged"; priority = "p1"; rank = 1; assignedTo = "compensation-super" }
+    $superTriage = Invoke-TestRequest -Method "PATCH" -Uri "$baseUri/bug-reports/$bugReportId" -Token $superToken -Body @{ expectedRevision = 1; status = "acknowledged"; priority = "p1"; rank = 1 }
     Assert-Equal -Expected 200 -Actual $superTriage.StatusCode -Message "Super admin could not triage a bug report."
     Assert-Equal -Expected 2 -Actual ([int]$superTriage.Json.report.revision) -Message "Triage did not advance the bug-report revision."
-    Assert-Equal -Expected "compensation-super" -Actual ([string]$superTriage.Json.report.assignedTo) -Message "Triage assignment was not persisted."
+    Assert-True -Condition (-not ($superTriage.Json.report.PSObject.Properties.Name -contains "assignedTo")) -Message "Bug-report API still exposes the removed assignee concept."
     $reporterLateEdit = Invoke-TestRequest -Method "PATCH" -Uri "$baseUri/bug-reports/$bugReportId" -Token $employeeToken -Body @{ expectedRevision = 2; title = "Changed too late" }
     Assert-Equal -Expected 403 -Actual $reporterLateEdit.StatusCode -Message "Reporter changed a bug report after triage started."
     $staleTriage = Invoke-TestRequest -Method "PATCH" -Uri "$baseUri/bug-reports/$bugReportId" -Token $superToken -Body @{ expectedRevision = 1; status = "resolved" }

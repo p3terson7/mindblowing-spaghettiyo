@@ -47,10 +47,10 @@ try {
     $bytesAfterConflict = [System.IO.File]::ReadAllBytes($script:bugReportsFile)
     Assert-Equal -Expected ([Convert]::ToBase64String($bytesBeforeConflict)) -Actual ([Convert]::ToBase64String($bytesAfterConflict)) -Message "Conflict changed shared data."
 
-    $triaged = Update-BugReport -ReportId $created.reportId -ExpectedRevision 2 -Input ([PSCustomObject]@{ status = "acknowledged"; priority = "p1"; rank = 1; assignedTo = "owner" }) -CurrentUser $superAdmin -NowUtc ([DateTime]"2026-09-17T14:10:00Z")
+    $triaged = Update-BugReport -ReportId $created.reportId -ExpectedRevision 2 -Input ([PSCustomObject]@{ status = "acknowledged"; priority = "p1"; rank = 1 }) -CurrentUser $superAdmin -NowUtc ([DateTime]"2026-09-17T14:10:00Z")
     Assert-Equal -Expected 3 -Actual $triaged.revision -Message "Triage did not advance revision."
     Assert-Equal -Expected "p1" -Actual $triaged.priority -Message "Priority was not saved."
-    Assert-Equal -Expected 4 -Actual @($triaged.history[2].changedFields).Count -Message "Unexpected triage audit shape."
+    Assert-Equal -Expected 3 -Actual @($triaged.history[2].changedFields).Count -Message "Unexpected follow-up audit shape."
     Assert-Equal -Expected 403 -Actual (Get-StatusCode { Update-BugReport -ReportId $created.reportId -ExpectedRevision 3 -Input ([PSCustomObject]@{ title = "Too late" }) -CurrentUser $employee }) -Message "Reporter changed content after triage started."
 
     $stored = Get-Content -LiteralPath $script:bugReportsFile -Raw | ConvertFrom-Json
@@ -79,12 +79,12 @@ try {
     try { Add-BugReportAttachment -ReportId $attachmentReport.reportId -ExpectedRevision 2 -Bytes ([byte[]]@(1, 2, 3, 4)) -FileName "fake.png" -ContentType "image/png" -CurrentUser $employee | Out-Null }
     catch [System.ArgumentException] { $invalidImageRejected = $true }
     Assert-True -Condition $invalidImageRejected -Message "A file with a fake image type was accepted."
-    $triagedAttachmentReport = Update-BugReport -ReportId $attachmentReport.reportId -ExpectedRevision 2 -Input ([PSCustomObject]@{ status = "acknowledged"; priority = "p1"; rank = 2; assignedTo = "owner" }) -CurrentUser $superAdmin
+    $triagedAttachmentReport = Update-BugReport -ReportId $attachmentReport.reportId -ExpectedRevision 2 -Input ([PSCustomObject]@{ status = "acknowledged"; priority = "p1"; rank = 2 }) -CurrentUser $superAdmin
     Assert-Equal -Expected 403 -Actual (Get-StatusCode { Add-BugReportAttachment -ReportId $attachmentReport.reportId -ExpectedRevision $triagedAttachmentReport.revision -Bytes $pngBytes -FileName "late.png" -ContentType "image/png" -CurrentUser $employee }) -Message "Reporter uploaded an image after triage started."
     $rankedQueue = @(Get-BugReports -CurrentUser $superAdmin -Scope "all" -Priority "p1")
     Assert-Equal -Expected $created.reportId -Actual $rankedQueue[0].reportId -Message "Priority queue did not place rank 1 first."
     Assert-Equal -Expected $attachmentReport.reportId -Actual $rankedQueue[1].reportId -Message "Priority queue did not place rank 2 second."
-    Assert-Equal -Expected "owner" -Actual $rankedQueue[1].assignedTo -Message "Queue summary omitted the triage assignee."
+    Assert-True -Condition (-not ($rankedQueue[1].PSObject.Properties.Name -contains "assignedTo")) -Message "Queue summary still exposes the removed assignee concept."
 
     $commentReport = Add-BugReport -Input ([PSCustomObject]@{ title = "Need more detail"; description = "A conversation is required."; category = "bug" }) -CurrentUser $employee
     $employeeComment = Add-BugReportComment -ReportId $commentReport.reportId -ExpectedRevision 1 -Input ([PSCustomObject]@{ body = "  It happens after signing in.  " }) -CurrentUser $employee -NowUtc ([DateTime]"2026-09-18T10:00:00Z")

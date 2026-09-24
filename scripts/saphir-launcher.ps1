@@ -193,9 +193,9 @@ try {
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Name="LauncherWindow"
         Width="540"
-        Height="675"
+        Height="700"
         MinWidth="540"
-        MinHeight="675"
+        MinHeight="700"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
         Background="#F5F5F7"
@@ -207,7 +207,7 @@ try {
         <Style x:Key="BaseButtonStyle" TargetType="{x:Type Button}">
             <Setter Property="MinHeight" Value="42"/>
             <Setter Property="Padding" Value="18,9"/>
-            <Setter Property="Margin" Value="0,0,10,0"/>
+            <Setter Property="Margin" Value="0"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -244,6 +244,8 @@ try {
             </Setter>
         </Style>
         <Style x:Key="PrimaryButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButtonStyle}">
+            <Setter Property="MinHeight" Value="48"/>
+            <Setter Property="FontSize" Value="15"/>
             <Setter Property="Background" Value="#0071E3"/>
             <Setter Property="BorderBrush" Value="#0071E3"/>
             <Setter Property="Foreground" Value="White"/>
@@ -257,6 +259,21 @@ try {
             <Setter Property="Background" Value="White"/>
             <Setter Property="BorderBrush" Value="#FF3B30"/>
             <Setter Property="Foreground" Value="#D70015"/>
+        </Style>
+        <Style x:Key="UtilityButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButtonStyle}">
+            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#5E5E63"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E8E8ED"/>
+                    <Setter Property="Foreground" Value="#1D1D1F"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Window.Resources>
     <Grid Margin="28">
@@ -394,25 +411,36 @@ try {
         <Grid Grid.Row="4">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="12"/>
+                <RowDefinition Height="10"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="14"/>
+                <RowDefinition Height="1"/>
+                <RowDefinition Height="7"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <StackPanel Grid.Row="0" Orientation="Horizontal">
-                <Button x:Name="StartButton" Style="{StaticResource PrimaryButtonStyle}"/>
-                <Button x:Name="UpdateButton" Style="{StaticResource PrimaryButtonStyle}"/>
-                <Button x:Name="OpenButton" Style="{StaticResource SecondaryButtonStyle}" IsDefault="True"/>
-                <Button x:Name="RestartButton" Style="{StaticResource SecondaryButtonStyle}"/>
-                <Button x:Name="StopButton" Style="{StaticResource DangerButtonStyle}" Margin="0"/>
+            <Grid Grid.Row="0">
+                <Button x:Name="StartButton" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Stretch"/>
+                <Button x:Name="UpdateButton" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Stretch"/>
+                <Button x:Name="OpenButton" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Stretch"/>
+            </Grid>
+            <StackPanel Grid.Row="2" x:Name="RuntimeActionsPanel"
+                        Orientation="Horizontal" HorizontalAlignment="Center">
+                <Button x:Name="RestartButton" Style="{StaticResource SecondaryButtonStyle}"
+                        Width="210" Margin="0,0,10,0"/>
+                <Button x:Name="StopButton" Style="{StaticResource DangerButtonStyle}" Width="210"/>
             </StackPanel>
-            <Grid Grid.Row="2">
+            <Border Grid.Row="4" Background="#DDDDE3"/>
+            <Grid Grid.Row="6">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <Button x:Name="LogsButton" Style="{StaticResource SecondaryButtonStyle}"/>
-                <Button Grid.Column="1" x:Name="RepairButton" Style="{StaticResource SecondaryButtonStyle}"/>
-                <Button Grid.Column="2" x:Name="RefreshButton" Style="{StaticResource SecondaryButtonStyle}" Margin="0"/>
+                <Button Grid.Column="1" x:Name="LogsButton" Style="{StaticResource UtilityButtonStyle}" Margin="0,0,6,0"/>
+                <Button Grid.Column="2" x:Name="RepairButton" Style="{StaticResource UtilityButtonStyle}" Margin="0,0,6,0"/>
+                <Button Grid.Column="3" x:Name="RefreshButton" Style="{StaticResource UtilityButtonStyle}"/>
             </Grid>
         </Grid>
     </Grid>
@@ -430,7 +458,7 @@ try {
         "DistributionValue", "DistributionPathText", "ReleaseLabel", "ReleaseValue",
         "TargetReleaseLabel", "TargetReleaseValue",
         "BusyProgress", "BusyText", "ErrorBanner", "ErrorText", "StartButton",
-        "UpdateButton", "OpenButton", "RestartButton", "StopButton", "LogsButton", "RepairButton", "RefreshButton"
+        "UpdateButton", "OpenButton", "RuntimeActionsPanel", "RestartButton", "StopButton", "LogsButton", "RepairButton", "RefreshButton"
     )
     foreach ($name in $names) {
         Set-Variable -Name $name -Value $window.FindName($name) -Scope Script
@@ -625,6 +653,10 @@ try {
         foreach ($button in @($script:StartButton, $script:UpdateButton, $script:OpenButton, $script:RestartButton, $script:StopButton, $script:RepairButton)) {
             Set-Visible -Element $button -Visible $false
         }
+        $script:StartButton.IsDefault = $false
+        $script:UpdateButton.IsDefault = $false
+        $script:OpenButton.IsDefault = $false
+        Set-Visible -Element $script:RuntimeActionsPanel -Visible $false
     }
 
     function Apply-Status {
@@ -775,10 +807,14 @@ try {
         $script:UpdateButton.Content = if ($state -eq "Offline") { $text.UpdateAndStart } else { $text.UpdateAndRestart }
         Set-Visible -Element $script:StartButton -Visible ($state -eq "Offline" -and -not $showUpdate)
         Set-Visible -Element $script:UpdateButton -Visible $showUpdate
-        Set-Visible -Element $script:OpenButton -Visible ($state -eq "Online")
+        Set-Visible -Element $script:OpenButton -Visible ($state -eq "Online" -and -not $showUpdate)
         Set-Visible -Element $script:RestartButton -Visible (($state -eq "Online" -or $state -eq "Unresponsive") -and -not $showUpdate)
         Set-Visible -Element $script:StopButton -Visible ($state -eq "Online" -or $state -eq "Unresponsive")
+        Set-Visible -Element $script:RuntimeActionsPanel -Visible ($state -eq "Online" -or $state -eq "Unresponsive")
         Set-Visible -Element $script:RepairButton -Visible ([bool]$Status.CanRepair)
+        $script:StartButton.IsDefault = ($state -eq "Offline" -and -not $showUpdate)
+        $script:UpdateButton.IsDefault = $showUpdate
+        $script:OpenButton.IsDefault = ($state -eq "Online" -and -not $showUpdate)
 
         if (-not $script:actionBusy) {
             $script:StartButton.IsEnabled = [bool]$Status.CanStart

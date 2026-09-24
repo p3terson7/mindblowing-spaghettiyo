@@ -63,7 +63,7 @@ $admin = [PSCustomObject]@{ username = "manager"; role = "admin" }
 $superAdmin = [PSCustomObject]@{ username = "owner"; role = "superAdmin" }
 $report = [PSCustomObject]@{
     reportId = "bug-0123456789abcdef0123456789abcdef"; revision = 1; title = "Title"; description = ("a" * 300)
-    category = "bug"; status = "new"; priority = "unranked"; rank = 0; assignedTo = ""
+    category = "bug"; status = "new"; priority = "unranked"; rank = 0
     createdBy = [PSCustomObject]@{ username = "employee.one"; displayName = "Employee One" }
     createdAtUtc = "2026-09-17T10:00:00.0000000Z"; updatedAtUtc = "2026-09-17T10:00:00.0000000Z"
     attachments = @(); comments = @()
@@ -78,6 +78,7 @@ $report.status = "acknowledged"
 Assert-True -Condition (-not (Test-SaphirBugReportReporterEditAllowed -Report $report -User $owner)) -Message "Reporter can edit a report after triage started."
 
 $summary = New-SaphirBugReportSummary -Report $report
+Assert-True -Condition (-not ($summary.PSObject.Properties.Name -contains "assignedTo")) -Message "Summary still exposes the removed assignee concept."
 Assert-True -Condition ($summary.descriptionPreview.Length -le 240) -Message "List preview is too long."
 Assert-True -Condition (-not ($summary.PSObject.Properties.Name -contains "description")) -Message "List summary exposes the full description."
 

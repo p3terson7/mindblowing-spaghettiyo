@@ -124,15 +124,15 @@ for (const copy of [
 }
 
 const gc179AssetCacheVersions = {
-  "I18n.js": "20260921-schedule-gc179-fixes-v2",
-  "Utilities.js": "20260921-schedule-gc179-fixes-v2",
-  "AppShell.js": "20260921-schedule-gc179-fixes-v2",
+  "I18n.js": "20260924-bug-report-minimal-v3",
+  "Utilities.js": "20260924-bug-report-minimal-v3",
+  "AppShell.js": "20260924-bug-report-minimal-v3",
 };
 for (const [asset, version] of Object.entries(gc179AssetCacheVersions)) {
   assert(indexSource.includes(`${asset}?v=${version}`), `${asset} is missing the GC179 cache buster.`);
 }
 assert(
-  appShellSource.includes("EmployeesView.js?v=20260921-schedule-gc179-fixes-v2"),
+  appShellSource.includes("EmployeesView.js?v=20260924-bug-report-minimal-v3"),
   "EmployeesView is missing the GC179 cache buster.",
 );
 

@@ -7,6 +7,7 @@ const bugReportViewState = {
   pendingAttachments: [],
   pendingUploadsLocked: false,
   detailObjectUrls: [],
+  imageViewerTrigger: null,
 };
 
 const BUG_REPORT_ATTACHMENT_MAX_COUNT = 5;
@@ -20,6 +21,17 @@ const BUG_REPORT_STATUS_KEYS = Object.freeze({
   waitingForUser: "bugReports.statusWaitingForUser",
   resolved: "bugReports.statusResolved",
   closed: "bugReports.statusClosed",
+});
+
+// P1-P4 remain the shared-storage encoding for backward compatibility. The UI
+// deliberately exposes them only as color codes, so existing reports do not
+// need a risky migration on the network disk.
+const BUG_REPORT_COLOR_CODE_KEYS = Object.freeze({
+  unranked: "bugReports.colorNone",
+  p1: "bugReports.colorRed",
+  p2: "bugReports.colorOrange",
+  p3: "bugReports.colorYellow",
+  p4: "bugReports.colorBlue",
 });
 
 const BUG_REPORT_CATEGORY_KEYS = Object.freeze({
@@ -41,89 +53,36 @@ function getBugReportCategoryLabel(category) {
   return key ? t(key) : String(category || "—");
 }
 
-function getBugReportPriorityLabel(priority) {
-  const normalized = String(priority || "unranked").toLowerCase();
-  return normalized === "unranked" ? t("bugReports.priorityUnranked") : normalized.toUpperCase();
+function getBugReportColorCodeLabel(storedCode) {
+  const normalized = String(storedCode || "unranked").toLowerCase();
+  const key = BUG_REPORT_COLOR_CODE_KEYS[normalized] || BUG_REPORT_COLOR_CODE_KEYS.unranked;
+  return t(key);
 }
 
-function getBugReportPriorityDescription(priority) {
-  const normalized = String(priority || "unranked").toLowerCase();
+function getBugReportColorCodeDescription(storedCode) {
+  const normalized = String(storedCode || "unranked").toLowerCase();
   const key = {
-    unranked: "bugReports.priorityHintUnranked",
-    p1: "bugReports.priorityHintP1",
-    p2: "bugReports.priorityHintP2",
-    p3: "bugReports.priorityHintP3",
-    p4: "bugReports.priorityHintP4",
+    unranked: "bugReports.colorHintNone",
+    p1: "bugReports.colorHintRed",
+    p2: "bugReports.colorHintOrange",
+    p3: "bugReports.colorHintYellow",
+    p4: "bugReports.colorHintBlue",
   }[normalized];
   return key ? t(key) : "";
 }
 
-function getBugReportHistoryFieldLabel(fieldName) {
-  const key = {
-    status: "bugReports.status",
-    priority: "bugReports.priority",
-    rank: "bugReports.queueOrder",
-    assignedTo: "bugReports.assignedTo",
-    title: "bugReports.title",
-    description: "bugReports.description",
-    category: "bugReports.category",
-    stepsToReproduce: "bugReports.steps",
-    expectedBehavior: "bugReports.expected",
-    actualBehavior: "bugReports.actual",
-    technicalContext: "bugReports.technicalContext",
-    attachments: "bugReports.images",
-  }[String(fieldName || "")];
-  return key ? t(key) : String(fieldName || "");
+function renderBugReportColorCodeBadge(storedCode) {
+  const normalized = String(storedCode || "unranked").toLowerCase();
+  if (!BUG_REPORT_COLOR_CODE_KEYS[normalized] || normalized === "unranked") return "";
+  return `<span class="bug-report-color-code bug-report-color-code-${escapeHtml(normalized)}"><span class="bug-report-color-dot" aria-hidden="true"></span>${escapeHtml(getBugReportColorCodeLabel(normalized))}</span>`;
 }
 
-function formatBugReportHistoryValue(fieldName, value) {
-  if (value == null || value === "") return t("bugReports.none");
-  if (fieldName === "status") return getBugReportStatusLabel(value);
-  if (fieldName === "priority") return getBugReportPriorityLabel(value);
-  if (fieldName === "rank") return Number(value) > 0 ? String(value) : t("bugReports.notOrdered");
-  return String(value);
-}
-
-function renderBugReportHistory(report) {
-  const history = Array.isArray(report && report.history) ? [...report.history].reverse() : [];
-  if (!history.length) return "";
-  return `
-    <div class="bug-report-detail-section bug-report-history-section">
-      <h4>${escapeHtml(t("bugReports.activity"))}</h4>
-      <ol class="bug-report-history-list">
-        ${history.map(event => {
-          const actor = event && event.actor && typeof event.actor === "object" ? event.actor : {};
-          const actorName = String(actor.displayName || actor.username || t("bugReports.systemActor"));
-          const changes = Array.isArray(event.changedFields) ? event.changedFields : [];
-          let eventLabel = t("bugReports.activityUpdated");
-          if (event.type === "created") eventLabel = t("bugReports.activityCreated");
-          if (event.type === "attachmentAdded") eventLabel = t("bugReports.activityImageAdded");
-          if (event.type === "commentAdded") eventLabel = t("bugReports.activityCommentAdded");
-          const changeMarkup = event.type === "updated" && changes.length ? `
-            <ul>
-              ${changes.map(change => {
-                const fieldName = String(change && change.field || "");
-                const hasValues = Object.prototype.hasOwnProperty.call(change || {}, "from") || Object.prototype.hasOwnProperty.call(change || {}, "to");
-                return `<li><strong>${escapeHtml(getBugReportHistoryFieldLabel(fieldName))}</strong>${hasValues
-                  ? `: ${escapeHtml(formatBugReportHistoryValue(fieldName, change.from))} <span aria-hidden="true">→</span> ${escapeHtml(formatBugReportHistoryValue(fieldName, change.to))}`
-                  : ""}</li>`;
-              }).join("")}
-            </ul>
-          ` : "";
-          return `
-            <li class="bug-report-history-event">
-              <span class="bug-report-history-marker" aria-hidden="true"></span>
-              <div>
-                <strong>${escapeHtml(eventLabel)}</strong>
-                <span>${escapeHtml(actorName)} · ${escapeHtml(formatBugReportDate(event.atUtc))}</span>
-                ${changeMarkup}
-              </div>
-            </li>
-          `;
-        }).join("")}
-      </ol>
-    </div>
-  `;
+function syncBugReportColorSelect(select) {
+  if (!select) return;
+  const supportedCodes = ["p1", "p2", "p3", "p4", "unranked", "all"];
+  supportedCodes.forEach(code => select.classList.remove(`bug-report-color-select-${code}`));
+  const storedCode = String(select.value || "").toLowerCase();
+  select.classList.add(`bug-report-color-select-${BUG_REPORT_COLOR_CODE_KEYS[storedCode] ? storedCode : "all"}`);
 }
 
 function renderBugReportComments(report) {
@@ -134,10 +93,7 @@ function renderBugReportComments(report) {
   return `
     <div class="bug-report-detail-section bug-report-comments-section">
       <div class="bug-report-comments-heading">
-        <div>
-          <h4>${escapeHtml(t("bugReports.discussion"))}</h4>
-          <p>${escapeHtml(t("bugReports.discussionHint"))}</p>
-        </div>
+        <h4>${escapeHtml(t("bugReports.discussion"))}</h4>
         <span>${escapeHtml(t("bugReports.commentCount", { count: comments.length }))}</span>
       </div>
       <div class="bug-report-comment-thread" id="bugReportCommentThread">
@@ -224,8 +180,99 @@ function setBugReportCreateMessage(message, type = "danger") {
 }
 
 function revokeBugReportDetailObjectUrls() {
+  closeBugReportImageViewer(false);
   bugReportViewState.detailObjectUrls.forEach(url => URL.revokeObjectURL(url));
   bugReportViewState.detailObjectUrls = [];
+}
+
+function ensureBugReportImageViewer() {
+  let viewer = document.getElementById("bugReportImageViewer");
+  if (viewer) return viewer;
+  viewer = document.createElement("div");
+  viewer.id = "bugReportImageViewer";
+  viewer.className = "bug-report-image-viewer";
+  viewer.hidden = true;
+  viewer.setAttribute("role", "dialog");
+  viewer.setAttribute("aria-modal", "true");
+  viewer.setAttribute("aria-labelledby", "bugReportImageViewerTitle");
+  viewer.innerHTML = `
+    <div class="bug-report-image-viewer-dialog">
+      <div class="bug-report-image-viewer-toolbar">
+        <strong id="bugReportImageViewerTitle"></strong>
+        <div>
+          <button type="button" class="bug-report-image-viewer-size" aria-pressed="false">
+            <i class="fa-solid fa-magnifying-glass-plus" aria-hidden="true"></i>
+            <span></span>
+          </button>
+          <button type="button" class="bug-report-image-viewer-close">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+      <div class="bug-report-image-viewer-stage">
+        <img alt="">
+      </div>
+    </div>
+  `;
+  document.body.appendChild(viewer);
+  viewer.addEventListener("click", event => {
+    if (event.target === viewer || event.target.closest(".bug-report-image-viewer-close")) {
+      closeBugReportImageViewer();
+      return;
+    }
+    if (event.target.closest(".bug-report-image-viewer-size") || event.target.closest(".bug-report-image-viewer-stage img")) {
+      setBugReportImageViewerActualSize(viewer, !viewer.classList.contains("is-actual-size"));
+    }
+  });
+  return viewer;
+}
+
+function syncBugReportImageViewerLabels(viewer) {
+  if (!viewer) return;
+  const actualSize = viewer.classList.contains("is-actual-size");
+  const sizeButton = viewer.querySelector(".bug-report-image-viewer-size");
+  const closeButton = viewer.querySelector(".bug-report-image-viewer-close");
+  if (sizeButton) {
+    sizeButton.setAttribute("aria-label", t(actualSize ? "bugReports.fitImage" : "bugReports.actualSize"));
+    sizeButton.querySelector("span").textContent = t(actualSize ? "bugReports.fitImage" : "bugReports.actualSize");
+  }
+  closeButton?.setAttribute("aria-label", t("bugReports.closeImage"));
+}
+
+function setBugReportImageViewerActualSize(viewer, actualSize) {
+  if (!viewer) return;
+  viewer.classList.toggle("is-actual-size", actualSize);
+  const sizeButton = viewer.querySelector(".bug-report-image-viewer-size");
+  sizeButton?.setAttribute("aria-pressed", actualSize ? "true" : "false");
+  const icon = sizeButton?.querySelector("i");
+  if (icon) icon.className = `fa-solid ${actualSize ? "fa-compress" : "fa-magnifying-glass-plus"}`;
+  syncBugReportImageViewerLabels(viewer);
+}
+
+function openBugReportImageViewer(imageUrl, fileName, trigger) {
+  if (!imageUrl) return;
+  const viewer = ensureBugReportImageViewer();
+  const image = viewer.querySelector(".bug-report-image-viewer-stage img");
+  const title = viewer.querySelector("#bugReportImageViewerTitle");
+  bugReportViewState.imageViewerTrigger = trigger || document.activeElement;
+  title.textContent = String(fileName || t("bugReports.images"));
+  image.src = imageUrl;
+  image.alt = String(fileName || "");
+  setBugReportImageViewerActualSize(viewer, false);
+  viewer.hidden = false;
+  document.body.classList.add("bug-report-image-viewer-open");
+  viewer.querySelector(".bug-report-image-viewer-close")?.focus({ preventScroll: true });
+}
+
+function closeBugReportImageViewer(restoreFocus = true) {
+  const viewer = document.getElementById("bugReportImageViewer");
+  if (!viewer || viewer.hidden) return;
+  viewer.hidden = true;
+  viewer.classList.remove("is-actual-size");
+  viewer.querySelector(".bug-report-image-viewer-stage img")?.removeAttribute("src");
+  document.body.classList.remove("bug-report-image-viewer-open");
+  if (restoreFocus) bugReportViewState.imageViewerTrigger?.focus({ preventScroll: true });
+  bugReportViewState.imageViewerTrigger = null;
 }
 
 function clearBugReportPendingAttachments() {
@@ -300,7 +347,7 @@ function addBugReportAttachmentFiles(fileList) {
 function getBugReportFilters() {
   return {
     status: String(document.getElementById("bugReportStatusFilter")?.value || ""),
-    priority: String(document.getElementById("bugReportPriorityFilter")?.value || ""),
+    priority: String(document.getElementById("bugReportColorCodeFilter")?.value || ""),
     category: String(document.getElementById("bugReportCategoryFilter")?.value || ""),
   };
 }
@@ -334,7 +381,6 @@ function renderBugReportList() {
       <div class="bug-report-empty-state">
         <i class="fa-regular fa-circle-check" aria-hidden="true"></i>
         <strong>${escapeHtml(t("bugReports.emptyTitle"))}</strong>
-        <span>${escapeHtml(t("bugReports.emptyHint"))}</span>
       </div>
     `;
     return;
@@ -344,17 +390,16 @@ function renderBugReportList() {
     const selected = bugReportViewState.selectedReport && bugReportViewState.selectedReport.reportId === report.reportId;
     const reporter = getBugReportReporterLabel(report);
     return `
-      <button type="button" class="bug-report-card${selected ? " is-selected" : ""}" data-bug-report-id="${escapeHtml(report.reportId)}" aria-pressed="${selected ? "true" : "false"}">
+      <button type="button" class="bug-report-card bug-report-card-color-${escapeHtml(String(report.priority || "unranked").toLowerCase())}${selected ? " is-selected" : ""}" data-bug-report-id="${escapeHtml(report.reportId)}" aria-pressed="${selected ? "true" : "false"}">
         <span class="bug-report-card-topline">
           <span class="bug-report-status bug-report-status-${escapeHtml(String(report.status || "new").toLowerCase())}">${escapeHtml(getBugReportStatusLabel(report.status))}</span>
-          <span class="bug-report-priority bug-report-priority-${escapeHtml(String(report.priority || "unranked").toLowerCase())}">${escapeHtml(getBugReportPriorityLabel(report.priority))}</span>
+          ${renderBugReportColorCodeBadge(report.priority)}
         </span>
         <strong class="bug-report-card-title">${escapeHtml(report.title)}</strong>
         <span class="bug-report-card-preview">${escapeHtml(report.descriptionPreview)}</span>
         <span class="bug-report-card-meta">
           <span><i class="fa-regular fa-folder" aria-hidden="true"></i>${escapeHtml(getBugReportCategoryLabel(report.category))}</span>
           ${reporter && isManagerUser() ? `<span><i class="fa-regular fa-user" aria-hidden="true"></i>${escapeHtml(reporter)}</span>` : ""}
-          ${isManagerUser() && report.assignedTo ? `<span><i class="fa-solid fa-user-check" aria-hidden="true"></i>${escapeHtml(report.assignedTo)}</span>` : ""}
           ${isManagerUser() && Number(report.rank) > 0 ? `<span><i class="fa-solid fa-arrow-down-1-9" aria-hidden="true"></i>${escapeHtml(t("bugReports.queueOrderShort", { rank: report.rank }))}</span>` : ""}
           ${Number(report.commentCount) > 0 ? `<span><i class="fa-regular fa-comment" aria-hidden="true"></i>${escapeHtml(String(report.commentCount))}</span>` : ""}
           <span><i class="fa-regular fa-clock" aria-hidden="true"></i>${escapeHtml(formatBugReportDate(report.updatedAtUtc))}</span>
@@ -385,7 +430,6 @@ function renderBugReportDetailEmpty() {
     <div class="bug-report-detail-empty">
       <i class="fa-regular fa-message" aria-hidden="true"></i>
       <strong>${escapeHtml(t("bugReports.selectTitle"))}</strong>
-      <span>${escapeHtml(t("bugReports.selectHint"))}</span>
     </div>
   `;
 }
@@ -403,7 +447,6 @@ function renderBugReportDetail(report) {
   ].filter(([, value]) => String(value || "").trim());
   const attachments = Array.isArray(report.attachments) ? report.attachments : [];
   const managerMetadata = isManagerUser() ? `
-    <div><dt>${escapeHtml(t("bugReports.assignedTo"))}</dt><dd>${escapeHtml(report.assignedTo || t("bugReports.unassigned"))}</dd></div>
     <div><dt>${escapeHtml(t("bugReports.queueOrder"))}</dt><dd>${escapeHtml(Number(report.rank) > 0 ? String(report.rank) : t("bugReports.notOrdered"))}</dd></div>
   ` : "";
   revokeBugReportDetailObjectUrls();
@@ -413,7 +456,7 @@ function renderBugReportDetail(report) {
       <div>
         <div class="bug-report-detail-badges">
           <span class="bug-report-status bug-report-status-${escapeHtml(String(report.status || "new").toLowerCase())}">${escapeHtml(getBugReportStatusLabel(report.status))}</span>
-          <span class="bug-report-priority bug-report-priority-${escapeHtml(String(report.priority || "unranked").toLowerCase())}">${escapeHtml(getBugReportPriorityLabel(report.priority))}</span>
+          ${renderBugReportColorCodeBadge(report.priority)}
         </div>
         <h3>${escapeHtml(report.title)}</h3>
       </div>
@@ -432,7 +475,6 @@ function renderBugReportDetail(report) {
           <div>
             <span class="panel-kicker">${escapeHtml(t("bugReports.triageKicker"))}</span>
             <h4>${escapeHtml(t("bugReports.triageTitle"))}</h4>
-            <p>${escapeHtml(t("bugReports.triageHint"))}</p>
           </div>
           <span class="bug-report-triage-revision">${escapeHtml(t("bugReports.revision", { revision: report.revision }))}</span>
         </div>
@@ -444,23 +486,19 @@ function renderBugReportDetail(report) {
             </select>
           </label>
           <label>
-            <span>${escapeHtml(t("bugReports.priority"))}</span>
-            <select class="form-select form-select-sm" id="bugReportTriagePriority">
-              ${["unranked", "p1", "p2", "p3", "p4"].map(priority => `<option value="${priority}"${report.priority === priority ? " selected" : ""}>${escapeHtml(getBugReportPriorityLabel(priority))}</option>`).join("")}
+            <span>${escapeHtml(t("bugReports.colorCode"))}</span>
+            <select class="form-select form-select-sm bug-report-color-select" id="bugReportTriageColorCode">
+              ${Object.keys(BUG_REPORT_COLOR_CODE_KEYS).map(storedCode => `<option value="${storedCode}"${report.priority === storedCode ? " selected" : ""}>${escapeHtml(getBugReportColorCodeLabel(storedCode))}</option>`).join("")}
             </select>
           </label>
           <label>
             <span>${escapeHtml(t("bugReports.queueOrder"))}</span>
             <input class="form-control form-control-sm" type="number" id="bugReportTriageRank" min="0" max="2147483647" step="1" value="${escapeHtml(String(Number(report.rank) || 0))}" required>
           </label>
-          <label>
-            <span>${escapeHtml(t("bugReports.assignedTo"))}</span>
-            <input class="form-control form-control-sm" type="text" id="bugReportTriageAssignee" maxlength="100" value="${escapeHtml(report.assignedTo || "")}" data-i18n-placeholder="bugReports.assignedToPlaceholder" placeholder="Name or username">
-          </label>
         </div>
-        <div class="bug-report-priority-guidance" id="bugReportPriorityGuidance">
+        <div class="bug-report-color-guidance" id="bugReportColorGuidance"${getBugReportColorCodeDescription(report.priority) ? "" : " hidden"}>
           <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-          <span>${escapeHtml(getBugReportPriorityDescription(report.priority))}</span>
+          <span>${escapeHtml(getBugReportColorCodeDescription(report.priority))}</span>
         </div>
         <div class="bug-report-triage-actions">
           <span class="bug-report-triage-message" id="bugReportTriageMessage" role="status" aria-live="polite"></span>
@@ -486,16 +524,15 @@ function renderBugReportDetail(report) {
         <h4>${escapeHtml(t("bugReports.images"))}</h4>
         <div class="bug-report-attachment-gallery">
           ${attachments.map(attachment => `
-            <a class="bug-report-attachment-preview is-loading" data-bug-report-attachment-id="${escapeHtml(attachment.attachmentId)}" download="${escapeHtml(attachment.fileName)}" aria-label="${escapeHtml(t("bugReports.openImage", { name: attachment.fileName }))}">
+            <button type="button" class="bug-report-attachment-preview is-loading" data-bug-report-attachment-id="${escapeHtml(attachment.attachmentId)}" data-bug-report-attachment-name="${escapeHtml(attachment.fileName)}" aria-label="${escapeHtml(t("bugReports.openImage", { name: attachment.fileName }))}">
               <span class="bug-report-upload-spinner" aria-hidden="true"></span>
               <span>${escapeHtml(attachment.fileName)}</span>
-            </a>
+            </button>
           `).join("")}
         </div>
       </div>
     ` : ""}
     ${renderBugReportComments(report)}
-    ${renderBugReportHistory(report)}
     <div class="bug-report-detail-footer">
       <span><i class="fa-regular fa-image" aria-hidden="true"></i>${escapeHtml(t("bugReports.attachmentCount", { count: Array.isArray(report.attachments) ? report.attachments.length : 0 }))}</span>
       <span><i class="fa-regular fa-comment" aria-hidden="true"></i>${escapeHtml(t("bugReports.commentCount", { count: Array.isArray(report.comments) ? report.comments.length : 0 }))}</span>
@@ -576,9 +613,8 @@ async function submitBugReportComment(event, report) {
 function getBugReportTriageValues() {
   return {
     status: String(document.getElementById("bugReportTriageStatus")?.value || "new"),
-    priority: String(document.getElementById("bugReportTriagePriority")?.value || "unranked"),
+    priority: String(document.getElementById("bugReportTriageColorCode")?.value || "unranked"),
     rank: Number(document.getElementById("bugReportTriageRank")?.value || 0),
-    assignedTo: String(document.getElementById("bugReportTriageAssignee")?.value || "").trim(),
   };
 }
 
@@ -593,24 +629,30 @@ function bindBugReportTriageControls(report) {
   const form = document.getElementById("bugReportTriageForm");
   const saveButton = document.getElementById("bugReportTriageSaveButton");
   if (!form || !saveButton) return;
+  const colorSelect = document.getElementById("bugReportTriageColorCode");
   const original = {
     status: String(report.status || "new"),
     priority: String(report.priority || "unranked"),
     rank: Number(report.rank || 0),
-    assignedTo: String(report.assignedTo || "").trim(),
   };
   const updateState = () => {
     const values = getBugReportTriageValues();
+    syncBugReportColorSelect(colorSelect);
     const dirty = Object.keys(original).some(key => values[key] !== original[key]);
     saveButton.disabled = !dirty;
-    const guidance = document.querySelector("#bugReportPriorityGuidance span");
-    if (guidance) guidance.textContent = getBugReportPriorityDescription(values.priority);
+    const guidance = document.querySelector("#bugReportColorGuidance span");
+    if (guidance) {
+      const description = getBugReportColorCodeDescription(values.priority);
+      guidance.textContent = description;
+      guidance.parentElement.hidden = !description;
+    }
     setBugReportTriageMessage(dirty ? t("bugReports.unsavedTriage") : "");
   };
   form.querySelectorAll("input, select").forEach(control => {
     control.addEventListener("input", updateState);
     control.addEventListener("change", updateState);
   });
+  syncBugReportColorSelect(colorSelect);
   form.addEventListener("submit", event => submitBugReportTriage(event, report));
 }
 
@@ -669,14 +711,14 @@ async function loadBugReportAttachmentPreviews(report, requestId) {
       if (requestId !== bugReportViewState.detailRequestId) return;
       const objectUrl = URL.createObjectURL(blob);
       bugReportViewState.detailObjectUrls.push(objectUrl);
-      tile.href = objectUrl;
+      tile.dataset.bugReportImageUrl = objectUrl;
       tile.innerHTML = `<img src="${escapeHtml(objectUrl)}" alt="${escapeHtml(attachment.fileName)}"><span>${escapeHtml(attachment.fileName)}</span>`;
       tile.classList.remove("is-loading");
     } catch (error) {
       tile.classList.remove("is-loading");
       tile.classList.add("is-error");
       tile.innerHTML = `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${escapeHtml(attachment.fileName)}</span>`;
-      tile.removeAttribute("href");
+      delete tile.dataset.bugReportImageUrl;
     }
   }));
 }
@@ -782,7 +824,7 @@ function getBugReportCreatePayload() {
     expectedBehavior: String(document.getElementById("bugReportExpectedInput")?.value || "").trim(),
     actualBehavior: String(document.getElementById("bugReportActualInput")?.value || "").trim(),
     technicalContext: {
-      appVersion: "20260921-schedule-gc179-fixes-v2",
+      appVersion: "20260924-bug-report-minimal-v3",
       page: String(window.location && window.location.hash || "") || String(typeof window.getActiveAppViewId === "function" ? window.getActiveAppViewId() : "bugReportsView"),
       browser: String(navigator.userAgent || "").slice(0, 500),
       operatingSystem: String(navigator.platform || "").slice(0, 300),
@@ -880,8 +922,25 @@ function initializeBugReportsView() {
   document.getElementById("bugReportRefreshButton")?.addEventListener("click", event => {
     runButtonAction(event.currentTarget, loadBugReportList, { key: "bug-report-list" });
   });
-  ["bugReportStatusFilter", "bugReportPriorityFilter", "bugReportCategoryFilter"].forEach(id => {
-    document.getElementById(id)?.addEventListener("change", loadBugReportList);
+  ["bugReportStatusFilter", "bugReportColorCodeFilter", "bugReportCategoryFilter"].forEach(id => {
+    const filter = document.getElementById(id);
+    filter?.addEventListener("change", () => {
+      if (id === "bugReportColorCodeFilter") syncBugReportColorSelect(filter);
+      loadBugReportList();
+    });
+  });
+  syncBugReportColorSelect(document.getElementById("bugReportColorCodeFilter"));
+  document.getElementById("bugReportDetail")?.addEventListener("click", event => {
+    const preview = event.target.closest(".bug-report-attachment-preview[data-bug-report-image-url]");
+    if (!preview) return;
+    openBugReportImageViewer(
+      preview.dataset.bugReportImageUrl,
+      preview.dataset.bugReportAttachmentName,
+      preview,
+    );
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeBugReportImageViewer();
   });
 }
 
@@ -898,6 +957,7 @@ function rerenderBugReportsViewForLanguageChange() {
   } else {
     renderBugReportDetailEmpty();
   }
+  syncBugReportImageViewerLabels(document.getElementById("bugReportImageViewer"));
 }
 
 window.openBugReportCreatePanel = openBugReportCreatePanel;

@@ -193,10 +193,9 @@ function Read-BugReportCollection {
         try {
             Saphir.BugReports\ConvertTo-SaphirBugReportCreateInput -Value $report | Out-Null
             Saphir.BugReports\ConvertTo-SaphirBugReportPatchInput -Value ([PSCustomObject]@{
-                status     = $report.status
-                priority   = $report.priority
-                rank       = $report.rank
-                assignedTo = $report.assignedTo
+                status   = $report.status
+                priority = $report.priority
+                rank     = $report.rank
             }) | Out-Null
         }
         catch [System.ArgumentException] {
@@ -330,7 +329,6 @@ function Add-BugReport {
         status            = 'new'
         priority          = 'unranked'
         rank              = [Int64]0
-        assignedTo        = ''
         createdBy         = $actor
         createdAtUtc      = $timestampText
         updatedAtUtc      = $timestampText
@@ -416,7 +414,7 @@ function Update-BugReport {
 
             Set-BugReportProperty -Record $report -Name $fieldName -Value $newValue
             $change = [ordered]@{ field = $fieldName }
-            if ($fieldName -in @('status', 'priority', 'rank', 'assignedTo')) {
+            if ($fieldName -in @('status', 'priority', 'rank')) {
                 $change['from'] = $oldValue
                 $change['to'] = $newValue
             }

@@ -4,7 +4,7 @@ $script:BugReportCategories = @('bug', 'performance', 'visual', 'data', 'suggest
 $script:BugReportStatuses = @('new', 'acknowledged', 'inProgress', 'waitingForUser', 'resolved', 'closed')
 $script:BugReportPriorities = @('unranked', 'p1', 'p2', 'p3', 'p4')
 $script:BugReportContentFields = @('title', 'description', 'category', 'stepsToReproduce', 'expectedBehavior', 'actualBehavior', 'technicalContext')
-$script:BugReportAdministrativeFields = @('status', 'priority', 'rank', 'assignedTo')
+$script:BugReportAdministrativeFields = @('status', 'priority', 'rank')
 
 function Get-SaphirBugReportProperty {
     param($Value, [Parameter(Mandatory = $true)][string]$Name)
@@ -136,7 +136,6 @@ function ConvertTo-SaphirBugReportPatchInput {
         switch ($fieldName) {
             'status' { $fields[$fieldName] = ConvertTo-SaphirBugReportChoice -Value (Get-SaphirBugReportProperty $Value $fieldName) -Label 'Status' -AllowedValues $script:BugReportStatuses }
             'priority' { $fields[$fieldName] = ConvertTo-SaphirBugReportChoice -Value (Get-SaphirBugReportProperty $Value $fieldName) -Label 'Priority' -AllowedValues $script:BugReportPriorities }
-            'assignedTo' { $fields[$fieldName] = ConvertTo-SaphirBugReportText -Value (Get-SaphirBugReportProperty $Value $fieldName) -Label 'Assigned user' -MaximumLength 100 }
             'rank' {
                 $rank = 0L
                 if (-not [Int64]::TryParse([string](Get-SaphirBugReportProperty $Value $fieldName), [ref]$rank) -or $rank -lt 0 -or $rank -gt 2147483647) {
@@ -227,7 +226,6 @@ function New-SaphirBugReportSummary {
         priority          = [string](Get-SaphirBugReportProperty $Report 'priority')
         rank              = [Int64](Get-SaphirBugReportProperty $Report 'rank')
         createdBy         = Get-SaphirBugReportProperty $Report 'createdBy'
-        assignedTo        = [string](Get-SaphirBugReportProperty $Report 'assignedTo')
         createdAtUtc      = [string](Get-SaphirBugReportProperty $Report 'createdAtUtc')
         updatedAtUtc      = [string](Get-SaphirBugReportProperty $Report 'updatedAtUtc')
         attachmentCount   = $attachments.Count

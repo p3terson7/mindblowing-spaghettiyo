@@ -206,10 +206,10 @@ for (const text of [
 }
 
 const workCommentViewCacheVersions = {
-  EmployeesView: "20260921-schedule-gc179-fixes-v2",
-  DashboardView: "20260921-schedule-gc179-fixes-v2",
-  ApprovalsView: "20260921-schedule-gc179-fixes-v2",
-  ProjectsView: "20260921-schedule-gc179-fixes-v2",
+  EmployeesView: "20260924-bug-report-minimal-v3",
+  DashboardView: "20260924-bug-report-minimal-v3",
+  ApprovalsView: "20260924-bug-report-minimal-v3",
+  ProjectsView: "20260924-bug-report-minimal-v3",
 };
 for (const [view, version] of Object.entries(workCommentViewCacheVersions)) {
   assert(
@@ -218,11 +218,11 @@ for (const [view, version] of Object.entries(workCommentViewCacheVersions)) {
   );
 }
 const workCommentAssetCacheVersions = {
-  "apple-ui.css": "20260921-schedule-gc179-fixes-v2",
-  "I18n.js": "20260921-schedule-gc179-fixes-v2",
-  "Utilities.js": "20260921-schedule-gc179-fixes-v2",
-  "AppShell.js": "20260921-schedule-gc179-fixes-v2",
-  "SelfView.js": "20260921-schedule-gc179-fixes-v2",
+  "apple-ui.css": "20260924-bug-report-minimal-v3",
+  "I18n.js": "20260924-bug-report-minimal-v3",
+  "Utilities.js": "20260924-bug-report-minimal-v3",
+  "AppShell.js": "20260924-bug-report-minimal-v3",
+  "SelfView.js": "20260924-bug-report-minimal-v3",
 };
 for (const [asset, version] of Object.entries(workCommentAssetCacheVersions)) {
   assert(indexSource.includes(`${asset}?v=${version}`), `${asset} is missing its work-comment cache buster.`);
