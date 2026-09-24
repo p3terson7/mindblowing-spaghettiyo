@@ -15,9 +15,9 @@ Quand une nouvelle version est disponible, le lanceur affiche **Mettre à jour e
 
 1. Vérifiez que vous êtes connecté au réseau du ministère.
 2. Ouvrez le lanceur et regardez séparément l’état de l’application et celui des données partagées.
-3. Cliquez sur **Réparer SAPHIR** si une mise à jour échoue ou si la copie locale semble endommagée. Le lanceur arrête seulement l’instance SAPHIR qu’il peut identifier, retélécharge la version publiée, vérifie son intégrité, puis la redémarre. Vos données partagées ne sont pas supprimées.
+3. Cliquez sur **Réparer** si une mise à jour échoue ou si la copie locale semble endommagée. Le lanceur arrête seulement l’instance SAPHIR qu’il peut identifier, retélécharge la version publiée, vérifie son intégrité, puis la redémarre. Vos données partagées ne sont pas supprimées.
 4. Si les scripts VBS sont bloqués sur votre poste, créez plutôt un raccourci vers `Launch SAPHIR.bat` (type **Fichier de commandes Windows**). Ce raccourci de secours n’aura peut-être pas le logo personnalisé.
-5. Si le problème continue, utilisez **Ouvrir les journaux** dans le lanceur ou exécutez `Stop SAPHIR.bat`, puis `Launch SAPHIR.bat` pour voir le message d’erreur.
+5. Si le problème continue, utilisez **Journaux** dans le lanceur ou exécutez `Stop SAPHIR.bat`, puis `Launch SAPHIR.bat` pour voir le message d’erreur.
 
 Fermer le navigateur ne ferme pas nécessairement le petit serveur SAPHIR local. Ce comportement est normal.
 
@@ -40,8 +40,8 @@ When a new release is available, the launcher displays **Update and start** or *
 
 1. Confirm that you are connected to the department network.
 2. Open the launcher and check the application and shared-data states separately.
-3. Select **Repair SAPHIR** if an update fails or the local copy appears damaged. The launcher stops only the SAPHIR instance it can identify, downloads and validates the published release again, and restarts it. Your shared data is not deleted.
+3. Select **Repair** if an update fails or the local copy appears damaged. The launcher stops only the SAPHIR instance it can identify, downloads and validates the published release again, and restarts it. Your shared data is not deleted.
 4. If VBS files are blocked on your computer, create a shortcut to `Launch SAPHIR.bat` (type **Windows Batch File**) instead. This fallback shortcut may not show the custom logo.
-5. If the problem continues, use **Open logs** in the launcher, or run `Stop SAPHIR.bat` followed by `Launch SAPHIR.bat` to keep the error visible.
+5. If the problem continues, use **Logs** in the launcher, or run `Stop SAPHIR.bat` followed by `Launch SAPHIR.bat` to keep the error visible.
 
 Closing the browser does not necessarily stop the small local SAPHIR server. This is normal.

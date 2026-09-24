@@ -89,7 +89,7 @@ background check after the launcher window has opened.
 If the canonical release was accidentally published before this step, it does
 not need to be copied manually or assigned another identifier: publish the
 fixed bootstrap, rerun the installer, close the old launcher window, and use
-**Update and start**, **Update and restart** or **Repair SAPHIR** once. **Open**
+**Update and start**, **Update and restart** or **Repair** once. **Open**
 and **Refresh** do not install releases.
 
 ### Step 2 — publish the first canonical release
@@ -126,7 +126,7 @@ only the normal packaging command. The publisher:
 3. copies the complete ZIP into `deployment\releases`;
 4. updates `deployment\current.json` last.
 
-Employees see **Update and start** while SAPHIR is stopped or **Update and restart** while it is running. Both actions use the versioned cache, checksum validation and automatic rollback workflow. **Repair SAPHIR** force-downloads and validates the currently published release again, without deleting or replacing DATA. Merely choosing **Open SAPHIR** leaves the healthy backend untouched. The previous local version remains available for automatic rollback if the new version cannot start.
+Employees see **Update and start** while SAPHIR is stopped or **Update and restart** while it is running. Both actions use the versioned cache, checksum validation and automatic rollback workflow. **Repair** force-downloads and validates the currently published release again, without deleting or replacing DATA. Merely choosing **Open SAPHIR** leaves the healthy backend untouched. The previous local version remains available for automatic rollback if the new version cannot start.
 
 ## Recommended rollout and rollback
 

@@ -66,7 +66,7 @@ try {
     $text = if ($isFrench) {
         @{
             WindowTitle       = "Lanceur SAPHIR"
-            Subtitle          = "Gestion de l’application locale"
+            Subtitle          = "Démarrage et état local"
             Checking          = "Vérification en cours…"
             AppLabel          = "Application"
             DataLabel         = "Données partagées"
@@ -78,10 +78,10 @@ try {
             Restart           = "_Redémarrer"
             UpdateAndStart    = "_Mettre à jour et démarrer"
             UpdateAndRestart  = "_Mettre à jour et redémarrer"
-            Repair            = "_Réparer SAPHIR"
+            Repair            = "_Réparer"
             Stop              = "A_rrêter"
             Refresh           = "A_ctualiser"
-            Logs              = "Ouvrir les _journaux"
+            Logs              = "_Journaux"
             Online            = "En ligne"
             OnlineDetail      = "SAPHIR répond normalement et peut être ouvert."
             Offline           = "Hors ligne"
@@ -128,7 +128,7 @@ try {
     else {
         @{
             WindowTitle       = "SAPHIR Launcher"
-            Subtitle          = "Local application control"
+            Subtitle          = "Local status and startup"
             Checking          = "Checking status…"
             AppLabel          = "Application"
             DataLabel         = "Shared data"
@@ -140,10 +140,10 @@ try {
             Restart           = "_Restart"
             UpdateAndStart    = "_Update and start"
             UpdateAndRestart  = "_Update and restart"
-            Repair            = "_Repair SAPHIR"
+            Repair            = "_Repair"
             Stop              = "S_top"
             Refresh           = "_Refresh"
-            Logs              = "Open _logs"
+            Logs              = "_Logs"
             Online            = "Online"
             OnlineDetail      = "SAPHIR is responding normally and is ready to open."
             Offline           = "Offline"
@@ -192,21 +192,21 @@ try {
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Name="LauncherWindow"
-        Width="540"
-        Height="700"
-        MinWidth="540"
-        MinHeight="700"
+        Width="570"
+        Height="680"
+        MinWidth="570"
+        MinHeight="680"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
-        Background="#F5F5F7"
+        Background="#F4F6F9"
         FontFamily="Segoe UI"
         FontSize="14"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True">
     <Window.Resources>
         <Style x:Key="BaseButtonStyle" TargetType="{x:Type Button}">
-            <Setter Property="MinHeight" Value="42"/>
-            <Setter Property="Padding" Value="18,9"/>
+            <Setter Property="MinHeight" Value="40"/>
+            <Setter Property="Padding" Value="14,8"/>
             <Setter Property="Margin" Value="0"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -218,7 +218,7 @@ try {
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type Button}">
                         <Border x:Name="ButtonBorder"
-                                CornerRadius="10"
+                                CornerRadius="9"
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
@@ -244,205 +244,269 @@ try {
             </Setter>
         </Style>
         <Style x:Key="PrimaryButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="MinHeight" Value="48"/>
+            <Setter Property="MinHeight" Value="46"/>
             <Setter Property="FontSize" Value="15"/>
             <Setter Property="Background" Value="#0071E3"/>
             <Setter Property="BorderBrush" Value="#0071E3"/>
             <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="ButtonBorder"
+                                CornerRadius="11"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="17"
+                                           Text="{TemplateBinding Tag}" Margin="0,0,10,0"
+                                           VerticalAlignment="Center"/>
+                                <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#0A7BEA"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#005FC1"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.42"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
-        <Style x:Key="SecondaryButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="Background" Value="#F2F2F7"/>
-            <Setter Property="BorderBrush" Value="#D8D8DE"/>
-            <Setter Property="Foreground" Value="#1D1D1F"/>
-        </Style>
-        <Style x:Key="DangerButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#FF3B30"/>
-            <Setter Property="Foreground" Value="#D70015"/>
-        </Style>
-        <Style x:Key="UtilityButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="MinHeight" Value="30"/>
-            <Setter Property="Padding" Value="10,5"/>
-            <Setter Property="FontSize" Value="12"/>
+        <Style x:Key="IconButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="Width" Value="88"/>
+            <Setter Property="Height" Value="58"/>
+            <Setter Property="Padding" Value="6,7"/>
+            <Setter Property="FontSize" Value="11"/>
             <Setter Property="FontWeight" Value="Normal"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="Foreground" Value="#5E5E63"/>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#E8E8ED"/>
-                    <Setter Property="Foreground" Value="#1D1D1F"/>
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="#F6F7F9"/>
+            <Setter Property="BorderBrush" Value="#E1E4E8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="#36383D"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="ButtonBorder"
+                                CornerRadius="10"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="18"
+                                           Text="{TemplateBinding Tag}" HorizontalAlignment="Center"/>
+                                <ContentPresenter Margin="0,5,0,0" HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#EDF3FA"/>
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#C9DDF3"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#DFEAF6"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.38"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="DangerIconButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource IconButtonStyle}">
+            <Setter Property="Foreground" Value="#C5312D"/>
+            <Setter Property="Background" Value="#FFF8F7"/>
+            <Setter Property="BorderBrush" Value="#F1D7D5"/>
+        </Style>
+        <Style x:Key="UtilityButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource IconButtonStyle}"/>
+        <Style x:Key="InfoTileStyle" TargetType="{x:Type Border}">
+            <Setter Property="Background" Value="#F7F8FA"/>
+            <Setter Property="BorderBrush" Value="#E8EAED"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="12,10"/>
         </Style>
     </Window.Resources>
-    <Grid Margin="28">
+    <Grid Margin="24,22,24,20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="18"/>
-            <RowDefinition Height="*"/>
             <RowDefinition Height="16"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="14"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="12"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <StackPanel>
-                <TextBlock Text="SAPHIR" FontSize="28" FontWeight="SemiBold" Foreground="#1D1D1F"/>
-                <TextBlock x:Name="SubtitleText" Margin="0,4,0,0" FontSize="14" Foreground="#6E6E73"/>
+            <Border Width="44" Height="44" CornerRadius="12" Background="#0071E3">
+                <TextBlock Text="S" Foreground="White" FontSize="22" FontWeight="Bold"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                <TextBlock Text="SAPHIR" FontSize="22" FontWeight="SemiBold" Foreground="#17191C"/>
+                <TextBlock x:Name="SubtitleText" Margin="0,2,0,0" FontSize="12" Foreground="#71757B"/>
             </StackPanel>
-            <Border Grid.Column="1" x:Name="StatusBadge" CornerRadius="14" Padding="12,6"
+            <Border Grid.Column="3" x:Name="StatusBadge" CornerRadius="14" Padding="11,6"
                     Background="#EFEFF4" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal">
-                    <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="#8E8E93"
-                             Margin="0,0,8,0" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="StatusBadgeText" FontWeight="SemiBold" Foreground="#3A3A3C"/>
+                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#8E8E93"
+                             Margin="0,0,7,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="StatusBadgeText" FontSize="12" FontWeight="SemiBold"
+                               Foreground="#3A3A3C"/>
                 </StackPanel>
             </Border>
         </Grid>
 
-        <Border Grid.Row="2" x:Name="MainCard" Background="White" BorderBrush="#DDDDE3"
-                BorderThickness="1" CornerRadius="20" Padding="24">
+        <Border Grid.Row="2" x:Name="MainCard" Background="White" BorderBrush="#E0E3E7"
+                BorderThickness="1" CornerRadius="16" Padding="20">
             <Border.Effect>
-                <DropShadowEffect BlurRadius="22" ShadowDepth="3" Opacity="0.08" Color="#000000"/>
+                <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.07" Color="#000000"/>
             </Border.Effect>
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="18"/>
-                    <RowDefinition Height="1"/>
-                    <RowDefinition Height="18"/>
+                    <RowDefinition Height="16"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="10"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="14"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="14"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="14"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="14"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="20"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" x:Name="StateTitle" FontSize="23" FontWeight="SemiBold"
-                           Foreground="#1D1D1F"/>
-                <TextBlock Grid.Row="1" x:Name="StateDetail" Margin="0,7,0,0" Foreground="#6E6E73"
-                           TextWrapping="Wrap" MinHeight="40"/>
-                <Border Grid.Row="3" Background="#E5E5EA"/>
+                <TextBlock Grid.Row="0" x:Name="StateTitle" FontSize="21" FontWeight="SemiBold"
+                           Foreground="#17191C"/>
+                <TextBlock Grid.Row="1" x:Name="StateDetail" Margin="0,5,0,0" Foreground="#656A70"
+                           TextWrapping="Wrap" MinHeight="34"/>
+
+                <Grid Grid.Row="3">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource InfoTileStyle}">
+                        <StackPanel>
+                            <TextBlock x:Name="ApplicationLabel" FontSize="11" Foreground="#777B81"/>
+                            <TextBlock x:Name="ApplicationValue" Margin="0,4,0,0" FontWeight="SemiBold"
+                                       Foreground="#17191C" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource InfoTileStyle}">
+                        <StackPanel>
+                            <TextBlock x:Name="DataLabel" FontSize="11" Foreground="#777B81"/>
+                            <TextBlock x:Name="DataValue" Margin="0,4,0,0" FontWeight="SemiBold"
+                                       Foreground="#17191C" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="DataPathText" Margin="0,2,0,0" FontSize="10"
+                                       Foreground="#92969C" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
 
                 <Grid Grid.Row="5">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="155"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="ApplicationLabel" Foreground="#6E6E73"/>
-                    <TextBlock Grid.Column="1" x:Name="ApplicationValue" FontWeight="SemiBold"
-                               Foreground="#1D1D1F" TextAlignment="Right"/>
-                </Grid>
-                <Grid Grid.Row="7">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="155"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="DataLabel" Foreground="#6E6E73"/>
-                    <StackPanel Grid.Column="1">
-                        <TextBlock x:Name="DataValue" FontWeight="SemiBold" Foreground="#1D1D1F"
-                                   TextAlignment="Right"/>
-                        <TextBlock x:Name="DataPathText" Margin="0,3,0,0" FontSize="11"
-                                   Foreground="#8E8E93" TextAlignment="Right"
-                                   TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                </Grid>
-                <Grid Grid.Row="9">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="155"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="DistributionLabel" Foreground="#6E6E73"/>
-                    <StackPanel Grid.Column="1">
-                        <TextBlock x:Name="DistributionValue" FontWeight="SemiBold" Foreground="#1D1D1F"
-                                   TextAlignment="Right"/>
-                        <TextBlock x:Name="DistributionPathText" Margin="0,3,0,0" FontSize="11"
-                                   Foreground="#8E8E93" TextAlignment="Right"
-                                   TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                </Grid>
-                <Grid Grid.Row="11">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="155"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="ReleaseLabel" Foreground="#6E6E73"/>
-                    <TextBlock Grid.Column="1" x:Name="ReleaseValue" FontWeight="SemiBold"
-                               Foreground="#1D1D1F" TextAlignment="Right"
-                               TextTrimming="CharacterEllipsis"/>
-                </Grid>
-                <Grid Grid.Row="13">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="155"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="TargetReleaseLabel" Foreground="#6E6E73"/>
-                    <TextBlock Grid.Column="1" x:Name="TargetReleaseValue" FontWeight="SemiBold"
-                               Foreground="#1D1D1F" TextAlignment="Right"
-                               TextTrimming="CharacterEllipsis"/>
+                    <Border Grid.Column="0" Style="{StaticResource InfoTileStyle}">
+                        <StackPanel>
+                            <TextBlock x:Name="ReleaseLabel" FontSize="11" Foreground="#777B81"/>
+                            <TextBlock x:Name="ReleaseValue" Margin="0,4,0,0" FontWeight="SemiBold"
+                                       Foreground="#17191C" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource InfoTileStyle}">
+                        <StackPanel>
+                            <TextBlock x:Name="TargetReleaseLabel" FontSize="11" Foreground="#777B81"/>
+                            <TextBlock x:Name="TargetReleaseValue" Margin="0,4,0,0" FontWeight="SemiBold"
+                                       Foreground="#17191C" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
 
-                <ProgressBar Grid.Row="15" x:Name="BusyProgress" Height="4"
+                <Border Grid.Row="7" Style="{StaticResource InfoTileStyle}" Padding="12,9">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock x:Name="DistributionLabel" FontSize="11" Foreground="#777B81"/>
+                            <TextBlock x:Name="DistributionPathText" Margin="0,3,14,0" FontSize="10"
+                                       Foreground="#92969C" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" x:Name="DistributionValue" FontSize="12"
+                                   FontWeight="SemiBold" Foreground="#17191C" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <ProgressBar Grid.Row="8" x:Name="BusyProgress" Margin="0,12,0,0" Height="3"
                              IsIndeterminate="True" Visibility="Collapsed"
                              Foreground="#0071E3" Background="#E5E5EA"/>
-                <TextBlock Grid.Row="16" x:Name="BusyText" Margin="0,8,0,0"
-                           Foreground="#6E6E73" Visibility="Collapsed"/>
-                <Border Grid.Row="17" x:Name="ErrorBanner" Margin="0,12,0,0"
-                        Padding="12,9" CornerRadius="9" Background="#FFF1F0"
+                <TextBlock Grid.Row="9" x:Name="BusyText" Margin="0,6,0,0"
+                           FontSize="12" Foreground="#656A70" Visibility="Collapsed"/>
+                <Border Grid.Row="10" x:Name="ErrorBanner" Margin="0,9,0,0"
+                        Padding="11,8" CornerRadius="8" Background="#FFF1F0"
                         BorderBrush="#FFD0CC" BorderThickness="1" Visibility="Collapsed">
-                    <TextBlock x:Name="ErrorText" Foreground="#A51C14" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="ErrorText" FontSize="12" Foreground="#A51C14" TextWrapping="Wrap"/>
                 </Border>
             </Grid>
         </Border>
 
-        <Grid Grid.Row="4">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="10"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="14"/>
-                <RowDefinition Height="1"/>
-                <RowDefinition Height="7"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <Grid Grid.Row="0">
-                <Button x:Name="StartButton" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Stretch"/>
-                <Button x:Name="UpdateButton" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Stretch"/>
-                <Button x:Name="OpenButton" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Stretch"/>
+        <Border Grid.Row="4" Background="White" BorderBrush="#E0E3E7" BorderThickness="1"
+                CornerRadius="14" Padding="14,13">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0">
+                    <Button x:Name="StartButton" Style="{StaticResource PrimaryButtonStyle}"
+                            Tag="&#xE768;" Width="300" HorizontalAlignment="Center"/>
+                    <Button x:Name="UpdateButton" Style="{StaticResource PrimaryButtonStyle}"
+                            Tag="&#xE895;" Width="300" HorizontalAlignment="Center"/>
+                    <Button x:Name="OpenButton" Style="{StaticResource PrimaryButtonStyle}"
+                            Tag="&#xE8A7;" Width="300" HorizontalAlignment="Center"/>
+                </Grid>
+                <StackPanel Grid.Row="2" x:Name="ActionToolbar" Orientation="Horizontal"
+                            HorizontalAlignment="Center">
+                    <StackPanel x:Name="RuntimeActionsPanel" Orientation="Horizontal">
+                        <Button x:Name="RestartButton" Style="{StaticResource IconButtonStyle}"
+                                Tag="&#xE72C;" Margin="0,0,7,0"/>
+                        <Button x:Name="StopButton" Style="{StaticResource DangerIconButtonStyle}"
+                                Tag="&#xE71A;" Margin="0,0,7,0"/>
+                    </StackPanel>
+                    <Button x:Name="LogsButton" Style="{StaticResource UtilityButtonStyle}"
+                            Tag="&#xE8B7;" Margin="0,0,7,0"/>
+                    <Button x:Name="RepairButton" Style="{StaticResource UtilityButtonStyle}"
+                            Tag="&#xE90F;" Margin="0,0,7,0"/>
+                    <Button x:Name="RefreshButton" Style="{StaticResource UtilityButtonStyle}"
+                            Tag="&#xE895;"/>
+                </StackPanel>
             </Grid>
-            <StackPanel Grid.Row="2" x:Name="RuntimeActionsPanel"
-                        Orientation="Horizontal" HorizontalAlignment="Center">
-                <Button x:Name="RestartButton" Style="{StaticResource SecondaryButtonStyle}"
-                        Width="210" Margin="0,0,10,0"/>
-                <Button x:Name="StopButton" Style="{StaticResource DangerButtonStyle}" Width="210"/>
-            </StackPanel>
-            <Border Grid.Row="4" Background="#DDDDE3"/>
-            <Grid Grid.Row="6">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Button Grid.Column="1" x:Name="LogsButton" Style="{StaticResource UtilityButtonStyle}" Margin="0,0,6,0"/>
-                <Button Grid.Column="2" x:Name="RepairButton" Style="{StaticResource UtilityButtonStyle}" Margin="0,0,6,0"/>
-                <Button Grid.Column="3" x:Name="RefreshButton" Style="{StaticResource UtilityButtonStyle}"/>
-            </Grid>
-        </Grid>
+        </Border>
     </Grid>
 </Window>
 '@
@@ -479,6 +543,18 @@ try {
     $script:LogsButton.Content = $text.Logs
     $script:RepairButton.Content = $text.Repair
     $script:RefreshButton.Content = $text.Refresh
+    foreach ($actionButton in @(
+        $script:StartButton,
+        $script:UpdateButton,
+        $script:OpenButton,
+        $script:RestartButton,
+        $script:StopButton,
+        $script:LogsButton,
+        $script:RepairButton,
+        $script:RefreshButton
+    )) {
+        $actionButton.ToolTip = ([string]$actionButton.Content).Replace("_", "")
+    }
 
     $iconCandidates = @(
         (Join-Path -Path $launcherRoot -ChildPath "SAPHIR.ico"),
