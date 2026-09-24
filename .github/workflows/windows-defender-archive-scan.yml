@@ -1,0 +1,69 @@
+name: Windows Defender archive scan
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  defender-scan:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Scan source archives with Microsoft Defender
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $status = Get-MpComputerStatus
+          Write-Host ("Defender enabled: {0}; real-time: {1}; antivirus signature: {2}" -f $status.AntivirusEnabled, $status.RealTimeProtectionEnabled, $status.AntivirusSignatureVersion)
+          if (-not $status.AntivirusEnabled) {
+              throw "Microsoft Defender Antivirus is not enabled on this runner."
+          }
+
+          $scanRoot = Join-Path $env:RUNNER_TEMP "saphir-defender-scan"
+          New-Item -ItemType Directory -Path $scanRoot -Force | Out-Null
+          $archives = [ordered]@{
+              "repository" = @()
+              "bootstrap"  = @("deploy/bootstrap")
+              "scripts"    = @("scripts")
+              "app"        = @("app")
+              "tests"      = @("tests")
+          }
+
+          $mpCmdRun = Get-ChildItem "$env:ProgramData\Microsoft\Windows Defender\Platform\*\MpCmdRun.exe" -ErrorAction Stop |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
+          if ($null -eq $mpCmdRun) {
+              throw "MpCmdRun.exe was not found."
+          }
+
+          $detected = $false
+          foreach ($entry in $archives.GetEnumerator()) {
+              $archivePath = Join-Path $scanRoot ("{0}.zip" -f $entry.Key)
+              $gitArguments = @("archive", "--format=zip", "--output=$archivePath", "HEAD") + @($entry.Value)
+              & git @gitArguments
+              if ($LASTEXITCODE -ne 0) {
+                  throw "git archive failed for $($entry.Key)."
+              }
+
+              Write-Host "Scanning $($entry.Key): $archivePath"
+              & $mpCmdRun.FullName -Scan -ScanType 3 -File $archivePath -DisableRemediation
+              $scanExitCode = $LASTEXITCODE
+              Write-Host "Defender exit code for $($entry.Key): $scanExitCode"
+              if ($scanExitCode -ne 0) {
+                  $detected = $true
+              }
+          }
+
+          Get-MpThreat | Format-List *
+          Get-MpThreatDetection | Select-Object InitialDetectionTime, ThreatID, ActionSuccess, Resources | Format-List
+          if ($detected) {
+              throw "Microsoft Defender reported at least one archive as suspicious."
+          }
