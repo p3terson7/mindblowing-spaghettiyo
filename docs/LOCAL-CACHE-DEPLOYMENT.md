@@ -16,7 +16,7 @@ the root of `SAPHIR-Distribution` for employees.
 3. Open PowerShell in the root of the updated source-code repository on a Windows administrator/deployment workstation, then run:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 `
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\package-app.ps1 `
   -OutputRoot "\\server\department\Applications" `
   -DataFolderPath "\\server\department\SAPHIR-Data" `
   -NoZip
@@ -32,7 +32,7 @@ The folder contains the clearly named `Installer SAPHIR sur le Bureau.vbs`, its 
 
 If your department only exposes a mapped R: drive, use the equivalent command:
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 -OutputRoot "R:\Applications" -DataFolderPath "R:\SAPHIR-Data" -NoZip
+    powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\package-app.ps1 -OutputRoot "R:\Applications" -DataFolderPath "R:\SAPHIR-Data" -NoZip
 
 The publisher first tries to resolve R: to its underlying UNC provider path. If Windows cannot reveal that path but confirms that R: is a network drive, the release keeps the R:\... path and prints a warning. In that fallback case, every employee must have the same R: mapping available when launching SAPHIR.
 
@@ -63,7 +63,7 @@ intentionally split so every workstation learns both application layouts before
 From the updated repository, run:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 `
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\package-app.ps1 `
   -OutputRoot "\\server\department\Applications" `
   -BootstrapOnly
 ```
@@ -97,7 +97,7 @@ and **Refresh** do not install releases.
 Only after the shortcut reinstall has been confirmed, publish normally:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 `
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\package-app.ps1 `
   -OutputRoot "\\server\department\Applications" `
   -DataFolderPath "\\server\department\SAPHIR-Data" `
   -NoZip

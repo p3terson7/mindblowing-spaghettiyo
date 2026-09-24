@@ -826,7 +826,7 @@ démarrage plus rapide et évite d’exécuter les scripts depuis un partage len
 Exemple :
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 `
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\package-app.ps1 `
   -OutputRoot "\\serveur\service\Applications" `
   -DataFolderPath "\\serveur\service\SAPHIR-Data" `
   -NoZip

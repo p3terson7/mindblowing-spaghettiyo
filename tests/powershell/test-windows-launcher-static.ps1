@@ -5,6 +5,7 @@ $repoRoot = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath "../..")).Pa
 $launcherEntryPath = Join-Path -Path $repoRoot -ChildPath "deploy/bootstrap/SAPHIR Launcher.vbs"
 $launcherHostPath = Join-Path -Path $repoRoot -ChildPath "deploy/bootstrap/SAPHIR Launcher Host.vbs"
 $quickLauncherPath = Join-Path -Path $repoRoot -ChildPath "deploy/bootstrap/Launch SAPHIR.vbs"
+$shortcutInstallerPath = Join-Path -Path $repoRoot -ChildPath "deploy/bootstrap/Install SAPHIR Shortcut.vbs"
 $launcherInterfacePath = Join-Path -Path $repoRoot -ChildPath "scripts/saphir-launcher.ps1"
 $launcherControlPath = Join-Path -Path $repoRoot -ChildPath "scripts/lib/LauncherControl.ps1"
 $cachedLaunchPath = Join-Path -Path $repoRoot -ChildPath "scripts/launch-cached-app.ps1"
@@ -23,7 +24,7 @@ function Assert-True {
     }
 }
 
-foreach ($requiredPath in @($launcherEntryPath, $launcherHostPath, $quickLauncherPath, $launcherInterfacePath, $launcherControlPath, $applicationLayoutPath)) {
+foreach ($requiredPath in @($launcherEntryPath, $launcherHostPath, $quickLauncherPath, $shortcutInstallerPath, $launcherInterfacePath, $launcherControlPath, $applicationLayoutPath)) {
     Assert-True -Condition (Test-Path -LiteralPath $requiredPath -PathType Leaf) -Message ("launcher file is missing: {0}" -f $requiredPath)
 }
 
@@ -95,6 +96,7 @@ foreach ($powerShellPath in $localLauncherPowerShellPaths) {
 $entrySource = [System.IO.File]::ReadAllText($launcherEntryPath)
 $hostSource = [System.IO.File]::ReadAllText($launcherHostPath)
 $quickLauncherSource = [System.IO.File]::ReadAllText($quickLauncherPath)
+$shortcutInstallerSource = [System.IO.File]::ReadAllText($shortcutInstallerPath)
 $interfaceSource = [System.IO.File]::ReadAllText($launcherInterfacePath)
 $controlSource = [System.IO.File]::ReadAllText($launcherControlPath)
 $combinedPowerShellSource = $interfaceSource + [Environment]::NewLine + $controlSource
@@ -112,7 +114,15 @@ Assert-True -Condition ($null -ne $parsedXaml.DocumentElement) -Message "launche
 
 Assert-True -Condition ($entrySource.IndexOf('%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "launcher entry point must use built-in Windows PowerShell rather than require PowerShell 7"
 Assert-True -Condition ($entrySource.IndexOf('-NoProfile', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "launcher entry point must isolate itself from employee PowerShell profiles"
-Assert-True -Condition ($entrySource.IndexOf('-ExecutionPolicy Bypass', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "launcher entry point must work with the same policy-safe invocation as the existing SAPHIR launchers"
+Assert-True -Condition ($entrySource.IndexOf('-ExecutionPolicy RemoteSigned', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "launcher entry point must respect the Windows script policy"
+$unsafePolicyArgument = '-ExecutionPolicy ' + 'By' + 'pass'
+Assert-True -Condition ($entrySource.IndexOf($unsafePolicyArgument, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) -Message "launcher entry point must not override the Windows script policy"
+foreach ($bootstrapFile in @(Get-ChildItem -LiteralPath (Join-Path -Path $repoRoot -ChildPath "deploy/bootstrap") -File | Where-Object { $_.Extension -in @(".vbs", ".bat") })) {
+    $bootstrapSource = [System.IO.File]::ReadAllText($bootstrapFile.FullName)
+    Assert-True -Condition ($bootstrapSource.IndexOf($unsafePolicyArgument, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) -Message ("bootstrap file must not override the Windows script policy: {0}" -f $bootstrapFile.Name)
+}
+Assert-True -Condition ($shortcutInstallerSource.IndexOf('Randomize', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) -Message "shortcut installer must not create randomized AppData bundle names"
+Assert-True -Condition ($shortcutInstallerSource.IndexOf('Rnd(', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) -Message "shortcut installer must not create randomized AppData bundle names"
 Assert-True -Condition ($entrySource.IndexOf('-STA', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "launcher entry point must use an STA thread for WPF"
 Assert-True -Condition ($entrySource.IndexOf('distribution-root.txt', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -Message "local launcher must read its persisted shared-distribution location"
 Assert-True -Condition ($entrySource.IndexOf('fso.FileExists(sharedLauncherPath)', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) -Message "local launcher entry must not synchronously probe an unavailable network share before opening WPF"

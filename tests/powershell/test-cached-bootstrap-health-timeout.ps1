@@ -28,7 +28,7 @@ function Invoke-TestBootstrap {
         [Parameter(Mandatory = $true)][string]$BootstrapPath
     )
 
-    $output = @(& $PowerShellPath -NoProfile -ExecutionPolicy Bypass -File $BootstrapPath -NonInteractive 2>&1)
+    $output = @(& $PowerShellPath -NoProfile -ExecutionPolicy RemoteSigned -File $BootstrapPath -NonInteractive 2>&1)
     return [PSCustomObject]@{
         ExitCode = $LASTEXITCODE
         Output   = $output

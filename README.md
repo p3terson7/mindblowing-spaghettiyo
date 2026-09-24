@@ -491,13 +491,13 @@ Stop SAPHIR.vbs
 On peut aussi utiliser PowerShell directement :
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\launch-app.ps1
+powershell -ExecutionPolicy RemoteSigned -File .\scripts\launch-app.ps1
 ```
 
 ou démarrer en arrière-plan :
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-all.ps1
+powershell -ExecutionPolicy RemoteSigned -File .\scripts\start-all.ps1
 ```
 
 ### Lancement sur macOS

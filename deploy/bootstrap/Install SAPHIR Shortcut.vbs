@@ -23,6 +23,9 @@ Dim stagingRoot
 Dim stagingScriptsRoot
 Dim stagingLibraryRoot
 Dim bundleId
+Dim bundleBaseId
+Dim bundleCandidate
+Dim bundleSequence
 Dim bundleRoot
 Dim localLauncherEntryPath
 Dim localLauncherHostPath
@@ -207,14 +210,24 @@ EnsureFolder localLauncherRoot
 EnsureFolder localLauncherVersionsRoot
 
 localIconPath = fso.BuildPath(localAssetsRoot, "SAPHIR.ico")
-Randomize
-bundleId = CStr(Year(Now)) & Right("0" & CStr(Month(Now)), 2) & Right("0" & CStr(Day(Now)), 2) & "-" & _
-    Right("0" & CStr(Hour(Now)), 2) & Right("0" & CStr(Minute(Now)), 2) & Right("0" & CStr(Second(Now)), 2) & "-" & _
-    Right("000000" & Hex(Int(Rnd * 16777215)), 6)
-stagingRoot = fso.BuildPath(localLauncherRoot, ".staging-" & bundleId)
+bundleBaseId = CStr(Year(Now)) & Right("0" & CStr(Month(Now)), 2) & Right("0" & CStr(Day(Now)), 2) & "-" & _
+    Right("0" & CStr(Hour(Now)), 2) & Right("0" & CStr(Minute(Now)), 2) & Right("0" & CStr(Second(Now)), 2)
+bundleSequence = 1
+Do
+    bundleCandidate = bundleBaseId
+    If bundleSequence > 1 Then
+        bundleCandidate = bundleBaseId & "-" & CStr(bundleSequence)
+    End If
+    stagingRoot = fso.BuildPath(localLauncherRoot, ".staging-" & bundleCandidate)
+    bundleRoot = fso.BuildPath(localLauncherVersionsRoot, bundleCandidate)
+    If Not fso.FolderExists(stagingRoot) And Not fso.FolderExists(bundleRoot) Then
+        Exit Do
+    End If
+    bundleSequence = bundleSequence + 1
+Loop
+bundleId = bundleCandidate
 stagingScriptsRoot = fso.BuildPath(stagingRoot, "scripts")
 stagingLibraryRoot = fso.BuildPath(stagingScriptsRoot, "lib")
-bundleRoot = fso.BuildPath(localLauncherVersionsRoot, bundleId)
 
 EnsureFolder stagingRoot
 EnsureFolder stagingScriptsRoot

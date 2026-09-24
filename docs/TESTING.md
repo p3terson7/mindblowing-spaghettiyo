@@ -15,7 +15,7 @@ Depuis la racine du dépôt :
 Sous Windows PowerShell 5.1 :
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-all.ps1
+powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\test-all.ps1
 ```
 
 Le lanceur exécute, dans le même ordre que la CI :

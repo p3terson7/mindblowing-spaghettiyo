@@ -915,7 +915,7 @@ function Start-Gc179LocalExportWorkspace {
     $powershellPath = Get-Gc179PowerShellExecutable
     $quotedScriptPath = '"' + ([string]$scriptPath).Replace('"', '\"') + '"'
     $argumentList = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
-        "-NoProfile -ExecutionPolicy Bypass -File $quotedScriptPath"
+        "-NoProfile -ExecutionPolicy RemoteSigned -File $quotedScriptPath"
     }
     else {
         "-NoProfile -File $quotedScriptPath"

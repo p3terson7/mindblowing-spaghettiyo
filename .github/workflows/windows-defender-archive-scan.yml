@@ -34,7 +34,7 @@ jobs:
           $scanRoot = Join-Path $env:RUNNER_TEMP "saphir-defender-scan"
           New-Item -ItemType Directory -Path $scanRoot -Force | Out-Null
           $archives = [ordered]@{
-              "reported-download" = @()
+              "codeload-source" = @()
               "repository" = @()
               "bootstrap"  = @("deploy/bootstrap")
               "scripts"    = @("scripts")
@@ -52,11 +52,11 @@ jobs:
           $detected = $false
           foreach ($entry in $archives.GetEnumerator()) {
               $archivePath = Join-Path $scanRoot ("{0}.zip" -f $entry.Key)
-              if ($entry.Key -eq "reported-download") {
-                  $reportedUrl = "https://codeload.github.com/${{ github.repository }}/zip/refs/heads/codex/windows-launcher"
-                  & curl.exe -L --fail --silent --show-error --output $archivePath $reportedUrl
+              if ($entry.Key -eq "codeload-source") {
+                  $sourceUrl = "https://codeload.github.com/${{ github.repository }}/zip/refs/heads/${{ github.ref_name }}"
+                  & curl.exe -L --fail --silent --show-error --output $archivePath $sourceUrl
                   if ($LASTEXITCODE -ne 0) {
-                      throw "Downloading the reported branch archive failed."
+                      throw "Downloading the branch source archive failed."
                   }
               }
               else {

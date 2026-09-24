@@ -72,7 +72,7 @@ If Not fso.FileExists(powerShellCommand) Then
     powerShellCommand = "powershell.exe"
 End If
 
-powerShellArguments = " -NoProfile -STA -ExecutionPolicy Bypass -File " & Chr(34) & launcherScript & Chr(34)
+powerShellArguments = " -NoProfile -STA -ExecutionPolicy RemoteSigned -File " & Chr(34) & launcherScript & Chr(34)
 If Len(distributionRoot) > 0 Then
     powerShellArguments = powerShellArguments & " -DistributionRoot " & Chr(34) & distributionRoot & Chr(34)
 End If

@@ -16,7 +16,7 @@ If Not fso.FileExists(powerShellCommand) Then
     powerShellCommand = "powershell.exe"
 End If
 
-exitCode = shell.Run(Chr(34) & powerShellCommand & Chr(34) & " -NoProfile -ExecutionPolicy Bypass -File " & scriptPath, 0, True)
+exitCode = shell.Run(Chr(34) & powerShellCommand & Chr(34) & " -NoProfile -ExecutionPolicy RemoteSigned -File " & scriptPath, 0, True)
 If exitCode <> 0 Then
     shell.Popup "SAPHIR could not be stopped automatically. Run Stop SAPHIR.bat to see the error details.", 0, "SAPHIR stop failed", 48
 End If

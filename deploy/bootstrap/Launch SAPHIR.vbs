@@ -133,4 +133,4 @@ If Not fso.FileExists(powerShellCommand) Then
     powerShellCommand = "powershell.exe"
 End If
 
-shell.Run Chr(34) & powerShellCommand & Chr(34) & " -NoProfile -ExecutionPolicy Bypass -File " & scriptPath, 0, True
+shell.Run Chr(34) & powerShellCommand & Chr(34) & " -NoProfile -ExecutionPolicy RemoteSigned -File " & scriptPath, 0, True

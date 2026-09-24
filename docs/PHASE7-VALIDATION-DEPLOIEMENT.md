@@ -24,7 +24,7 @@ pwsh -NoLogo -NoProfile -File ./scripts/test-all.ps1 `
 Sur le poste de validation Windows, avec Node.js disponible pour les tests UI :
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-all.ps1 `
+powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\test-all.ps1 `
   -ReportPath .\output\test-reports\phase7-windows.json
 ```
 
@@ -87,7 +87,7 @@ nouvel identifiant pour toute nouvelle construction.
    choisis. Remplacer les exemples avant d'exécuter la commande :
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-app.ps1 `
+powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\package-app.ps1 `
   -OutputRoot '\\serveur\departement\SAPHIR-Pilote' `
   -DataFolderPath '\\serveur\departement\SAPHIR-DATA-Pilote' `
   -ReleaseId 'phase7-pilote-01' -NoZip

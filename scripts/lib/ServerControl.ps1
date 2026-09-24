@@ -20,7 +20,7 @@ function ConvertTo-WindowsPowerShellFileArguments {
         throw "A PowerShell script path cannot contain a double quote."
     }
 
-    return ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $ScriptPath)
+    return ('-NoProfile -ExecutionPolicy RemoteSigned -File "{0}"' -f $ScriptPath)
 }
 
 function Get-ManagedServiceLaunchPlan {

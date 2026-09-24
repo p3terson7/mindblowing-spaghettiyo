@@ -38,7 +38,7 @@ function Get-ProcessCommandLine {
 }
 
 $quotedArguments = ConvertTo-WindowsPowerShellFileArguments -ScriptPath "C:\Users\Test User\SAPHIR Cache\saphir-server.ps1"
-Assert-True -Condition ($quotedArguments -eq '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\Test User\SAPHIR Cache\saphir-server.ps1"') -Message "Windows launch arguments must quote cached paths containing spaces"
+Assert-True -Condition ($quotedArguments -eq '-NoProfile -ExecutionPolicy RemoteSigned -File "C:\Users\Test User\SAPHIR Cache\saphir-server.ps1"') -Message "Windows launch arguments must quote cached paths containing spaces without bypassing script policy"
 
 $healthyCurrentRelease = Get-ManagedServiceLaunchPlan -IsRunning $true -HasTrackedProcess $true -IsExpectedManagedInstance $true -FrontendIsAvailable $true
 Assert-True -Condition ($healthyCurrentRelease.Action -eq "Reuse" -and -not $healthyCurrentRelease.ForceRestart) -Message "a healthy current release must be reused"
