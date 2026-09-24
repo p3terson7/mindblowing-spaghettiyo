@@ -21,6 +21,10 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
+          Set-MpPreference -DisableRealtimeMonitoring $false
+          Set-MpPreference -MAPSReporting Advanced
+          Set-MpPreference -CloudBlockLevel High
+          Update-MpSignature
           $status = Get-MpComputerStatus
           Write-Host ("Defender enabled: {0}; real-time: {1}; antivirus signature: {2}" -f $status.AntivirusEnabled, $status.RealTimeProtectionEnabled, $status.AntivirusSignatureVersion)
           if (-not $status.AntivirusEnabled) {
@@ -30,6 +34,7 @@ jobs:
           $scanRoot = Join-Path $env:RUNNER_TEMP "saphir-defender-scan"
           New-Item -ItemType Directory -Path $scanRoot -Force | Out-Null
           $archives = [ordered]@{
+              "reported-download" = @()
               "repository" = @()
               "bootstrap"  = @("deploy/bootstrap")
               "scripts"    = @("scripts")
@@ -47,11 +52,22 @@ jobs:
           $detected = $false
           foreach ($entry in $archives.GetEnumerator()) {
               $archivePath = Join-Path $scanRoot ("{0}.zip" -f $entry.Key)
-              $gitArguments = @("archive", "--format=zip", "--output=$archivePath", "HEAD") + @($entry.Value)
-              & git @gitArguments
-              if ($LASTEXITCODE -ne 0) {
-                  throw "git archive failed for $($entry.Key)."
+              if ($entry.Key -eq "reported-download") {
+                  $reportedUrl = "https://codeload.github.com/${{ github.repository }}/zip/refs/heads/codex/windows-launcher"
+                  & curl.exe -L --fail --silent --show-error --output $archivePath $reportedUrl
+                  if ($LASTEXITCODE -ne 0) {
+                      throw "Downloading the reported branch archive failed."
+                  }
               }
+              else {
+                  $gitArguments = @("archive", "--format=zip", "--output=$archivePath", "HEAD") + @($entry.Value)
+                  & git @gitArguments
+                  if ($LASTEXITCODE -ne 0) {
+                      throw "git archive failed for $($entry.Key)."
+                  }
+              }
+
+              Set-Content -LiteralPath $archivePath -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`nHostUrl=https://codeload.github.com/" -Encoding ASCII
 
               Write-Host "Scanning $($entry.Key): $archivePath"
               & $mpCmdRun.FullName -Scan -ScanType 3 -File $archivePath -DisableRemediation
