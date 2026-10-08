@@ -1135,6 +1135,9 @@ function Import-Gc179PreviewEntries {
         }
 
         if ($imported -gt 0) {
+            if (Get-Command -Name Set-ApprovedEntryCompensationSnapshots -ErrorAction SilentlyContinue) {
+                Set-ApprovedEntryCompensationSnapshots -EmployeeCode $EmployeeCode -Entries $existingData | Out-Null
+            }
             Write-JsonArrayAtomic -Path $dataFile -Items $existingData -Depth 10
         }
     }

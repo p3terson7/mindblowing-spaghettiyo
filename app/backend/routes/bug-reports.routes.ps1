@@ -236,12 +236,41 @@ if ($request.Url.AbsolutePath -match "^/bug-reports(?:/([^/]+))?/?$") {
             continue
         }
 
+        if (-not $isCollection -and $reportId -match "^bug-[0-9a-fA-F]{32}$" -and $request.HttpMethod -eq "DELETE") {
+            $expectedRevision = 0
+            if (-not [int]::TryParse([string]$request.Headers["X-SAPHIR-Expected-Revision"], [ref]$expectedRevision) -or $expectedRevision -lt 1) {
+                respondWithError $response 400 "X-SAPHIR-Expected-Revision must be a positive integer."
+                continue
+            }
+
+            $deleted = Remove-BugReport -ReportId $reportId -ExpectedRevision $expectedRevision -CurrentUser $currentUser
+            $postCommitWarnings = New-Object System.Collections.ArrayList
+            if (-not [string]::IsNullOrWhiteSpace([string]$deleted.attachmentCleanupWarning)) {
+                [void]$postCommitWarnings.Add([string]$deleted.attachmentCleanupWarning)
+            }
+            $historyWarning = Invoke-PostCommitActionSafely -Description "Bug report deleted, but history logging failed" -Action {
+                logHistory "Delete" ("Deleted bug report {0}." -f [string]$deleted.reportId) ([string]$currentUser.displayName) -PublishChange:$false
+            }
+            if ($historyWarning) { [void]$postCommitWarnings.Add($historyWarning) }
+            $syncWarning = Invoke-PostCommitActionSafely -Description "Bug report deleted, but cross-machine refresh publication failed" -Action {
+                Publish-DataChange -Category "bug-reports" -Resource ([string]$deleted.reportId) | Out-Null
+            }
+            if ($syncWarning) { [void]$postCommitWarnings.Add($syncWarning) }
+
+            respondWithSuccess $response (([PSCustomObject][ordered]@{
+                message  = "Bug report deleted successfully."
+                reportId = [string]$deleted.reportId
+                warnings = @($postCommitWarnings.ToArray())
+            }) | ConvertTo-Json -Depth 8)
+            continue
+        }
+
         if (-not $isCollection -and $reportId -notmatch "^bug-[0-9a-fA-F]{32}$") {
             respondWithError $response 404 "Bug report not found."
             continue
         }
 
-        $response.Headers["Allow"] = if ($isCollection) { "GET, POST" } else { "GET, PATCH" }
+        $response.Headers["Allow"] = if ($isCollection) { "GET, POST" } else { "GET, PATCH, DELETE" }
         respondWithError $response 405 "Method not allowed."
     }
     catch [System.ArgumentException] {

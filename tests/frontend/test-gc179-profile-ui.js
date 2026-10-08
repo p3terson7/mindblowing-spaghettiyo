@@ -113,10 +113,10 @@ assert(!openSettingsSource.includes("timeEntryTypes"), "Diverse-only employees m
 for (const copy of [
   '"employees.gc179GroupInput": "Group"',
   '"employees.gc179SubGroupInput": "Sub-Group"',
-  '"employees.gc179LevelInput": "Level"',
+  '"employees.gc179LevelInput": "Level / step"',
   '"employees.gc179GroupInput": "Groupe"',
   '"employees.gc179SubGroupInput": "Sous-groupe"',
-  '"employees.gc179LevelInput": "Niveau"',
+  '"employees.gc179LevelInput": "Niveau / échelon"',
   '"employees.gc179ClassificationHint": "Group uses letters only.',
   '"employees.gc179ClassificationHint": "Le groupe contient seulement des lettres.',
 ]) {
@@ -124,15 +124,15 @@ for (const copy of [
 }
 
 const gc179AssetCacheVersions = {
-  "I18n.js": "20260924-bug-report-minimal-v3",
-  "Utilities.js": "20260924-bug-report-minimal-v3",
-  "AppShell.js": "20260924-bug-report-minimal-v3",
+  "I18n.js": "20261008-money-visibility-v1",
+  "Utilities.js": "20261008-money-visibility-v1",
+  "AppShell.js": "20261008-money-visibility-v1",
 };
 for (const [asset, version] of Object.entries(gc179AssetCacheVersions)) {
   assert(indexSource.includes(`${asset}?v=${version}`), `${asset} is missing the GC179 cache buster.`);
 }
 assert(
-  appShellSource.includes("EmployeesView.js?v=20260924-bug-report-minimal-v3"),
+  appShellSource.includes("EmployeesView.js?v=20261008-money-visibility-v1"),
   "EmployeesView is missing the GC179 cache buster.",
 );
 

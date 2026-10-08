@@ -1,6 +1,6 @@
 @{
     RootModule        = "Saphir.BusinessRules.psm1"
-    ModuleVersion     = "1.0.0"
+    ModuleVersion     = "1.1.0"
     GUID              = "389bf57f-40dd-43e2-9a37-50c13ecf32dd"
     Author            = "SAPHIR"
     CompanyName       = "SAPHIR"

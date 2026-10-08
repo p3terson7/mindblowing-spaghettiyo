@@ -4,7 +4,7 @@ $repoRoot = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath "../..")).Pa
 $backendRoot = Join-Path -Path $repoRoot -ChildPath "app/backend"
 $manifestPath = Join-Path -Path $backendRoot -ChildPath "modules/Saphir.BudgetPeriods.psd1"
 $modulePath = Join-Path -Path $backendRoot -ChildPath "modules/Saphir.BudgetPeriods.psm1"
-$templatePath = Join-Path -Path $backendRoot -ChildPath "defaults/budget-periods.v1.json"
+$templatePath = Join-Path -Path $backendRoot -ChildPath "defaults/budget-periods.v2.json"
 
 function Assert-True {
     param([bool]$Condition, [Parameter(Mandatory = $true)][string]$Message)
@@ -40,6 +40,7 @@ $expectedFunctions = @(
     "Get-SaphirConfiguredBudgetPeriods"
 ) | Sort-Object
 Assert-Equal -Expected ($expectedFunctions -join ",") -Actual (@($manifest.FunctionsToExport | Sort-Object) -join ",") -Message "The budget-period module exports changed."
+Assert-Equal -Expected "2.0.0" -Actual ([string]$manifest.ModuleVersion) -Message "The dynamic budget-period module version changed."
 Assert-Equal -Expected "5.1" -Actual ([string]$manifest.PowerShellVersion) -Message "The module must remain compatible with Windows PowerShell 5.1."
 
 $tokens = $null
@@ -48,11 +49,11 @@ $parseErrors = $null
 Assert-Equal -Expected 0 -Actual @($parseErrors).Count -Message "The budget-period module has parser errors."
 
 Import-Module -Name $manifestPath -Force -ErrorAction Stop
-Assert-Equal -Expected "P1,P2,P3,P4" -Actual (@(Get-SaphirBudgetPeriodIds) -join ",") -Message "The period identity contract changed."
+Assert-Equal -Expected "P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12" -Actual (@(Get-SaphirBudgetPeriodIds) -join ",") -Message "The default period identity contract changed."
 
 $template = [System.IO.File]::ReadAllText($templatePath) | ConvertFrom-Json -ErrorAction Stop
 $normalizedTemplate = ConvertTo-SaphirBudgetPeriodConfiguration -Value $template
-Assert-Equal -Expected 4 -Actual @($normalizedTemplate.periods).Count -Message "The template must contain four periods."
+Assert-Equal -Expected 12 -Actual @($normalizedTemplate.periods).Count -Message "The template must contain twelve periods."
 Assert-Equal -Expected 0 -Actual @(Get-SaphirConfiguredBudgetPeriods -Configuration $template).Count -Message "The shipped template must not invent department budget dates."
 
 $valid = [PSCustomObject]@{
@@ -66,9 +67,29 @@ $valid = [PSCustomObject]@{
     )
 }
 $normalized = ConvertTo-SaphirBudgetPeriodConfiguration -Value $valid
+Assert-Equal -Expected 2 -Actual ([int]$normalized.schemaVersion) -Message "Legacy configurations must migrate to the dynamic schema."
+Assert-Equal -Expected 12 -Actual @($normalized.periods).Count -Message "Legacy P1 through P4 must expand to the twelve-period default."
 Assert-Equal -Expected "P1" -Actual ([string]$normalized.periods[0].id) -Message "Period IDs must normalize to uppercase."
 Assert-Equal -Expected $true -Actual ([bool]$normalized.periods[0].configured) -Message "A complete period must be configured."
 Assert-Equal -Expected 2 -Actual @(Get-SaphirConfiguredBudgetPeriods -Configuration $valid).Count -Message "Configured-period filtering changed."
+
+$dynamic = [PSCustomObject]@{
+    schemaVersion = 2
+    cycleLabel = "Dynamic"
+    periods = @(
+        [PSCustomObject]@{ id = "P10"; startDate = ""; endDate = "" },
+        [PSCustomObject]@{ id = "P2"; startDate = ""; endDate = "" },
+        [PSCustomObject]@{ id = "P5"; startDate = ""; endDate = "" }
+    )
+}
+$normalizedDynamic = ConvertTo-SaphirBudgetPeriodConfiguration -Value $dynamic
+Assert-Equal -Expected "P2,P5,P10" -Actual (@($normalizedDynamic.periods.id) -join ",") -Message "Dynamic period IDs must sort numerically."
+
+$empty = [PSCustomObject]@{ schemaVersion = 2; cycleLabel = ""; periods = @() }
+Assert-ArgumentError -Action { ConvertTo-SaphirBudgetPeriodConfiguration -Value $empty | Out-Null } -Message "An empty period list was accepted."
+
+$invalidId = [PSCustomObject]@{ schemaVersion = 2; cycleLabel = ""; periods = @([PSCustomObject]@{ id = "Quarter1"; startDate = ""; endDate = "" }) }
+Assert-ArgumentError -Action { ConvertTo-SaphirBudgetPeriodConfiguration -Value $invalidId | Out-Null } -Message "An invalid dynamic period ID was accepted."
 
 $partial = $valid | ConvertTo-Json -Depth 6 | ConvertFrom-Json
 $partial.periods[1].endDate = ""

@@ -92,6 +92,23 @@ routes conservent leurs heures arrondies historiques pour l’affichage, mais
 stockent la durée créditée renvoyée par ce module. Les GC179 importées restent
 hors de ce recalcul : leur durée déclarée est la source officielle.
 
+`Saphir.OvertimeCompensation` est la source unique des catégories GC179 et des
+multiplicateurs 1,5×, 1,75× et 2×. Il produit des segments purs à partir du code,
+de l'horaire, du nombre d'heures déjà créditées et du contexte d'un congé férié.
+L'export GC179 utilise déjà ces segments. Le même module convertit maintenant
+un salaire annuel fourni par l'appelant selon le diviseur PA `1 956,6` et produit
+une estimation monétaire pure, réconciliée au cent, sans lire DATA. Le module ne
+contient toujours aucun salaire : les montants annuels restent dans la grille
+administrable `Saphir.CompensationGrid`. Les trois champs de classification du
+profil GC179 servent aussi aux montants. `OvertimeCostSnapshotService` utilise
+cette classe courante et l'échelle valide à la date de l'entrée, puis persiste
+un snapshot privé dans la même écriture
+atomique que l'approbation. Les projections ordinaires retirent ce snapshot :
+le salaire et les montants ne sont donc pas envoyés au tableau de bord employé.
+Aucun calcul n'est délégué au navigateur. Une promotion ne remplace pas le
+salaire capturé des entrées déjà chiffrées. Le contrat détaillé se trouve dans
+`docs/OVERTIME-MONETARY-CONTRACT.md`.
+
 `Saphir.Gc179Profile` isole la normalisation du profil utilisé pour produire une
 GC179 : nom, initiales, indicateurs, PRI et les trois codes d'en-tête Groupe,
 Sous-groupe et Niveau. Les douze fonctions publiques de `AuthService.ps1`

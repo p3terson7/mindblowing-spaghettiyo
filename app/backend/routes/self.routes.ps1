@@ -41,8 +41,14 @@
                 $updatedUser = Get-EmployeeUserByCode -EmployeeCode ([string]$currentUser.employeeCode)
                 $updatedProfile = Get-Gc179ProfileFromUserRecord -UserRecord $updatedUser
                 $postCommitWarnings = New-Object System.Collections.ArrayList
+                $compensationWarning = Invoke-PostCommitActionSafely -Description "Profile saved, but overtime estimates could not be refreshed" -Action {
+                    Update-EmployeeApprovedCompensationSnapshots -EmployeeCode ([string]$currentUser.employeeCode) | Out-Null
+                }
+                if (-not [string]::IsNullOrWhiteSpace($compensationWarning)) {
+                    [void]$postCommitWarnings.Add($compensationWarning)
+                }
                 $syncWarning = Invoke-PostCommitActionSafely -Description "GC179 profile saved, but cross-machine refresh publication failed" -Action {
-                    Publish-DataChange -Category "auth" -Resource ([string]$currentUser.employeeCode) | Out-Null
+                    Publish-DataChange -Category "employee-directory" -Resource ([string]$currentUser.employeeCode) | Out-Null
                 }
                 if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
                     [void]$postCommitWarnings.Add($syncWarning)
@@ -133,7 +139,7 @@
                 continue
             }
 
-            $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
+            $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile | ForEach-Object { Convert-ToNormalizedEntryObject -Entry $_ })
             $entriesJson = ConvertTo-Json -InputObject @($entries) -Depth 6
             respondWithSuccess $response $entriesJson
             continue

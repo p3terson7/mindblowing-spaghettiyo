@@ -41,6 +41,15 @@
                     }
                 }
 
+                if ($null -ne $gc179Profile) {
+                    $compensationWarning = Invoke-PostCommitActionSafely -Description "Employee profile saved, but approved overtime estimates could not be refreshed" -Action {
+                        Update-EmployeeApprovedCompensationSnapshots -EmployeeCode $employeeCode | Out-Null
+                    }
+                    if (-not [string]::IsNullOrWhiteSpace($compensationWarning)) {
+                        [void]$postCommitWarnings.Add($compensationWarning)
+                    }
+                }
+
                 $historyMessage = "Updated the employee profile for <strong>$displayName</strong>."
                 $historyWarning = Invoke-PostCommitActionSafely -Description "Employee profile saved, but history logging failed" -Action {
                     logHistory "Update" $historyMessage $displayName -PublishChange:$false

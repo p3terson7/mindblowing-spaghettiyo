@@ -1285,6 +1285,118 @@ function secondsToDurationLabel(totalSeconds) {
   return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}`;
 }
 
+function formatCurrencyCents(value, currency = "CAD") {
+  if (value == null || value === "") {
+    return "";
+  }
+  const cents = Number(value);
+  if (!Number.isSafeInteger(cents)) {
+    return "";
+  }
+
+  return new Intl.NumberFormat(getCurrentLocale() || "en-CA", {
+    style: "currency",
+    currency: String(currency || "CAD").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
+function getMonetaryUnavailableLabel(reason) {
+  const normalizedReason = String(reason || "").trim();
+  const translationKey = `money.unavailableReason.${normalizedReason}`;
+  const translated = t(translationKey);
+  return translated === translationKey ? t("money.unavailable") : translated;
+}
+
+function getMonetaryCoverageNote(monetary) {
+  const unavailableCount = Number(monetary && monetary.unavailableEntryCount || 0);
+  const reasons = Object.entries(monetary && monetary.unavailableReasons || {})
+    .filter(([, count]) => Number(count) > 0)
+    .sort((left, right) => Number(right[1]) - Number(left[1]))
+    .slice(0, 2)
+    .map(([reason]) => getMonetaryUnavailableLabel(reason));
+  return unavailableCount > 0
+    ? [t("money.incompleteCoverage", { count: unavailableCount }), ...reasons].join(" · ")
+    : t("money.salaryOnlyEstimate");
+}
+
+function summarizeMonetaryValues(values) {
+  const result = {
+    currency: "CAD", approvedEntryCount: 0, calculatedEntryCount: 0,
+    unavailableEntryCount: 0, totalAmountCents: 0, cashAmountCents: 0,
+    compensatoryLeaveValueCents: 0, unavailableReasons: {},
+  };
+  (Array.isArray(values) ? values : []).forEach(monetary => {
+    if (!monetary) return;
+    ["approvedEntryCount", "calculatedEntryCount", "unavailableEntryCount", "totalAmountCents", "cashAmountCents", "compensatoryLeaveValueCents"].forEach(key => {
+      result[key] += Number(monetary[key] || 0);
+    });
+    Object.entries(monetary.unavailableReasons || {}).forEach(([reason, count]) => {
+      result.unavailableReasons[reason] = (result.unavailableReasons[reason] || 0) + Number(count || 0);
+    });
+  });
+  return result;
+}
+
+function summarizeEntryMonetaryValues(entries) {
+  const values = (Array.isArray(entries) ? entries : [])
+    .filter(entry => String(entry.status || "pending").toLowerCase() === "approved" && !isDiverseEntry(entry))
+    .map(entry => {
+      const monetary = entry.monetary;
+      const calculated = monetary && monetary.status === "final" && Number.isSafeInteger(monetary.totalAmountCents);
+      const reason = monetary && monetary.unavailableReason || "snapshot-missing";
+      return {
+        approvedEntryCount: 1, calculatedEntryCount: calculated ? 1 : 0,
+        unavailableEntryCount: calculated ? 0 : 1,
+        totalAmountCents: calculated ? monetary.totalAmountCents : 0,
+        cashAmountCents: calculated ? monetary.cashAmountCents : 0,
+        compensatoryLeaveValueCents: calculated ? monetary.compensatoryLeaveValueCents : 0,
+        unavailableReasons: calculated ? {} : { [reason]: 1 },
+      };
+    });
+  return summarizeMonetaryValues(values);
+}
+
+function getRecordMonetaryAggregate(record) {
+  if (record && record.monetary && typeof record.monetary === "object") {
+    return record.monetary;
+  }
+  const approvedCount = record && (record.approvedEntryCount ?? record.approvedCount);
+  if (approvedCount == null) return null;
+  const result = summarizeMonetaryValues([]);
+  result.approvedEntryCount = Number(approvedCount || 0);
+  result.unavailableEntryCount = result.approvedEntryCount;
+  if (result.unavailableEntryCount > 0) {
+    result.unavailableReasons["snapshot-missing"] = result.unavailableEntryCount;
+  }
+  return result;
+}
+
+function getMonetaryAmountLabel(monetary, field = "totalAmountCents") {
+  if (!monetary || (Number(monetary.unavailableEntryCount || 0) > 0 && Number(monetary.calculatedEntryCount || 0) === 0)) {
+    return t("money.toComplete");
+  }
+  return formatCurrencyCents(monetary[field], monetary.currency);
+}
+
+function renderMonetarySummary(monetary, scopeLabel) {
+  const incomplete = Number(monetary && monetary.unavailableEntryCount || 0) > 0;
+  const partial = incomplete && Number(monetary.calculatedEntryCount || 0) > 0;
+  return `<div class="monetary-summary${incomplete ? " is-incomplete" : ""}">
+    <span class="monetary-summary-label">${escapeHtml(t("money.estimatedValue"))}${partial ? ` · ${escapeHtml(t("money.partial"))}` : ""}</span>
+    <strong class="monetary-summary-value">${escapeHtml(getMonetaryAmountLabel(monetary))}</strong>
+    <small class="monetary-summary-note">${escapeHtml(incomplete ? getMonetaryCoverageNote(monetary) : scopeLabel)}</small>
+  </div>`;
+}
+
+function renderMonetaryEntryValue(entry) {
+  if (!entry.monetary) return "";
+  return entry.monetary.status === "final" && entry.monetary.totalAmountCents != null
+    ? `<span class="entry-monetary-value" title="${escapeHtml(t("money.salaryOnlyEstimate"))}">${escapeHtml(formatCurrencyCents(entry.monetary.totalAmountCents, entry.monetary.currency))}</span>`
+    : `<span class="entry-monetary-value monetary-unavailable-text">${escapeHtml(getMonetaryUnavailableLabel(entry.monetary.unavailableReason))}</span>`;
+}
+
 function getEntryDurationSeconds(entry) {
   if (isEntryOpen(entry)) {
     const startedAt = toEntryDateTime(entry);

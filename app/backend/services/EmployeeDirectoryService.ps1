@@ -146,6 +146,7 @@ function Get-EmployeeDirectoryStats {
     $diverseCount = 0
     $diverseSeconds = 0
     $projectBuckets = @{}
+    $monetary = New-MonetaryAccumulator
 
     foreach ($entry in @($Entries)) {
         $seconds = Get-EmployeeDirectoryEntrySeconds -Entry $entry
@@ -183,6 +184,7 @@ function Get-EmployeeDirectoryStats {
                 pendingCount = 0
                 rejectedCount = 0
                 liveCount = 0
+                monetary = (New-MonetaryAccumulator)
             }
         }
 
@@ -194,6 +196,9 @@ function Get-EmployeeDirectoryStats {
         if ($status -eq "approved") {
             $approvedCount++
             $bucket.approvedCount = [int]$bucket.approvedCount + 1
+            $entryMonetary = New-EntryMonetaryReadModel -Entry $entry
+            Add-EntryMonetaryToAccumulator -Accumulator $monetary -Monetary $entryMonetary
+            Add-EntryMonetaryToAccumulator -Accumulator $bucket.monetary -Monetary $entryMonetary
         }
         elseif ($status -eq "rejected") {
             $rejectedCount++
@@ -221,6 +226,7 @@ function Get-EmployeeDirectoryStats {
             pendingCount = [int]$bucket.pendingCount
             rejectedCount = [int]$bucket.rejectedCount
             liveCount = [int]$bucket.liveCount
+            monetary = ConvertTo-MonetaryAggregateReadModel -Accumulator $bucket.monetary
         })
     }
 
@@ -234,6 +240,7 @@ function Get-EmployeeDirectoryStats {
         diverseCount = [int]$diverseCount
         diverseSeconds = [int]$diverseSeconds
         diverseDuration = Convert-SecondsToTimeText -Seconds $diverseSeconds
+        monetary = ConvertTo-MonetaryAggregateReadModel -Accumulator $monetary
         projectStats = @($projectStatsList.ToArray())
     }
 }
@@ -461,6 +468,7 @@ function Get-EmployeeDirectoryListUncached {
             pendingCount         = [int]$entryStats.pendingCount
             rejectedCount        = [int]$entryStats.rejectedCount
             liveCount            = [int]$entryStats.liveCount
+            monetary             = $entryStats.monetary
             projectCodes         = $projectCodes
             projectStats         = @($entryStats.projectStats)
             supervisedProjects   = @($responsibilities.supervised)

@@ -337,10 +337,10 @@ catch {
 Initialize-JsonFileIfEmpty -Path $compensationGridFile -Value $defaultCompensationGrid -Depth 12
 
 # Budget dates are shared business configuration. The template deliberately
-# leaves them blank: a super admin defines the department's actual P1-P4
+# leaves them blank: a super admin defines the department's actual periods
 # calendar, and future releases preserve that shared configuration.
 $budgetPeriodsFile = Join-Path -Path $sharedFolder -ChildPath "budget-periods.json"
-$budgetPeriodsTemplateFile = Join-Path -Path $backendRoot -ChildPath "defaults/budget-periods.v1.json"
+$budgetPeriodsTemplateFile = Join-Path -Path $backendRoot -ChildPath "defaults/budget-periods.v2.json"
 if (-not (Test-Path -LiteralPath $budgetPeriodsTemplateFile -PathType Leaf)) {
     throw "The packaged budget-period template is missing: $budgetPeriodsTemplateFile"
 }

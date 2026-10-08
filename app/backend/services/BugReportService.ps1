@@ -447,6 +447,79 @@ function Update-BugReport {
     return $updatedRecord
 }
 
+function Remove-BugReport {
+    param(
+        [Parameter(Mandatory = $true)][string]$ReportId,
+        [Parameter(Mandatory = $true)][int]$ExpectedRevision,
+        [Parameter(Mandatory = $true)]$CurrentUser
+    )
+
+    if ($ExpectedRevision -lt 1) {
+        throw [System.ArgumentException]::new("expectedRevision must be a positive integer.")
+    }
+    if (-not (Saphir.BugReports\Test-SaphirBugReportAdministrativeUser -User $CurrentUser)) {
+        throw (New-BugReportServiceException -StatusCode 403 -Message "Super admin access is required to delete bug reports.")
+    }
+
+    $normalizedId = $ReportId.Trim()
+    $removedReport = $null
+    $lockHandle = Acquire-ResourceLock -ResourcePath $bugReportsFile
+    try {
+        $reports = @(Read-BugReportCollection)
+        $index = -1
+        for ($candidateIndex = 0; $candidateIndex -lt $reports.Count; $candidateIndex++) {
+            if (([string]$reports[$candidateIndex].reportId).Equals($normalizedId, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $index = $candidateIndex
+                break
+            }
+        }
+        if ($index -lt 0) {
+            throw (New-BugReportServiceException -StatusCode 404 -Message "Bug report not found.")
+        }
+
+        $report = $reports[$index]
+        if ([int]$report.revision -ne $ExpectedRevision) {
+            throw (New-BugReportServiceException -StatusCode 409 -Message "This bug report changed on another workstation. Refresh it before deleting.")
+        }
+
+        $remainingReports = New-Object System.Collections.ArrayList
+        for ($candidateIndex = 0; $candidateIndex -lt $reports.Count; $candidateIndex++) {
+            if ($candidateIndex -ne $index) {
+                [void]$remainingReports.Add($reports[$candidateIndex])
+            }
+        }
+        Write-JsonArrayAtomic -Path $bugReportsFile -Items @($remainingReports.ToArray()) -Depth 16
+        Clear-BugReportRuntimeCache
+        $removedReport = $report
+    }
+    finally {
+        Release-ResourceLock -LockHandle $lockHandle
+    }
+
+    # The JSON removal is committed first so an attachment cleanup failure can
+    # never leave a visible report whose images have already disappeared.
+    $attachmentCleanupWarning = ""
+    if (@($removedReport.attachments).Count -gt 0) {
+        $attachmentFolder = Join-Path -Path $bugReportAttachmentsFolder -ChildPath $normalizedId.ToLowerInvariant()
+        try {
+            if (Test-SaphirDirectoryExists -Path $attachmentFolder) {
+                Remove-Item -LiteralPath $attachmentFolder -Recurse -Force -ErrorAction Stop
+            }
+        }
+        catch {
+            $attachmentCleanupWarning = "The bug was deleted, but its image files could not be removed from shared storage."
+            Write-Warning ("{0} {1}" -f $attachmentCleanupWarning, $_.Exception.Message)
+        }
+    }
+
+    return [PSCustomObject][ordered]@{
+        reportId                  = [string]$removedReport.reportId
+        title                     = [string]$removedReport.title
+        attachmentCount           = @($removedReport.attachments).Count
+        attachmentCleanupWarning  = $attachmentCleanupWarning
+    }
+}
+
 function Add-BugReportAttachment {
     param(
         [Parameter(Mandatory = $true)][string]$ReportId,

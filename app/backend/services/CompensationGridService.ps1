@@ -75,10 +75,8 @@ function Resolve-CompensationBandForClassification {
         [Parameter(Mandatory = $true)][DateTime]$AsOfDate
     )
 
-    # This is intentionally not wired into time-entry calculations yet. The
-    # annual-hours divisor and overtime multipliers have not been approved.
-    # Callers must supply a trusted compensation classification rather than a
-    # self-editable GC179 export profile.
+    # The caller supplies the current classification from the shared employee
+    # profile. Salary amounts remain in the editable grid.
     return (Saphir.CompensationGrid\Resolve-CompensationSalaryBand `
         -SalaryGrid (Get-CompensationGrid) `
         -Group $Group `

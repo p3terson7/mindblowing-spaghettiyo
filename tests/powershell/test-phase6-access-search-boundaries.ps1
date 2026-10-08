@@ -15,7 +15,7 @@ $projectsPath = Join-Path -Path $frontendRoot -ChildPath "scripts/Views/Projects
 $indexPath = Join-Path -Path $frontendRoot -ChildPath "index.html"
 $appShellPath = Join-Path -Path $frontendRoot -ChildPath "scripts/AppShell.js"
 $architecturePath = Join-Path -Path $repoRoot -ChildPath "docs/ARCHITECTURE.md"
-$expectedFrontendCacheKey = "20260924-bug-report-minimal-v3"
+$expectedFrontendCacheKey = "20261008-money-visibility-v1"
 
 $expectedAccessFunctions = @(
     "Get-NormalizedRoleName",

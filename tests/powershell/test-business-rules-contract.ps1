@@ -20,10 +20,17 @@ Remove-Module -Name "Saphir.BusinessRules" -Force -ErrorAction SilentlyContinue
 Import-Module -Name $manifestPath -Force -ErrorAction Stop | Out-Null
 
 $contract = Get-SaphirBusinessRuleContract
-Assert-Equal -Expected 1 -Actual $contract.contractVersion -Message "The contract version changed."
+Assert-Equal -Expected 2 -Actual $contract.contractVersion -Message "The contract version changed."
 Assert-Equal -Expected "overtime,diverse" -Actual ([string]::Join(",", @($contract.entryTypes))) -Message "Entry types changed."
 Assert-Equal -Expected "regular,compressed,unconfirmed" -Actual ([string]::Join(",", @($contract.workSchedules))) -Message "Work schedules changed."
-Assert-Equal -Expected "P1,P2,P3,P4" -Actual ([string]::Join(",", @($contract.budgetPeriodIds))) -Message "Budget period identifiers changed."
+Assert-Equal -Expected "^P[1-9][0-9]{0,2}$" -Actual ([string]$contract.budgetPeriodIdPattern) -Message "Budget period identifier validation changed."
+Assert-Equal -Expected 12 -Actual ([int]$contract.defaultBudgetPeriodCount) -Message "Default budget period count changed."
+Assert-Equal -Expected 60 -Actual ([int]$contract.maximumBudgetPeriodCount) -Message "Maximum budget period count changed."
+Assert-Equal -Expected $false -Actual ([bool]$contract.monetaryAccess.clientCalculationAllowed) -Message "Clients must not calculate authoritative amounts."
+Assert-Equal -Expected $false -Actual ([bool]$contract.monetaryAccess.employeeSelfAmountVisible) -Message "Employee monetary visibility changed."
+Assert-Equal -Expected "superAdmin" -Actual ([string]::Join(",", @($contract.monetaryAccess.salaryDetailRoles))) -Message "Salary-detail access changed."
+Assert-Equal -Expected "admin,superAdmin" -Actual ([string]::Join(",", @($contract.monetaryAccess.entryAmountRoles))) -Message "Entry-amount access changed."
+Assert-Equal -Expected $true -Actual ([bool]$contract.monetaryAccess.adminScopeRequired) -Message "Admin project scope must remain mandatory."
 
 Assert-Equal -Expected "overtime" -Actual (ConvertTo-SaphirEntryType -Value $null) -Message "Legacy entries must default to overtime."
 Assert-Equal -Expected "diverse" -Actual (ConvertTo-SaphirEntryType -Value " DIVERSE ") -Message "Diverse normalization failed."

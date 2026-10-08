@@ -138,11 +138,23 @@ try {
     Write-TestJson -Path (Join-Path -Path $dataRoot -ChildPath "users.json") -Value @(
         [PSCustomObject]@{ username = "compensation-super"; displayName = "Super User"; role = "superAdmin"; employeeCode = $null; disabled = $false; mustChangePassword = $false; passwordSalt = $superCredential.passwordSalt; passwordHash = $superCredential.passwordHash; passwordIterations = $superCredential.passwordIterations; passwordAlgorithm = $superCredential.passwordAlgorithm },
         [PSCustomObject]@{ username = "compensation-admin"; displayName = "Manager User"; role = "admin"; employeeCode = $null; disabled = $false; mustChangePassword = $false; passwordSalt = $adminCredential.passwordSalt; passwordHash = $adminCredential.passwordHash; passwordIterations = $adminCredential.passwordIterations; passwordAlgorithm = $adminCredential.passwordAlgorithm },
-        [PSCustomObject]@{ username = "000000001"; displayName = "Worker User"; role = "employee"; employeeCode = "000000001"; disabled = $false; mustChangePassword = $false; passwordSalt = $employeeCredential.passwordSalt; passwordHash = $employeeCredential.passwordHash; passwordIterations = $employeeCredential.passwordIterations; passwordAlgorithm = $employeeCredential.passwordAlgorithm }
+        [PSCustomObject]@{ username = "000000001"; displayName = "Worker User"; role = "employee"; employeeCode = "000000001"; disabled = $false; mustChangePassword = $false; passwordSalt = $employeeCredential.passwordSalt; passwordHash = $employeeCredential.passwordHash; passwordIterations = $employeeCredential.passwordIterations; passwordAlgorithm = $employeeCredential.passwordAlgorithm },
+        [PSCustomObject]@{ username = "000000002"; displayName = "Legacy Worker"; role = "employee"; employeeCode = "000000002"; disabled = $false; gc179Profile = [PSCustomObject]@{ group = "CR"; subGroup = "04"; level = "01" }; mustChangePassword = $false; passwordSalt = $employeeCredential.passwordSalt; passwordHash = $employeeCredential.passwordHash; passwordIterations = $employeeCredential.passwordIterations; passwordAlgorithm = $employeeCredential.passwordAlgorithm }
     )
     Write-TestJson -Path (Join-Path -Path $dataRoot -ChildPath "sessions.json") -Value ([object[]]@())
     Write-TestJson -Path (Join-Path -Path $dataRoot -ChildPath "history.json") -Value ([object[]]@())
-    Write-TestJson -Path (Join-Path -Path $dataRoot -ChildPath "projects.json") -Value ([object[]]@())
+    Write-TestJson -Path (Join-Path -Path $dataRoot -ChildPath "projects.json") -Value @(
+        [PSCustomObject]@{ projectCode = "TEST"; projectName = "Classification project"; admins = @(); backupAdmins = @(); archived = $false },
+        [PSCustomObject]@{ projectCode = "LEGACY"; projectName = "Read-only legacy estimates"; admins = @(); backupAdmins = @(); archived = $false }
+    )
+    Write-TestJson -Path (Join-Path -Path $dataRoot -ChildPath "000000001_data.json") -Value @(
+        [PSCustomObject]@{ entryId = "historical-classification"; name = "Worker User"; entryType = "overtime"; date = "2026-09-01"; punchIn = "17:00:00"; punchOut = "18:00:00"; overtime = "01:00:00"; status = "approved"; projectCode = "TEST"; overtimeCode = "260"; paymentOption = "cash"; workSchedule = "regular" }
+    )
+    $legacyDataFile = Join-Path $dataRoot "000000002_data.json"
+    Write-TestJson -Path $legacyDataFile -Value @(
+        [PSCustomObject]@{ entryId = "legacy-read-only"; name = "Legacy Worker"; entryType = "overtime"; date = "2026-09-01"; punchIn = "17:00:00"; punchOut = "18:00:00"; overtime = "01:00:00"; status = "approved"; projectCode = "LEGACY"; overtimeCode = "260"; paymentOption = "cash"; workSchedule = "regular" }
+    )
+    $legacyDataBefore = [System.IO.File]::ReadAllText($legacyDataFile)
 
     $stdout = Join-Path -Path $tempRoot -ChildPath "stdout.log"
     $stderr = Join-Path -Path $tempRoot -ChildPath "stderr.log"
@@ -198,6 +210,26 @@ try {
     $superLogin = Invoke-TestRequest -Method "POST" -Uri "$baseUri/auth/login" -Body @{ username = "compensation-super"; password = $superPassword }
     Assert-Equal -Expected 200 -Actual $superLogin.StatusCode -Message "Super-admin login failed."
     $superToken = [string]$superLogin.Json.token
+
+    $legacyAmounts = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employee/000000002" -Token $superToken
+    Assert-Equal -Expected 200 -Actual $legacyAmounts.StatusCode -Message "Legacy monetary read failed."
+    $legacyAmountBefore = @($legacyAmounts.Json)[0].monetary.totalAmountCents
+    Assert-True -Condition ([long]$legacyAmountBefore -gt 0) -Message "A configured legacy approval should show money without resaving its profile."
+    $legacyDirectory = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employees/bootstrap" -Token $superToken
+    $legacyEmployee = @($legacyDirectory.Json.employees | Where-Object code -eq "000000002")[0]
+    Assert-Equal -Expected $legacyAmountBefore -Actual $legacyEmployee.monetary.totalAmountCents -Message "Personnel directory did not expose the historical amount."
+    Assert-Equal -Expected $legacyAmountBefore -Actual $legacyEmployee.projectStats[0].monetary.totalAmountCents -Message "Personnel project filter totals are missing."
+    $legacyList = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employees?scope=all" -Token $superToken
+    Assert-Equal -Expected $legacyAmountBefore -Actual @($legacyList.Json | Where-Object code -eq "000000002")[0].projectStats[0].monetary.totalAmountCents -Message "The employee list truncated its nested monetary aggregate."
+    Assert-Equal -Expected $legacyDataBefore -Actual ([System.IO.File]::ReadAllText($legacyDataFile)) -Message "A read-only monetary request wrote to the employee file."
+    $scopedDirectory = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employees/bootstrap" -Token $adminToken
+    $managerLegacy = @($scopedDirectory.Json.employees | Where-Object code -eq "000000002")[0]
+    Assert-Equal -Expected $legacyAmountBefore -Actual $managerLegacy.monetary.totalAmountCents -Message "Existing read-only manager access lost the monetary summary."
+    Assert-True -Condition ($scopedDirectory.Body -notmatch 'annualSalaryCents|hourlyRateCents|compensationSnapshot') -Message "Personnel directory exposed private salary inputs."
+    $legacyLogin = Invoke-TestRequest -Method "POST" -Uri "$baseUri/auth/login" -Body @{ username = "000000002"; password = $employeePassword }
+    $legacySelf = Invoke-TestRequest -Method "GET" -Uri "$baseUri/self/entries" -Token ([string]$legacyLogin.Json.token)
+    Assert-Equal -Expected 200 -Actual $legacySelf.StatusCode -Message "Legacy employee self read failed."
+    Assert-True -Condition ($legacySelf.Body -notmatch 'monetary|annualSalary|compensationSnapshot') -Message "Derived legacy estimates leaked through the employee self endpoint."
 
     $anonymousBugReports = Invoke-TestRequest -Method "GET" -Uri "$baseUri/bug-reports"
     Assert-Equal -Expected 401 -Actual $anonymousBugReports.StatusCode -Message "Anonymous users must not list bug reports."
@@ -275,7 +307,7 @@ try {
 
     $initialBudgetRead = Invoke-TestRequest -Method "GET" -Uri "$baseUri/budget-periods" -Token $superToken
     Assert-Equal -Expected 200 -Actual $initialBudgetRead.StatusCode -Message "Super admin could not read the seeded budget periods."
-    Assert-Equal -Expected 4 -Actual @($initialBudgetRead.Json.periods).Count -Message "Budget setup must expose P1 through P4."
+    Assert-Equal -Expected 12 -Actual @($initialBudgetRead.Json.periods).Count -Message "A new budget setup must expose P1 through P12."
     Assert-Equal -Expected 0 -Actual @($initialBudgetRead.Json.periods | Where-Object { [bool]$_.configured }).Count -Message "The release must not invent budget dates."
     $beforeBudgetSync = Invoke-TestRequest -Method "GET" -Uri "$baseUri/sync/status" -Token $superToken
     Assert-Equal -Expected 200 -Actual $beforeBudgetSync.StatusCode -Message "Initial budget sync-state read failed."
@@ -349,6 +381,9 @@ try {
     $validBands += [PSCustomObject]@{ id = "cr-04-01-2026-h2"; group = "CR"; subGroup = "04"; level = "1"; annualSalaryCents = 5900000; effectiveFrom = "2026-07-01"; effectiveTo = "" }
     $validSave = Invoke-TestRequest -Method "PUT" -Uri "$baseUri/compensation-grid" -Token $superToken -Body @{ bands = $validBands }
     Assert-Equal -Expected 200 -Actual $validSave.StatusCode -Message "A valid versioned compensation update failed."
+    $legacyAfterGridSave = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employee/000000002" -Token $superToken
+    Assert-True -Condition ([long]@($legacyAfterGridSave.Json)[0].monetary.totalAmountCents -gt [long]$legacyAmountBefore) -Message "Salary grid changes did not invalidate the legacy estimate cache."
+    Assert-Equal -Expected $legacyDataBefore -Actual ([System.IO.File]::ReadAllText($legacyDataFile)) -Message "Refreshing the derived monetary cache rewrote the employee file."
     Assert-Equal -Expected 11 -Actual @($validSave.Json.bands).Count -Message "The valid compensation update returned the wrong band count."
     Assert-Equal -Expected 5900000 -Actual (@($validSave.Json.bands | Where-Object { [string]$_.id -eq "cr-04-01-2026-h2" })[0]).annualSalaryCents -Message "The valid updated salary was not stored in cents."
     Assert-True -Condition ($initialGridHash -ne (Get-FileHash -LiteralPath $gridPath -Algorithm SHA256).Hash) -Message "A valid compensation update did not persist."
@@ -360,6 +395,37 @@ try {
 
     $unsupportedMethod = Invoke-TestRequest -Method "POST" -Uri "$baseUri/compensation-grid" -Token $superToken -Body @{}
     Assert-Equal -Expected 405 -Actual $unsupportedMethod.StatusCode -Message "Compensation grid must accept only GET and PUT."
+
+    $classificationSave = Invoke-TestRequest -Method "PUT" -Uri "$baseUri/employees/000000001" -Token $superToken -Body @{
+        name = "Worker User"
+        gc179Profile = @{ surname = "USER"; givenName = "WORKER"; group = "CR"; subGroup = "04"; level = "01"; compressedWorkWeek = $false }
+    }
+    Assert-Equal -Expected 200 -Actual $classificationSave.StatusCode -Message "The single employee classification could not be saved."
+    Assert-Equal -Expected 0 -Actual @($classificationSave.Json.warnings).Count -Message "Saving the classification could not refresh the historical estimate."
+    $classifiedProfile = Invoke-TestRequest -Method "GET" -Uri "$baseUri/self/profile" -Token $employeeToken
+    Assert-Equal -Expected "CR" -Actual $classifiedProfile.Json.gc179Profile.group -Message "GC179 did not receive the same classification as the salary estimate."
+    $classifiedEntries = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employee/000000001" -Token $superToken
+    Assert-Equal -Expected "final" -Actual @($classifiedEntries.Json)[0].monetary.status -Message "Saving the shared profile did not make the historical amount visible."
+    $capturedAmount = @($classifiedEntries.Json)[0].monetary.totalAmountCents
+    Assert-True -Condition ([long]$capturedAmount -gt 0) -Message "The shared classification produced no monetary value."
+    $reviewAmounts = Invoke-TestRequest -Method "GET" -Uri "$baseUri/approvals/entries" -Token $superToken
+    Assert-Equal -Expected $capturedAmount -Actual @($reviewAmounts.Json | Where-Object employeeCode -eq "000000001")[0].monetary.totalAmountCents -Message "Review lost the monetary snapshot while building its cached entry model."
+    $projectAmounts = Invoke-TestRequest -Method "GET" -Uri "$baseUri/stats/projects?startDate=2026-09-01&endDate=2026-09-30" -Token $superToken
+    Assert-Equal -Expected $capturedAmount -Actual @($projectAmounts.Json | Where-Object projectCode -eq "TEST")[0].monetary.totalAmountCents -Message "Project totals lost the monetary snapshot while building their cached statistics."
+    $savedEmployee = @(Get-Content -LiteralPath (Join-Path $dataRoot "000000001_data.json") -Raw | ConvertFrom-Json)[0]
+    Assert-Equal -Expected 5900000 -Actual $savedEmployee.compensationSnapshot.annualSalaryCents -Message "The classification did not resolve the applicable salary band."
+
+    $promotionSave = Invoke-TestRequest -Method "PUT" -Uri "$baseUri/employees/000000001" -Token $superToken -Body @{
+        name = "Worker User"
+        gc179Profile = @{ surname = "USER"; givenName = "WORKER"; group = "AS"; subGroup = "04"; level = "03"; compressedWorkWeek = $false }
+    }
+    Assert-Equal -Expected 200 -Actual $promotionSave.StatusCode -Message "A promotion should only require changing the three profile fields."
+    $afterPromotion = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employee/000000001" -Token $superToken
+    Assert-Equal -Expected $capturedAmount -Actual @($afterPromotion.Json)[0].monetary.totalAmountCents -Message "A promotion repriced existing approved history through the HTTP route."
+    $selfEntriesAfterPromotion = Invoke-TestRequest -Method "GET" -Uri "$baseUri/self/entries" -Token $employeeToken
+    Assert-True -Condition ($selfEntriesAfterPromotion.Body -notmatch 'monetary|annualSalary|compensationSnapshot') -Message "The employee entry endpoint exposed private monetary data after classification was configured."
+    $selfBootstrapAfterPromotion = Invoke-TestRequest -Method "GET" -Uri "$baseUri/self/bootstrap" -Token $employeeToken
+    Assert-True -Condition ($selfBootstrapAfterPromotion.Body -notmatch 'monetary|annualSalary|compensationSnapshot') -Message "The employee bootstrap exposed private monetary data after classification was configured."
 
     Write-Host "Business settings and bug-report HTTP integration passed: access, validation, revisions, statistics, and targeted sync are correct."
 }

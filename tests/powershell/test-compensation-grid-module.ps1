@@ -11,7 +11,10 @@ $expectedFunctions = @(
     "ConvertTo-CompensationSalaryBand",
     "Test-CompensationSalaryGridDocument",
     "ConvertTo-CompensationSalaryGridDocument",
-    "Resolve-CompensationSalaryBand"
+    "Resolve-CompensationSalaryBand",
+    "ConvertTo-EmployeeCompensationAssignment",
+    "ConvertTo-EmployeeCompensationAssignments",
+    "Resolve-EmployeeCompensationAssignment"
 )
 
 function Assert-True {

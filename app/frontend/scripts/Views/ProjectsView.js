@@ -19,7 +19,8 @@ const PROJECT_OTHER_CHART_BORDER_DASH = Object.freeze([3, 5]);
 const PROJECT_TREND_LINE_WIDTH = 3;
 const PROJECT_TREND_FOCUSED_LINE_WIDTH = 3.75;
 const PROJECT_TREND_MUTED_LINE_WIDTH = 1.5;
-const PROJECT_BUDGET_PERIOD_IDS = Object.freeze(["P1", "P2", "P3", "P4"]);
+const PROJECT_BUDGET_LOADING_COUNT = 6;
+let projectBudgetBetaRenderVersion = 0;
 const projectInsightChartInstances = {};
 const projectPalette = ["#0868d7", "#16865a", "#7558d8", "#008994", "#c27a00", "#c43840", "#c94f8a", "#4f72d8", "#7f6b52", "#0f8f7a"];
 const projectsViewState = {
@@ -40,6 +41,7 @@ const projectsViewState = {
   portfolioScope: "active",
   portfolioSort: "activity",
   budgetComparison: {
+    view: "beta",
     payload: null,
     selectedIds: new Set(),
     initialized: false,
@@ -66,11 +68,10 @@ function getProjectBudgetComparisonElements() {
 
 function normalizeProjectBudgetComparisonPayload(payload) {
   const sourcePeriods = payload && Array.isArray(payload.periods) ? payload.periods : [];
-  const periodsById = new Map(sourcePeriods.map(period => [String(period && period.id || "").trim().toUpperCase(), period]));
   return {
     cycleLabel: String(payload && payload.cycleLabel || "").trim(),
-    periods: PROJECT_BUDGET_PERIOD_IDS.map(id => {
-      const source = periodsById.get(id) || {};
+    periods: sourcePeriods.map(source => {
+      const id = String(source && source.id || "").trim().toUpperCase();
       return {
         id,
         configured: Boolean(source.configured && source.startDate && source.endDate),
@@ -79,9 +80,11 @@ function normalizeProjectBudgetComparisonPayload(payload) {
         approvedSeconds: Math.max(0, Number(source.approvedSeconds) || 0),
         approvedEntryCount: Math.max(0, Number(source.approvedEntryCount) || 0),
         projectsWithOvertimeCount: Math.max(0, Number(source.projectsWithOvertimeCount) || 0),
+        monetary: source.monetary && typeof source.monetary === "object" ? source.monetary : null,
         projects: Array.isArray(source.projects) ? source.projects : [],
       };
-    }),
+    }).filter(period => /^P[1-9][0-9]{0,2}$/.test(period.id))
+      .sort((left, right) => Number(left.id.slice(1)) - Number(right.id.slice(1))),
   };
 }
 
@@ -92,10 +95,31 @@ function formatProjectBudgetPeriodRange(period) {
   return `${formatDateLabel(period.startDate)} – ${formatDateLabel(period.endDate)}`;
 }
 
+function getDefaultProjectBudgetPeriodIds(periods) {
+  const configuredPeriods = (Array.isArray(periods) ? periods : []).filter(period => period.configured);
+  if (configuredPeriods.length <= 2) {
+    return configuredPeriods.map(period => period.id);
+  }
+
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const currentIndex = configuredPeriods.findIndex(period => period.startDate <= todayKey && period.endDate >= todayKey);
+  if (currentIndex >= 0) {
+    const previousIndex = Math.max(0, currentIndex - 1);
+    return Array.from(new Set([configuredPeriods[previousIndex].id, configuredPeriods[currentIndex].id]));
+  }
+
+  const completedPeriods = configuredPeriods.filter(period => period.endDate < todayKey);
+  if (completedPeriods.length > 0) {
+    return completedPeriods.slice(-2).map(period => period.id);
+  }
+  return configuredPeriods.slice(0, 2).map(period => period.id);
+}
+
 function setProjectBudgetComparisonLoading() {
   const elements = getProjectBudgetComparisonElements();
   if (elements.controls) {
-    elements.controls.innerHTML = PROJECT_BUDGET_PERIOD_IDS.map(id => `<span class="budget-period-choice is-loading"><strong>${id}</strong></span>`).join("");
+    elements.controls.innerHTML = Array.from({ length: PROJECT_BUDGET_LOADING_COUNT }, (_, index) => `<span class="budget-period-choice is-loading"><strong>P${index + 1}</strong></span>`).join("");
   }
   if (elements.summary) {
     elements.summary.innerHTML = createLoadingState("grid", 4);
@@ -154,6 +178,7 @@ function formatBudgetComparisonDelta(firstSeconds, lastSeconds) {
 }
 
 function renderProjectBudgetComparison() {
+  renderProjectBudgetBeta();
   const payload = projectsViewState.budgetComparison.payload;
   const elements = getProjectBudgetComparisonElements();
   if (!payload || !elements.controls || !elements.summary || !elements.table) {
@@ -275,7 +300,7 @@ async function loadProjectBudgetComparison() {
     projectsViewState.budgetComparison.selectedIds = new Set(
       projectsViewState.budgetComparison.initialized && previousSelection.length > 0
         ? previousSelection
-        : configuredIds,
+        : getDefaultProjectBudgetPeriodIds(payload.periods),
     );
     projectsViewState.budgetComparison.initialized = true;
     renderProjectBudgetComparison();
@@ -291,6 +316,51 @@ async function loadProjectBudgetComparison() {
     if (elements.table) {
       elements.table.innerHTML = createEmptyState(t("projects.budgetLoadError"));
     }
+    const betaHost = document.getElementById("projectBudgetBeta");
+    if (betaHost) {
+      betaHost.innerHTML = createEmptyState(t("projects.budgetLoadError"));
+    }
+  }
+}
+
+async function renderProjectBudgetBeta() {
+  const host = document.getElementById("projectBudgetBeta");
+  const disclosure = document.querySelector(".project-budget-comparison-disclosure");
+  const betaSelected = projectsViewState.budgetComparison.view === "beta";
+  if (!host || !disclosure) return;
+  host.classList.toggle("d-none", !betaSelected);
+  document.getElementById("projectBudgetClassic").classList.toggle("d-none", betaSelected);
+  document.querySelectorAll("[data-budget-view]").forEach(button => {
+    const active = button.dataset.budgetView === projectsViewState.budgetComparison.view;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  const version = ++projectBudgetBetaRenderVersion;
+  if (!betaSelected || !disclosure.open || !projectsViewState.budgetComparison.payload) {
+    if (window.Saphir && window.Saphir.budgetBeta) window.Saphir.budgetBeta.dispose();
+    if (betaSelected && disclosure.open && !projectsViewState.budgetComparison.payload) host.innerHTML = createLoadingState("chart", 1);
+    return;
+  }
+  if (!window.Saphir || !window.Saphir.budgetBeta) host.innerHTML = createLoadingState("chart", 1);
+  try {
+    await loadScriptOnce("assets/vendor/echarts/echarts.min.js?v=6.1.0");
+    await loadScriptOnce("scripts/Views/ProjectBudgetBeta.js?v=20261008-money-visibility-v1");
+    if (version !== projectBudgetBetaRenderVersion || !disclosure.open || projectsViewState.budgetComparison.view !== "beta") return;
+    window.Saphir.budgetBeta.render(host, projectsViewState.budgetComparison.payload, {
+      openProject: (projectCode, period) => {
+        if (period) {
+          projectsViewState.customRange = { startDate: period.startDate, endDate: period.endDate };
+          currentProjectFilter = "custom";
+          syncProjectRangeButtons();
+          syncProjectCustomRangeInputs();
+        }
+        return openProjectDetailFromPortfolio(projectCode, period ? "custom" : currentProjectFilter);
+      },
+    });
+  } catch (error) {
+    if (version !== projectBudgetBetaRenderVersion) return;
+    console.error("Unable to load budget beta:", error);
+    host.innerHTML = createEmptyState(t("budgetBeta.loadError"));
   }
 }
 
@@ -1357,13 +1427,6 @@ function renderProjectInsights(projects) {
     return;
   }
 
-  if (typeof Chart !== "function") {
-    summaryContainer.innerHTML = createEmptyState(t("projects.chartLibraryFailed"));
-    setProjectInsightEmptyState("projectOvertimeShareChart", "projects.chartLibraryFailed");
-    setProjectInsightEmptyState("projectSectorDistributionChart", "projects.chartLibraryFailed");
-    return;
-  }
-
   if (projectList.length === 0) {
     summaryContainer.innerHTML = createEmptyState(t("projects.noStats"));
     setProjectInsightEmptyState("projectOvertimeShareChart");
@@ -1375,6 +1438,7 @@ function renderProjectInsights(projects) {
   const archivedProjects = projectList.filter(project => isProjectArchived(project));
   const sectorMetrics = {};
   const totalSeconds = projectList.reduce((sum, project) => sum + getProjectTotalSeconds(project), 0);
+  const monetary = summarizeMonetaryValues(projectList.map(getRecordMonetaryAggregate));
   const missingPrimaryCount = activeProjects.filter(project => normalizeProjectAssignmentCodes(project.admins).length === 0).length;
   const missingBackupCount = activeProjects.filter(project => normalizeProjectAssignmentCodes(project.backupAdmins).length === 0).length;
 
@@ -1383,6 +1447,11 @@ function renderProjectInsights(projects) {
   });
 
   summaryContainer.innerHTML = `
+    <div class="project-insight-stat project-insight-stat-money">
+      <span class="metric-label">${escapeHtml(t("money.periodValue"))}</span>
+      <strong class="metric-value money-value">${escapeHtml(getMonetaryAmountLabel(monetary))}</strong>
+      <span class="metric-hint">${escapeHtml(getMonetaryCoverageNote(monetary))}</span>
+    </div>
     <div class="project-insight-stat">
       <span class="metric-label">${escapeHtml(t("projects.insightTotalOvertime"))}</span>
       <strong class="metric-value duration-value">${escapeHtml(secondsToDurationLabel(totalSeconds))}</strong>
@@ -1404,6 +1473,13 @@ function renderProjectInsights(projects) {
       <span class="metric-hint">${escapeHtml(t("projects.insightCoverageHint", { primary: missingPrimaryCount, backup: missingBackupCount }))}</span>
     </div>
   `;
+
+  // Plain metrics (including monetary values) do not depend on a chart library.
+  if (typeof Chart !== "function") {
+    setProjectInsightEmptyState("projectOvertimeShareChart", "projects.chartLibraryFailed");
+    setProjectInsightEmptyState("projectSectorDistributionChart", "projects.chartLibraryFailed");
+    return;
+  }
 
   if (pendingProjectInsightFrameId) {
     window.cancelAnimationFrame(pendingProjectInsightFrameId);
@@ -2102,6 +2178,27 @@ function updateActiveProjectSummaryCard() {
   });
 }
 
+function getProjectMonetaryModel(value) {
+  const monetary = getRecordMonetaryAggregate(value);
+  if (!monetary) {
+    return null;
+  }
+
+  return {
+    ...monetary,
+    calculatedEntryCount: Number(monetary.calculatedEntryCount || 0),
+    unavailableEntryCount: Number(monetary.unavailableEntryCount || 0),
+    totalAmountCents: Number(monetary.totalAmountCents || 0),
+    cashAmountCents: Number(monetary.cashAmountCents || 0),
+    compensatoryLeaveValueCents: Number(monetary.compensatoryLeaveValueCents || 0),
+  };
+}
+
+function renderProjectMonetarySummaryPill(detail) {
+  const monetary = getProjectMonetaryModel(detail);
+  return renderMonetarySummary(monetary, t("projects.insightSelectedPeriod"));
+}
+
 function renderProjectSummaryCard(detail) {
   const approvedSeconds = getProjectWorkspaceApprovedSeconds(detail);
   const total = secondsToDurationLabel(approvedSeconds);
@@ -2136,6 +2233,7 @@ function renderProjectSummaryCard(detail) {
         <span class="meta-pill">${escapeHtml(t("projects.average", { value: secondsToDurationLabel(averageSeconds) }))}</span>
         ${pending.count > 0 ? `<span class="status-badge pending">${escapeHtml(t("projects.pendingShort", { count: pending.count }))}</span>` : ""}
       </div>
+      ${renderProjectMonetarySummaryPill(detail)}
       <div class="project-card-assignments">
         ${renderProjectAssignmentLine("projects.admins", detail.adminDisplay, admins)}
         ${renderProjectAssignmentLine("projects.backupAdmins", detail.backupAdminDisplay, backupAdmins)}
@@ -2195,6 +2293,7 @@ function getProjectWorkspaceContributors(detail) {
       ? Number(contributor.pendingSeconds)
       : pendingEntries.reduce((sum, entry) => sum + getProjectWorkspaceEntrySeconds(entry), 0);
     const lastActivityDate = String(contributor.lastActivityDate || contributor.lastActivityAt || getLatestProjectEntryDate(entries) || "");
+    const monetary = getProjectMonetaryModel(contributor);
     return {
       ...contributor,
       employee: String(contributor.employee || contributor.employeeName || contributor.employeeCode || ""),
@@ -2209,6 +2308,8 @@ function getProjectWorkspaceContributors(detail) {
         ? Number(contributor.averageApprovedSeconds)
         : (approvedEntryCount > 0 ? approvedSeconds / approvedEntryCount : 0),
       lastActivityDate,
+      monetary,
+      monetaryTotalAmountCents: monetary ? monetary.totalAmountCents : 0,
       entries,
     };
   });
@@ -2584,6 +2685,7 @@ function renderProjectWorkspaceContributors(detail) {
           <tr>
             <th>${renderProjectWorkspaceSortButton("employee", t("projects.contributor"))}</th>
             <th>${renderProjectWorkspaceSortButton("approvedSeconds", t("projects.approvedHours"))}</th>
+            <th>${renderProjectWorkspaceSortButton("monetaryTotalAmountCents", t("money.estimatedValue"))}</th>
             <th>${renderProjectWorkspaceSortButton("sharePercent", t("projects.share"))}</th>
             <th>${renderProjectWorkspaceSortButton("approvedEntryCount", t("projects.entriesLabel"))}</th>
             <th>${renderProjectWorkspaceSortButton("pendingCount", t("status.pending"))}</th>
@@ -2599,6 +2701,9 @@ function renderProjectWorkspaceContributors(detail) {
                 ${contributor.employeeCode ? `<span class="project-workspace-cell-note mono">${escapeHtml(contributor.employeeCode)}</span>` : ""}
               </td>
               <td class="duration-value">${escapeHtml(secondsToDurationLabel(contributor.approvedSeconds))}</td>
+              <td class="monetary-table-value">${contributor.monetary && contributor.monetary.calculatedEntryCount > 0
+                ? `<strong>${escapeHtml(formatCurrencyCents(contributor.monetary.totalAmountCents, contributor.monetary.currency))}</strong>${contributor.monetary.unavailableEntryCount > 0 ? `<span class="project-workspace-cell-note">${escapeHtml(getMonetaryCoverageNote(contributor.monetary))}</span>` : ""}`
+                : escapeHtml(t("projects.notAvailable"))}</td>
               <td>${escapeHtml(`${contributor.sharePercent.toLocaleString(typeof getCurrentLocale === "function" ? getCurrentLocale() : undefined, { maximumFractionDigits: 1 })}%`)}</td>
               <td>${escapeHtml(contributor.approvedEntryCount)}</td>
               <td>${contributor.pendingCount > 0 ? `<span class="status-badge pending">${escapeHtml(contributor.pendingCount)}</span>` : "0"}</td>
@@ -2641,7 +2746,12 @@ function renderProjectWorkspaceRecentEntries(detail) {
               <span class="time-value">${getEntryRoundedTimeRangeMarkup(entry)}</span>
               ${exactTimeLabel ? `<span class="project-workspace-cell-note">${escapeHtml(exactTimeLabel)}</span>` : ""}
             </div>
-            <span class="duration-value project-workspace-entry-duration">${escapeHtml(secondsToDurationLabel(getProjectWorkspaceEntrySeconds(entry)))}</span>
+            <div class="duration-value project-workspace-entry-duration">
+              <span>${escapeHtml(secondsToDurationLabel(getProjectWorkspaceEntrySeconds(entry)))}</span>
+              ${entry.monetary && entry.monetary.status === "final" && entry.monetary.totalAmountCents != null
+                ? `<span class="project-workspace-cell-note">${escapeHtml(formatCurrencyCents(entry.monetary.totalAmountCents, entry.monetary.currency))}</span>`
+                : (entry.monetary ? `<span class="project-workspace-cell-note monetary-unavailable-text" title="${escapeHtml(getMonetaryUnavailableLabel(entry.monetary.unavailableReason))}">${escapeHtml(t("money.unavailable"))}</span>` : "")}
+            </div>
             <div class="project-workspace-entry-state"><span class="status-badge ${escapeHtml(status === "open" ? "pending" : getStatusTone(statusEntry))}">${escapeHtml(status === "open" ? t("projects.openEntry") : getEntryStatusLabel(statusEntry))}</span>${renderEntryWorkScheduleBadge(entry)}</div>
             <div class="project-workspace-entry-notes">${renderEntryNotesPreview(entry)}</div>
             ${canOpen ? `
@@ -2699,6 +2809,7 @@ function renderProjectDetail(detail) {
   const approvedCount = Number(detail.approvedEntryCount != null ? detail.approvedEntryCount : detail.entryCount || 0);
   const pending = getProjectWorkspaceStatusBucket(detail, "pending");
   const comparison = getProjectWorkspaceComparison(detail);
+  const monetary = getProjectMonetaryModel(detail);
   const departmentShare = detail.departmentShare && detail.departmentShare.percent != null && Number.isFinite(Number(detail.departmentShare.percent))
     ? Number(detail.departmentShare.percent)
     : null;
@@ -2725,6 +2836,13 @@ function renderProjectDetail(detail) {
         <span>${escapeHtml(t("projects.approvedHours"))}</span>
         <strong class="duration-value">${escapeHtml(secondsToDurationLabel(approvedSeconds))}</strong>
         <small>${escapeHtml(t("projects.approvedEntries", { count: approvedCount }))}</small>
+      </article>
+      <article class="project-workspace-metric project-workspace-metric-money">
+        <span>${escapeHtml(t("money.estimatedValue"))}</span>
+        <strong class="money-value">${escapeHtml(getMonetaryAmountLabel(monetary))}</strong>
+        <small>${monetary && monetary.calculatedEntryCount > 0
+          ? escapeHtml(`${t("money.cash")} ${formatCurrencyCents(monetary.cashAmountCents, monetary.currency)} · ${t("money.compensatoryLeave")} ${formatCurrencyCents(monetary.compensatoryLeaveValueCents, monetary.currency)}${monetary.unavailableEntryCount > 0 ? ` · ${getMonetaryCoverageNote(monetary)}` : ""}`)
+          : escapeHtml(monetary ? getMonetaryCoverageNote(monetary) : t("money.salaryOnlyEstimate"))}</small>
       </article>
       <article class="project-workspace-metric">
         <span>${escapeHtml(t("projects.pendingHours"))}</span>
@@ -3384,6 +3502,23 @@ document.getElementById("projectQuickRangeButtons").addEventListener("click", ev
     showToast(t("projects.unableToLoad"), "error");
   });
 });
+document.querySelector(".project-budget-comparison-disclosure")?.addEventListener("toggle", renderProjectBudgetBeta);
+document.getElementById("projectBudgetComparisonPanel").addEventListener("click", event => {
+  const button = event.target.closest("[data-budget-view]");
+  if (!button) return;
+  projectsViewState.budgetComparison.view = button.dataset.budgetView;
+  renderProjectBudgetBeta();
+});
+if (typeof MutationObserver === "function") {
+  new MutationObserver(() => {
+    if (document.getElementById("projectsView").classList.contains("active")) {
+      renderProjectBudgetBeta();
+    } else {
+      projectBudgetBetaRenderVersion++;
+      if (window.Saphir && window.Saphir.budgetBeta) window.Saphir.budgetBeta.dispose();
+    }
+  }).observe(document.getElementById("projectsView"), { attributes: true, attributeFilter: ["class"] });
+}
 document.getElementById("projectBudgetComparisonControls").addEventListener("change", event => {
   const input = event.target.closest('input[type="checkbox"]');
   if (!input || input.disabled) {
@@ -3594,6 +3729,7 @@ window.addEventListener("app:theme-changed", () => {
   }
 
   renderProjectMultiLineChart(projectsViewState.trends || {});
+  renderProjectBudgetBeta();
   renderProjectInsights(projectsViewState.projects || []);
   if (projectsViewState.workspaceOpen && currentProjectCode) {
     const cacheKey = getProjectDetailCacheKey(currentProjectCode, currentProjectFilter);
@@ -3616,6 +3752,7 @@ window.rerenderProjectsViewForLanguageChange = function () {
   renderProjectSummaryCards(projectsViewState.projects || []);
   renderProjectMultiLineChart(projectsViewState.trends || {});
   renderProjectInsights(projectsViewState.projects || []);
+  renderProjectBudgetComparison();
 
   const cacheKey = currentProjectCode
     ? getProjectDetailCacheKey(currentProjectCode, currentProjectFilter)

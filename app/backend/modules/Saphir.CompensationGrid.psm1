@@ -214,7 +214,7 @@ function Get-CompensationSalaryGridValidationResult {
     }
 
     $bandsRaw = Get-CompensationObjectPropertyValue -Value $Value -Name "bands"
-    if ($null -eq $bandsRaw -or $bandsRaw -is [string] -or -not ($bandsRaw -is [System.Collections.IEnumerable])) {
+    if ($null -eq $bandsRaw -or $bandsRaw -is [string] -or $bandsRaw -is [System.ValueType]) {
         [void]$errors.Add("Salary grid bands must be an array.")
     }
     else {
@@ -395,10 +395,115 @@ function Resolve-CompensationSalaryBand {
     return $null
 }
 
+function ConvertTo-EmployeeCompensationAssignment {
+    <#
+        Normalizes one authoritative employee classification period. These
+        records intentionally live outside gc179Profile: employees may edit
+        their form header, but only a super administrator may change the
+        classification used for monetary calculations.
+    #>
+    param([Parameter(Mandatory = $true)]$Value)
+
+    $group = ConvertTo-CompensationGroupCode -Value (Get-CompensationObjectPropertyValue -Value $Value -Name "group")
+    $subGroup = ConvertTo-CompensationTwoDigitCode -Value (Get-CompensationObjectPropertyValue -Value $Value -Name "subGroup") -FieldName "Sub-group"
+    $level = ConvertTo-CompensationTwoDigitCode -Value (Get-CompensationObjectPropertyValue -Value $Value -Name "level") -FieldName "Level"
+    if ([string]::IsNullOrWhiteSpace($group) -or [string]::IsNullOrWhiteSpace($subGroup) -or [string]::IsNullOrWhiteSpace($level)) {
+        throw [System.ArgumentException]::new("Group, sub-group, and level are required for every compensation assignment.")
+    }
+
+    $effectiveFrom = ConvertTo-CompensationEffectiveDate -Value (Get-CompensationObjectPropertyValue -Value $Value -Name "effectiveFrom") -FieldName "effectiveFrom"
+    $effectiveTo = ConvertTo-CompensationEffectiveDate -Value (Get-CompensationObjectPropertyValue -Value $Value -Name "effectiveTo") -AllowEmpty $true -FieldName "effectiveTo"
+    if ($null -ne $effectiveTo) {
+        $start = Get-CompensationEffectiveDateValue -Value $effectiveFrom -FieldName "effectiveFrom"
+        $end = Get-CompensationEffectiveDateValue -Value $effectiveTo -FieldName "effectiveTo"
+        if ($end -lt $start) {
+            throw [System.ArgumentException]::new("effectiveTo cannot be earlier than effectiveFrom.")
+        }
+    }
+
+    $assignmentId = ([string](Get-CompensationObjectPropertyValue -Value $Value -Name "id")).Trim()
+    if ([string]::IsNullOrWhiteSpace($assignmentId)) {
+        $assignmentId = "{0}-{1}-{2}-{3}" -f $group, $subGroup, $level, $effectiveFrom
+    }
+    if ($assignmentId.Length -gt 120 -or -not [System.Text.RegularExpressions.Regex]::IsMatch($assignmentId, "^[0-9A-Za-z][0-9A-Za-z._:-]*$")) {
+        throw [System.ArgumentException]::new("Compensation assignment id contains unsupported characters.")
+    }
+
+    return [PSCustomObject][ordered]@{
+        id            = $assignmentId
+        group         = $group
+        subGroup      = $subGroup
+        level         = $level
+        effectiveFrom = $effectiveFrom
+        effectiveTo   = $effectiveTo
+    }
+}
+
+function ConvertTo-EmployeeCompensationAssignments {
+    param([AllowNull()]$Value)
+
+    if ($null -eq $Value) {
+        return @()
+    }
+    if ($Value -is [string] -or $Value -is [System.ValueType]) {
+        throw [System.ArgumentException]::new("Compensation assignments must be an array.")
+    }
+
+    $values = @($Value)
+    if ($values.Count -gt 100) {
+        throw [System.ArgumentException]::new("An employee cannot have more than 100 compensation assignments.")
+    }
+
+    $normalized = New-Object System.Collections.ArrayList
+    $ids = @{}
+    foreach ($item in $values) {
+        $assignment = ConvertTo-EmployeeCompensationAssignment -Value $item
+        $idKey = ([string]$assignment.id).ToUpperInvariant()
+        if ($ids.ContainsKey($idKey)) {
+            throw [System.ArgumentException]::new(("Compensation assignment id '{0}' is duplicated." -f [string]$assignment.id))
+        }
+        $ids[$idKey] = $true
+        [void]$normalized.Add($assignment)
+    }
+
+    $ordered = @($normalized.ToArray() | Sort-Object effectiveFrom, id)
+    for ($index = 0; $index -lt $ordered.Count; $index++) {
+        for ($otherIndex = $index + 1; $otherIndex -lt $ordered.Count; $otherIndex++) {
+            if (Test-CompensationBandDateRangesOverlap -First $ordered[$index] -Second $ordered[$otherIndex]) {
+                throw [System.ArgumentException]::new("Employee compensation assignment periods cannot overlap.")
+            }
+        }
+    }
+
+    return $ordered
+}
+
+function Resolve-EmployeeCompensationAssignment {
+    param(
+        [AllowNull()]$Assignments,
+        [Parameter(Mandatory = $true)][DateTime]$AsOfDate
+    )
+
+    $normalized = @(ConvertTo-EmployeeCompensationAssignments -Value $Assignments)
+    $comparisonDate = $AsOfDate.Date
+    foreach ($assignment in $normalized) {
+        $start = Get-CompensationEffectiveDateValue -Value ([string]$assignment.effectiveFrom) -FieldName "effectiveFrom"
+        $end = if ($null -eq $assignment.effectiveTo) { [DateTime]::MaxValue.Date } else { Get-CompensationEffectiveDateValue -Value ([string]$assignment.effectiveTo) -FieldName "effectiveTo" }
+        if ($comparisonDate -ge $start -and $comparisonDate -le $end) {
+            return $assignment
+        }
+    }
+
+    return $null
+}
+
 Export-ModuleMember -Function @(
     "ConvertTo-CompensationGridCode",
     "ConvertTo-CompensationSalaryBand",
     "Test-CompensationSalaryGridDocument",
     "ConvertTo-CompensationSalaryGridDocument",
-    "Resolve-CompensationSalaryBand"
+    "Resolve-CompensationSalaryBand",
+    "ConvertTo-EmployeeCompensationAssignment",
+    "ConvertTo-EmployeeCompensationAssignments",
+    "Resolve-EmployeeCompensationAssignment"
 )

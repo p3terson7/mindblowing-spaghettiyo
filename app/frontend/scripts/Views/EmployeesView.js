@@ -1795,6 +1795,9 @@ function getEmployeeDirectorySectionDefinitions(employees) {
 
 function renderEmployeeDirectoryCard(employee) {
   const isCurrentUser = isCurrentUserEmployeeCode(employee.code);
+  const monetary = employeesViewState.selectedProjectCode
+    ? getRecordMonetaryAggregate((employee.projectStats || []).find(project => String(project.projectCode) === employeesViewState.selectedProjectCode) || { approvedCount: 0 })
+    : getRecordMonetaryAggregate(employee);
   return `
     <article class="employee-card${employeesViewState.selectedEmployeeCode === employee.code ? " is-active" : ""}${isCurrentUser ? " is-current-user" : ""}" data-employee-code="${escapeHtml(employee.code)}">
       <div class="employee-card-header">
@@ -1821,6 +1824,7 @@ function renderEmployeeDirectoryCard(employee) {
         </div>
         ${isArchivedEmployee(employee) ? `<div class="employee-card-info-row"><span class="employee-card-info-label">${escapeHtml(t("employees.scope"))}</span><span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span></div>` : ""}
       </div>
+      ${renderMonetarySummary(monetary, employeesViewState.selectedProjectCode || t("money.allApproved"))}
     </article>
   `;
 }
@@ -2331,6 +2335,7 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
           </div>
           <div class="people-project-entry-side">
             <span class="inline-code-pill">${escapeHtml(duration)}</span>
+            ${renderMonetaryEntryValue(entry)}
             <span class="status-badge ${escapeHtml(getStatusTone(entry))}">${escapeHtml(getEntryStatusLabel(entry))}</span>
             ${renderEntryWorkScheduleBadge(entry)}
           </div>
@@ -2405,6 +2410,7 @@ function getDefaultEmployeeMonthKey(employeeCode, entries) {
 function buildEmployeeInsightMarkup(entries, monthEntries) {
   const allEntries = Array.isArray(entries) ? entries : [];
   const visibleMonthEntries = Array.isArray(monthEntries) ? monthEntries : [];
+  const monthMonetary = summarizeEntryMonetaryValues(visibleMonthEntries);
   const monthTotalSeconds = visibleMonthEntries.reduce((accumulator, entry) => accumulator + getEntryDurationSeconds(entry), 0);
   const pendingCount = allEntries.filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry)).length;
   const liveCount = allEntries.filter(entry => isEntryOpen(entry)).length;
@@ -2447,6 +2453,11 @@ function buildEmployeeInsightMarkup(entries, monthEntries) {
       label: t("employees.insightMonth"),
       value: secondsToDurationLabel(monthTotalSeconds),
       hint: tn("shared.entry", visibleMonthEntries.length),
+    },
+    {
+      label: t("money.monthValue"),
+      value: getMonetaryAmountLabel(monthMonetary),
+      hint: getMonetaryCoverageNote(monthMonetary),
     },
     {
       label: t("employees.insightPending"),
@@ -2521,12 +2532,16 @@ function buildEmployeeStatsModel(entries) {
 
 function buildEmployeeDetailedStatsMarkup(entries, employeeCode) {
   const model = buildEmployeeStatsModel(entries);
+  const monetary = summarizeEntryMonetaryValues(entries);
   const averageSeconds = model.totals.count > 0 ? Math.round(model.totals.seconds / model.totals.count) : 0;
   const topCodeLabel = model.topOvertimeCode
     ? `${model.topOvertimeCode.code} | ${secondsToDurationLabel(model.topOvertimeCode.seconds)}`
     : t("shared.uncoded");
 
   const summaryCards = [
+    { label: t("money.estimatedValue"), value: getMonetaryAmountLabel(monetary), hint: getMonetaryCoverageNote(monetary), money: true },
+    { label: t("money.cash"), value: getMonetaryAmountLabel(monetary, "cashAmountCents"), hint: t("money.allApproved"), money: true },
+    { label: t("money.compensatoryLeave"), value: getMonetaryAmountLabel(monetary, "compensatoryLeaveValueCents"), hint: t("money.allApproved"), money: true },
     { label: t("self.statsTotal"), value: secondsToDurationLabel(model.totals.seconds), hint: t("self.statsFilteredSummary", { count: model.totals.count, duration: secondsToDurationLabel(model.totals.seconds) }) },
     { label: t("self.statsApproved"), value: secondsToDurationLabel(model.totals.approvedSeconds), hint: t("status.approved") },
     { label: t("employees.statsRejectedTime"), value: secondsToDurationLabel(model.totals.rejectedSeconds), hint: t("employees.statsRejectedEntries", { count: model.totals.rejected }), tone: "rejected", action: model.totals.rejected > 0 },
@@ -2555,6 +2570,7 @@ function buildEmployeeDetailedStatsMarkup(entries, employeeCode) {
                 <span class="inline-code-pill duration-value">${escapeHtml(secondsToDurationLabel(project.seconds))}</span>
               </div>
               <div class="self-project-stat-grid">
+                <span class="employee-project-money"><strong>${escapeHtml(getMonetaryAmountLabel(summarizeEntryMonetaryValues(project.entries)))}</strong> ${escapeHtml(t("money.estimatedValue"))}</span>
                 <span><strong>${escapeHtml(String(project.count))}</strong> ${escapeHtml(t("self.statsEntries"))}</span>
                 <span><strong>${escapeHtml(secondsToDurationLabel(project.approvedSeconds))}</strong> ${escapeHtml(t("self.statsApproved"))}</span>
                 <span><strong>${escapeHtml(String(project.pending))}/${escapeHtml(String(project.rejected))}</strong> ${escapeHtml(t("self.statsPendingRejected"))}</span>
@@ -2590,10 +2606,10 @@ function buildEmployeeDetailedStatsMarkup(entries, employeeCode) {
         ${summaryCards.map(card => {
           const content = `
             <span class="metric-label">${escapeHtml(card.label)}</span>
-            <strong class="metric-value duration-value">${escapeHtml(card.value)}</strong>
+            <strong class="metric-value ${card.money ? "money-value" : "duration-value"}">${escapeHtml(card.value)}</strong>
             <span class="metric-hint">${escapeHtml(card.hint)}</span>
           `;
-          const classes = `self-stat-card${card.tone ? ` self-stat-card-${escapeHtml(card.tone)}` : ""}${card.action ? " self-stat-card-action employee-rejected-time-action" : ""}`;
+          const classes = `self-stat-card${card.money ? " self-stat-card-money" : ""}${card.tone ? ` self-stat-card-${escapeHtml(card.tone)}` : ""}${card.action ? " self-stat-card-action employee-rejected-time-action" : ""}`;
           return card.action
             ? `<button type="button" class="${classes}" data-employee-code="${escapeHtml(employeeCode)}" aria-label="${escapeHtml(t("employees.viewRejectedEntries"))}">${content}</button>`
             : `<article class="${classes}">${content}</article>`;

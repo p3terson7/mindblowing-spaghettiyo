@@ -359,7 +359,24 @@ function Get-Gc179ProfileFromUserRecord {
 
     $profile = Get-ObjectPropertyValue -Value $UserRecord -Name "gc179Profile"
     $displayName = Get-ObjectStringProperty -Value $UserRecord -Name "displayName"
-    return (ConvertTo-Gc179ProfileObject -Value $profile -DisplayName $displayName)
+    $normalized = ConvertTo-Gc179ProfileObject -Value $profile -DisplayName $displayName
+    # Complete profiles own the current classification. For older records
+    # with only the retired salary-period list, bring its latest class into
+    # the same profile projection until the next explicit profile save.
+    if ([string]::IsNullOrWhiteSpace([string]$normalized.level)) {
+        $legacyAssignments = @(Get-ObjectPropertyValue -Value $UserRecord -Name "compensationAssignments")
+        $latest = $legacyAssignments | Where-Object {
+            (Get-ObjectStringProperty -Value $_ -Name "group") -match "^[A-Za-z]{1,6}$" -and
+            (Get-ObjectStringProperty -Value $_ -Name "subGroup") -match "^[0-9]{1,2}$" -and
+            (Get-ObjectStringProperty -Value $_ -Name "level") -match "^[0-9]{1,2}$"
+        } | Sort-Object { Get-ObjectStringProperty -Value $_ -Name "effectiveFrom" } -Descending | Select-Object -First 1
+        if ($null -ne $latest) {
+            $normalized.group = ConvertTo-Gc179GroupText -Value (Get-ObjectStringProperty -Value $latest -Name "group")
+            $normalized.subGroup = ConvertTo-Gc179SubGroupText -Value (Get-ObjectStringProperty -Value $latest -Name "subGroup")
+            $normalized.level = ConvertTo-Gc179LevelText -Value (Get-ObjectStringProperty -Value $latest -Name "level")
+        }
+    }
+    return $normalized
 }
 
 Export-ModuleMember -Function @(

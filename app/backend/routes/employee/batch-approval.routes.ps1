@@ -230,6 +230,9 @@
                         }
 
                         if ($employeeUpdatedRequests.Count -gt 0) {
+                            if (Get-Command -Name Set-ApprovedEntryCompensationSnapshots -ErrorAction SilentlyContinue) {
+                                Set-ApprovedEntryCompensationSnapshots -EmployeeCode $employeeCode -Entries $existingData | Out-Null
+                            }
                             Write-JsonArrayAtomic -Path $dataFile -Items $existingData -Depth 8
                             foreach ($preparedEntry in $employeeUpdatedRequests) {
                                 $requestOutcomes[[string]$preparedEntry.requestIndex] = "updated"

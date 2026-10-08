@@ -17,11 +17,11 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20260924-bug-report-minimal-v3",
-  dashboard: "scripts/Views/DashboardView.js?v=20260924-bug-report-minimal-v3",
-  approvals: "scripts/Views/ApprovalsView.js?v=20260924-bug-report-minimal-v3",
-  history: "scripts/Views/HistoryView.js?v=20260924-bug-report-minimal-v3",
-  projects: "scripts/Views/ProjectsView.js?v=20260924-bug-report-minimal-v3",
+  employees: "scripts/Views/EmployeesView.js?v=20261008-money-visibility-v1",
+  dashboard: "scripts/Views/DashboardView.js?v=20261008-money-visibility-v1",
+  approvals: "scripts/Views/ApprovalsView.js?v=20261008-money-visibility-v1",
+  history: "scripts/Views/HistoryView.js?v=20261008-money-visibility-v1",
+  projects: "scripts/Views/ProjectsView.js?v=20261008-money-visibility-v1",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
@@ -242,7 +242,7 @@ function ensureManagerAssetsForView(viewId, user = getCurrentUser()) {
 
   if (!appShellState.managerAssetPromisesByView[viewId]) {
     const sources = isBugReportView
-      ? ["scripts/Views/BugReportsView.js?v=20260924-bug-report-minimal-v3"]
+      ? ["scripts/Views/BugReportsView.js?v=20261008-money-visibility-v1"]
       : (MANAGER_VIEW_SCRIPT_SOURCES[viewId] || []);
     const viewPromise = Promise.all(sources.map(source => loadScriptOnce(source)))
       .then(() => undefined)
@@ -708,7 +708,21 @@ async function loadSettingsHealth(triggerButton) {
 }
 
 const BUDGET_PERIOD_ENDPOINT = "budget-periods";
-const BUDGET_PERIOD_IDS = Object.freeze(["P1", "P2", "P3", "P4"]);
+const DEFAULT_BUDGET_PERIOD_COUNT = 12;
+const MAX_BUDGET_PERIOD_COUNT = 60;
+
+function getBudgetPeriodNumber(id) {
+  const match = /^P([1-9][0-9]{0,2})$/i.exec(String(id || "").trim());
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+function createDefaultBudgetPeriods(count = DEFAULT_BUDGET_PERIOD_COUNT) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `P${index + 1}`,
+    startDate: "",
+    endDate: "",
+  }));
+}
 
 function setBudgetPeriodSettingsMessage(message, type) {
   const messageBox = document.getElementById("budgetPeriodSettingsMessage");
@@ -728,18 +742,18 @@ function setBudgetPeriodSettingsMessage(message, type) {
 
 function normalizeBudgetPeriodConfiguration(payload) {
   const sourcePeriods = payload && Array.isArray(payload.periods) ? payload.periods : [];
-  const periodsById = new Map(sourcePeriods.map(period => [String(period && period.id || "").trim().toUpperCase(), period]));
+  const normalizedSource = sourcePeriods
+    .map(period => ({
+      id: String(period && period.id || "").trim().toUpperCase(),
+      startDate: normalizeCompensationGridDate(period && period.startDate),
+      endDate: normalizeCompensationGridDate(period && period.endDate),
+    }))
+    .filter(period => getBudgetPeriodNumber(period.id) !== Number.MAX_SAFE_INTEGER)
+    .sort((left, right) => getBudgetPeriodNumber(left.id) - getBudgetPeriodNumber(right.id));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     cycleLabel: String(payload && payload.cycleLabel || "").trim().slice(0, 80),
-    periods: BUDGET_PERIOD_IDS.map(id => {
-      const source = periodsById.get(id) || {};
-      return {
-        id,
-        startDate: normalizeCompensationGridDate(source.startDate),
-        endDate: normalizeCompensationGridDate(source.endDate),
-      };
-    }),
+    periods: normalizedSource.length > 0 ? normalizedSource : createDefaultBudgetPeriods(),
   };
 }
 
@@ -751,6 +765,20 @@ function renderBudgetPeriodSettings(configuration) {
   if (cycleLabelInput) {
     cycleLabelInput.value = normalized.cycleLabel;
   }
+  const generatorCountInput = document.getElementById("budgetPeriodGeneratorCount");
+  if (generatorCountInput && !generatorCountInput.value) {
+    generatorCountInput.value = String(DEFAULT_BUDGET_PERIOD_COUNT);
+  }
+  const firstConfiguredPeriod = normalized.periods.find(period => period.startDate);
+  const generatorMonthInput = document.getElementById("budgetPeriodGeneratorStartMonth");
+  const generatorDayInput = document.getElementById("budgetPeriodGeneratorDay");
+  if (firstConfiguredPeriod && generatorMonthInput && generatorDayInput) {
+    generatorMonthInput.value = firstConfiguredPeriod.startDate.slice(0, 7);
+    generatorDayInput.value = String(Number(firstConfiguredPeriod.startDate.slice(8, 10)));
+  } else if (generatorMonthInput && !generatorMonthInput.value) {
+    const now = new Date();
+    generatorMonthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  }
   if (!rows) {
     return;
   }
@@ -760,6 +788,7 @@ function renderBudgetPeriodSettings(configuration) {
       <th scope="row"><span class="budget-period-id">${period.id}</span></th>
       <td><input type="date" class="form-control form-control-sm budget-period-start-input" value="${escapeHtml(period.startDate)}" aria-label="${escapeHtml(t("settings.budgetStartDateFor", { period: period.id }))}"></td>
       <td><input type="date" class="form-control form-control-sm budget-period-end-input" value="${escapeHtml(period.endDate)}" aria-label="${escapeHtml(t("settings.budgetEndDateFor", { period: period.id }))}"></td>
+      <td class="budget-period-row-actions"><button type="button" class="btn btn-outline-danger btn-sm budget-period-remove-button" data-budget-period-remove="${period.id}" aria-label="${escapeHtml(t("settings.budgetRemovePeriod", { period: period.id }))}" title="${escapeHtml(t("settings.budgetRemovePeriod", { period: period.id }))}"${normalized.periods.length === 1 ? " disabled" : ""}><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button></td>
     </tr>
   `).join("");
 }
@@ -767,7 +796,7 @@ function renderBudgetPeriodSettings(configuration) {
 function renderBudgetPeriodSettingsLoading() {
   const rows = document.getElementById("budgetPeriodSettingsRows");
   if (rows) {
-    rows.innerHTML = `<tr><td colspan="3" class="budget-period-empty">${escapeHtml(t("settings.budgetLoading"))}</td></tr>`;
+    rows.innerHTML = `<tr><td colspan="4" class="budget-period-empty">${escapeHtml(t("settings.budgetLoading"))}</td></tr>`;
   }
 }
 
@@ -775,10 +804,10 @@ function getBudgetPeriodConfigurationFromForm() {
   const rows = document.getElementById("budgetPeriodSettingsRows");
   const cycleLabelInput = document.getElementById("budgetPeriodCycleLabelInput");
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     cycleLabel: String(cycleLabelInput && cycleLabelInput.value || "").trim().slice(0, 80),
-    periods: BUDGET_PERIOD_IDS.map(id => {
-      const row = rows && rows.querySelector(`[data-budget-period-id="${id}"]`);
+    periods: Array.from(rows ? rows.querySelectorAll("[data-budget-period-id]") : []).map(row => {
+      const id = String(row.getAttribute("data-budget-period-id") || "").trim().toUpperCase();
       return {
         id,
         startDate: normalizeCompensationGridDate(row && row.querySelector(".budget-period-start-input")?.value),
@@ -788,8 +817,76 @@ function getBudgetPeriodConfigurationFromForm() {
   };
 }
 
+function addBudgetPeriod() {
+  const configuration = getBudgetPeriodConfigurationFromForm();
+  if (configuration.periods.length >= MAX_BUDGET_PERIOD_COUNT) {
+    setBudgetPeriodSettingsMessage(t("settings.budgetPeriodLimit", { count: MAX_BUDGET_PERIOD_COUNT }), "warning");
+    return;
+  }
+
+  const nextNumber = configuration.periods.reduce((highest, period) => Math.max(highest, getBudgetPeriodNumber(period.id)), 0) + 1;
+  configuration.periods.push({ id: `P${nextNumber}`, startDate: "", endDate: "" });
+  renderBudgetPeriodSettings(configuration);
+  setBudgetPeriodSettingsMessage("");
+  document.querySelector(`[data-budget-period-id="P${nextNumber}"] .budget-period-start-input`)?.focus();
+}
+
+function removeBudgetPeriod(id) {
+  const configuration = getBudgetPeriodConfigurationFromForm();
+  if (configuration.periods.length <= 1) {
+    setBudgetPeriodSettingsMessage(t("settings.budgetKeepOneConfiguredPeriod"), "warning");
+    return;
+  }
+  configuration.periods = configuration.periods.filter(period => period.id !== id);
+  renderBudgetPeriodSettings(configuration);
+  setBudgetPeriodSettingsMessage("");
+}
+
+function formatBudgetPeriodDate(date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function getMonthlyBudgetBoundary(year, monthIndex, requestedDay) {
+  const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, monthIndex, Math.min(requestedDay, lastDay)));
+}
+
+function createMonthlyBudgetPeriods(startYear, startMonthIndex, requestedDay, count) {
+  return Array.from({ length: count }, (_, index) => {
+    const start = getMonthlyBudgetBoundary(startYear, startMonthIndex + index, requestedDay);
+    const nextStart = getMonthlyBudgetBoundary(startYear, startMonthIndex + index + 1, requestedDay);
+    const end = new Date(nextStart.getTime() - 86400000);
+    return { id: `P${index + 1}`, startDate: formatBudgetPeriodDate(start), endDate: formatBudgetPeriodDate(end) };
+  });
+}
+
+function generateMonthlyBudgetPeriods() {
+  const monthInput = document.getElementById("budgetPeriodGeneratorStartMonth");
+  const dayInput = document.getElementById("budgetPeriodGeneratorDay");
+  const countInput = document.getElementById("budgetPeriodGeneratorCount");
+  const monthMatch = /^(\d{4})-(\d{2})$/.exec(String(monthInput && monthInput.value || ""));
+  const requestedDay = Number(dayInput && dayInput.value);
+  const count = Number(countInput && countInput.value);
+  if (!monthMatch || !Number.isInteger(requestedDay) || requestedDay < 1 || requestedDay > 31 || !Number.isInteger(count) || count < 1 || count > MAX_BUDGET_PERIOD_COUNT) {
+    setBudgetPeriodSettingsMessage(t("settings.budgetGeneratorInvalid"), "danger");
+    return;
+  }
+
+  const startYear = Number(monthMatch[1]);
+  const startMonthIndex = Number(monthMatch[2]) - 1;
+  const periods = createMonthlyBudgetPeriods(startYear, startMonthIndex, requestedDay, count);
+
+  const configuration = getBudgetPeriodConfigurationFromForm();
+  configuration.periods = periods;
+  renderBudgetPeriodSettings(configuration);
+  setBudgetPeriodSettingsMessage(t("settings.budgetGeneratorReady", { count }), "success");
+}
+
 function getBudgetPeriodValidationError(configuration) {
   const periods = configuration && Array.isArray(configuration.periods) ? configuration.periods : [];
+  if (periods.length === 0) {
+    return t("settings.budgetKeepOneConfiguredPeriod");
+  }
   let previousConfiguredPeriod = null;
   for (const period of periods) {
     const hasStart = Boolean(period.startDate);
@@ -2285,6 +2382,14 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("changePasswordButton").addEventListener("click", event => submitPasswordChange(event.currentTarget));
   document.getElementById("appSettingsButton").addEventListener("click", event => openSelfSettingsForm(event.currentTarget));
   document.getElementById("settingsHealthRefreshButton").addEventListener("click", event => loadSettingsHealth(event.currentTarget));
+  document.getElementById("budgetPeriodAddButton").addEventListener("click", addBudgetPeriod);
+  document.getElementById("budgetPeriodGenerateButton").addEventListener("click", generateMonthlyBudgetPeriods);
+  document.getElementById("budgetPeriodSettingsRows").addEventListener("click", event => {
+    const removeButton = event.target.closest("[data-budget-period-remove]");
+    if (removeButton) {
+      removeBudgetPeriod(removeButton.getAttribute("data-budget-period-remove"));
+    }
+  });
   document.getElementById("budgetPeriodSaveButton").addEventListener("click", event => saveBudgetPeriods(event.currentTarget));
   document.getElementById("selfPasswordSaveButton").addEventListener("click", event => submitModalPasswordChange(event.currentTarget));
   document.getElementById("selfGc179ProfileSaveButton").addEventListener("click", event => submitSelfGc179Profile(event.currentTarget));

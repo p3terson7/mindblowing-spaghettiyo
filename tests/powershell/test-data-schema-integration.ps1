@@ -125,8 +125,8 @@ try {
         -Destination (Join-Path -Path $fixtureDefaults -ChildPath "compensation-grid.v1.json") `
         -Force
     Copy-Item `
-        -LiteralPath (Join-Path -Path $repoRoot -ChildPath "app/backend/defaults/budget-periods.v1.json") `
-        -Destination (Join-Path -Path $fixtureDefaults -ChildPath "budget-periods.v1.json") `
+        -LiteralPath (Join-Path -Path $repoRoot -ChildPath "app/backend/defaults/budget-periods.v2.json") `
+        -Destination (Join-Path -Path $fixtureDefaults -ChildPath "budget-periods.v2.json") `
         -Force
 
     $legacyProjectsPath = Join-Path -Path $legacyFolder -ChildPath "projects.json"
@@ -156,7 +156,7 @@ try {
     $budgetPeriodsPath = Join-Path -Path $legacyFolder -ChildPath "budget-periods.json"
     Assert-True -Condition (Test-Path -LiteralPath $budgetPeriodsPath -PathType Leaf) -Message "legacy startup did not seed the shared budget periods"
     $budgetPeriods = [System.IO.File]::ReadAllText($budgetPeriodsPath) | ConvertFrom-Json -ErrorAction Stop
-    Assert-Equal -Expected 4 -Actual @($budgetPeriods.periods).Count -Message "legacy startup did not seed P1 through P4"
+    Assert-Equal -Expected 12 -Actual @($budgetPeriods.periods).Count -Message "legacy startup did not seed P1 through P12"
     $bugReportsPath = Join-Path -Path $legacyFolder -ChildPath "bug-reports.json"
     Assert-True -Condition (Test-Path -LiteralPath $bugReportsPath -PathType Leaf) -Message "legacy startup did not create the optional bug-report sidecar"
     Assert-Equal -Expected 0 -Actual @([System.IO.File]::ReadAllText($bugReportsPath) | ConvertFrom-Json).Count -Message "legacy startup did not create an empty bug-report collection"

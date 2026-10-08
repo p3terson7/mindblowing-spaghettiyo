@@ -183,16 +183,22 @@ if (Test-Path -LiteralPath $budgetPeriodsPath -PathType Leaf) {
     if ($null -eq $budgetConfiguration -or
         -not ($budgetConfiguration.PSObject.TypeNames -contains "System.Management.Automation.PSCustomObject") -or
         -not [int]::TryParse([string]$budgetConfiguration.schemaVersion, [ref]$budgetSchemaVersion) -or
-        $budgetSchemaVersion -ne 1 -or
+        (1, 2) -notcontains $budgetSchemaVersion -or
         -not ($budgetConfiguration.PSObject.Properties.Name -contains "periods")) {
         throw "Invalid budget-period configuration: $budgetPeriodsPath"
     }
 
     $budgetPeriods = @(ConvertTo-RecordArray -Value $budgetConfiguration.periods -Path $budgetPeriodsPath)
+    if ($budgetPeriods.Count -lt 1 -or $budgetPeriods.Count -gt 60) {
+        throw "Budget-period configuration must contain between 1 and 60 periods: $budgetPeriodsPath"
+    }
     Assert-UniqueTextProperty -Records $budgetPeriods -PropertyName "id" -Path $budgetPeriodsPath
-    $actualBudgetIds = @($budgetPeriods | ForEach-Object { ([string]$_.id).Trim().ToUpperInvariant() } | Sort-Object)
-    if ((@($actualBudgetIds) -join ",") -ne "P1,P2,P3,P4") {
-        throw "Budget-period configuration must contain exactly P1, P2, P3, and P4: $budgetPeriodsPath"
+    $actualBudgetIds = @($budgetPeriods | ForEach-Object { ([string]$_.id).Trim().ToUpperInvariant() })
+    if (@($actualBudgetIds | Where-Object { $_ -notmatch "^P[1-9][0-9]{0,2}$" }).Count -gt 0) {
+        throw "Budget-period identifiers must use P followed by a number from 1 to 999: $budgetPeriodsPath"
+    }
+    if ($budgetSchemaVersion -eq 1 -and ((@($actualBudgetIds | Sort-Object) -join ",") -ne "P1,P2,P3,P4")) {
+        throw "Legacy budget-period schemaVersion 1 must contain exactly P1 through P4: $budgetPeriodsPath"
     }
     foreach ($period in $budgetPeriods) {
         $startDate = ([string]$period.startDate).Trim()

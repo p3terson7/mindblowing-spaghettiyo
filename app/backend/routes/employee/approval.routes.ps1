@@ -71,6 +71,10 @@
                     Set-EntrySupervisorNote -Entry $entry -Note $managerMessage -CurrentUser $currentUser | Out-Null
                 }
 
+                    if (Get-Command -Name Set-ApprovedEntryCompensationSnapshots -ErrorAction SilentlyContinue) {
+                        Set-ApprovedEntryCompensationSnapshots -EmployeeCode $employeeCode -Entries $existingData | Out-Null
+                    }
+
                     Write-JsonArrayAtomic -Path $dataFile -Items $existingData -Depth 8
                     $entryMutationCommitted = $true
                     Release-ResourceLock -LockHandle $lockHandle

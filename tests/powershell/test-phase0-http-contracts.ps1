@@ -541,7 +541,7 @@ try {
 
     $afterApproval = Get-TestDataFolderSnapshot -RootPath $testDataRoot -ForbiddenRootPath $productionDataRoot
     $approvalChanges = @(Assert-TestDataFolderChanges -Before $beforeApproval -After $afterApproval -Description "Approval" -AllowedChanges @{
-        ("{0}_data.json" -f $employeeCode) = @('$[0].status')
+        ("{0}_data.json" -f $employeeCode) = @('$[0].status', '$[0].compensationSnapshot.*')
         "history.json" = @('$[1].*')
         "sync-state.json" = @(
             '$.version',
@@ -555,6 +555,8 @@ try {
     Assert-Equal -Expected ((@(("{0}_data.json" -f $employeeCode), "history.json", "sync-state.json") | Sort-Object) -join ",") -Actual (($approvalChanges | Sort-Object) -join ",") -Message "Approval changed files outside its persistence contract."
     $savedAfterApproval = @([System.IO.File]::ReadAllText((Join-Path -Path $testDataRoot -ChildPath ("{0}_data.json" -f $employeeCode))) | ConvertFrom-Json)
     Assert-Equal -Expected "approved" -Actual ([string]$savedAfterApproval[0].status) -Message "Approval was not persisted on the requested entry."
+    Assert-Equal -Expected "unavailable" -Actual ([string]$savedAfterApproval[0].compensationSnapshot.snapshotStatus) -Message "Approval must persist an auditable monetary snapshot even when HR classification is missing."
+    Assert-Equal -Expected "employee-classification-missing" -Actual ([string]$savedAfterApproval[0].compensationSnapshot.unavailableReason) -Message "Approval stored the wrong missing-compensation reason."
     Assert-Equal -Expected "pending" -Actual ([string]$savedAfterApproval[1].status) -Message "Approval modified the wrong entry."
 
     Write-Host "Phase-zero HTTP contracts passed: auth, dashboard, employee read, add, approval, and strict isolated-DATA diffs are stable."

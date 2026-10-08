@@ -1,4 +1,8 @@
-﻿function ConvertTo-Gc179MonthParts {
+﻿$overtimeCompensationModuleManifest = Join-Path -Path $PSScriptRoot -ChildPath "../modules/Saphir.OvertimeCompensation.psd1"
+Import-Module -Name $overtimeCompensationModuleManifest -Force -ErrorAction Stop | Out-Null
+Remove-Variable -Name overtimeCompensationModuleManifest -ErrorAction SilentlyContinue
+
+function ConvertTo-Gc179MonthParts {
     param([Parameter(Mandatory = $true)][string]$MonthKey)
 
     $normalized = ([string]$MonthKey).Trim()
@@ -305,38 +309,95 @@ function ConvertTo-Gc179DurationText {
     }
 }
 
-function Get-Gc179RegularWorkdayFieldName {
-    param(
-        [Parameter(Mandatory = $true)]$EntryDate,
-        [Parameter(Mandatory = $true)][bool]$CompressedWorkWeek,
-        [Parameter(Mandatory = $true)]$WorkedDateSet
+function Get-Gc179DurationFieldDefinitions {
+    return @(
+        [PSCustomObject]@{ Category = "regular"; Field1 = "RegTime"; Field15 = "RegTimeHalf"; Field175 = "RegTime3Quarter"; Field2 = "RegTimeDouble" },
+        [PSCustomObject]@{ Category = "first-day-rest"; Field1 = "FirstDayRest"; Field15 = "FirstDayTimeHalf"; Field175 = "FirstDay3Quarter"; Field2 = "FirstDayTimeDbl" },
+        [PSCustomObject]@{ Category = "subsequent-day-rest"; Field1 = "SubseqDayRest"; Field15 = "SubseqTimeHalf"; Field175 = "SubseqTime3Quarter"; Field2 = "SubseqTimeDbl" },
+        [PSCustomObject]@{ Category = "holiday"; Field1 = "Holiday"; Field15 = "HolidayTimeHalf"; Field175 = "HolidayTime3quarter"; Field2 = "HolidayTimeDbl" }
     )
-
-    if ($CompressedWorkWeek) {
-        return "RegTime3Quarter"
-    }
-
-    if ($EntryDate.DayOfWeek -eq [System.DayOfWeek]::Sunday) {
-        $previousDateKey = $EntryDate.AddDays(-1).ToString("yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture)
-        if ($WorkedDateSet -and $WorkedDateSet.ContainsKey($previousDateKey)) {
-            return "RegTimeDouble"
-        }
-    }
-
-    return "RegTimeHalf"
 }
 
-function Add-Gc179RegularWorkdayFields {
+function Get-Gc179EntryDurationCategory {
+    param([AllowNull()][string]$OvertimeCode)
+
+    return (Saphir.OvertimeCompensation\Get-SaphirOvertimeCategory -OvertimeCode $OvertimeCode)
+}
+
+function Get-Gc179DurationFieldName {
+    param(
+        [Parameter(Mandatory = $true)][string]$Category,
+        [Parameter(Mandatory = $true)][ValidateSet("1.0", "1.5", "1.75", "2.0")][string]$Rate
+    )
+
+    $definition = @(Get-Gc179DurationFieldDefinitions | Where-Object { $_.Category -eq $Category } | Select-Object -First 1)
+    if ($definition.Count -eq 0) {
+        throw "Unsupported GC179 duration category: $Category"
+    }
+
+    switch ($Rate) {
+        "1.0" { return [string]$definition[0].Field1 }
+        "1.5" { return [string]$definition[0].Field15 }
+        "1.75" { return [string]$definition[0].Field175 }
+        default { return [string]$definition[0].Field2 }
+    }
+}
+
+function ConvertTo-Gc179HoursText {
+    param([Parameter(Mandatory = $true)][double]$Hours)
+
+    return $Hours.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Get-Gc179CalculatedDurationFields {
+    param(
+        [Parameter(Mandatory = $true)]$Entry,
+        [Parameter(Mandatory = $true)][bool]$CompressedWorkWeek,
+        [double]$PreviouslyCreditedHours = 0,
+        [bool]$HolidayAdjacentToSecondRest = $false
+    )
+
+    $durationHours = 0.0
+    if (-not [double]::TryParse(
+        (ConvertTo-Gc179DurationText -Entry $Entry),
+        [System.Globalization.NumberStyles]::Float,
+        [System.Globalization.CultureInfo]::InvariantCulture,
+        [ref]$durationHours
+    ) -or $durationHours -le 0) {
+        return @{}
+    }
+
+    $fields = @{}
+    $workSchedule = if ($CompressedWorkWeek) { "compressed" } else { "regular" }
+    $segments = @(Saphir.OvertimeCompensation\Get-SaphirOvertimeRateSegments `
+        -OvertimeCode ([string]$Entry.overtimeCode) `
+        -WorkSchedule $workSchedule `
+        -Hours ([decimal]$durationHours) `
+        -PreviouslyCreditedHours ([decimal]$PreviouslyCreditedHours) `
+        -HolidayAdjacentToSecondRest $HolidayAdjacentToSecondRest)
+
+    foreach ($segment in $segments) {
+        $rate = ([decimal]$segment.multiplier).ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)
+        if ($rate -eq "1") { $rate = "1.0" }
+        elseif ($rate -eq "2") { $rate = "2.0" }
+        $fieldName = Get-Gc179DurationFieldName -Category ([string]$segment.category) -Rate $rate
+        $fields[$fieldName] = ConvertTo-Gc179HoursText -Hours ([double]$segment.hours)
+    }
+    return $fields
+}
+
+function Add-Gc179DurationFields {
     param(
         [Parameter(Mandatory = $true)]$Builder,
         [Parameter(Mandatory = $true)][int]$RowIndex,
-        [AllowNull()][string]$TargetFieldName,
-        [AllowNull()][string]$DurationText
+        [Parameter(Mandatory = $true)]$DurationFields
     )
 
-    $fieldNames = @("RegTime", "RegTimeHalf", "RegTime3Quarter", "RegTimeDouble")
+    $fieldNames = @(Get-Gc179DurationFieldDefinitions | ForEach-Object {
+        @($_.Field1, $_.Field15, $_.Field175, $_.Field2)
+    })
     foreach ($fieldName in $fieldNames) {
-        $value = if ($fieldName -eq $TargetFieldName) { [string]$DurationText } else { "" }
+        $value = if ($DurationFields.ContainsKey([string]$fieldName)) { [string]$DurationFields[[string]$fieldName] } else { "" }
         Add-Gc179FdfTextField -Builder $Builder -Name ("{0}.{1}" -f $fieldName, $RowIndex) -Value $value
     }
 }
@@ -430,11 +491,44 @@ function Get-Gc179WorkedDateSet {
 
     foreach ($entry in $entries) {
         if (Test-Gc179WorkedDateEntry -Entry $entry) {
-            $workedDateSet[[string]$entry.date] = $true
+            $dateKey = [string]$entry.date
+            if (-not $workedDateSet.ContainsKey($dateKey) -or -not ($workedDateSet[$dateKey] -is [System.Collections.IDictionary])) {
+                $workedDateSet[$dateKey] = @{}
+            }
+            $workedDateSet[$dateKey][([string]$entry.overtimeCode).Trim()] = $true
         }
     }
 
     return $workedDateSet
+}
+
+function Test-Gc179WorkedDateCode {
+    param(
+        [Parameter(Mandatory = $true)]$WorkedDateSet,
+        [Parameter(Mandatory = $true)][string]$DateKey,
+        [Parameter(Mandatory = $true)][string]$OvertimeCode
+    )
+
+    if (-not $WorkedDateSet -or -not $WorkedDateSet.ContainsKey($DateKey)) {
+        return $false
+    }
+    $dateValue = $WorkedDateSet[$DateKey]
+    return ($dateValue -is [System.Collections.IDictionary] -and $dateValue.Contains($OvertimeCode))
+}
+
+function Test-Gc179HolidayAdjacentToSecondRest {
+    param(
+        [Parameter(Mandatory = $true)]$EntryDate,
+        [Parameter(Mandatory = $true)]$WorkedDateSet
+    )
+
+    foreach ($adjacentDate in @($EntryDate.AddDays(-1), $EntryDate.AddDays(1))) {
+        $dateKey = $adjacentDate.ToString("yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture)
+        if (Test-Gc179WorkedDateCode -WorkedDateSet $WorkedDateSet -DateKey $dateKey -OvertimeCode "262") {
+            return $true
+        }
+    }
+    return $false
 }
 
 function Test-Gc179ExportableEntry {
@@ -552,6 +646,7 @@ function New-Gc179FdfExportPart {
     Add-Gc179FdfTextField -Builder $builder -Name "Level" -Value ([string]$headerValues.Level)
     Add-Gc179FdfNameField -Builder $builder -Name "WorkWeek" -ValueName ([string]$headerValues.WorkWeek)
     $compressedWorkWeek = ([string]$headerValues.WorkWeek -eq "2")
+    $creditedHoursByDayAndCategory = @{}
 
     for ($index = 0; $index -lt 16; $index++) {
         if ($index -lt $entries.Count) {
@@ -564,22 +659,34 @@ function New-Gc179FdfExportPart {
             }
 
             if ($null -ne $entryDate) {
-                $durationText = ConvertTo-Gc179DurationText -Entry $entry
-                $regularWorkdayFieldName = Get-Gc179RegularWorkdayFieldName -EntryDate $entryDate -CompressedWorkWeek $compressedWorkWeek -WorkedDateSet $WorkedDateSet
                 Add-Gc179FdfTextField -Builder $builder -Name ("DayofWeek.{0}" -f $index) -Value (ConvertTo-Gc179DayText -Date $entryDate)
                 Add-Gc179FdfTextField -Builder $builder -Name ("OTCODE.{0}" -f $index) -Value ([string]$entry.reasonCode)
                 Add-Gc179FdfTextField -Builder $builder -Name ("DayWorked.{0}" -f $index) -Value (ConvertTo-Gc179WeekdayText -Date $entryDate)
                 Add-Gc179FdfTextField -Builder $builder -Name ("StartTime.{0}" -f $index) -Value (ConvertTo-Gc179TimeText -TimeText ([string]$entry.punchIn))
                 Add-Gc179FdfTextField -Builder $builder -Name ("EndTime.{0}" -f $index) -Value (ConvertTo-Gc179TimeText -TimeText ([string]$entry.punchOut))
                 Add-Gc179FdfTextField -Builder $builder -Name ("OvertimeCode.{0}" -f $index) -Value ([string]$entry.overtimeCode)
-                $importedDurationFields = Get-Gc179ExportDurationFields -Entry $entry
-                if ($importedDurationFields.Count -gt 0) {
-                    foreach ($fieldName in $importedDurationFields.Keys) {
-                        Add-Gc179FdfTextField -Builder $builder -Name ("{0}.{1}" -f $fieldName, $index) -Value ([string]$importedDurationFields[$fieldName])
-                    }
+
+                $category = Get-Gc179EntryDurationCategory -OvertimeCode ([string]$entry.overtimeCode)
+                $usageKey = "{0}|{1}" -f ([string]$entry.date), $category
+                $previouslyCreditedHours = if ($creditedHoursByDayAndCategory.ContainsKey($usageKey)) { [double]$creditedHoursByDayAndCategory[$usageKey] } else { 0.0 }
+                $durationFields = Get-Gc179ExportDurationFields -Entry $entry
+                if ($durationFields.Count -eq 0) {
+                    $durationFields = Get-Gc179CalculatedDurationFields `
+                        -Entry $entry `
+                        -CompressedWorkWeek $compressedWorkWeek `
+                        -PreviouslyCreditedHours $previouslyCreditedHours `
+                        -HolidayAdjacentToSecondRest ($category -eq "holiday" -and (Test-Gc179HolidayAdjacentToSecondRest -EntryDate $entryDate -WorkedDateSet $WorkedDateSet))
                 }
-                else {
-                    Add-Gc179RegularWorkdayFields -Builder $builder -RowIndex $index -TargetFieldName $regularWorkdayFieldName -DurationText $durationText
+                Add-Gc179DurationFields -Builder $builder -RowIndex $index -DurationFields $durationFields
+
+                $durationHours = 0.0
+                if ([double]::TryParse(
+                    (ConvertTo-Gc179DurationText -Entry $entry),
+                    [System.Globalization.NumberStyles]::Float,
+                    [System.Globalization.CultureInfo]::InvariantCulture,
+                    [ref]$durationHours
+                ) -and $durationHours -gt 0) {
+                    $creditedHoursByDayAndCategory[$usageKey] = $previouslyCreditedHours + $durationHours
                 }
                 Add-Gc179FdfNameField -Builder $builder -Name (Get-Gc179PaymentFieldName -RowIndex $index) -ValueName (Get-Gc179PaymentValueName -PaymentOption ([string]$entry.paymentOption))
                 continue
@@ -592,7 +699,7 @@ function New-Gc179FdfExportPart {
         Add-Gc179FdfTextField -Builder $builder -Name ("StartTime.{0}" -f $index) -Value ""
         Add-Gc179FdfTextField -Builder $builder -Name ("EndTime.{0}" -f $index) -Value ""
         Add-Gc179FdfTextField -Builder $builder -Name ("OvertimeCode.{0}" -f $index) -Value ""
-        Add-Gc179RegularWorkdayFields -Builder $builder -RowIndex $index -TargetFieldName "" -DurationText ""
+        Add-Gc179DurationFields -Builder $builder -RowIndex $index -DurationFields @{}
         Add-Gc179FdfNameField -Builder $builder -Name (Get-Gc179PaymentFieldName -RowIndex $index) -ValueName "Off"
     }
 

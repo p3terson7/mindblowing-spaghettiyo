@@ -1,11 +1,11 @@
 function Get-SaphirBusinessRuleContract {
     <#
         This contract intentionally contains shapes and allowed values only.
-        Budget dates and compensation formulas remain administrator-managed
-        business data and must never be hard-coded in the application.
+        Budget dates and annual salaries remain administrator-managed business
+        data. Agreement conversion and overtime formulas are versioned rules.
     #>
     return [PSCustomObject]@{
-        contractVersion = 1
+        contractVersion = 2
         entryTypes = @("overtime", "diverse")
         workSchedules = @("regular", "compressed", "unconfirmed")
         classification = [PSCustomObject]@{
@@ -13,7 +13,17 @@ function Get-SaphirBusinessRuleContract {
             subGroupPattern = "^[0-9]{2}$"
             levelPattern = "^[0-9]{2}$"
         }
-        budgetPeriodIds = @("P1", "P2", "P3", "P4")
+        budgetPeriodIdPattern = "^P[1-9][0-9]{0,2}$"
+        defaultBudgetPeriodCount = 12
+        maximumBudgetPeriodCount = 60
+        monetaryAccess = [PSCustomObject]@{
+            clientCalculationAllowed = $false
+            employeeSelfAmountVisible = $false
+            salaryDetailRoles = @("superAdmin")
+            entryAmountRoles = @("admin", "superAdmin")
+            aggregateAmountRoles = @("admin", "superAdmin")
+            adminScopeRequired = $true
+        }
     }
 }
 

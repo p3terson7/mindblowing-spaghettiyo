@@ -502,10 +502,16 @@ function renderBugReportDetail(report) {
         </div>
         <div class="bug-report-triage-actions">
           <span class="bug-report-triage-message" id="bugReportTriageMessage" role="status" aria-live="polite"></span>
-          <button type="submit" class="btn btn-primary btn-sm" id="bugReportTriageSaveButton" disabled>
-            <i class="fa-solid fa-check" aria-hidden="true"></i>
-            <span>${escapeHtml(t("bugReports.saveTriage"))}</span>
-          </button>
+          <div class="d-flex flex-wrap gap-2 justify-content-end">
+            <button type="button" class="btn btn-outline-danger btn-sm" id="bugReportDeleteButton">
+              <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+              <span>${escapeHtml(t("bugReports.delete"))}</span>
+            </button>
+            <button type="submit" class="btn btn-primary btn-sm" id="bugReportTriageSaveButton" disabled>
+              <i class="fa-solid fa-check" aria-hidden="true"></i>
+              <span>${escapeHtml(t("bugReports.saveTriage"))}</span>
+            </button>
+          </div>
         </div>
       </form>
     ` : ""}
@@ -628,6 +634,7 @@ function setBugReportTriageMessage(message, type = "") {
 function bindBugReportTriageControls(report) {
   const form = document.getElementById("bugReportTriageForm");
   const saveButton = document.getElementById("bugReportTriageSaveButton");
+  const deleteButton = document.getElementById("bugReportDeleteButton");
   if (!form || !saveButton) return;
   const colorSelect = document.getElementById("bugReportTriageColorCode");
   const original = {
@@ -654,6 +661,41 @@ function bindBugReportTriageControls(report) {
   });
   syncBugReportColorSelect(colorSelect);
   form.addEventListener("submit", event => submitBugReportTriage(event, report));
+  deleteButton?.addEventListener("click", () => deleteBugReport(report, deleteButton));
+}
+
+async function deleteBugReport(report, button) {
+  if (!report || !button || !isSuperAdminUser()) return false;
+  if (!window.confirm(t("bugReports.deleteConfirm", { title: String(report.title || "") }))) {
+    return false;
+  }
+
+  return runButtonAction(button, async () => {
+    const response = await fetch(`${apiUrl}bug-reports/${encodeURIComponent(report.reportId)}`, {
+      method: "DELETE",
+      headers: { "X-SAPHIR-Expected-Revision": String(report.revision) },
+    });
+    try {
+      await parseResponse(response);
+      revokeBugReportDetailObjectUrls();
+      bugReportViewState.selectedReport = null;
+      renderBugReportDetailEmpty();
+      await loadBugReportList();
+      showToast(t("bugReports.deleteSuccess"), "success");
+      return true;
+    } catch (error) {
+      if (response.status === 409) {
+        showToast(t("bugReports.deleteConflict"), "warning");
+        await loadBugReportDetail(report.reportId);
+        return false;
+      }
+      showToast(error.message || t("bugReports.deleteError"), "error");
+      return false;
+    }
+  }, {
+    key: `bug-report-delete:${report.reportId}`,
+    disableWhileRunning: () => document.querySelectorAll("#bugReportTriageForm input, #bugReportTriageForm select, #bugReportTriageForm button"),
+  });
 }
 
 async function submitBugReportTriage(event, report) {
@@ -824,7 +866,7 @@ function getBugReportCreatePayload() {
     expectedBehavior: String(document.getElementById("bugReportExpectedInput")?.value || "").trim(),
     actualBehavior: String(document.getElementById("bugReportActualInput")?.value || "").trim(),
     technicalContext: {
-      appVersion: "20260924-bug-report-minimal-v3",
+      appVersion: "20261008-money-visibility-v1",
       page: String(window.location && window.location.hash || "") || String(typeof window.getActiveAppViewId === "function" ? window.getActiveAppViewId() : "bugReportsView"),
       browser: String(navigator.userAgent || "").slice(0, 500),
       operatingSystem: String(navigator.platform || "").slice(0, 300),

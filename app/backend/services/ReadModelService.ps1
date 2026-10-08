@@ -276,9 +276,8 @@ function Clear-ReadModelCoreCachesForChange {
             }
         }
         "compensation" {
-            # Salary bands are read only by super-admin settings for now. Keep
-            # the employee projections warm while making the shared grid
-            # immediately current on every workstation.
+            # Keep the raw employee-file caches warm. Derived monetary read
+            # estimates are invalidated with ReadModelCache on every revision.
             Clear-ReadModelFileCache -Path $compensationGridFile
             Clear-ReadModelFileCache -Path $historyFile
             if (Get-Command -Name Clear-CompensationGridRuntimeCache -ErrorAction SilentlyContinue) {
@@ -496,6 +495,114 @@ function New-EmployeeEntryProjection {
     }
 }
 
+function New-EntryMonetaryReadModel {
+    <#
+        Exposes only the management-facing monetary result. The private
+        compensation snapshot also contains salary, hourly-rate and HR
+        classification data; those fields must never be copied into normal
+        entry read models.
+    #>
+    param([Parameter(Mandatory = $true)]$Entry)
+
+    $entryType = Saphir.BusinessRules\ConvertTo-SaphirEntryType -Value $(if ($Entry.PSObject.Properties.Name -contains "entryType") { [string]$Entry.entryType } else { "" })
+    $status = if ($Entry.PSObject.Properties.Name -contains "status") { ([string]$Entry.status).Trim().ToLowerInvariant() } else { "pending" }
+    if ($entryType -ne "overtime" -or $status -ne "approved") {
+        return $null
+    }
+
+    $snapshot = if ($Entry.PSObject.Properties.Name -contains "compensationSnapshot") { $Entry.compensationSnapshot } else { $null }
+    if ($null -eq $snapshot) {
+        return [PSCustomObject][ordered]@{
+            status                      = "unavailable"
+            currency                    = "CAD"
+            estimateOnly                = $true
+            costBasis                   = "salary-only"
+            includesEmployerCosts       = $false
+            paymentOption               = if (([string]$Entry.paymentOption).Trim().ToLowerInvariant() -eq "leave") { "leave" } else { "cash" }
+            totalAmountCents            = $null
+            cashAmountCents             = $null
+            compensatoryLeaveValueCents = $null
+            unavailableReason           = "snapshot-missing"
+            calculationVersion          = ""
+        }
+    }
+
+    $snapshotStatus = if ($snapshot.PSObject.Properties.Name -contains "snapshotStatus") { ([string]$snapshot.snapshotStatus).Trim().ToLowerInvariant() } else { "unavailable" }
+    $isFinal = ($snapshotStatus -eq "final")
+    return [PSCustomObject][ordered]@{
+        status                      = if ($isFinal) { "final" } else { "unavailable" }
+        currency                    = if ($snapshot.PSObject.Properties.Name -contains "currency" -and -not [string]::IsNullOrWhiteSpace([string]$snapshot.currency)) { [string]$snapshot.currency } else { "CAD" }
+        estimateOnly                = if ($snapshot.PSObject.Properties.Name -contains "estimateOnly") { [bool]$snapshot.estimateOnly } else { $true }
+        costBasis                   = if ($snapshot.PSObject.Properties.Name -contains "costBasis") { [string]$snapshot.costBasis } else { "salary-only" }
+        includesEmployerCosts       = if ($snapshot.PSObject.Properties.Name -contains "includesEmployerCosts") { [bool]$snapshot.includesEmployerCosts } else { $false }
+        paymentOption               = if ($snapshot.PSObject.Properties.Name -contains "paymentOption" -and ([string]$snapshot.paymentOption).Trim().ToLowerInvariant() -eq "leave") { "leave" } else { "cash" }
+        totalAmountCents            = if ($isFinal -and $snapshot.PSObject.Properties.Name -contains "totalAmountCents") { [long]$snapshot.totalAmountCents } else { $null }
+        cashAmountCents             = if ($isFinal -and $snapshot.PSObject.Properties.Name -contains "cashAmountCents") { [long]$snapshot.cashAmountCents } else { $null }
+        compensatoryLeaveValueCents = if ($isFinal -and $snapshot.PSObject.Properties.Name -contains "compensatoryLeaveValueCents") { [long]$snapshot.compensatoryLeaveValueCents } else { $null }
+        unavailableReason           = if ($isFinal) { $null } elseif ($snapshot.PSObject.Properties.Name -contains "unavailableReason") { [string]$snapshot.unavailableReason } else { "snapshot-unavailable" }
+        calculationVersion          = if ($snapshot.PSObject.Properties.Name -contains "calculationVersion") { [string]$snapshot.calculationVersion } else { "" }
+    }
+}
+
+function New-MonetaryAccumulator {
+    return @{
+        currency                    = "CAD"
+        estimateOnly                = $true
+        costBasis                   = "salary-only"
+        includesEmployerCosts       = $false
+        approvedEntryCount          = 0
+        calculatedEntryCount        = 0
+        unavailableEntryCount       = 0
+        totalAmountCents            = [long]0
+        cashAmountCents             = [long]0
+        compensatoryLeaveValueCents = [long]0
+        unavailableReasons          = @{}
+    }
+}
+
+function Add-EntryMonetaryToAccumulator {
+    param(
+        [Parameter(Mandatory = $true)]$Accumulator,
+        [AllowNull()]$Monetary
+    )
+
+    $Accumulator.approvedEntryCount++
+    if ($null -eq $Monetary -or [string]$Monetary.status -ne "final" -or $null -eq $Monetary.totalAmountCents) {
+        $Accumulator.unavailableEntryCount++
+        $reason = if ($null -ne $Monetary -and $Monetary.unavailableReason) { [string]$Monetary.unavailableReason } else { "snapshot-missing" }
+        if (-not $Accumulator.ContainsKey("unavailableReasons")) { $Accumulator.unavailableReasons = @{} }
+        $Accumulator.unavailableReasons[$reason] = [int]$Accumulator.unavailableReasons[$reason] + 1
+        return
+    }
+
+    $Accumulator.calculatedEntryCount++
+    $Accumulator.totalAmountCents += [long]$Monetary.totalAmountCents
+    $Accumulator.cashAmountCents += [long]$Monetary.cashAmountCents
+    $Accumulator.compensatoryLeaveValueCents += [long]$Monetary.compensatoryLeaveValueCents
+}
+
+function ConvertTo-MonetaryAggregateReadModel {
+    param([AllowNull()]$Accumulator)
+
+    $source = if ($null -ne $Accumulator) { $Accumulator } else { New-MonetaryAccumulator }
+    $approvedCount = [int]$source.approvedEntryCount
+    $calculatedCount = [int]$source.calculatedEntryCount
+    return [PSCustomObject][ordered]@{
+        currency                    = [string]$source.currency
+        estimateOnly                = [bool]$source.estimateOnly
+        costBasis                   = [string]$source.costBasis
+        includesEmployerCosts       = [bool]$source.includesEmployerCosts
+        approvedEntryCount          = $approvedCount
+        calculatedEntryCount        = $calculatedCount
+        unavailableEntryCount       = [int]$source.unavailableEntryCount
+        coveragePercent             = if ($approvedCount -gt 0) { [math]::Round(($calculatedCount / [double]$approvedCount) * 100, 1) } else { 100 }
+        totalAmountCents            = [long]$source.totalAmountCents
+        cashAmountCents             = [long]$source.cashAmountCents
+        compensatoryLeaveValueCents = [long]$source.compensatoryLeaveValueCents
+        unavailableReasons          = [PSCustomObject]$(if ($source.ContainsKey("unavailableReasons")) { $source.unavailableReasons } else { @{} })
+    }
+}
+
 function Add-EntryPermissionProjection {
     param(
         [Parameter(Mandatory = $true)]$Entry,
@@ -566,7 +673,14 @@ function New-EmployeeEntryProjectionForCurrentUser {
     )
 
     $projection = New-EmployeeEntryProjection -EmployeeCode $EmployeeCode -EmployeeName $EmployeeName -Entry $Entry -EmployeeRole $EmployeeRole
-    return (Add-EntryPermissionProjection -Entry $projection -CurrentUser $CurrentUser -EmployeeRole $EmployeeRole)
+    $projection = Add-EntryPermissionProjection -Entry $projection -CurrentUser $CurrentUser -EmployeeRole $EmployeeRole
+    if (Test-CurrentUserManager -CurrentUser $CurrentUser) {
+        $monetary = New-EntryMonetaryReadModel -Entry $Entry
+        if ($null -ne $monetary) {
+            $projection | Add-Member -NotePropertyName monetary -NotePropertyValue $monetary -Force
+        }
+    }
+    return $projection
 }
 
 function New-EmployeeEntryProjectionForAccessModel {
@@ -581,7 +695,26 @@ function New-EmployeeEntryProjectionForAccessModel {
     )
 
     $projection = New-EmployeeEntryProjection -EmployeeCode $EmployeeCode -EmployeeName $EmployeeName -Entry $Entry -EmployeeRole $EmployeeRole
-    return (Add-EntryPermissionProjectionFromAccessModel -Entry $projection -ModifyProjectCodeSet $ModifyProjectCodeSet -IsSuperAdmin:$IsSuperAdmin -CanApproveEmployeeRole:$CanApproveEmployeeRole)
+    $projection = Add-EntryPermissionProjectionFromAccessModel -Entry $projection -ModifyProjectCodeSet $ModifyProjectCodeSet -IsSuperAdmin:$IsSuperAdmin -CanApproveEmployeeRole:$CanApproveEmployeeRole
+    $monetary = New-EntryMonetaryReadModel -Entry $Entry
+    if ($null -ne $monetary) {
+        $projection | Add-Member -NotePropertyName monetary -NotePropertyValue $monetary -Force
+    }
+    return $projection
+}
+
+function Get-CachedEmployeeMonetaryEntries {
+    param([string]$DataFile, $Metadata, [AllowEmptyCollection()]$Entries)
+
+    $employeeCode = [System.IO.Path]::GetFileName($DataFile) -replace "_data\.json$", ""
+    if (-not (Test-ReadModelEmployeeCode -Value $employeeCode) -or
+        -not (Get-Command -Name Get-EmployeeCompensationReadEstimates -ErrorAction SilentlyContinue)) {
+        return $Entries
+    }
+    $key = "employee-monetary|{0}|{1}|{2}" -f $DataFile, $Metadata.LastWriteTicks, $Metadata.Length
+    return (Invoke-ReadModelCache -Key $key -Factory {
+        Get-EmployeeCompensationReadEstimates -EmployeeCode $employeeCode -Entries @($Entries)
+    })
 }
 
 function Get-CachedEmployeeEntriesForFile {
@@ -603,12 +736,19 @@ function Get-CachedEmployeeEntriesForFile {
 
     $cacheEntry = $script:EmployeeEntryFileCache[$DataFile]
     if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
-        return $cacheEntry.Entries
+        return (Get-CachedEmployeeMonetaryEntries -DataFile $DataFile -Metadata $metadata -Entries @($cacheEntry.Entries))
     }
 
     $entriesList = New-Object System.Collections.ArrayList
     foreach ($entry in @(Read-JsonArrayFile -Path $DataFile)) {
-        [void]$entriesList.Add((Convert-ToNormalizedEntryObject -Entry $entry))
+        $normalizedEntry = Convert-ToNormalizedEntryObject -Entry $entry
+        # This cache is internal. Preserve the private snapshot here so the
+        # manager projections can expose only its permitted monetary fields.
+        # Public employee responses must still pass through a safe projection.
+        if ($null -ne $entry -and $entry.PSObject.Properties.Name -contains "compensationSnapshot") {
+            $normalizedEntry | Add-Member -NotePropertyName compensationSnapshot -NotePropertyValue $entry.compensationSnapshot -Force
+        }
+        [void]$entriesList.Add($normalizedEntry)
     }
     $entries = @($entriesList.ToArray())
     $script:EmployeeEntryFileCache[$DataFile] = [PSCustomObject]@{
@@ -617,7 +757,7 @@ function Get-CachedEmployeeEntriesForFile {
         Entries        = $entries
     }
 
-    return $entries
+    return (Get-CachedEmployeeMonetaryEntries -DataFile $DataFile -Metadata $metadata -Entries $entries)
 }
 
 function Get-EmployeeDataSnapshot {
@@ -1185,7 +1325,7 @@ function New-ProjectEntryDetailProjection {
 
     $employeeCode = if ($Entry.PSObject.Properties.Name -contains "employeeCode") { [string]$Entry.employeeCode } else { "" }
     $employeeName = if ($Entry.PSObject.Properties.Name -contains "employeeName") { [string]$Entry.employeeName } elseif ($Entry.PSObject.Properties.Name -contains "name") { [string]$Entry.name } else { "" }
-    return [PSCustomObject]@{
+    $projection = [PSCustomObject]@{
         entryId          = if ($Entry.PSObject.Properties.Name -contains "entryId") { [string]$Entry.entryId } else { "" }
         employeeCode     = $employeeCode
         employeeName     = $employeeName
@@ -1216,6 +1356,10 @@ function New-ProjectEntryDetailProjection {
         canApprove       = if ($Entry.PSObject.Properties.Name -contains "canApprove") { [bool]$Entry.canApprove } else { $false }
         permissionReason = if ($Entry.PSObject.Properties.Name -contains "permissionReason") { [string]$Entry.permissionReason } else { "readOnlyProject" }
     }
+    if ($Entry.PSObject.Properties.Name -contains "monetary" -and $null -ne $Entry.monetary) {
+        $projection | Add-Member -NotePropertyName monetary -NotePropertyValue $Entry.monetary -Force
+    }
+    return $projection
 }
 
 function Get-ProjectStatisticsOverview {
@@ -1264,6 +1408,7 @@ function Get-ProjectStatisticsOverview {
                     minSeconds     = $null
                     maxSeconds     = $null
                     statusBuckets  = (New-ProjectStatusAccumulatorSet)
+                    monetary       = (New-MonetaryAccumulator)
                     breakdown      = if ($IncludeBreakdown) { @{} } else { $null }
                 }
             }
@@ -1275,6 +1420,8 @@ function Get-ProjectStatisticsOverview {
             if ($statusBucket -eq "approved") {
                 $stats[$projectCode].totalSeconds += $seconds
                 $stats[$projectCode].approvedEntryCount++
+                $entryMonetary = if ($entry.PSObject.Properties.Name -contains "monetary") { $entry.monetary } else { $null }
+                Add-EntryMonetaryToAccumulator -Accumulator $stats[$projectCode].monetary -Monetary $entryMonetary
                 if ($null -eq $stats[$projectCode].minSeconds -or $seconds -lt $stats[$projectCode].minSeconds) {
                     $stats[$projectCode].minSeconds = $seconds
                 }
@@ -1301,6 +1448,7 @@ function Get-ProjectStatisticsOverview {
                     pendingCount = 0
                     pendingSeconds = [long]0
                     openCount = 0
+                    monetary  = (New-MonetaryAccumulator)
                     lastActivityDate = ""
                     lastActivityAt = ""
                     entries      = (New-Object System.Collections.ArrayList)
@@ -1313,6 +1461,8 @@ function Get-ProjectStatisticsOverview {
             if ($statusBucket -eq "approved") {
                 $employeeBucket.totalSeconds += $seconds
                 $employeeBucket.approvedEntryCount++
+                $entryMonetary = if ($entry.PSObject.Properties.Name -contains "monetary") { $entry.monetary } else { $null }
+                Add-EntryMonetaryToAccumulator -Accumulator $employeeBucket.monetary -Monetary $entryMonetary
             }
             elseif ($statusBucket -eq "pending") {
                 $employeeBucket.pendingCount++
@@ -1396,6 +1546,7 @@ function Get-ProjectSummaryList {
             $backupAdminCodes = if ($project) { @(Get-ProjectBackupAdminCodes -Project $project) } else { @() }
             $statusBuckets = ConvertTo-ProjectStatusBucketModel -Buckets $(if ($projectStats) { $projectStats.statusBuckets } else { $null })
             $sharePercent = if ($departmentApprovedSeconds -gt 0) { [math]::Round(($totalSeconds / [double]$departmentApprovedSeconds) * 100, 2) } else { 0 }
+            $monetary = ConvertTo-MonetaryAggregateReadModel -Accumulator $(if ($projectStats) { $projectStats.monetary } else { $null })
 
             [void]$summariesList.Add([PSCustomObject]@{
                 projectCode     = [string]$projectCode
@@ -1424,6 +1575,7 @@ function Get-ProjectSummaryList {
                 maxSeconds      = $maxSeconds
                 maxOvertime     = Convert-SecondsToTimeText -Seconds $maxSeconds
                 statusBuckets   = $statusBuckets
+                monetary       = $monetary
                 departmentShare = [PSCustomObject]@{
                     scope                     = "visibleProjects"
                     projectApprovedSeconds    = $totalSeconds
@@ -1576,6 +1728,7 @@ function Get-ProjectDetailModel {
                 sharePercent = $sharePercent
                 averageApprovedSeconds = $averageApprovedSeconds
                 averageOvertime = Convert-SecondsToTimeText -Seconds $averageApprovedSeconds
+                monetary     = ConvertTo-MonetaryAggregateReadModel -Accumulator $employeeStats.monetary
                 lastActivityDate = [string]$employeeStats.lastActivityDate
                 lastActivityAt = [string]$employeeStats.lastActivityAt
                 entries      = $entries
@@ -1621,6 +1774,7 @@ function Get-ProjectDetailModel {
         maxSeconds          = [long]$projectSummary.maxSeconds
         maxOvertime         = [string]$projectSummary.maxOvertime
         statusBuckets       = $projectSummary.statusBuckets
+        monetary           = $projectSummary.monetary
         departmentShare     = $projectSummary.departmentShare
         comparison          = $comparison
         contributors        = $contributors
@@ -1745,7 +1899,12 @@ function Get-SelfBootstrapModel {
 
     $dataFile = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $EmployeeCode)
     $user = Get-EmployeeUserByCode -EmployeeCode $EmployeeCode
-    $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
+    $employeeName = if ($null -ne $user -and $user.displayName) { [string]$user.displayName } else { [string](Get-EmployeeName $EmployeeCode) }
+    $employeeRole = if ($null -ne $user) { Get-EffectiveUserRole -UserRecord $user } else { "employee" }
+    $entries = @(
+        Get-CachedEmployeeEntriesForFile -DataFile $dataFile |
+            ForEach-Object { New-EmployeeEntryProjection -EmployeeCode $EmployeeCode -EmployeeName $employeeName -Entry $_ -EmployeeRole $employeeRole }
+    )
     $timeEntryTypes = @(Get-EmployeeTimeEntryTypesByCode -EmployeeCode $EmployeeCode)
 
     return [PSCustomObject]@{

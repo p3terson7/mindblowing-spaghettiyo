@@ -40,11 +40,11 @@ function Write-JsonAtomic {
 
 try {
     New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path -Path $repoRoot -ChildPath "app/backend/defaults/budget-periods.v1.json") -Destination $script:budgetPeriodsFile -Force
+    Copy-Item -LiteralPath (Join-Path -Path $repoRoot -ChildPath "app/backend/defaults/budget-periods.v2.json") -Destination $script:budgetPeriodsFile -Force
     . (Join-Path -Path $repoRoot -ChildPath "app/backend/services/BudgetPeriodService.ps1")
 
     $initial = Get-BudgetPeriodConfiguration
-    Assert-Equal -Expected 4 -Actual @($initial.periods).Count -Message "The service did not read the shared configuration."
+    Assert-Equal -Expected 12 -Actual @($initial.periods).Count -Message "The service did not read the shared configuration."
 
     $validPeriods = @(
         [PSCustomObject]@{ id = "P1"; startDate = "2026-04-01"; endDate = "2026-06-30" },

@@ -41,6 +41,7 @@ $script:PublishedResource = ""
 $script:HistoryAction = ""
 $script:HistoryMessage = ""
 $script:HistoryPublishChange = $true
+$script:ValidatedAdminCodes = @()
 
 . (Join-Path -Path $repoRoot -ChildPath "app/backend/lib/CommonHelpers.ps1")
 . (Join-Path -Path $repoRoot -ChildPath "app/backend/services/ProjectMutationService.ps1")
@@ -55,7 +56,11 @@ function Get-SaphirChildFilesWithRetry {
 function Read-TextFileWithRetry { param([string]$Path) return [System.IO.File]::ReadAllText($Path) }
 function Read-JsonRequestBody { param($Request) return $script:RequestPayload }
 function ConvertTo-CodeArray { param($Value) return @($Value) }
-function Test-EmployeeCodeHasAdminRole { param([string]$EmployeeCode) return $true }
+function Test-EmployeeCodeHasAdminRole {
+    param([string]$EmployeeCode)
+    $script:ValidatedAdminCodes += $EmployeeCode
+    return ($EmployeeCode -in @("000000001", "000000002"))
+}
 function Test-ProjectArchived {
     param($Project)
     return ($null -ne $Project -and $Project.PSObject.Properties.Name -contains "archived" -and [bool]$Project.archived)
@@ -121,6 +126,7 @@ function Reset-ProjectScenario {
     $script:HistoryAction = ""
     $script:HistoryMessage = ""
     $script:HistoryPublishChange = $true
+    $script:ValidatedAdminCodes = @()
     Get-ChildItem -LiteralPath $tempFolder -Filter "*_data.json" -File -ErrorAction SilentlyContinue | Remove-Item -Force
 }
 
@@ -206,6 +212,35 @@ try {
     Assert-Equal -Expected (Get-DefaultProjectMarkerKey -ProjectCode "P002") -Actual $script:Projects[1].markerKey -Message "A project without an explicit marker did not receive its stable fallback."
     Assert-Equal -Expected "Created a project with code <strong>P002</strong>." -Actual $script:HistoryMessage -Message "A nameless project used an unclear history message."
     Assert-Equal -Expected $false -Actual $script:HistoryPublishChange -Message "Project creation duplicated sync publication through history logging."
+
+    Reset-ProjectScenario
+    $script:RequestPayload = [PSCustomObject]@{
+        projectCode = "P002-ADM"
+        projectName = "Two assignment groups"
+        sector = "Test"
+        admins = @("000000001")
+        backupAdmins = @("000000002")
+    }
+    Invoke-ProjectAddRoute
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "One primary and one backup admin were concatenated during project creation."
+    Assert-Equal -Expected "000000001,000000002" -Actual ([string]::Join(",", @($script:ValidatedAdminCodes))) -Message "Project creation did not validate the two HRMIS codes separately."
+    Assert-Equal -Expected "000000001" -Actual ([string]$script:Projects[1].admins[0]) -Message "The primary admin was not stored separately."
+    Assert-Equal -Expected "000000002" -Actual ([string]$script:Projects[1].backupAdmins[0]) -Message "The backup admin was not stored separately."
+
+    Reset-ProjectScenario
+    $script:RequestPayload = [PSCustomObject]@{
+        projectCode = "P001"
+        projectName = "Updated assignments"
+        sector = "Test"
+        admins = @("000000001")
+        backupAdmins = @("000000002")
+        archived = $false
+    }
+    Invoke-ProjectUpdateRoute
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "One primary and one backup admin were concatenated during project update."
+    Assert-Equal -Expected "000000001,000000002" -Actual ([string]::Join(",", @($script:ValidatedAdminCodes))) -Message "Project update did not validate the two HRMIS codes separately."
+    Assert-Equal -Expected "000000001" -Actual ([string]$script:Projects[0].admins[0]) -Message "Project update did not retain the primary admin separately."
+    Assert-Equal -Expected "000000002" -Actual ([string]$script:Projects[0].backupAdmins[0]) -Message "Project update did not retain the backup admin separately."
 
     Reset-ProjectScenario
     $script:RequestPayload = [PSCustomObject]@{ projectCode = "P003"; projectName = "   "; sector = ""; admins = @(); backupAdmins = @() }

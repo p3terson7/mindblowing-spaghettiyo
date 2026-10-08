@@ -37,10 +37,12 @@
             }
 
             $sector = if ($payload.PSObject.Properties.Name -contains "sector") { ([string]$payload.sector).Trim() } else { "" }
-            $admins = if ($payload.PSObject.Properties.Name -contains "admins") { @(ConvertTo-CodeArray -Value $payload.admins) } else { @() }
-            $backupAdmins = if ($payload.PSObject.Properties.Name -contains "backupAdmins") { @(ConvertTo-CodeArray -Value $payload.backupAdmins) } else { @() }
+            # Preserve one-item selections as arrays. Otherwise one primary and
+            # one backup HRMIS are string-concatenated during validation.
+            [string[]]$admins = if ($payload.PSObject.Properties.Name -contains "admins") { @(ConvertTo-CodeArray -Value $payload.admins) } else { @() }
+            [string[]]$backupAdmins = if ($payload.PSObject.Properties.Name -contains "backupAdmins") { @(ConvertTo-CodeArray -Value $payload.backupAdmins) } else { @() }
             $invalidAdminCode = ""
-            foreach ($adminCode in @($admins + $backupAdmins)) {
+            foreach ($adminCode in @(@($admins) + @($backupAdmins))) {
                 if (-not (Test-EmployeeCodeHasAdminRole -EmployeeCode ([string]$adminCode))) {
                     $invalidAdminCode = [string]$adminCode
                     break

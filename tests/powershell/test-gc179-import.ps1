@@ -390,6 +390,85 @@ $cashExport = New-Gc179FdfExportPart `
     -WorkedDateSet $roundTripWorkedDates
 Assert-Equal -Expected "000123456_SMITH_J_GC179_2026-07.fdf" -Actual $cashExport.FileName -Message "A cash GC179 incorrectly received the TEMPS suffix or lost the requested naming format."
 
+function New-Gc179RateTestEntry {
+    param(
+        [Parameter(Mandatory = $true)][string]$Date,
+        [Parameter(Mandatory = $true)][string]$OvertimeCode,
+        [Parameter(Mandatory = $true)][string]$Duration,
+        [string]$WorkSchedule = "regular",
+        [string]$PunchIn = "08:00:00",
+        [string]$PunchOut = "10:00:00"
+    )
+
+    return [PSCustomObject]@{
+        entryType     = "overtime"
+        date          = $Date
+        punchIn       = $PunchIn
+        punchOut      = $PunchOut
+        overtime      = $Duration
+        status        = "approved"
+        overtimeCode  = $OvertimeCode
+        paymentOption = "cash"
+        reasonCode    = "B"
+        workSchedule  = $WorkSchedule
+    }
+}
+
+function Assert-Gc179ExportFieldValue {
+    param(
+        [Parameter(Mandatory = $true)][string]$Content,
+        [Parameter(Mandatory = $true)][string]$FieldName,
+        [Parameter(Mandatory = $true)][string]$ExpectedValue,
+        [int]$RowIndex = 0,
+        [Parameter(Mandatory = $true)][string]$Message
+    )
+
+    $pattern = "/T \(" + [regex]::Escape($FieldName) + "\." + $RowIndex + "\)\s*/V \(" + [regex]::Escape($ExpectedValue) + "\)"
+    Assert-True -Condition ([regex]::IsMatch($Content, $pattern)) -Message $Message
+}
+
+# GC179 category and rate mapping for the four overtime codes used by SAPHIR.
+# These assertions follow PA 25.27, 28.05, 28.06 and 30.08.
+$regularRateCases = @(
+    [PSCustomObject]@{ Code = "260"; Field = "RegTimeHalf" },
+    [PSCustomObject]@{ Code = "261"; Field = "FirstDayTimeHalf" },
+    [PSCustomObject]@{ Code = "262"; Field = "SubseqTimeDbl" },
+    [PSCustomObject]@{ Code = "263"; Field = "HolidayTimeHalf" }
+)
+foreach ($case in $regularRateCases) {
+    $caseEntry = New-Gc179RateTestEntry -Date "2026-07-07" -OvertimeCode $case.Code -Duration "02:00:00"
+    $caseExport = New-Gc179FdfExportPart -EmployeeCode "000123456" -MonthParts $roundTripMonth -Entries @($caseEntry) -WorkedDateSet @{}
+    Assert-Gc179ExportFieldValue -Content ([string]$caseExport.Content) -FieldName $case.Field -ExpectedValue "2" -Message ("Regular schedule code {0} was exported to the wrong GC179 category or rate." -f $case.Code)
+}
+
+$compressedRateCases = @(
+    [PSCustomObject]@{ Code = "260"; Field = "RegTime3Quarter" },
+    [PSCustomObject]@{ Code = "261"; Field = "FirstDay3Quarter" },
+    [PSCustomObject]@{ Code = "262"; Field = "SubseqTime3Quarter" },
+    [PSCustomObject]@{ Code = "263"; Field = "HolidayTimeHalf" }
+)
+foreach ($case in $compressedRateCases) {
+    $caseEntry = New-Gc179RateTestEntry -Date "2026-07-08" -OvertimeCode $case.Code -Duration "02:00:00" -WorkSchedule "compressed"
+    $caseExport = New-Gc179FdfExportPart -EmployeeCode "000123456" -MonthParts $roundTripMonth -Entries @($caseEntry) -WorkedDateSet @{}
+    Assert-Gc179ExportFieldValue -Content ([string]$caseExport.Content) -FieldName $case.Field -ExpectedValue "2" -Message ("Compressed schedule code {0} was exported to the wrong GC179 category or rate." -f $case.Code)
+}
+
+$longRegularEntry = New-Gc179RateTestEntry -Date "2026-07-09" -OvertimeCode "260" -Duration "08:00:00" -PunchOut "16:00:00"
+$longRegularExport = New-Gc179FdfExportPart -EmployeeCode "000123456" -MonthParts $roundTripMonth -Entries @($longRegularEntry) -WorkedDateSet @{}
+Assert-Gc179ExportFieldValue -Content ([string]$longRegularExport.Content) -FieldName "RegTimeHalf" -ExpectedValue "7.5" -Message "A regular workday longer than 7.5 overtime hours lost its time-and-a-half portion."
+Assert-Gc179ExportFieldValue -Content ([string]$longRegularExport.Content) -FieldName "RegTimeDouble" -ExpectedValue "0.5" -Message "A regular workday longer than 7.5 overtime hours was not split into double time."
+
+$splitEntryOne = New-Gc179RateTestEntry -Date "2026-07-10" -OvertimeCode "261" -Duration "04:00:00" -PunchIn "08:00:00" -PunchOut "12:00:00"
+$splitEntryTwo = New-Gc179RateTestEntry -Date "2026-07-10" -OvertimeCode "261" -Duration "04:00:00" -PunchIn "12:00:00" -PunchOut "16:00:00"
+$splitRowsExport = New-Gc179FdfExportPart -EmployeeCode "000123456" -MonthParts $roundTripMonth -Entries @($splitEntryOne, $splitEntryTwo) -WorkedDateSet @{}
+Assert-Gc179ExportFieldValue -Content ([string]$splitRowsExport.Content) -FieldName "FirstDayTimeHalf" -ExpectedValue "3.5" -RowIndex 1 -Message "The 7.5-hour threshold was reset incorrectly between same-day first-rest rows."
+Assert-Gc179ExportFieldValue -Content ([string]$splitRowsExport.Content) -FieldName "FirstDayTimeDbl" -ExpectedValue "0.5" -RowIndex 1 -Message "Same-day first-rest rows did not carry their double-time remainder."
+
+$adjacentHolidayEntry = New-Gc179RateTestEntry -Date "2026-07-12" -OvertimeCode "263" -Duration "02:00:00"
+$adjacentHolidayWorkedDates = @{ "2026-07-11" = @{ "262" = $true }; "2026-07-12" = @{ "263" = $true } }
+$adjacentHolidayExport = New-Gc179FdfExportPart -EmployeeCode "000123456" -MonthParts $roundTripMonth -Entries @($adjacentHolidayEntry) -WorkedDateSet $adjacentHolidayWorkedDates
+Assert-Gc179ExportFieldValue -Content ([string]$adjacentHolidayExport.Content) -FieldName "HolidayTimeDbl" -ExpectedValue "2" -Message "A holiday contiguous to a worked second day of rest must be exported at double time."
+
 $mixedPaymentExport = New-Gc179FdfExportPart `
     -EmployeeCode "000123456" `
     -MonthParts $roundTripMonth `
@@ -483,8 +562,8 @@ Assert-Equal -Expected "2026-07-05" -Actual $roundTripImportedEntry.date -Messag
 Assert-Equal -Expected "09:15:00" -Actual $roundTripImportedEntry.punchIn -Message "The round-trip start time changed."
 Assert-Equal -Expected "10:45:00" -Actual $roundTripImportedEntry.punchOut -Message "The round-trip end time changed."
 Assert-Equal -Expected "01:30:00" -Actual $roundTripImportedEntry.overtime -Message "The round-trip duration changed."
-Assert-Equal -Expected "RegTimeDouble" -Actual $roundTripImportedEntry.gc179RateField -Message "The round-trip Sunday double-time field changed."
-Assert-Equal -Expected "2.0" -Actual $roundTripImportedEntry.gc179Rate -Message "The round-trip Sunday rate changed."
+Assert-Equal -Expected "SubseqTimeDbl" -Actual $roundTripImportedEntry.gc179RateField -Message "Code 262 must use the second/subsequent-day-of-rest double-time field."
+Assert-Equal -Expected "2.0" -Actual $roundTripImportedEntry.gc179Rate -Message "Code 262 must round-trip at double time on a regular schedule."
 Assert-Equal -Expected "262" -Actual $roundTripImportedEntry.overtimeCode -Message "The round-trip overtime code changed."
 Assert-Equal -Expected "leave" -Actual $roundTripImportedEntry.paymentOption -Message "The round-trip payment choice changed."
 Assert-Equal -Expected "B" -Actual $roundTripImportedEntry.reasonCode -Message "The round-trip reason code changed."

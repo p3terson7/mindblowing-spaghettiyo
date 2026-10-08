@@ -12,7 +12,7 @@ const switchingSource = read("app/frontend/scripts/Views/ViewSwitching.js");
 const viewSource = read("app/frontend/scripts/Views/BugReportsView.js");
 const i18nSource = read("app/frontend/scripts/I18n.js");
 const stylesSource = read("app/frontend/assets/apple-ui.css");
-const cacheKey = "20260924-bug-report-minimal-v3";
+const cacheKey = "20261008-money-visibility-v1";
 
 assert(indexSource.includes('id="navBugReports" data-role-scope="authenticated"'), "Authenticated users need an Issues navigation link.");
 assert(indexSource.includes('id="appReportBugButton" data-role-scope="authenticated"'), "The global Report a problem shortcut is missing.");
@@ -58,6 +58,11 @@ assert(viewSource.includes("isSuperAdminUser()"), "The triage editor is not rest
 assert(viewSource.includes('id="bugReportTriageForm"'), "The super-admin triage panel is missing.");
 assert(viewSource.includes('method: "PATCH"'), "Triage changes are not connected to the revision-aware API.");
 assert(viewSource.includes("expectedRevision: report.revision"), "Triage changes do not use optimistic concurrency.");
+assert(viewSource.includes('id="bugReportDeleteButton"'), "The super-admin bug deletion control is missing.");
+assert(viewSource.includes('method: "DELETE"'), "Bug deletion is not connected to the API.");
+assert(viewSource.includes('"X-SAPHIR-Expected-Revision": String(report.revision)'), "Bug deletion does not use optimistic concurrency.");
+assert(viewSource.includes('window.confirm(t("bugReports.deleteConfirm"'), "Permanent bug deletion has no confirmation.");
+assert(viewSource.includes('key: `bug-report-delete:${report.reportId}`'), "Duplicate bug deletions are not guarded.");
 assert(viewSource.includes("response.status === 409"), "Triage conflicts do not reload the latest shared version.");
 assert(!viewSource.includes("renderBugReportHistory"), "The removed Activity section is still rendered.");
 assert(!viewSource.includes("report.assignedTo"), "Assignment still appears in the inquiry dashboard.");
@@ -95,6 +100,11 @@ for (const key of [
   "bugReports.createPartialSuccess",
   "bugReports.triageTitle",
   "bugReports.triageConflict",
+  "bugReports.delete",
+  "bugReports.deleteConfirm",
+  "bugReports.deleteSuccess",
+  "bugReports.deleteError",
+  "bugReports.deleteConflict",
   "bugReports.actualSize",
   "bugReports.fitImage",
   "bugReports.closeImage",

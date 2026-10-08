@@ -30,7 +30,7 @@ function Set-BudgetPeriodConfiguration {
     )
 
     $candidate = [PSCustomObject][ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
         cycleLabel    = [string]$CycleLabel
         periods       = @($Periods)
     }

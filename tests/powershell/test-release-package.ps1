@@ -185,6 +185,8 @@ try {
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.EntryDuration.psm1") -PathType Leaf) -Message "runtime must include the pure entry duration module"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.BusinessRules.psd1") -PathType Leaf) -Message "runtime must include the business-rule contract manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.BusinessRules.psm1") -PathType Leaf) -Message "runtime must include the pure business-rule contract module"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.OvertimeCompensation.psd1") -PathType Leaf) -Message "runtime must include the overtime compensation module manifest"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.OvertimeCompensation.psm1") -PathType Leaf) -Message "runtime must include the pure overtime compensation module"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.Gc179Profile.psd1") -PathType Leaf) -Message "runtime must include the GC179 profile module manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.Gc179Profile.psm1") -PathType Leaf) -Message "runtime must include the pure GC179 profile module"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.CompensationGrid.psd1") -PathType Leaf) -Message "runtime must include the compensation-grid module manifest"
@@ -192,11 +194,14 @@ try {
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/defaults/compensation-grid.v1.json") -PathType Leaf) -Message "runtime must include the compensation-grid seed template"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.BudgetPeriods.psd1") -PathType Leaf) -Message "runtime must include the budget-period module manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.BudgetPeriods.psm1") -PathType Leaf) -Message "runtime must include the pure budget-period module"
-    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/defaults/budget-periods.v1.json") -PathType Leaf) -Message "runtime must include the budget-period seed template"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/defaults/budget-periods.v2.json") -PathType Leaf) -Message "runtime must include the budget-period seed template"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.BugReports.psd1") -PathType Leaf) -Message "runtime must include the bug-report module manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.BugReports.psm1") -PathType Leaf) -Message "runtime must include the pure bug-report module"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/routes/bug-reports.routes.ps1") -PathType Leaf) -Message "runtime must include the bug-report HTTP route"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/frontend/scripts/Views/BugReportsView.js") -PathType Leaf) -Message "runtime must include the bug-report workspace"
+    foreach ($betaAsset in @("scripts/Views/ProjectBudgetBeta.js", "assets/vendor/echarts/echarts.min.js", "assets/vendor/echarts/LICENSE", "assets/vendor/echarts/NOTICE")) {
+        Assert-True -Condition (Test-Path -LiteralPath (Join-Path $expandedRelease "app/frontend/$betaAsset") -PathType Leaf) -Message "runtime must include the offline budget beta asset $betaAsset"
+    }
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.ProjectCatalog.psd1") -PathType Leaf) -Message "runtime must include the project catalog module manifest"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.ProjectCatalog.psm1") -PathType Leaf) -Message "runtime must include the pure project catalog module"
     $packagedProjectCatalogManifest = Import-PowerShellDataFile -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/modules/Saphir.ProjectCatalog.psd1")

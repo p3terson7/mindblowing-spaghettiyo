@@ -38,6 +38,6 @@
                 $employees = @($employees | Where-Object { -not [bool]$_.archived })
             }
 
-            respondWithSuccess $response (ConvertTo-Json -InputObject @($employees) -Depth 4)
+            respondWithSuccess $response (ConvertTo-Json -InputObject @($employees) -Depth 8)
             continue
         }

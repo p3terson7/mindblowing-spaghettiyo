@@ -500,6 +500,41 @@ code {
   max-width: 360px;
 }
 
+.budget-period-generator {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+}
+
+.budget-period-generator-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.budget-period-generator-copy span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.budget-period-generator-fields {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(100px, 0.55fr) minmax(120px, 0.65fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.budget-period-generator-fields .field-block {
+  margin: 0;
+}
+
+.budget-period-generator-fields .btn {
+  min-height: 34px;
+  white-space: nowrap;
+}
+
 .budget-period-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--panel-border);
@@ -508,7 +543,7 @@ code {
 }
 
 .budget-period-table {
-  min-width: 500px;
+  min-width: 560px;
 }
 
 .budget-period-table th,
@@ -532,13 +567,34 @@ code {
   font-weight: 750;
 }
 
+.budget-period-row-actions {
+  width: 48px;
+  text-align: right;
+}
+
+.budget-period-remove-button {
+  width: 34px;
+  min-height: 32px;
+  padding-inline: 0;
+}
+
 .budget-period-empty {
   padding: 15px 10px !important;
   color: var(--text-muted);
 }
 
 .budget-period-actions {
-  justify-content: flex-end;
+  justify-content: space-between;
+}
+
+@media (max-width: 760px) {
+  .budget-period-generator-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .budget-period-generator-fields .btn {
+    grid-column: 1 / -1;
+  }
 }
 
 .gc179-workweek-options {
@@ -2243,6 +2299,21 @@ button.is-async-busy::before,
   border: 1px solid rgba(31, 35, 41, 0.08);
 }
 
+.meta-pill.monetary-pill {
+  border-color: rgba(40, 150, 105, 0.28);
+  background: rgba(40, 150, 105, 0.1);
+  color: var(--text-primary);
+}
+
+.meta-pill.monetary-pill-unavailable {
+  border-color: rgba(198, 137, 30, 0.28);
+  background: rgba(198, 137, 30, 0.1);
+}
+
+.monetary-unavailable-text {
+  color: var(--warning);
+}
+
 .permission-badge {
   display: inline-flex;
   align-items: center;
@@ -3474,8 +3545,53 @@ button.is-async-busy::before,
 }
 
 .project-budget-comparison-shell {
+  padding: 0;
+  overflow: hidden;
+}
+
+.project-budget-comparison-disclosure > summary {
+  padding: 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.project-budget-comparison-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.project-budget-comparison-disclosure > summary:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.project-budget-comparison-content {
   display: grid;
   gap: 14px;
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.project-budget-comparison-content > :first-child {
+  margin-top: 14px;
+}
+
+.project-budget-disclosure-actions,
+.project-budget-disclosure-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-budget-disclosure-label {
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.project-budget-comparison-disclosure:not([open]) .project-budget-disclosure-label-open,
+.project-budget-comparison-disclosure[open] .project-budget-disclosure-label-closed {
+  display: none;
 }
 
 .project-budget-comparison-header .panel-title {

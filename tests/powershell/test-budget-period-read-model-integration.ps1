@@ -82,7 +82,7 @@ function New-EmployeeEntryProjectionForAccessModel {
 }
 function Get-BudgetPeriodConfiguration {
     return [PSCustomObject]@{
-        schemaVersion = 1; cycleLabel = "2026-2027"; periods = @(
+        schemaVersion = 2; cycleLabel = "2026-2027"; periods = @(
             [PSCustomObject]@{ id = "P1"; configured = $true; startDate = "2026-04-01"; endDate = "2026-06-30" },
             [PSCustomObject]@{ id = "P2"; configured = $true; startDate = "2026-07-01"; endDate = "2026-09-30" },
             [PSCustomObject]@{ id = "P3"; configured = $true; startDate = "2026-10-01"; endDate = "2026-12-31" },

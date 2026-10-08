@@ -40,6 +40,10 @@ try {
                 surname   = "ORIGINAL"
                 givenName = "EMPLOYEE"
             }
+            compensationAssignments = @(
+                [PSCustomObject]@{ group = "CR"; subGroup = "04"; level = "01"; effectiveFrom = "2025-01-01" },
+                [PSCustomObject]@{ group = "AS"; subGroup = "03"; level = "02"; effectiveFrom = "2026-01-01" }
+            )
             passwordSalt       = "salt-1"
             passwordHash       = "hash-1"
             passwordIterations = 120000
@@ -68,6 +72,10 @@ try {
 
     . (Join-Path -Path $repoRoot -ChildPath "app/backend/lib/FileStore.ps1")
     . (Join-Path -Path $repoRoot -ChildPath "app/backend/services/AuthService.ps1")
+
+    $legacyProfile = Get-Gc179ProfileFromUserRecord -UserRecord $seedUsers[0]
+    Assert-Equal -Expected "AS" -Actual $legacyProfile.group -Message "An older salary-period-only record did not resolve into the single profile."
+    Assert-Equal -Expected "02" -Actual $legacyProfile.level -Message "The older record did not retain its latest configured level."
 
     # Warm both file and parsed auth caches, then simulate a completed write
     # from another lock-respecting process without touching this process's caches.
@@ -130,9 +138,9 @@ try {
     $profile = [PSCustomObject]@{
         initials           = "JD"
         pri                = "123456789"
-        group              = "  sts  "
-        subGroup           = "  0  "
-        level              = " 02 "
+        group              = "  cr  "
+        subGroup           = "  4  "
+        level              = " 01 "
         compressedWorkWeek = $true
     }
 
@@ -164,9 +172,13 @@ try {
     }
     Assert-Equal -Expected "DOE" -Actual $savedTarget.gc179Profile.surname -Message "GC179 surname did not use the updated display name."
     Assert-Equal -Expected "JANE" -Actual $savedTarget.gc179Profile.givenName -Message "GC179 given name did not use the updated display name."
-    Assert-Equal -Expected "STS" -Actual $savedTarget.gc179Profile.group -Message "The employee-specific GC179 Group was not normalized and persisted."
-    Assert-Equal -Expected "00" -Actual $savedTarget.gc179Profile.subGroup -Message "The employee-specific GC179 Sub-Group was not normalized and persisted."
-    Assert-Equal -Expected "02" -Actual $savedTarget.gc179Profile.level -Message "The employee-specific GC179 Level was not normalized and persisted."
+    Assert-Equal -Expected "CR" -Actual $savedTarget.gc179Profile.group -Message "The shared GC179/salary Group was not normalized and persisted."
+    Assert-Equal -Expected "04" -Actual $savedTarget.gc179Profile.subGroup -Message "The shared GC179/salary Sub-group was not normalized and persisted."
+    Assert-Equal -Expected "01" -Actual $savedTarget.gc179Profile.level -Message "The shared GC179/salary Level was not normalized and persisted."
+    $classification = Get-EmployeeClassificationFromUserRecord -UserRecord $savedTarget
+    Assert-Equal -Expected $savedTarget.gc179Profile.group -Actual $classification.group -Message "Salary Group differs from GC179 Group."
+    Assert-Equal -Expected $savedTarget.gc179Profile.level -Actual $classification.level -Message "Salary Level differs from GC179 Level."
+    if ($savedTarget.PSObject.Properties.Name -contains "compensationAssignments") { throw "The profile update kept a second employee classification source." }
     Assert-Equal -Expected "hash-1" -Actual $savedTarget.passwordHash -Message "The update changed an unrelated password field."
     Assert-Equal -Expected "Externally Updated Employee" -Actual $savedOther.displayName -Message "The update overwrote a concurrent display-name change."
     Assert-Equal -Expected "external-hash" -Actual $savedOther.passwordHash -Message "The update overwrote a concurrent password change."

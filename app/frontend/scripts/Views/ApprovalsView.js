@@ -212,6 +212,23 @@ function renderReviewIssues(entry) {
   `;
 }
 
+function renderEntryMonetaryPill(entry) {
+  const monetary = entry && entry.monetary;
+  if (!monetary) {
+    return "";
+  }
+
+  if (String(monetary.status || "").toLowerCase() !== "final" || monetary.totalAmountCents == null) {
+    return `<span class="meta-pill monetary-pill monetary-pill-unavailable" title="${escapeHtml(getMonetaryUnavailableLabel(monetary.unavailableReason))}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${escapeHtml(t("money.unavailable"))}</span>`;
+  }
+
+  const amount = formatCurrencyCents(monetary.totalAmountCents, monetary.currency);
+  const paymentLabel = String(monetary.paymentOption || "cash").toLowerCase() === "leave"
+    ? t("money.compensatoryLeave")
+    : t("money.cash");
+  return `<span class="meta-pill monetary-pill" title="${escapeHtml(`${paymentLabel} · ${t("money.salaryOnlyEstimate")}`)}"><i class="fa-solid fa-coins" aria-hidden="true"></i>${escapeHtml(`${t("money.estimatedValue")} ${amount}`)}</span>`;
+}
+
 function buildApprovalCard(entry, showActions) {
   const exactTimeLabel = getEntryExactTimeLabel(entry);
   const permissionBadge = getEntryPermissionBadgeMarkup(entry);
@@ -262,6 +279,7 @@ function buildApprovalCard(entry, showActions) {
         ${isDiverseEntry(entry) && entry.diverseReason ? `<span class="meta-pill">${escapeHtml(entry.diverseReason)}</span>` : ""}
         ${!isDiverseEntry(entry) && entry.reasonCode ? `<span class="meta-pill">${escapeHtml(entry.reasonCode)}</span>` : ""}
         <span class="meta-pill duration-value">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
+        ${renderEntryMonetaryPill(entry)}
         ${renderEntryWorkScheduleBadge(entry)}
         <span class="meta-pill">EMP ${escapeHtml(entry.employeeCode)}</span>
       </div>

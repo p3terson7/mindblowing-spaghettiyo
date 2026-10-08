@@ -1,6 +1,6 @@
 # Notes sur le projet SAPHIR
 
-> Dernière mise à jour : 22 août 2026
+> Dernière mise à jour : 8 octobre 2026
 > J’ai volontairement écrit ce document dans un langage assez simple. Le but est
 > d’expliquer mon projet comme je le présenterais à quelqu’un, pas de donner
 > l’impression de lire un contrat ou une documentation générée automatiquement.
@@ -362,6 +362,25 @@ réécrit pas tout seul les données du disque partagé.
 
 L’export prépare les données du mois choisi et ouvre le formulaire local. Les
 entrées rejetées, ouvertes et `Divers` ne sont pas envoyées dans la GC179.
+
+Le code de temps supplémentaire choisit maintenant la bonne section de la
+ligne GC179, au lieu d'envoyer toutes les durées dans « Jour ouvrable
+régulier » :
+
+| Code | Section GC179 | Horaire régulier | Horaire comprimé |
+| --- | --- | --- | --- |
+| `260` | Jour ouvrable régulier | 1,5×, puis 2× après 7,5 h | 1,75× |
+| `261` | Premier jour de repos | 1,5×, puis 2× après 7,5 h | 1,75× |
+| `262` | Deuxième jour de repos subséquent | 2× | 1,75× |
+| `263` | Congé férié | 1,5×, avec les exceptions prévues | 1,5×, avec les exceptions prévues |
+
+Pour un horaire régulier, le seuil de 7,5 heures est conservé entre plusieurs
+entrées de la même journée et de la même catégorie. Un congé férié adjacent à
+un deuxième jour de repos travaillé au code `262` est placé à 2×. Une ligne
+importée qui contient déjà une répartition explicite entre plusieurs taux est
+réexportée telle quelle. Ces règles suivent les articles 25.27, 28.05, 28.06
+et 30.08 de la convention collective PA publiée par le Secrétariat du Conseil
+du Trésor.
 
 Le nom du fichier suit la nomenclature demandée :
 
@@ -1142,6 +1161,15 @@ Le code et les tests restent la référence lorsqu’un ancien document contredi
 fonctionnement réel.
 
 ## 19. Conclusion
+
+Les montants de temps supplémentaire sont maintenant visibles dans Personnel et
+Projets : cartes, fiches, détail par projet et par entrée. On sépare l’argent
+payé de la valeur du congé compensatoire. Les chiffres restent des estimations,
+sans les charges employeur, et seules les heures supp. approuvées sont comptées.
+La classification est celle du profil GC179; la grille salariale se règle dans
+les paramètres super admin. Si une donnée manque, l’écran indique quoi compléter
+au lieu de montrer un faux 0 $. Les anciennes entrées peuvent être chiffrées à
+la lecture sans réécrire leurs fichiers sur le disque partagé.
 
 SAPHIR a commencé comme une façon d’éviter des courriels répétitifs, mais le
 projet est devenu un vrai outil de suivi, de révision et d’analyse.

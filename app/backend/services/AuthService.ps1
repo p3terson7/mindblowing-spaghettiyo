@@ -394,6 +394,18 @@ function Get-Gc179ProfileFromUserRecord {
     return (Saphir.Gc179Profile\Get-Gc179ProfileFromUserRecord -UserRecord $UserRecord)
 }
 
+function Get-EmployeeClassificationFromUserRecord {
+    param($UserRecord)
+
+    $profile = Get-Gc179ProfileFromUserRecord -UserRecord $UserRecord
+    if ([string]::IsNullOrWhiteSpace([string]$profile.group) -or
+        [string]::IsNullOrWhiteSpace([string]$profile.subGroup) -or
+        [string]::IsNullOrWhiteSpace([string]$profile.level)) {
+        return $null
+    }
+    return [PSCustomObject]@{ group = [string]$profile.group; subGroup = [string]$profile.subGroup; level = [string]$profile.level }
+}
+
 function ConvertTo-TimeEntryTypeArray {
     param($Value)
 
@@ -1536,6 +1548,7 @@ function Ensure-EmployeeUser {
             else {
                 $targetUser | Add-Member -NotePropertyName "gc179Profile" -NotePropertyValue $effectiveGc179Profile -Force
             }
+            $targetUser.PSObject.Properties.Remove("compensationAssignments")
             Set-AuthRecordProperty -Record $targetUser -Name "passwordSalt" -Value $secret.passwordSalt
             Set-AuthRecordProperty -Record $targetUser -Name "passwordHash" -Value $secret.passwordHash
             Set-AuthRecordProperty -Record $targetUser -Name "passwordIterations" -Value $secret.passwordIterations
@@ -1634,6 +1647,7 @@ function Set-EmployeeUserProfile {
                     else {
                         $user | Add-Member -NotePropertyName "gc179Profile" -NotePropertyValue $effectiveGc179Profile -Force
                     }
+                    $user.PSObject.Properties.Remove("compensationAssignments")
                 }
                 if ($updateCompressedWorkWeek) {
                     # Update this dashboard setting from the latest record while

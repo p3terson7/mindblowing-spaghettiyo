@@ -119,7 +119,7 @@ l'ID de release. Toutes ces lignes sont **à valider sur les postes réels**.
 | Entrée Divers avec et sans privilège | Création autorisée seulement pour l'employé habilité, refus aussi côté serveur. |
 | Temps comprimé global, puis création et modification d'entrées | Préférence visible et conservée; chaque entrée garde le régime prévu, les anciennes entrées ne changent pas à cause d'une nouvelle préférence. |
 | Groupe, sous-groupe et niveau | `as`, `3`, `1` donnent `AS`, `03`, `01`; lettres/chiffres invalides refusés; champs GC179 corrects. |
-| P1–P4 et tranches personnalisées | Dates limites incluses comme prévu, périodes sans données lisibles, totaux identiques aux entrées retenues. |
+| Périodes budgétaires dynamiques et tranches personnalisées | P1–P12 présents sur une nouvelle installation, ajout/suppression et génération mensuelle valides, dates limites incluses comme prévu, périodes sans données lisibles, totaux identiques aux entrées retenues. |
 | Grille salariale | Seul un super admin peut l'ajuster; `01` et l'ancien niveau `1` restent compatibles; les réglages survivent au redémarrage. |
 | Deux postes modifient des entrées différentes | Chaque écriture est conservée et devient visible sur l'autre poste. |
 | Deux superviseurs modifient la même entrée | Aucun écrasement silencieux; conflit signalé et résolution après actualisation. |

@@ -99,7 +99,21 @@ try {
     $closedCommentReport = Update-BugReport -ReportId $commentReport.reportId -ExpectedRevision 3 -Input ([PSCustomObject]@{ status = "closed" }) -CurrentUser $superAdmin
     Assert-Equal -Expected 409 -Actual (Get-StatusCode { Add-BugReportComment -ReportId $commentReport.reportId -ExpectedRevision $closedCommentReport.revision -Input ([PSCustomObject]@{ body = "Too late" }) -CurrentUser $employee }) -Message "Closed report accepted a comment."
 
-    Write-Host "Bug-report storage service tests passed: privacy, authorization, attachments, locking, revisions, and forward-compatible updates are stable."
+    $deleteReport = Add-BugReport -Input ([PSCustomObject]@{ title = "Delete me"; description = "Temporary test bug."; category = "bug" }) -CurrentUser $employee
+    $deleteAttachment = Add-BugReportAttachment -ReportId $deleteReport.reportId -ExpectedRevision 1 -Bytes $pngBytes -FileName "delete.png" -ContentType "image/png" -CurrentUser $employee
+    $deleteAttachmentFolder = Join-Path -Path $script:bugReportAttachmentsFolder -ChildPath $deleteReport.reportId
+    Assert-Equal -Expected 403 -Actual (Get-StatusCode { Remove-BugReport -ReportId $deleteReport.reportId -ExpectedRevision 2 -CurrentUser $admin }) -Message "A regular admin deleted a bug report."
+    Assert-Equal -Expected 403 -Actual (Get-StatusCode { Remove-BugReport -ReportId $deleteReport.reportId -ExpectedRevision 2 -CurrentUser $employee }) -Message "A reporter deleted a bug report."
+    Assert-Equal -Expected 409 -Actual (Get-StatusCode { Remove-BugReport -ReportId $deleteReport.reportId -ExpectedRevision 1 -CurrentUser $superAdmin }) -Message "A stale bug-report deletion did not conflict."
+    Assert-True -Condition (Test-Path -LiteralPath $deleteAttachmentFolder -PathType Container) -Message "A rejected deletion removed attachment files."
+    $deleted = Remove-BugReport -ReportId $deleteReport.reportId -ExpectedRevision $deleteAttachment.report.revision -CurrentUser $superAdmin
+    Assert-Equal -Expected $deleteReport.reportId -Actual $deleted.reportId -Message "Deletion returned the wrong report identifier."
+    Assert-Equal -Expected 1 -Actual $deleted.attachmentCount -Message "Deletion returned the wrong attachment count."
+    Assert-Equal -Expected "" -Actual $deleted.attachmentCleanupWarning -Message "Successful attachment cleanup returned a warning."
+    Assert-Equal -Expected 404 -Actual (Get-StatusCode { Get-BugReport -ReportId $deleteReport.reportId -CurrentUser $superAdmin }) -Message "Deleted bug report remained readable."
+    Assert-True -Condition (-not (Test-Path -LiteralPath $deleteAttachmentFolder)) -Message "Deleting a bug report left its attachment folder behind."
+
+    Write-Host "Bug-report storage service tests passed: privacy, authorization, attachments, deletion, locking, revisions, and forward-compatible updates are stable."
 }
 finally {
     Remove-Module -Name "Saphir.BugReports" -Force -ErrorAction SilentlyContinue

@@ -1,6 +1,6 @@
 @{
     RootModule        = "Saphir.BudgetPeriods.psm1"
-    ModuleVersion     = "1.0.0"
+    ModuleVersion     = "2.0.0"
     GUID              = "8f573571-f1b6-44a0-9d10-e973a9de3d51"
     Author            = "SAPHIR"
     CompanyName       = "SAPHIR"

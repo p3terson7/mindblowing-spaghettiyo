@@ -364,6 +364,9 @@
                 }
                 Set-EntrySupervisorNote -Entry $existingEntry -Note $managerMessage -CurrentUser $currentUser | Out-Null
                 Update-EntryComputedOvertime -Entry $existingEntry
+                if (Get-Command -Name Set-ApprovedEntryCompensationSnapshots -ErrorAction SilentlyContinue) {
+                    Set-ApprovedEntryCompensationSnapshots -EmployeeCode $employeeCode -Entries $existingData | Out-Null
+                }
 
                     Write-JsonArrayAtomic -Path $dataFile -Items $existingData -Depth 8
                     $entryMutationCommitted = $true
