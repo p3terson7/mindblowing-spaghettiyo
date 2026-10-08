@@ -58,7 +58,7 @@ assert(bulkScheduleRoute.includes('$storedSchedule -in @("regular", "compressed"
 assert(layoutStyles.includes(".calendar-entry .work-schedule-badge > span"), "Calendar schedule badges are not constrained against overflow.");
 assert(layoutStyles.includes("text-overflow: ellipsis"), "Overflowing calendar schedule text is not truncated.");
 
-const cacheRevision = "20261008-money-visibility-v1";
+const cacheRevision = "20261008-loading-performance-v1";
 assert(index.includes(`scripts/Views/SelfView.js?v=${cacheRevision}`), "The self dashboard cache revision was not bumped.");
 assert(appShell.includes(`ApprovalsView.js?v=${cacheRevision}`), "The Review entry labels may remain cached.");
 

@@ -46,6 +46,9 @@ const projectsViewState = {
     selectedIds: new Set(),
     initialized: false,
     tableExpanded: false,
+    stale: true,
+    refreshVersion: 0,
+    loadingPromise: null,
   },
   workspaceOpen: false,
   workspaceEntriesExpanded: false,
@@ -289,38 +292,60 @@ function renderProjectBudgetComparison() {
   `;
 }
 
-async function loadProjectBudgetComparison() {
-  setProjectBudgetComparisonLoading();
-  try {
-    const response = await fetch(`${apiUrl}stats/budget-periods`, { cache: "no-store" });
-    const payload = normalizeProjectBudgetComparisonPayload(await parseResponse(response));
-    projectsViewState.budgetComparison.payload = payload;
-    const configuredIds = payload.periods.filter(period => period.configured).map(period => period.id);
-    const previousSelection = Array.from(projectsViewState.budgetComparison.selectedIds).filter(id => configuredIds.includes(id));
-    projectsViewState.budgetComparison.selectedIds = new Set(
-      projectsViewState.budgetComparison.initialized && previousSelection.length > 0
-        ? previousSelection
-        : getDefaultProjectBudgetPeriodIds(payload.periods),
-    );
-    projectsViewState.budgetComparison.initialized = true;
+function loadProjectBudgetComparison() {
+  const disclosure = document.querySelector(".project-budget-comparison-disclosure");
+  const state = projectsViewState.budgetComparison;
+  if (!disclosure || !disclosure.open) return Promise.resolve();
+  if (state.loadingPromise) return state.loadingPromise;
+  if (state.payload && !state.stale) {
     renderProjectBudgetComparison();
-  } catch (error) {
-    console.error("Unable to load budget-period comparison:", error);
-    const elements = getProjectBudgetComparisonElements();
-    if (elements.controls) {
-      elements.controls.innerHTML = "";
-    }
-    if (elements.summary) {
-      elements.summary.innerHTML = "";
-    }
-    if (elements.table) {
-      elements.table.innerHTML = createEmptyState(t("projects.budgetLoadError"));
-    }
-    const betaHost = document.getElementById("projectBudgetBeta");
-    if (betaHost) {
-      betaHost.innerHTML = createEmptyState(t("projects.budgetLoadError"));
-    }
+    return Promise.resolve();
   }
+  const refreshVersion = state.refreshVersion;
+  setProjectBudgetComparisonLoading();
+  state.loadingPromise = (async () => {
+    try {
+      const response = await fetch(`${apiUrl}stats/budget-periods`, { cache: "no-store" });
+      const payload = normalizeProjectBudgetComparisonPayload(await parseResponse(response));
+      if (refreshVersion !== state.refreshVersion) return;
+      state.stale = false;
+      state.payload = payload;
+      const configuredIds = payload.periods.filter(period => period.configured).map(period => period.id);
+      const previousSelection = Array.from(state.selectedIds).filter(id => configuredIds.includes(id));
+      state.selectedIds = new Set(
+        state.initialized && previousSelection.length > 0
+          ? previousSelection
+          : getDefaultProjectBudgetPeriodIds(payload.periods),
+      );
+      state.initialized = true;
+      renderProjectBudgetComparison();
+    } catch (error) {
+      if (refreshVersion !== state.refreshVersion) return;
+      console.error("Unable to load budget-period comparison:", error);
+      const elements = getProjectBudgetComparisonElements();
+      if (elements.controls) {
+        elements.controls.innerHTML = "";
+      }
+      if (elements.summary) {
+        elements.summary.innerHTML = "";
+      }
+      if (elements.table) {
+        elements.table.innerHTML = createEmptyState(t("projects.budgetLoadError"));
+      }
+      const betaHost = document.getElementById("projectBudgetBeta");
+      if (betaHost) {
+        betaHost.innerHTML = createEmptyState(t("projects.budgetLoadError"));
+      }
+    }
+  })().finally(() => {
+    state.loadingPromise = null;
+    // Coalesce an intervening shared-data refresh; never retry a failed
+    // request in a loop, nor fetch while the comparison is collapsed.
+    if (refreshVersion !== state.refreshVersion && disclosure.open) {
+      loadProjectBudgetComparison();
+    }
+  });
+  return state.loadingPromise;
 }
 
 async function renderProjectBudgetBeta() {
@@ -344,7 +369,7 @@ async function renderProjectBudgetBeta() {
   if (!window.Saphir || !window.Saphir.budgetBeta) host.innerHTML = createLoadingState("chart", 1);
   try {
     await loadScriptOnce("assets/vendor/echarts/echarts.min.js?v=6.1.0");
-    await loadScriptOnce("scripts/Views/ProjectBudgetBeta.js?v=20261008-money-visibility-v1");
+    await loadScriptOnce("scripts/Views/ProjectBudgetBeta.js?v=20261008-loading-performance-v1");
     if (version !== projectBudgetBetaRenderVersion || !disclosure.open || projectsViewState.budgetComparison.view !== "beta") return;
     window.Saphir.budgetBeta.render(host, projectsViewState.budgetComparison.payload, {
       openProject: (projectCode, period) => {
@@ -2036,10 +2061,10 @@ async function refreshProjectsView() {
   setProjectInsightsLoadingState();
 
   try {
-    // Budget comparison is independent from the active Trends range. Start it
-    // in parallel, but do not hold back the main project workspace while the
-    // four period summaries are being assembled.
-    const budgetComparisonPromise = loadProjectBudgetComparison();
+    // The single-request PowerShell server must serve the main workspace
+    // before an optional twelve-period comparison, even if it is expanded.
+    projectsViewState.budgetComparison.stale = true;
+    projectsViewState.budgetComparison.refreshVersion++;
     const response = await fetch(buildProjectBootstrapUrl(currentProjectFilter, requestedProjectCode));
     const payload = await parseResponse(response);
     const summary = Array.isArray(payload && payload.summary) ? payload.summary : [];
@@ -2099,7 +2124,7 @@ async function refreshProjectsView() {
     if (detailContainer) {
       detailContainer.setAttribute("aria-busy", "false");
     }
-    await budgetComparisonPromise;
+    loadProjectBudgetComparison();
     return true;
   } catch (error) {
     console.error("Error loading project data:", error);
@@ -3502,7 +3527,10 @@ document.getElementById("projectQuickRangeButtons").addEventListener("click", ev
     showToast(t("projects.unableToLoad"), "error");
   });
 });
-document.querySelector(".project-budget-comparison-disclosure")?.addEventListener("toggle", renderProjectBudgetBeta);
+document.querySelector(".project-budget-comparison-disclosure")?.addEventListener("toggle", event => {
+  if (event.target.open) loadProjectBudgetComparison();
+  renderProjectBudgetBeta();
+});
 document.getElementById("projectBudgetComparisonPanel").addEventListener("click", event => {
   const button = event.target.closest("[data-budget-view]");
   if (!button) return;

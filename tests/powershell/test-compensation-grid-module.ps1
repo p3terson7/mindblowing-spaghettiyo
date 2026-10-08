@@ -11,6 +11,7 @@ $expectedFunctions = @(
     "ConvertTo-CompensationSalaryBand",
     "Test-CompensationSalaryGridDocument",
     "ConvertTo-CompensationSalaryGridDocument",
+    "New-CompensationSalaryBandIndex",
     "Resolve-CompensationSalaryBand",
     "ConvertTo-EmployeeCompensationAssignment",
     "ConvertTo-EmployeeCompensationAssignments",
@@ -182,6 +183,14 @@ $effectiveValidation = Test-CompensationSalaryGridDocument -Value $effectiveDocu
 Assert-Equal -Expected $true -Actual ([bool]$effectiveValidation.isValid) -Message "Non-overlapping effective salary periods should be valid."
 Assert-Equal -Expected 5727100 -Actual (Resolve-CompensationSalaryBand -SalaryGrid $effectiveDocument -Group "CR" -SubGroup "04" -Level "1" -AsOfDate ([DateTime]"2026-06-30")).annualSalaryCents -Message "The first effective period did not resolve on its last day."
 Assert-Equal -Expected 5900000 -Actual (Resolve-CompensationSalaryBand -SalaryGrid $effectiveDocument -Group "CR" -SubGroup "04" -Level "1" -AsOfDate ([DateTime]"2026-07-01")).annualSalaryCents -Message "The replacement effective period did not resolve on its first day."
+
+$salaryIndex = New-CompensationSalaryBandIndex -SalaryGrid $effectiveDocument
+foreach ($date in @("2025-12-31", "2026-01-01", "2026-06-30", "2026-07-01", "2027-12-31")) {
+    $direct = Resolve-CompensationSalaryBand -SalaryGrid $effectiveDocument -Group "CR" -SubGroup "04" -Level "1" -AsOfDate ([DateTime]$date)
+    $indexed = Resolve-CompensationSalaryBand -SalaryBandIndex $salaryIndex -Group " cr " -SubGroup "04" -Level "01" -AsOfDate ([DateTime]$date)
+    Assert-Equal -Expected ([string]$direct.id) -Actual ([string]$indexed.id) -Message "Indexed salary resolution changed inclusive date boundaries for $date."
+}
+Assert-Equal -Expected $null -Actual (Resolve-CompensationSalaryBand -SalaryBandIndex $salaryIndex -Group "CR" -SubGroup "05" -Level "01" -AsOfDate ([DateTime]"2026-07-01")) -Message "The index must not fall back to another classification."
 
 $overlappingDocument = [PSCustomObject]@{
     schemaVersion = 1

@@ -19,7 +19,7 @@ assert(!employeesSource.includes("compensationAssignments"), "Employee saves mus
 assert(employeesSource.includes("gc179Profile,"), "Employee saves must retain the shared GC179/classification profile.");
 assert(i18nSource.includes('"employees.gc179Header": "Profile and classification"'));
 assert(i18nSource.includes('"employees.gc179Header": "Profil et classification"'));
-assert(indexSource.includes("styles.css?v=20261008-money-visibility-v1"));
-assert(indexSource.includes("I18n.js?v=20261008-money-visibility-v1"));
+assert(indexSource.includes("styles.css?v=20261008-loading-performance-v1"));
+assert(indexSource.includes("I18n.js?v=20261008-loading-performance-v1"));
 
 console.log("Unified employee classification UI contract tests passed.");

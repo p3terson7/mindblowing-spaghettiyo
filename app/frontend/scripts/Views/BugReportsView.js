@@ -866,7 +866,7 @@ function getBugReportCreatePayload() {
     expectedBehavior: String(document.getElementById("bugReportExpectedInput")?.value || "").trim(),
     actualBehavior: String(document.getElementById("bugReportActualInput")?.value || "").trim(),
     technicalContext: {
-      appVersion: "20261008-money-visibility-v1",
+      appVersion: "20261008-loading-performance-v1",
       page: String(window.location && window.location.hash || "") || String(typeof window.getActiveAppViewId === "function" ? window.getActiveAppViewId() : "bugReportsView"),
       browser: String(navigator.userAgent || "").slice(0, 500),
       operatingSystem: String(navigator.platform || "").slice(0, 300),

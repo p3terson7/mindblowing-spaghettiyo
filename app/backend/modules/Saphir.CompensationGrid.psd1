@@ -1,6 +1,6 @@
 @{
     RootModule        = "Saphir.CompensationGrid.psm1"
-    ModuleVersion     = "1.1.0"
+    ModuleVersion     = "1.2.0"
     GUID              = "77e1f9fd-d645-42b3-a0e0-9e6a1c1f31e5"
     Author            = "SAPHIR"
     CompanyName       = "SAPHIR"
@@ -12,6 +12,7 @@
         "ConvertTo-CompensationSalaryBand",
         "Test-CompensationSalaryGridDocument",
         "ConvertTo-CompensationSalaryGridDocument",
+        "New-CompensationSalaryBandIndex",
         "Resolve-CompensationSalaryBand",
         "ConvertTo-EmployeeCompensationAssignment",
         "ConvertTo-EmployeeCompensationAssignments",

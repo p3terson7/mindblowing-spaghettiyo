@@ -151,7 +151,8 @@ function Set-ApprovedEntryCompensationSnapshots {
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()]$Entries,
         [AllowNull()]$EmployeeUser,
-        [AllowNull()][string]$CalculationTimeUtc
+        [AllowNull()][string]$CalculationTimeUtc,
+        [switch]$MissingSnapshotsOnly
     )
 
     $calculatedAtUtc = if ([string]::IsNullOrWhiteSpace($CalculationTimeUtc)) { (Get-Date).ToUniversalTime().ToString("o") } else { [string]$CalculationTimeUtc }
@@ -168,9 +169,15 @@ function Set-ApprovedEntryCompensationSnapshots {
         $assignmentLoadError = $_
     }
     $salaryGrid = $null
+    $salaryBandIndex = $null
     $salaryGridError = $null
     try {
         $salaryGrid = Get-CompensationGrid
+        $salaryBandIndex = if (Get-Command -Name Get-CompensationSalaryBandIndex -ErrorAction SilentlyContinue) {
+            Get-CompensationSalaryBandIndex -SalaryGrid $salaryGrid
+        } else {
+            Saphir.CompensationGrid\New-CompensationSalaryBandIndex -SalaryGrid $salaryGrid
+        }
     }
     catch {
         $salaryGridError = $_
@@ -200,6 +207,8 @@ function Set-ApprovedEntryCompensationSnapshots {
     $creditedMinutesByDateAndCategory = @{}
     $sortedEntries = @($approvedEntries.ToArray() | Sort-Object date, punchIn, entryId)
     foreach ($entry in $sortedEntries) {
+        $existingSnapshot = if ($entry.PSObject.Properties.Name -contains "compensationSnapshot") { $entry.compensationSnapshot } else { $null }
+        $retainCapturedSnapshot = $MissingSnapshotsOnly -and $null -ne $existingSnapshot -and [string]$existingSnapshot.snapshotStatus -eq "final"
         $entryDate = [DateTime]::MinValue
         $dateIsValid = [DateTime]::TryParseExact(
             ([string]$entry.date).Trim(),
@@ -209,6 +218,7 @@ function Set-ApprovedEntryCompensationSnapshots {
             [ref]$entryDate
         )
         if (-not $dateIsValid) {
+            if ($retainCapturedSnapshot) { continue }
             $reason = "entry-date-invalid"
             $fingerprint = Get-EntryCompensationSourceFingerprint -Entry $entry -Assignment $null -SalaryBand $null -CreditedMinutes $null -UnavailableReason $reason
             Set-EntryCompensationSnapshotIfChanged -Entry $entry -Snapshot (New-UnavailableEntryCompensationSnapshot -Reason $reason -Assignment $null -SalaryBand $null -SourceFingerprint $fingerprint -CalculatedAtUtc $calculatedAtUtc) | Out-Null
@@ -217,13 +227,21 @@ function Set-ApprovedEntryCompensationSnapshots {
 
         $creditedMinutes = ConvertTo-EntryCreditedMinutes -Entry $entry
         if ($null -eq $creditedMinutes) {
+            if ($retainCapturedSnapshot) { continue }
             $reason = "credited-duration-invalid"
             $fingerprint = Get-EntryCompensationSourceFingerprint -Entry $entry -Assignment $null -SalaryBand $null -CreditedMinutes $null -UnavailableReason $reason
             Set-EntryCompensationSnapshotIfChanged -Entry $entry -Snapshot (New-UnavailableEntryCompensationSnapshot -Reason $reason -Assignment $null -SalaryBand $null -SourceFingerprint $fingerprint -CalculatedAtUtc $calculatedAtUtc) | Out-Null
             continue
         }
 
-        $existingSnapshot = if ($entry.PSObject.Properties.Name -contains "compensationSnapshot") { $entry.compensationSnapshot } else { $null }
+        if ($retainCapturedSnapshot) {
+            # Count captured history toward the day's threshold, but do not
+            # rebuild financial snapshots that the read path must preserve.
+            $category = Saphir.OvertimeCompensation\Get-SaphirOvertimeCategory -OvertimeCode ([string]$entry.overtimeCode)
+            $usageKey = "{0}|{1}" -f $entryDate.ToString("yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture), $category
+            $creditedMinutesByDateAndCategory[$usageKey] = [int]$creditedMinutesByDateAndCategory[$usageKey] + [int]$creditedMinutes
+            continue
+        }
         $hasCapturedSalary = ($null -ne $existingSnapshot -and
             [string]$existingSnapshot.snapshotStatus -eq "final" -and
             $existingSnapshot.PSObject.Properties.Name -contains "annualSalaryCents" -and
@@ -265,7 +283,7 @@ function Set-ApprovedEntryCompensationSnapshots {
             # daily threshold changes still use this entry's captured salary.
             [PSCustomObject]@{ id = [string]$existingSnapshot.salaryBandId; annualSalaryCents = [long]$existingSnapshot.annualSalaryCents }
         } else {
-            Saphir.CompensationGrid\Resolve-CompensationSalaryBand -SalaryGrid $salaryGrid -Group ([string]$assignment.group) -SubGroup ([string]$assignment.subGroup) -Level ([string]$assignment.level) -AsOfDate $entryDate
+            Saphir.CompensationGrid\Resolve-CompensationSalaryBand -SalaryBandIndex $salaryBandIndex -Group ([string]$assignment.group) -SubGroup ([string]$assignment.subGroup) -Level ([string]$assignment.level) -AsOfDate $entryDate
         }
         if ($null -eq $salaryBand) {
             $reason = "salary-band-missing"
@@ -361,13 +379,7 @@ function Get-EmployeeCompensationReadEstimates {
         foreach ($property in $_.PSObject.Properties) { $properties[$property.Name] = $property.Value }
         [PSCustomObject]$properties
     })
-    Set-ApprovedEntryCompensationSnapshots -EmployeeCode $EmployeeCode -Entries $copies | Out-Null
-    for ($index = 0; $index -lt $sourceEntries.Count; $index++) {
-        $original = $sourceEntries[$index]
-        if ($original.PSObject.Properties.Name -contains "compensationSnapshot" -and [string]$original.compensationSnapshot.snapshotStatus -eq "final") {
-            Set-EntryPropertyValue -Entry $copies[$index] -Name "compensationSnapshot" -Value $original.compensationSnapshot
-        }
-    }
+    Set-ApprovedEntryCompensationSnapshots -EmployeeCode $EmployeeCode -Entries $copies -MissingSnapshotsOnly | Out-Null
     return $copies
 }
 

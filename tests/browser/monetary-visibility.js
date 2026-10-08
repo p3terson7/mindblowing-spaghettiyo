@@ -75,6 +75,7 @@ const server = http.createServer((req, res) => {
     await page.locator("#employeeDetailContainer").screenshot({ path: "/tmp/saphir-money-personnel.png" });
     await page.locator("#navProjects").click();
     await page.waitForSelector("#projectsSummaryContainer .monetary-summary");
+    assert(!requests.some(request => request.url === "/stats/budget-periods"), "Showing project amounts loaded the hidden annual comparison.");
     assert((await page.locator("#projectInsightsSummary").textContent()).includes(expected));
     assert((await page.locator('.project-summary-card[data-project-code="ALPHA"]').textContent()).includes(expected));
     await page.locator('.project-open-button[data-project-code="ALPHA"]').click();

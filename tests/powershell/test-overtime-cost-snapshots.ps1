@@ -109,6 +109,9 @@ Assert-Equal 1 $script:snapshotWriteCount "Displaying estimates must not write t
 $capturedBeforeRead = ConvertTo-Json -InputObject $entries[0].compensationSnapshot -Depth 12 -Compress
 $mixedRead = @(Get-EmployeeCompensationReadEstimates -EmployeeCode "0001" -Entries @($entries[0], $legacyReadEntries[0]))
 Assert-Equal $capturedBeforeRead (ConvertTo-Json -InputObject $mixedRead[0].compensationSnapshot -Depth 12 -Compress) "Displaying an estimate replaced a captured final snapshot."
+$capturedInvalid = [PSCustomObject]@{ entryId = "captured-invalid"; entryType = "overtime"; date = "invalid"; overtime = "invalid"; status = "approved"; compensationSnapshot = $entries[0].compensationSnapshot }
+$invalidRead = @(Get-EmployeeCompensationReadEstimates -EmployeeCode "0001" -Entries @($capturedInvalid, $legacyReadEntries[0]))
+Assert-Equal $capturedBeforeRead (ConvertTo-Json -InputObject $invalidRead[0].compensationSnapshot -Depth 12 -Compress) "The read-only fast path replaced captured history when other fields were invalid."
 $script:testEmployeeUser.gc179Profile.level = ""
 $missingRead = @(Get-EmployeeCompensationReadEstimates -EmployeeCode "0001" -Entries $legacyReadEntries)
 Assert-Equal "employee-classification-missing" $missingRead[0].compensationSnapshot.unavailableReason "Missing legacy data must stay unavailable instead of becoming zero."

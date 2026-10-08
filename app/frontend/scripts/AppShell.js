@@ -17,11 +17,11 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20261008-money-visibility-v1",
-  dashboard: "scripts/Views/DashboardView.js?v=20261008-money-visibility-v1",
-  approvals: "scripts/Views/ApprovalsView.js?v=20261008-money-visibility-v1",
-  history: "scripts/Views/HistoryView.js?v=20261008-money-visibility-v1",
-  projects: "scripts/Views/ProjectsView.js?v=20261008-money-visibility-v1",
+  employees: "scripts/Views/EmployeesView.js?v=20261008-loading-performance-v1",
+  dashboard: "scripts/Views/DashboardView.js?v=20261008-loading-performance-v1",
+  approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1",
+  history: "scripts/Views/HistoryView.js?v=20261008-loading-performance-v1",
+  projects: "scripts/Views/ProjectsView.js?v=20261008-loading-performance-v1",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
@@ -242,7 +242,7 @@ function ensureManagerAssetsForView(viewId, user = getCurrentUser()) {
 
   if (!appShellState.managerAssetPromisesByView[viewId]) {
     const sources = isBugReportView
-      ? ["scripts/Views/BugReportsView.js?v=20261008-money-visibility-v1"]
+      ? ["scripts/Views/BugReportsView.js?v=20261008-loading-performance-v1"]
       : (MANAGER_VIEW_SCRIPT_SOURCES[viewId] || []);
     const viewPromise = Promise.all(sources.map(source => loadScriptOnce(source)))
       .then(() => undefined)

@@ -434,7 +434,7 @@ function Get-EmployeeDirectoryListUncached {
         $employeeCode = Get-UserEmployeeCodeValue -UserRecord $user
         $displayName = if ($user.displayName) { [string]$user.displayName } else { [string](Get-EmployeeName $employeeCode) }
         $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
-        $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
+        $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile -IncludeMonetary)
         $responsibilities = Get-EmployeeDirectoryProjectResponsibilities -Index $responsibilityIndex -EmployeeCode $employeeCode
         $hasVisibleResponsibility = (@($responsibilities.supervised).Count + @($responsibilities.backup).Count) -gt 0
         if ($isScopedManager) {

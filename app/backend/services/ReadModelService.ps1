@@ -22,6 +22,10 @@ if (-not $script:EmployeeEntryFileCache) {
     $script:EmployeeEntryFileCache = @{}
 }
 
+if (-not $script:EmployeeMonetaryEntryCache) {
+    $script:EmployeeMonetaryEntryCache = @{}
+}
+
 if (-not $script:ReadModelSyncState) {
     $script:ReadModelSyncState = $null
 }
@@ -163,6 +167,7 @@ function Clear-EmployeeEntryCacheForCode {
     if ($script:EmployeeEntryFileCache.ContainsKey($dataFile)) {
         $script:EmployeeEntryFileCache.Remove($dataFile) | Out-Null
     }
+    $script:EmployeeMonetaryEntryCache.Remove($dataFile) | Out-Null
     return $true
 }
 
@@ -189,6 +194,7 @@ function Clear-AllEmployeeEntryCaches {
         Clear-CachedFileContent -Path ([string]$path)
     }
     $script:EmployeeEntryFileCache = @{}
+    $script:EmployeeMonetaryEntryCache = @{}
 }
 
 function Clear-ReadModelFileCache {
@@ -200,6 +206,11 @@ function Clear-ReadModelFileCache {
 }
 
 function Clear-AllReadModelCoreFileCaches {
+    # With a grid-content key, coalesced changes can retain unrelated estimates.
+    # Without that dependency reader (standalone consumers), fail conservatively.
+    if (-not (Get-Command -Name Get-CompensationGridCacheKey -ErrorAction SilentlyContinue)) {
+        $script:EmployeeMonetaryEntryCache = @{}
+    }
     foreach ($corePath in @(
         $projectsFile,
         $mappingFile,
@@ -276,9 +287,10 @@ function Clear-ReadModelCoreCachesForChange {
             }
         }
         "compensation" {
-            # Keep the raw employee-file caches warm. Derived monetary read
-            # estimates are invalidated with ReadModelCache on every revision.
+            # Keep raw employee files warm, but invalidate the dedicated
+            # monetary cache because editable salary bands have changed.
             Clear-ReadModelFileCache -Path $compensationGridFile
+            $script:EmployeeMonetaryEntryCache = @{}
             Clear-ReadModelFileCache -Path $historyFile
             if (Get-Command -Name Clear-CompensationGridRuntimeCache -ErrorAction SilentlyContinue) {
                 Clear-CompensationGridRuntimeCache
@@ -711,14 +723,49 @@ function Get-CachedEmployeeMonetaryEntries {
         -not (Get-Command -Name Get-EmployeeCompensationReadEstimates -ErrorAction SilentlyContinue)) {
         return $Entries
     }
-    $key = "employee-monetary|{0}|{1}|{2}" -f $DataFile, $Metadata.LastWriteTicks, $Metadata.Length
-    return (Invoke-ReadModelCache -Key $key -Factory {
-        Get-EmployeeCompensationReadEstimates -EmployeeCode $employeeCode -Entries @($Entries)
-    })
+    $cached = $script:EmployeeMonetaryEntryCache[$DataFile]
+    $sameFile = $cached -and $cached.LastWriteTicks -eq $Metadata.LastWriteTicks -and $cached.Length -eq $Metadata.Length
+    if ($sameFile -and -not $cached.DependsOnCurrentData) {
+        return $cached.Entries
+    }
+    $dependsOnCurrentData = if ($sameFile) { $cached.DependsOnCurrentData } else {
+        @($Entries | Where-Object {
+            [string]$_.status -eq "approved" -and [string]$_.entryType -ne "diverse" -and
+            ($_.PSObject.Properties.Name -notcontains "compensationSnapshot" -or [string]$_.compensationSnapshot.snapshotStatus -ne "final")
+        }).Count -gt 0
+    }
+    $gridKey = ""
+    $classificationKey = ""
+    if ($dependsOnCurrentData) {
+        if (Get-Command -Name Get-CompensationGridCacheKey -ErrorAction SilentlyContinue) {
+            try { $gridKey = Get-CompensationGridCacheKey } catch { $gridKey = "#unavailable" }
+        }
+        if ((Get-Command -Name Get-EmployeeUserByCode -ErrorAction SilentlyContinue) -and
+            (Get-Command -Name Get-EmployeeClassificationFromUserRecord -ErrorAction SilentlyContinue)) {
+            try {
+                $user = Get-EmployeeUserByCode -EmployeeCode $employeeCode
+                $classification = if ($null -ne $user) { Get-EmployeeClassificationFromUserRecord -UserRecord $user } else { $null }
+                $classificationKey = if ($null -ne $classification) { "{0}|{1}|{2}" -f $classification.group, $classification.subGroup, $classification.level } else { "#missing" }
+            } catch { $classificationKey = "#invalid" }
+        }
+    }
+    if ($sameFile -and $cached.GridKey -ceq $gridKey -and $cached.ClassificationKey -ceq $classificationKey) {
+        return $cached.Entries
+    }
+    $estimates = @(Get-EmployeeCompensationReadEstimates -EmployeeCode $employeeCode -Entries @($Entries))
+    $script:EmployeeMonetaryEntryCache[$DataFile] = [PSCustomObject]@{
+        LastWriteTicks = $Metadata.LastWriteTicks
+        Length = $Metadata.Length
+        Entries = $estimates
+        DependsOnCurrentData = [bool]$dependsOnCurrentData
+        GridKey = $gridKey
+        ClassificationKey = $classificationKey
+    }
+    return $estimates
 }
 
 function Get-CachedEmployeeEntriesForFile {
-    param([Parameter(Mandatory = $true)][string]$DataFile)
+    param([Parameter(Mandatory = $true)][string]$DataFile, [switch]$IncludeMonetary)
 
     # Invoke-ReadModelCache reconciles once before entering a model factory.
     # Avoid repeating the same sync-state lookup for every employee in a
@@ -731,12 +778,16 @@ function Get-CachedEmployeeEntriesForFile {
         if ($script:EmployeeEntryFileCache.ContainsKey($DataFile)) {
             $script:EmployeeEntryFileCache.Remove($DataFile) | Out-Null
         }
+        $script:EmployeeMonetaryEntryCache.Remove($DataFile) | Out-Null
         return @()
     }
 
     $cacheEntry = $script:EmployeeEntryFileCache[$DataFile]
     if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
-        return (Get-CachedEmployeeMonetaryEntries -DataFile $DataFile -Metadata $metadata -Entries @($cacheEntry.Entries))
+        if ($IncludeMonetary) {
+            return (Get-CachedEmployeeMonetaryEntries -DataFile $DataFile -Metadata $metadata -Entries @($cacheEntry.Entries))
+        }
+        return $cacheEntry.Entries
     }
 
     $entriesList = New-Object System.Collections.ArrayList
@@ -757,11 +808,16 @@ function Get-CachedEmployeeEntriesForFile {
         Entries        = $entries
     }
 
-    return (Get-CachedEmployeeMonetaryEntries -DataFile $DataFile -Metadata $metadata -Entries $entries)
+    if ($IncludeMonetary) {
+        return (Get-CachedEmployeeMonetaryEntries -DataFile $DataFile -Metadata $metadata -Entries $entries)
+    }
+    return $entries
 }
 
 function Get-EmployeeDataSnapshot {
-    return (Invoke-ReadModelCache -Key "employee-data-snapshot" -Factory {
+    param([switch]$IncludeMonetary)
+    $cacheKey = if ($IncludeMonetary) { "employee-data-snapshot|monetary" } else { "employee-data-snapshot" }
+    return (Invoke-ReadModelCache -Key $cacheKey -Factory {
         $employeesList = New-Object System.Collections.ArrayList
         $entriesByEmployee = @{}
         $flattenedEntriesList = New-Object System.Collections.ArrayList
@@ -772,7 +828,7 @@ function Get-EmployeeDataSnapshot {
             $displayName = if ($user.displayName) { [string]$user.displayName } else { [string](Get-EmployeeName $employeeCode) }
             $effectiveRole = Get-EffectiveUserRole -UserRecord $user
             $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
-            $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
+            $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile -IncludeMonetary:$IncludeMonetary)
 
             $projectCodes = @(
                 $entries |
@@ -806,7 +862,7 @@ function Get-EmployeeDataSnapshot {
 }
 
 function Get-ScopedEmployeeDataSnapshot {
-    param($CurrentUser)
+    param($CurrentUser, [switch]$IncludeMonetary)
 
     if (-not (Test-CurrentUserManager -CurrentUser $CurrentUser)) {
         return [PSCustomObject]@{
@@ -832,9 +888,10 @@ function Get-ScopedEmployeeDataSnapshot {
     $modifyScopeKey = if ($isSuperAdmin) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
     $cacheKey = "scoped-employee-data-snapshot|{0}|{1}|{2}" -f $scopeKey, $modifyScopeKey, $userScopeKey
+    if ($IncludeMonetary) { $cacheKey += "|monetary" }
 
     return (Invoke-ReadModelCache -Key $cacheKey -Factory {
-        $snapshot = Get-EmployeeDataSnapshot
+        $snapshot = Get-EmployeeDataSnapshot -IncludeMonetary:$IncludeMonetary
         $employeesList = New-Object System.Collections.ArrayList
         $entriesByEmployee = @{}
         $flattenedEntriesList = New-Object System.Collections.ArrayList
@@ -1110,7 +1167,7 @@ function Get-ApprovalsEntriesModel {
     $modifyScopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
     return (Invoke-ReadModelCache -Key "approvals-entries|$scopeKey|$modifyScopeKey|$userScopeKey" -Factory {
-        return @((Get-ScopedEmployeeDataSnapshot -CurrentUser $CurrentUser).flattenedEntries | Sort-Object { Get-EntryDateTimeOrMin -Entry $_ } -Descending)
+        return @((Get-ScopedEmployeeDataSnapshot -CurrentUser $CurrentUser -IncludeMonetary).flattenedEntries | Sort-Object { Get-EntryDateTimeOrMin -Entry $_ } -Descending)
     })
 }
 
@@ -1268,7 +1325,7 @@ function Get-ProjectStatisticsEntriesSnapshot {
             $canApproveEmployeeRole = Test-CurrentUserCanApproveEmployeeRole -CurrentUser $CurrentUser -EmployeeRole $employeeRole
             $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
 
-            foreach ($entry in @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)) {
+            foreach ($entry in @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile -IncludeMonetary)) {
                 $projectCode = if ($entry.PSObject.Properties.Name -contains "projectCode") { ([string]$entry.projectCode).Trim() } else { "" }
                 if ([string]::IsNullOrWhiteSpace($projectCode) -or (-not $isSuperAdmin -and -not $accessModel.ProjectCodeSet.ContainsKey($projectCode))) {
                     continue

@@ -352,6 +352,27 @@ function ConvertTo-CompensationSalaryGridDocument {
     return $validation.document
 }
 
+function New-CompensationSalaryBandIndex {
+    param([Parameter(Mandatory = $true)]$SalaryGrid)
+
+    # Validate once for a batch, not once for every historical entry. Index
+    # values are detached canonical bands with parsed inclusive date bounds.
+    $document = ConvertTo-CompensationSalaryGridDocument -Value $SalaryGrid
+    $byClassification = @{}
+    foreach ($band in @($document.bands)) {
+        $key = "{0}|{1}|{2}" -f $band.group, $band.subGroup, $band.level
+        if (-not $byClassification.ContainsKey($key)) {
+            $byClassification[$key] = New-Object System.Collections.ArrayList
+        }
+        [void]$byClassification[$key].Add([PSCustomObject]@{
+            band = $band
+            start = Get-CompensationEffectiveDateValue -Value ([string]$band.effectiveFrom) -FieldName "effectiveFrom"
+            end = if ($null -eq $band.effectiveTo) { [DateTime]::MaxValue.Date } else { Get-CompensationEffectiveDateValue -Value ([string]$band.effectiveTo) -FieldName "effectiveTo" }
+        })
+    }
+    return [PSCustomObject]@{ byClassification = $byClassification }
+}
+
 function Resolve-CompensationSalaryBand {
     <#
         Resolves the rate valid for one specific calendar day. The caller must
@@ -359,15 +380,17 @@ function Resolve-CompensationSalaryBand {
         missing or invalid employee classification produces no match rather
         than using legacy profile fields or an inferred default.
     #>
+    [CmdletBinding(DefaultParameterSetName = "Grid")]
     param(
-        [Parameter(Mandatory = $true)]$SalaryGrid,
+        [Parameter(Mandatory = $true, ParameterSetName = "Grid")]$SalaryGrid,
+        [Parameter(Mandatory = $true, ParameterSetName = "Index")]$SalaryBandIndex,
         [AllowNull()][string]$Group,
         [AllowNull()][string]$SubGroup,
         [AllowNull()][string]$Level,
         [Parameter(Mandatory = $true)][DateTime]$AsOfDate
     )
 
-    $document = ConvertTo-CompensationSalaryGridDocument -Value $SalaryGrid
+    $index = if ($PSCmdlet.ParameterSetName -eq "Index") { $SalaryBandIndex } else { New-CompensationSalaryBandIndex -SalaryGrid $SalaryGrid }
     $normalizedGroup = ConvertTo-CompensationGroupCode -Value $Group
     $normalizedSubGroup = ConvertTo-CompensationTwoDigitCode -Value $SubGroup -FieldName "Sub-group"
     $normalizedLevel = ConvertTo-CompensationTwoDigitCode -Value $Level -FieldName "Level"
@@ -378,17 +401,11 @@ function Resolve-CompensationSalaryBand {
     }
 
     $comparisonDate = $AsOfDate.Date
-    foreach ($band in @($document.bands)) {
-        if ([string]$band.group -cne $normalizedGroup -or
-            [string]$band.subGroup -cne $normalizedSubGroup -or
-            [string]$band.level -cne $normalizedLevel) {
-            continue
-        }
-
-        $effectiveFrom = Get-CompensationEffectiveDateValue -Value ([string]$band.effectiveFrom) -FieldName "effectiveFrom"
-        $effectiveTo = if ($null -eq $band.effectiveTo) { [DateTime]::MaxValue.Date } else { Get-CompensationEffectiveDateValue -Value ([string]$band.effectiveTo) -FieldName "effectiveTo" }
-        if ($comparisonDate -ge $effectiveFrom -and $comparisonDate -le $effectiveTo) {
-            return $band
+    $key = "{0}|{1}|{2}" -f $normalizedGroup, $normalizedSubGroup, $normalizedLevel
+    if (-not $index.byClassification.ContainsKey($key)) { return $null }
+    foreach ($candidate in @($index.byClassification[$key])) {
+        if ($comparisonDate -ge $candidate.start -and $comparisonDate -le $candidate.end) {
+            return $candidate.band
         }
     }
 
@@ -502,6 +519,7 @@ Export-ModuleMember -Function @(
     "ConvertTo-CompensationSalaryBand",
     "Test-CompensationSalaryGridDocument",
     "ConvertTo-CompensationSalaryGridDocument",
+    "New-CompensationSalaryBandIndex",
     "Resolve-CompensationSalaryBand",
     "ConvertTo-EmployeeCompensationAssignment",
     "ConvertTo-EmployeeCompensationAssignments",

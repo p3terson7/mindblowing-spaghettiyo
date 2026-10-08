@@ -117,7 +117,10 @@ Get-CachedEmployeeMonetaryEntries -DataFile "000100001_data.json" -Metadata $met
 Assert-Equal 1 $script:estimateReadCalls "Warm monetary requests must not repeat salary calculations."
 $script:ReadModelCache = @{}
 Get-CachedEmployeeMonetaryEntries -DataFile "000100001_data.json" -Metadata $metadata -Entries @($approvedEntry) | Out-Null
-Assert-Equal 2 $script:estimateReadCalls "A shared revision must invalidate derived estimates even when the raw employee file is unchanged."
+Assert-Equal 1 $script:estimateReadCalls "An unrelated view refresh must preserve monetary estimates."
+$script:EmployeeMonetaryEntryCache = @{}
+Get-CachedEmployeeMonetaryEntries -DataFile "000100001_data.json" -Metadata $metadata -Entries @($approvedEntry) | Out-Null
+Assert-Equal 2 $script:estimateReadCalls "A monetary source invalidation must refresh derived estimates."
 $script:ReadModelFactoryDepth = 0
 
 Write-Host "Monetary read-model projection tests passed."

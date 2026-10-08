@@ -75,7 +75,7 @@ function Get-Projects { return $script:BudgetTestProjects }
 function Get-Users { return $script:BudgetTestUsers }
 function Get-EmployeeNameMap { return [PSCustomObject]@{} }
 function Get-EmployeeDataFilePath { param([string]$EmployeeCode) return $EmployeeCode }
-function Get-CachedEmployeeEntriesForFile { param([string]$DataFile) return $script:BudgetTestEntries[$DataFile] }
+function Get-CachedEmployeeEntriesForFile { param([string]$DataFile, [switch]$IncludeMonetary) return $script:BudgetTestEntries[$DataFile] }
 function New-EmployeeEntryProjectionForAccessModel {
     param([string]$EmployeeCode, [string]$EmployeeName, $Entry, $ModifyProjectCodeSet, [string]$EmployeeRole, [bool]$IsSuperAdmin, [bool]$CanApproveEmployeeRole)
     return $Entry.PSObject.Copy()

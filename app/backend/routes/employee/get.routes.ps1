@@ -37,7 +37,7 @@
             # empty collection, so do not probe it once here and again in the
             # read model—or create a shared lock/file as a side effect.
             $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
-            $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile)
+            $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile -IncludeMonetary)
             $isSuperAdmin = Test-CurrentUserSuperAdmin -CurrentUser $currentUser
             $modifyAccessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $currentUser
             if (-not $isSuperAdmin) {

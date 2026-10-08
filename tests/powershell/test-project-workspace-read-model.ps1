@@ -128,7 +128,7 @@ function Get-EmployeeName { param([string]$EmployeeCode) return "Employee $Emplo
 function Test-CurrentUserCanApproveEmployeeRole { param($CurrentUser, [string]$EmployeeRole) return $true }
 function Get-EmployeeDataFilePath { param([string]$EmployeeCode) return $EmployeeCode }
 function Get-CachedEmployeeEntriesForFile {
-    param([string]$DataFile)
+    param([string]$DataFile, [switch]$IncludeMonetary)
     if (-not $script:EmployeeFileCalls.ContainsKey($DataFile)) { $script:EmployeeFileCalls[$DataFile] = 0 }
     $script:EmployeeFileCalls[$DataFile]++
     return @($script:EntriesByEmployee[$DataFile])
