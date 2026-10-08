@@ -1,0 +1,20 @@
+[
+  {
+    "projectCode": "P-ACT",
+    "projectName": "Projet actif de référence",
+    "sector": "Tests",
+    "colorKey": "blue",
+    "admins": [],
+    "backupAdmins": [],
+    "archived": false
+  },
+  {
+    "projectCode": "P-ARC",
+    "projectName": "Projet archivé de référence",
+    "sector": "Archives",
+    "colorKey": "graphite",
+    "admins": [],
+    "backupAdmins": [],
+    "archived": true
+  }
+]

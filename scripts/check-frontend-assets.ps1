@@ -4,7 +4,7 @@ param()
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Get-Item -Path (Join-Path -Path $PSScriptRoot -ChildPath "..")).FullName
-$frontendRoot = Join-Path -Path $repoRoot -ChildPath "apps/admin/frontend"
+$frontendRoot = Join-Path -Path $repoRoot -ChildPath "app/frontend"
 $indexPath = Join-Path -Path $frontendRoot -ChildPath "index.html"
 
 if (-not (Test-Path -Path $indexPath -PathType Leaf)) {

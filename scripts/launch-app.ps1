@@ -1,4 +1,7 @@
-param([switch]$Force)
+param(
+    [switch]$Force,
+    [switch]$NoBrowser
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -88,19 +91,21 @@ if (-not (Test-FrontendUrlAvailable -Url $service.FrontendUrl)) {
     throw "SAPHIR started but did not pass its local web readiness check at $($service.FrontendUrl)."
 }
 
-Write-Host ""
-Write-Host "Opening SAPHIR..."
-try {
-    Open-UriInDefaultBrowser -Uri $service.FrontendUrl
-}
-catch {
-    Write-Warning "SAPHIR is ready, but the browser could not be opened automatically. Open $($service.FrontendUrl) manually."
-    if (Test-IsWindowsHost) {
-        try {
-            $shell = New-Object -ComObject WScript.Shell
-            [void]$shell.Popup("SAPHIR is ready. Open $($service.FrontendUrl) in your browser.", 0, "SAPHIR is ready", 64)
-        }
-        catch {
+if (-not $NoBrowser) {
+    Write-Host ""
+    Write-Host "Opening SAPHIR..."
+    try {
+        Open-UriInDefaultBrowser -Uri $service.FrontendUrl
+    }
+    catch {
+        Write-Warning "SAPHIR is ready, but the browser could not be opened automatically. Open $($service.FrontendUrl) manually."
+        if (Test-IsWindowsHost) {
+            try {
+                $shell = New-Object -ComObject WScript.Shell
+                [void]$shell.Popup("SAPHIR is ready. Open $($service.FrontendUrl) in your browser.", 0, "SAPHIR is ready", 64)
+            }
+            catch {
+            }
         }
     }
 }

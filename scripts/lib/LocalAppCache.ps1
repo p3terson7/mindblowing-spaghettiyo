@@ -1,5 +1,15 @@
 $ErrorActionPreference = "Stop"
 
+$script:saphirLocalAppCacheDirectory = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
+$applicationLayoutCommand = Get-Command -Name "Resolve-SaphirApplicationLayout" -CommandType Function -ErrorAction SilentlyContinue
+if ($null -eq $applicationLayoutCommand) {
+    $applicationLayoutLibrary = Join-Path -Path $script:saphirLocalAppCacheDirectory -ChildPath "ApplicationLayout.ps1"
+    if (-not (Test-Path -LiteralPath $applicationLayoutLibrary -PathType Leaf)) {
+        throw "The SAPHIR application-layout library is unavailable."
+    }
+    . $applicationLayoutLibrary
+}
+
 function Ensure-SaphirLocalDirectory {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -152,10 +162,6 @@ function Read-SaphirReleaseManifest {
 
 function Get-SaphirRequiredReleaseFiles {
     return @(
-        "apps/admin/backend/admin-server.ps1",
-        "apps/admin/backend/admin-config.psd1",
-        "apps/admin/backend/services/RouteDispatchService.ps1",
-        "apps/admin/frontend/index.html",
         "docs/GC179.pdf",
         "scripts/launch-app.ps1",
         "scripts/lib/RuntimeLayout.ps1",
@@ -166,6 +172,11 @@ function Get-SaphirRequiredReleaseFiles {
 function Test-SaphirReleaseFiles {
     param([Parameter(Mandatory = $true)][string]$ReleasePath)
 
+    $applicationLayout = Resolve-SaphirApplicationLayout -ApplicationRoot $ReleasePath
+    if ($null -eq $applicationLayout) {
+        return $false
+    }
+
     foreach ($relativePath in Get-SaphirRequiredReleaseFiles) {
         $candidatePath = Join-Path -Path $ReleasePath -ChildPath $relativePath
         if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
@@ -174,6 +185,14 @@ function Test-SaphirReleaseFiles {
     }
 
     if (Test-Path -LiteralPath (Join-Path -Path $ReleasePath -ChildPath "data")) {
+        return $false
+    }
+
+    # Legacy releases carry a self-contained RuntimeLayout that knows their old
+    # paths. Canonical releases load the shared resolver at runtime, so require
+    # it only for the new topology to keep existing AppData caches valid.
+    if ([string]$applicationLayout.Kind -eq "Canonical" -and
+        -not (Test-Path -LiteralPath (Join-Path -Path $ReleasePath -ChildPath "scripts/lib/ApplicationLayout.ps1") -PathType Leaf)) {
         return $false
     }
 
