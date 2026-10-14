@@ -71,6 +71,11 @@ $checks = @(
         Pattern = '\bTest-Json\b'
         Message = "`Test-Json` requires PowerShell 6+."
     }
+    @{
+        Name = "Decimal Min/Max runtime API"
+        Pattern = '(?i)\[(?:System\.)?Decimal\]\s*::\s*(?:Min|Max)\s*\('
+        Message = "Decimal.Min/Max are not public in .NET Framework; use Math.Min/Max with decimal operands for Windows PowerShell 5.1."
+    }
 )
 
 function Set-AnalysisCharacterRange {
@@ -221,6 +226,7 @@ const ready = first && second;
 const label = ready ? "yes" : "no";
 const nested = employee?.name;
 // Join-String and Get-Error are JavaScript/template text here.
+// [decimal]::Max(0, 1) and [System.Decimal]::Min(0, 1) are template text.
 </script>
 "@
 '@
@@ -235,6 +241,21 @@ const nested = employee?.name;
     $executableIssues = @(Get-PowerShellAuditResult -Content $executableSample -FilePath "<self-test-executable>" -CompatibilityChecks $CompatibilityChecks)
     if (@($executableIssues | Where-Object { $_.Check -eq "Join-String" }).Count -ne 1) {
         throw "PowerShell 5.1 audit self-test failed: executable syntax inside an expandable string was not detected."
+    }
+
+    $decimalApiSample = @'
+$maximum = [decimal]::Max([decimal]0, [decimal]1)
+$minimum = [System.Decimal] :: Min([decimal]0, [decimal]1)
+'@
+    $decimalApiIssues = @(Get-PowerShellAuditResult -Content $decimalApiSample -FilePath "<self-test-decimal-api>" -CompatibilityChecks $CompatibilityChecks)
+    if (@($decimalApiIssues | Where-Object { $_.Check -eq "Decimal Min/Max runtime API" }).Count -ne 2) {
+        throw "PowerShell 5.1 audit self-test failed: incompatible decimal runtime methods were not detected."
+    }
+
+    $compatibleDecimalSample = '$value = [Math]::Max([decimal]0, [Math]::Min([decimal]1, [decimal]2))'
+    $compatibleDecimalIssues = @(Get-PowerShellAuditResult -Content $compatibleDecimalSample -FilePath "<self-test-decimal-math>" -CompatibilityChecks $CompatibilityChecks)
+    if ($compatibleDecimalIssues.Count -ne 0) {
+        throw "PowerShell 5.1 audit self-test failed: compatible decimal Math overloads were rejected."
     }
 
     $invalidSample = '$value = ('

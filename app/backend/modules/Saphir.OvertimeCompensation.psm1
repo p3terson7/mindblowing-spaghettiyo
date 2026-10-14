@@ -166,8 +166,11 @@ function Get-SaphirOvertimeRateSegments {
         })
     }
 
-    $remainingBaseHours = [decimal]::Max([decimal]0, ([decimal]$plan.thresholdHours - $PreviouslyCreditedHours))
-    $baseHours = [decimal]::Min($Hours, $remainingBaseHours)
+    # Decimal.Max/Min are not public in the .NET Framework used by Windows
+    # PowerShell 5.1. Explicit decimal operands select Math's decimal overloads
+    # without introducing floating-point rounding into monetary calculations.
+    $remainingBaseHours = [Math]::Max([decimal]0, ([decimal]$plan.thresholdHours - $PreviouslyCreditedHours))
+    $baseHours = [Math]::Min([decimal]$Hours, [decimal]$remainingBaseHours)
     $excessHours = $Hours - $baseHours
     $segments = New-Object System.Collections.ArrayList
     if ($baseHours -gt 0) {

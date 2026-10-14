@@ -111,6 +111,27 @@ Assert-Equal -Expected "1.5" -Actual $segments[0].hours -Message "The first spli
 Assert-Equal -Expected "2.0" -Actual ([decimal]$segments[1].multiplier).ToString("0.0", [System.Globalization.CultureInfo]::InvariantCulture) -Message "The second split multiplier is wrong."
 Assert-Equal -Expected "1.5" -Actual $segments[1].hours -Message "The second split duration is wrong."
 
+foreach ($case in @(
+    @{ previous = [decimal]0; hours = [decimal]0.25; baseHours = [decimal]0.25; excessHours = [decimal]0 },
+    @{ previous = [decimal]7.25; hours = [decimal]0.25; baseHours = [decimal]0.25; excessHours = [decimal]0 },
+    @{ previous = [decimal]7.25; hours = [decimal]0.5; baseHours = [decimal]0.25; excessHours = [decimal]0.25 },
+    @{ previous = [decimal]7.5; hours = [decimal]0.25; baseHours = [decimal]0; excessHours = [decimal]0.25 },
+    @{ previous = [decimal]8; hours = [decimal]0.25; baseHours = [decimal]0; excessHours = [decimal]0.25 }
+)) {
+    $boundarySegments = @(Get-SaphirOvertimeRateSegments -OvertimeCode "260" -WorkSchedule "regular" -Hours $case.hours -PreviouslyCreditedHours $case.previous)
+    $actualBaseHours = [decimal]0
+    $actualExcessHours = [decimal]0
+    foreach ($segment in $boundarySegments) {
+        Assert-True -Condition ($segment.hours -is [decimal]) -Message "Threshold calculations must preserve decimal precision on every runtime."
+        if ($segment.multiplier -eq [decimal]1.5) { $actualBaseHours += $segment.hours }
+        elseif ($segment.multiplier -eq [decimal]2) { $actualExcessHours += $segment.hours }
+        else { throw "Unexpected threshold multiplier." }
+    }
+    Assert-True -Condition ($case.baseHours -eq $actualBaseHours) -Message "The base-rate boundary is wrong after $($case.previous) hours."
+    Assert-True -Condition ($case.excessHours -eq $actualExcessHours) -Message "The excess-rate boundary is wrong after $($case.previous) hours."
+    Assert-True -Condition ($case.hours -eq ($actualBaseHours + $actualExcessHours)) -Message "Threshold segments must preserve the complete credited duration."
+}
+
 $zeroSegments = @(Get-SaphirOvertimeRateSegments -OvertimeCode "260" -WorkSchedule "regular" -Hours 0)
 Assert-Equal -Expected 0 -Actual $zeroSegments.Count -Message "Zero hours must not create a compensation segment."
 
