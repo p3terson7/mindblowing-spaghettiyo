@@ -444,8 +444,9 @@ try {
     $afterLogin = Get-TestDataFolderSnapshot -RootPath $testDataRoot -ForbiddenRootPath $productionDataRoot
     $loginChanges = @(Assert-TestDataFolderChanges -Before $beforeLogin -After $afterLogin -Description "Login" -AllowedChanges @{
         "sessions.json" = @('$[{index}].*')
+        "sync-state.json" = @('$.version', '$.changeId', '$.updatedAtUtc', '$.category', '$.resource', '$.sourceRevisions.*', '$.dependencySchemaVersion')
     })
-    Assert-Equal -Expected "sessions.json" -Actual ($loginChanges -join ",") -Message "Login changed files outside its persistence contract."
+    Assert-Equal -Expected "sessions.json,sync-state.json" -Actual (($loginChanges | Sort-Object) -join ",") -Message "Login changed files outside its session/publication contract."
 
     $beforeReads = $afterLogin
     $me = Invoke-TestHttpRequest -Method "GET" -Uri "$baseUri/auth/me" -Token $token
@@ -505,6 +506,7 @@ try {
             '$.updatedAtUtc',
             '$.category',
             '$.resource',
+            '$.sourceRevisions.*',
             ("`$.employeeDataRevisions.{0}" -f $employeeCode)
         )
     })
@@ -549,6 +551,7 @@ try {
             '$.updatedAtUtc',
             '$.category',
             '$.resource',
+            '$.sourceRevisions.*',
             ("`$.employeeDataRevisions.{0}" -f $employeeCode)
         )
     })

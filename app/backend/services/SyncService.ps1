@@ -49,6 +49,8 @@ function New-DefaultSyncState {
         resource              = "system"
         employeeDataEpoch     = [Guid]::NewGuid().ToString("N")
         employeeDataRevisions = [PSCustomObject]@{}
+        dependencySchemaVersion = 1
+        sourceRevisions       = [PSCustomObject]@{}
     }
 }
 
@@ -143,6 +145,7 @@ function Read-SyncStateFromDisk {
             throw (New-Object System.IO.InvalidDataException("Sync state file is empty: $syncStateFile"))
         }
 
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "json.parse.sync" }
         $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
         $parsedVersion = 0
         if ($null -eq $parsed -or
@@ -251,6 +254,7 @@ function Read-SyncStateUnsafe {
         # The watcher is only an optimization. At validation expiry, bypass the
         # text/metadata caches so timestamp-preserving replacements are observed.
         $parsed = Read-SyncStateFromDisk -ThrowOnError:$true
+        $script:SyncStateReadFailed = $false
         $script:CachedSyncState = $parsed
         $script:SyncStateDirty = $false
         $script:SyncStateLastValidatedUtc = $nowUtc
@@ -260,6 +264,7 @@ function Read-SyncStateUnsafe {
         # A transient cross-process replacement or parse failure must not invent
         # a fresh change identity. Retain the last known-good state, or create a
         # single stable bootstrap state if no valid state has ever been read.
+        $script:SyncStateReadFailed = $true
         if (-not $script:CachedSyncState) {
             $script:CachedSyncState = New-DefaultSyncState
         }
@@ -397,7 +402,7 @@ function Publish-DataChange {
                 $requiresEmployeeEpochReset = $true
             }
         }
-        elseif (@("history", "project", "auth", "compensation", "budget-periods", "bug-reports") -notcontains $normalizedCategory) {
+        elseif (@("history", "project", "auth", "sessions", "compensation", "budget-periods", "bug-reports") -notcontains $normalizedCategory) {
             $requiresEmployeeEpochReset = $true
         }
 
@@ -410,6 +415,18 @@ function Publish-DataChange {
         foreach ($employeeCode in @($affectedCodes.ToArray())) {
             $employeeDataRevisions[[string]$employeeCode] = $changeId
         }
+        # Additive cumulative vector: the last category alone cannot describe
+        # several mutations between polls. Older clients ignore these fields;
+        # older publishers dropping them make readers fall back conservatively.
+        $sourceRevisions = [ordered]@{}
+        $knownSources = @("employee", "employee-directory", "history", "project", "auth", "sessions", "compensation", "budget-periods", "bug-reports")
+        if (-not $requiresEmployeeEpochReset -and $state.PSObject.Properties.Name -contains "sourceRevisions") {
+            $existingSources = ConvertTo-SyncStateRevisionMap -Value $state.sourceRevisions
+            foreach ($source in $existingSources.Keys) {
+                if ($knownSources -contains $source -and (Test-SyncGuidValue $existingSources[$source])) { $sourceRevisions[$source] = $existingSources[$source] }
+            }
+        }
+        if ($knownSources -contains $normalizedCategory) { $sourceRevisions[$normalizedCategory] = $changeId }
 
         $updatedState = [PSCustomObject]@{
             version               = $nextVersion
@@ -419,6 +436,8 @@ function Publish-DataChange {
             resource              = $normalizedResource
             employeeDataEpoch     = $employeeDataEpoch
             employeeDataRevisions = [PSCustomObject]$employeeDataRevisions
+            dependencySchemaVersion = 1
+            sourceRevisions       = [PSCustomObject]$sourceRevisions
         }
 
         Write-JsonAtomic -Path $syncStateFile -Value $updatedState -Depth 8

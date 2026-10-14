@@ -46,7 +46,8 @@ function Read-EmployeeNameMapFromDisk {
 }
 
 function Get-EmployeeNameMap {
-    if (-not (Test-SaphirFileExists -Path $mappingFile)) {
+    $metadata = Get-FileMetadataSnapshot -Path $mappingFile
+    if ($null -eq $metadata) {
         $mappingLock = Acquire-ResourceLock -ResourcePath $mappingFile
         try {
             if (-not (Test-SaphirFileExists -Path $mappingFile)) {
@@ -56,9 +57,8 @@ function Get-EmployeeNameMap {
         finally {
             Release-ResourceLock -LockHandle $mappingLock
         }
+        $metadata = Get-FileMetadataSnapshot -Path $mappingFile
     }
-
-    $metadata = Get-FileMetadataSnapshot -Path $mappingFile
     $cacheKey = if ($null -ne $metadata) { "{0}:{1}" -f $metadata.LastWriteTicks, $metadata.Length } else { "missing" }
     if ($script:EmployeeNameMapCache -and $script:EmployeeNameMapCache.Key -eq $cacheKey) {
         return $script:EmployeeNameMapCache.Value
@@ -174,7 +174,8 @@ function Read-ProjectsFromDisk {
 }
 
 function Get-Projects {
-    if (-not (Test-SaphirFileExists -Path $projectsFile)) {
+    $metadata = Get-FileMetadataSnapshot -Path $projectsFile
+    if ($null -eq $metadata) {
         $projectsLock = Acquire-ResourceLock -ResourcePath $projectsFile
         try {
             if (-not (Test-SaphirFileExists -Path $projectsFile)) {
@@ -184,9 +185,8 @@ function Get-Projects {
         finally {
             Release-ResourceLock -LockHandle $projectsLock
         }
+        $metadata = Get-FileMetadataSnapshot -Path $projectsFile
     }
-
-    $metadata = Get-FileMetadataSnapshot -Path $projectsFile
     $cacheKey = if ($null -ne $metadata) { "{0}:{1}" -f $metadata.LastWriteTicks, $metadata.Length } else { "missing" }
     if ($script:ProjectsCache -and $script:ProjectsCache.Key -eq $cacheKey) {
         return @($script:ProjectsCache.Value)

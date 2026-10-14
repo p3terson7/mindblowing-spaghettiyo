@@ -33,6 +33,14 @@ function loadChangeKey(relativePath, functionName, nextMarker) {
   return context.changeKey;
 }
 
+{
+  const source = readSource("app/frontend/scripts/AppShell.js");
+  const context = { getCurrentUser: () => ({ role: "admin" }), getAllowedViewsForUser: () => ["dashboardView"] };
+  vm.createContext(context);
+  vm.runInContext(getFunctionSource(source, "getViewsAffectedBySyncState", "function normalizeApiUrl"), context);
+  assert.deepEqual(Array.from(context.getViewsAffectedBySyncState({ category: "sessions" })), [], "Session notifications must not mark business views stale; backend poll authentication still enforces revocation");
+}
+
 function createUnifiedPollHarness({
   username = "manager",
   role = "admin",

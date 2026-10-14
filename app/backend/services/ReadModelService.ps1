@@ -33,6 +33,9 @@ if (-not $script:ReadModelSyncState) {
 if ($null -eq $script:ReadModelFactoryDepth) {
     $script:ReadModelFactoryDepth = 0
 }
+. (Join-Path $PSScriptRoot "ReadModelCacheService.ps1")
+. (Join-Path $PSScriptRoot "EmployeeContributionService.ps1")
+. (Join-Path $PSScriptRoot "EmployeeFileReadService.ps1")
 
 function Get-ReadModelSyncStateKey {
     param($State)
@@ -126,7 +129,7 @@ function Test-ReadModelCurrentStateSupportsTargeting {
     }
 
     $category = ([string]$State.category).Trim().ToLowerInvariant()
-    if (@("history", "project", "auth", "compensation", "budget-periods", "bug-reports") -contains $category) {
+    if (@("history", "project", "auth", "sessions", "compensation", "budget-periods", "bug-reports") -contains $category) {
         return $true
     }
 
@@ -163,6 +166,8 @@ function Clear-EmployeeEntryCacheForCode {
     }
 
     $dataFile = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $normalizedCode)
+    $script:ReadModelSourceStamps.Remove($dataFile) | Out-Null
+    Remove-DependentReadModels -ChangedSources @("employee:$normalizedCode")
     Clear-CachedFileContent -Path $dataFile
     if ($script:EmployeeEntryFileCache.ContainsKey($dataFile)) {
         $script:EmployeeEntryFileCache.Remove($dataFile) | Out-Null
@@ -195,6 +200,7 @@ function Clear-AllEmployeeEntryCaches {
     }
     $script:EmployeeEntryFileCache = @{}
     $script:EmployeeMonetaryEntryCache = @{}
+    $script:ReadModelSourceStamps = @{}
 }
 
 function Clear-ReadModelFileCache {
@@ -276,6 +282,10 @@ function Clear-ReadModelCoreCachesForChange {
                 Clear-AuthRuntimeCaches
             }
         }
+        "sessions" {
+            Clear-ReadModelFileCache -Path $sessionsFile
+            if (Get-Command -Name Clear-AuthRuntimeCaches -ErrorAction SilentlyContinue) { Clear-AuthRuntimeCaches }
+        }
         "employee-directory" {
             Clear-ReadModelFileCache -Path $usersFile
             Clear-ReadModelFileCache -Path $sessionsFile
@@ -323,13 +333,31 @@ function Clear-ReadModelCoreCachesForChange {
 
 function Sync-ReadModelCaches {
     $state = Get-SyncState
+    $readFailed = [bool]$script:SyncStateReadFailed
+    if ($readFailed -ne [bool]$script:ReadModelSyncReadFailed) {
+        Remove-DependentReadModels
+        Clear-AllEmployeeEntryCaches
+        Clear-AllReadModelCoreFileCaches
+        $script:ReadModelSyncReadFailed = $readFailed
+    }
+    Invoke-ReadModelSourceReconciliation
     $stateKey = Get-ReadModelSyncStateKey -State $state
+    $sameIdentityConflict = $false
     if ($script:ReadModelCacheVersion -eq $stateKey) {
-        return
+        # Reuse a stable observation (including a legacy/malformed state that
+        # already caused a conservative fresh rebuild). Conflicting content
+        # under the SAME identity is a protocol violation, never a cache hit.
+        if ([object]::ReferenceEquals($script:ReadModelSyncState, $state)) { return }
+        $fingerprint = Get-ReadModelStateFingerprint -State $state
+        if ($fingerprint -ceq $script:ReadModelSyncStateFingerprint) {
+            $script:ReadModelSyncState = $state
+            return
+        }
+        $sameIdentityConflict = $true
     }
 
     $previousState = $script:ReadModelSyncState
-    $script:ReadModelCache = @{}
+    $changedSources = New-Object Collections.ArrayList
     $previousVersion = -1
     $currentVersion = -1
     $hasPreviousVersion = $null -ne $previousState -and
@@ -342,12 +370,14 @@ function Sync-ReadModelCaches {
         $hasCurrentVersion -and
         $currentVersion -eq ($previousVersion + 1)
 
-    $canTargetEmployeeCaches = (Test-ReadModelSyncStateRevisionSchema -State $previousState) -and
+    $canTargetEmployeeCaches = (-not $sameIdentityConflict) -and $hasPreviousVersion -and $hasCurrentVersion -and
+        ($currentVersion -gt $previousVersion) -and (Test-ReadModelSyncStateRevisionSchema -State $previousState) -and
         (Test-ReadModelSyncStateRevisionSchema -State $state) -and
         (Test-ReadModelCurrentStateSupportsTargeting -State $state) -and
         ([string]$previousState.employeeDataEpoch -eq [string]$state.employeeDataEpoch)
 
     if (-not $canTargetEmployeeCaches) {
+        [void]$changedSources.Add("*")
         Clear-AllEmployeeEntryCaches
     }
     else {
@@ -365,6 +395,7 @@ function Sync-ReadModelCaches {
             $previousRevision = if ($previousRevisions.ContainsKey($employeeCode)) { [string]$previousRevisions[$employeeCode] } else { "" }
             $currentRevision = if ($currentRevisions.ContainsKey($employeeCode)) { [string]$currentRevisions[$employeeCode] } else { "" }
             if ($previousRevision -ne $currentRevision) {
+                [void]$changedSources.Add("employee:$employeeCode")
                 if (-not (Clear-EmployeeEntryCacheForCode -EmployeeCode ([string]$employeeCode))) {
                     Clear-AllEmployeeEntryCaches
                     break
@@ -373,36 +404,37 @@ function Sync-ReadModelCaches {
         }
     }
 
-    Clear-ReadModelCoreCachesForChange `
-        -Category ([string]$state.category) `
-        -CanUseTargetedInvalidation:$isSequentialChange
+    $changedCategories = @(Get-ReadModelChangedCategories -PreviousState $previousState -CurrentState $state -Sequential:$isSequentialChange)
+    if (-not $hasPreviousVersion -or -not $hasCurrentVersion -or $currentVersion -le $previousVersion -or -not $canTargetEmployeeCaches) {
+        $changedCategories = @("*")
+    }
+    if ($changedCategories -contains "*" -and $state.PSObject.Properties.Name -contains "sourceRevisions") {
+        # An advertised but inconsistent vector is not a trustworthy employee
+        # authority either. Legacy gaps without this vector keep their previous
+        # cumulative employee-map fallback; malformed NEW protocol is stricter.
+        Clear-AllEmployeeEntryCaches
+    }
+    foreach ($category in $changedCategories) {
+        switch ($category.Trim().ToLowerInvariant()) {
+            "employee" { [void]$changedSources.Add("history") }
+            "employee-directory" { foreach ($source in @("directory", "auth", "history")) { [void]$changedSources.Add($source) } }
+            "auth" { foreach ($source in @("auth", "directory", "compensation", "history")) { [void]$changedSources.Add($source) } }
+            "sessions" { [void]$changedSources.Add("sessions") }
+            "project" { foreach ($source in @("projects", "history")) { [void]$changedSources.Add($source) } }
+            "compensation" { foreach ($source in @("compensation", "history")) { [void]$changedSources.Add($source) } }
+            "budget-periods" { foreach ($source in @("budget", "history")) { [void]$changedSources.Add($source) } }
+            "bug-reports" { foreach ($source in @("bugs", "history")) { [void]$changedSources.Add($source) } }
+            "history" { [void]$changedSources.Add("history") }
+            default { [void]$changedSources.Add("*") }
+        }
+    }
+    Remove-DependentReadModels -ChangedSources @($changedSources.ToArray())
+    foreach ($category in $changedCategories) {
+        Clear-ReadModelCoreCachesForChange -Category $category -CanUseTargetedInvalidation:($category -ne "*")
+    }
     $script:ReadModelSyncState = $state
+    $script:ReadModelSyncStateFingerprint = Get-ReadModelStateFingerprint -State $state
     $script:ReadModelCacheVersion = $stateKey
-}
-
-function Invoke-ReadModelCache {
-    param(
-        [Parameter(Mandatory = $true)][string]$Key,
-        [Parameter(Mandatory = $true)][scriptblock]$Factory
-    )
-
-    if ($script:ReadModelFactoryDepth -le 0) {
-        Sync-ReadModelCaches
-    }
-
-    if ($script:ReadModelCache.ContainsKey($Key)) {
-        return $script:ReadModelCache[$Key]
-    }
-
-    $script:ReadModelFactoryDepth++
-    try {
-        $value = & $Factory
-    }
-    finally {
-        $script:ReadModelFactoryDepth--
-    }
-    $script:ReadModelCache[$Key] = $value
-    return $value
 }
 
 function Convert-SecondsToTimeText {
@@ -817,40 +849,22 @@ function Get-CachedEmployeeEntriesForFile {
 function Get-EmployeeDataSnapshot {
     param([switch]$IncludeMonetary)
     $cacheKey = if ($IncludeMonetary) { "employee-data-snapshot|monetary" } else { "employee-data-snapshot" }
-    return (Invoke-ReadModelCache -Key $cacheKey -Factory {
+    return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth") -Factory {
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.snapshot.assembled" }
         $employeesList = New-Object System.Collections.ArrayList
         $entriesByEmployee = @{}
         $flattenedEntriesList = New-Object System.Collections.ArrayList
         $users = @(Get-Users | Where-Object { (Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode "") -and -not [bool]$_.disabled } | Sort-Object username)
 
+        $filePaths = @($users | ForEach-Object { Get-EmployeeDataFilePath -EmployeeCode (Get-UserEmployeeCodeValue $_) })
+        Prime-EmployeeFileMetadata -Paths $filePaths
+        Prefetch-EmployeeFileText -Paths $filePaths
+
         foreach ($user in $users) {
-            $employeeCode = Get-UserEmployeeCodeValue -UserRecord $user
-            $displayName = if ($user.displayName) { [string]$user.displayName } else { [string](Get-EmployeeName $employeeCode) }
-            $effectiveRole = Get-EffectiveUserRole -UserRecord $user
-            $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
-            $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile -IncludeMonetary:$IncludeMonetary)
-
-            $projectCodes = @(
-                $entries |
-                    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.projectCode) } |
-                    ForEach-Object { [string]$_.projectCode } |
-                    Sort-Object -Unique
-            )
-
-            [void]$employeesList.Add([PSCustomObject]@{
-                code       = $employeeCode
-                name       = $displayName
-                entryCount = $entries.Count
-                projectCodes = $projectCodes
-                role       = $effectiveRole
-                timeEntryTypes = @(Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $user)
-            })
-
-            $entriesByEmployee[$employeeCode] = $entries
-
-            foreach ($entry in $entries) {
-                [void]$flattenedEntriesList.Add((New-EmployeeEntryProjection -EmployeeCode $employeeCode -EmployeeName $displayName -Entry $entry -EmployeeRole $effectiveRole))
-            }
+            $contribution = Get-EmployeeReadContribution -User $user -IncludeMonetary:$IncludeMonetary
+            [void]$employeesList.Add($contribution.employee)
+            $entriesByEmployee[[string]$contribution.employee.code] = @($contribution.entries)
+            foreach ($entry in @($contribution.projectedEntries)) { [void]$flattenedEntriesList.Add($entry) }
         }
 
         return [PSCustomObject]@{
@@ -874,7 +888,6 @@ function Get-ScopedEmployeeDataSnapshot {
 
     $accessModel = Get-ProjectAccessModelForCurrentUser -CurrentUser $CurrentUser
     $modifyAccessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $CurrentUser
-    $visibleProjectCodeSet = $accessModel.ProjectCodeSet
     $isSuperAdmin = Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser
     if (-not $isSuperAdmin -and $accessModel.ProjectCodes.Count -eq 0) {
         return [PSCustomObject]@{
@@ -890,7 +903,7 @@ function Get-ScopedEmployeeDataSnapshot {
     $cacheKey = "scoped-employee-data-snapshot|{0}|{1}|{2}" -f $scopeKey, $modifyScopeKey, $userScopeKey
     if ($IncludeMonetary) { $cacheKey += "|monetary" }
 
-    return (Invoke-ReadModelCache -Key $cacheKey -Factory {
+    return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects") -Factory {
         $snapshot = Get-EmployeeDataSnapshot -IncludeMonetary:$IncludeMonetary
         $employeesList = New-Object System.Collections.ArrayList
         $entriesByEmployee = @{}
@@ -898,43 +911,13 @@ function Get-ScopedEmployeeDataSnapshot {
 
         foreach ($employee in @($snapshot.employees)) {
             $employeeCode = [string]$employee.code
-            $employeeRole = if ($employee.PSObject.Properties.Name -contains "role") { [string]$employee.role } else { "employee" }
             $entries = if ($snapshot.entriesByEmployee.ContainsKey($employeeCode)) { @($snapshot.entriesByEmployee[$employeeCode]) } else { @() }
-            $visibleEntries = if ($isSuperAdmin) {
-                @($entries)
-            }
-            else {
-                @($entries | Where-Object { $visibleProjectCodeSet.ContainsKey([string]$_.projectCode) })
-            }
-            if ($visibleEntries.Count -eq 0) {
-                continue
-            }
-
-            $projectCodes = @(
-                $visibleEntries |
-                    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.projectCode) } |
-                    ForEach-Object { [string]$_.projectCode } |
-                    Sort-Object -Unique
-            )
-
-            [void]$employeesList.Add([PSCustomObject]@{
-                code         = $employeeCode
-                name         = [string]$employee.name
-                entryCount   = $visibleEntries.Count
-                projectCodes = $projectCodes
-                role         = $employeeRole
-                timeEntryTypes = if ($employee.PSObject.Properties.Name -contains "timeEntryTypes") { @($employee.timeEntryTypes) } else { @("overtime") }
-            })
-
-            $canApproveEmployeeRole = Test-CurrentUserCanApproveEmployeeRole -CurrentUser $CurrentUser -EmployeeRole $employeeRole
-            $projectedEntriesList = New-Object System.Collections.ArrayList
-            foreach ($entry in $visibleEntries) {
-                $projectedEntry = New-EmployeeEntryProjectionForAccessModel -EmployeeCode $employeeCode -EmployeeName ([string]$employee.name) -Entry $entry -ModifyProjectCodeSet $modifyAccessModel.ProjectCodeSet -EmployeeRole $employeeRole -IsSuperAdmin:$isSuperAdmin -CanApproveEmployeeRole:$canApproveEmployeeRole
-                [void]$projectedEntriesList.Add($projectedEntry)
-                [void]$flattenedEntriesList.Add($projectedEntry)
-            }
-
-            $entriesByEmployee[$employeeCode] = @($projectedEntriesList.ToArray())
+            $source = [PSCustomObject]@{ employee = $employee; entries = $entries }
+            $contribution = Get-ScopedEmployeeReadContribution -Contribution $source -ScopeIdentity $cacheKey -AccessModel $accessModel -ModifyAccessModel $modifyAccessModel -CurrentUser $CurrentUser -IsSuperAdmin:$isSuperAdmin -IncludeMonetary:$IncludeMonetary
+            if ($contribution.entries.Count -eq 0) { continue }
+            [void]$employeesList.Add($contribution.employee)
+            $entriesByEmployee[$employeeCode] = @($contribution.entries)
+            foreach ($entry in @($contribution.entries)) { [void]$flattenedEntriesList.Add($entry) }
         }
 
         return [PSCustomObject]@{
@@ -952,7 +935,7 @@ function Get-FilteredEmployeeEntriesSnapshot {
     )
 
     $cacheKey = "filtered-employee-entries|{0}|{1}" -f [string]$StartDate, [string]$EndDate
-    return (Invoke-ReadModelCache -Key $cacheKey -Factory {
+    return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth") -Factory {
         $snapshot = Get-EmployeeDataSnapshot
         $entries = @($snapshot.flattenedEntries)
         $startDt = $null
@@ -1051,7 +1034,7 @@ function New-HistoryEntryReadModel {
 }
 
 function Get-HistoryEntriesSnapshot {
-    return (Invoke-ReadModelCache -Key "history-entries" -Factory {
+    return (Invoke-ReadModelCache -Key "history-entries" -Dependencies @("history", "directory") -Factory {
         if (-not (Test-SaphirFileExists -Path $historyFile)) {
             return @()
         }
@@ -1073,7 +1056,7 @@ function Get-HistoryEntriesSnapshot {
 }
 
 function Get-SortedHistoryEntriesSnapshot {
-    return (Invoke-ReadModelCache -Key "history-entries-sorted" -Factory {
+    return (Invoke-ReadModelCache -Key "history-entries-sorted" -Dependencies @("history", "directory") -Factory {
         return @(Get-HistoryEntriesSnapshot | Sort-Object {
             try {
                 [DateTime]::Parse(($_.timestamp -replace " ", "T"))
@@ -1109,7 +1092,8 @@ function Get-DashboardBootstrapModel {
     $modifyScopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
     $cacheKey = "dashboard-bootstrap|{0}|{1}|{2}|{3}" -f [string]$SelectedEmployeeCode, $scopeKey, $modifyScopeKey, $userScopeKey
-    return (Invoke-ReadModelCache -Key $cacheKey -Factory {
+    $cacheKey += "|" + (Get-Date -Format "yyyy-MM")
+    $dashboard = Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects") -Factory {
         $snapshot = Get-ScopedEmployeeDataSnapshot -CurrentUser $CurrentUser
         $flattenedEntries = @($snapshot.flattenedEntries)
         $now = Get-Date
@@ -1150,12 +1134,17 @@ function Get-DashboardBootstrapModel {
             projects              = @(Get-ProjectsForCurrentUser -CurrentUser $CurrentUser -Scope "all")
             pendingQueue          = @($pendingEntries | Select-Object -First 6)
             activeSessions        = @($activeEntries | Select-Object -First 6)
-            recentHistory         = Get-RecentHistoryEntriesSnapshot -Limit 7
+            recentHistory         = @()
             defaultEmployeeCode   = $defaultEmployeeCode
             selectedEmployeeCode  = $resolvedEmployeeCode
             selectedEmployeeEntries = $selectedEmployeeEntries
         }
-    })
+    }
+    # History is independent: retain employee dashboard calculations on ticket
+    # edits while returning fresh recentHistory with the SAME public DTO.
+    $result = $dashboard.PSObject.Copy()
+    $result.recentHistory = @(Get-RecentHistoryEntriesSnapshot -Limit 7)
+    return $result
 }
 
 function Get-ApprovalsEntriesModel {
@@ -1166,7 +1155,7 @@ function Get-ApprovalsEntriesModel {
     $scopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@($accessModel.ProjectCodes) -join ",") }
     $modifyScopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
-    return (Invoke-ReadModelCache -Key "approvals-entries|$scopeKey|$modifyScopeKey|$userScopeKey" -Factory {
+    return (Invoke-ReadModelCache -Key "approvals-entries|$scopeKey|$modifyScopeKey|$userScopeKey" -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
         return @((Get-ScopedEmployeeDataSnapshot -CurrentUser $CurrentUser -IncludeMonetary).flattenedEntries | Sort-Object { Get-EntryDateTimeOrMin -Entry $_ } -Descending)
     })
 }
@@ -1304,7 +1293,7 @@ function Get-ProjectStatisticsEntriesSnapshot {
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
     $cacheKey = "project-statistics-entry-snapshot|{0}|{1}|{2}" -f $scopeKey, $modifyScopeKey, $userScopeKey
 
-    return (Invoke-ReadModelCache -Key $cacheKey -Factory {
+    return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
         $entriesList = New-Object System.Collections.ArrayList
         $seenEmployeeCodes = @{}
         $users = @(Get-Users | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode "" } | Sort-Object username)
@@ -1316,31 +1305,12 @@ function Get-ProjectStatisticsEntriesSnapshot {
             }
             $seenEmployeeCodes[$employeeCode] = $true
 
-            $displayName = if ($user.PSObject.Properties.Name -contains "displayName") { ([string]$user.displayName).Trim() } else { "" }
-            if ([string]::IsNullOrWhiteSpace($displayName)) {
-                $displayName = [string](Get-EmployeeName $employeeCode)
-            }
-            $employeeRole = Get-EffectiveUserRole -UserRecord $user
             $employeeArchived = ($user.PSObject.Properties.Name -contains "disabled" -and [bool]$user.disabled)
-            $canApproveEmployeeRole = Test-CurrentUserCanApproveEmployeeRole -CurrentUser $CurrentUser -EmployeeRole $employeeRole
-            $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
 
-            foreach ($entry in @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile -IncludeMonetary)) {
-                $projectCode = if ($entry.PSObject.Properties.Name -contains "projectCode") { ([string]$entry.projectCode).Trim() } else { "" }
-                if ([string]::IsNullOrWhiteSpace($projectCode) -or (-not $isSuperAdmin -and -not $accessModel.ProjectCodeSet.ContainsKey($projectCode))) {
-                    continue
-                }
-
-                $projection = New-EmployeeEntryProjectionForAccessModel `
-                    -EmployeeCode $employeeCode `
-                    -EmployeeName $displayName `
-                    -Entry $entry `
-                    -ModifyProjectCodeSet $modifyAccessModel.ProjectCodeSet `
-                    -EmployeeRole $employeeRole `
-                    -IsSuperAdmin:$isSuperAdmin `
-                    -CanApproveEmployeeRole:$canApproveEmployeeRole
-                $projection | Add-Member -NotePropertyName employeeArchived -NotePropertyValue ([bool]$employeeArchived) -Force
-                [void]$entriesList.Add($projection)
+            $source = Get-EmployeeReadContribution -User $user -IncludeMonetary -SkipProjection
+            $contribution = Get-ScopedEmployeeReadContribution -Contribution $source -ScopeIdentity $cacheKey -AccessModel $accessModel -ModifyAccessModel $modifyAccessModel -CurrentUser $CurrentUser -IsSuperAdmin:$isSuperAdmin -IncludeMonetary:$true -Archived:$employeeArchived
+            foreach ($entry in @($contribution.entries)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$entry.projectCode)) { [void]$entriesList.Add($entry) }
             }
         }
 
@@ -1435,7 +1405,7 @@ function Get-ProjectStatisticsOverview {
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
     $detailKey = if ($IncludeBreakdown) { "detail" } else { "summary" }
     $cacheKey = "project-statistics-overview|{0}|{1}|{2}|{3}|{4}|{5}" -f [string]$StartDate, [string]$EndDate, $scopeKey, $modifyScopeKey, $userScopeKey, $detailKey
-    return (Invoke-ReadModelCache -Key $cacheKey -Factory {
+    return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
         $stats = @{}
         $entries = @(Get-ProjectStatisticsEntriesForPeriod -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser)
         $visibleProjectCodeSet = $accessModel.ProjectCodeSet
@@ -1559,7 +1529,7 @@ function Get-ProjectSummaryList {
     $modifyScopeKey = if ($isSuperAdmin) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
     $cacheKey = "project-summary-list|{0}|{1}|{2}|{3}|{4}" -f [string]$StartDate, [string]$EndDate, $scopeKey, $modifyScopeKey, $userScopeKey
-    return (Invoke-ReadModelCache -Key $cacheKey -Factory {
+    return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
         $projects = @($accessModel.Projects)
         $projectMap = @{}
         foreach ($project in $projects) {
@@ -1855,7 +1825,7 @@ function Get-ProjectTrendModel {
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
     $scopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@($accessModel.ProjectCodes) -join ",") }
     $cacheKey = "project-trends|approved-closed|{0}|{1}|{2}|{3}" -f [string]$StartDate, [string]$EndDate, $scopeKey, $userScopeKey
-    return (Invoke-ReadModelCache -Key $cacheKey -Factory {
+    return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
         $trendStats = @{}
         $entries = @(Get-ProjectStatisticsEntriesForPeriod -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser)
         $visibleProjectCodeSet = $accessModel.ProjectCodeSet

@@ -405,7 +405,8 @@ function Update-EmployeeEntryDisplayName {
 function Get-EmployeeDirectoryListUncached {
     param(
         [bool]$IncludeDisabled = $false,
-        $CurrentUser
+        $CurrentUser,
+        [switch]$ReuseContributions
     )
 
     $directoryList = New-Object System.Collections.ArrayList
@@ -423,6 +424,9 @@ function Get-EmployeeDirectoryListUncached {
 
     $responsibilityProjects = if ($null -ne $accessModel) { @($accessModel.Projects) } else { @() }
     $responsibilityIndex = New-EmployeeDirectoryProjectResponsibilityIndex -Projects $responsibilityProjects
+    $contributionScope = if ($null -ne $CurrentUser -and (Get-Command Get-ProjectAccessCacheUserKey -ErrorAction SilentlyContinue)) {
+        (Get-ProjectAccessCacheUserKey $CurrentUser) + "|" + (@($visibleProjectCodeSet.Keys | Sort-Object) -join ",")
+    } else { "anonymous" }
 
     $users = @(Get-Users | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode "" })
     foreach ($user in ($users | Sort-Object username)) {
@@ -434,7 +438,12 @@ function Get-EmployeeDirectoryListUncached {
         $employeeCode = Get-UserEmployeeCodeValue -UserRecord $user
         $displayName = if ($user.displayName) { [string]$user.displayName } else { [string](Get-EmployeeName $employeeCode) }
         $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
-        $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile -IncludeMonetary)
+        $contribution = $null
+        if ($ReuseContributions -and (Get-Command -Name Get-EmployeeDirectoryContribution -ErrorAction SilentlyContinue)) {
+            $contribution = Get-EmployeeDirectoryContribution -User $user -ScopeIdentity $contributionScope -VisibleProjectCodeSet $visibleProjectCodeSet -Scoped:$isScopedManager
+            $entries = @($contribution.entries)
+        }
+        else { $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile -IncludeMonetary) }
         $responsibilities = Get-EmployeeDirectoryProjectResponsibilities -Index $responsibilityIndex -EmployeeCode $employeeCode
         $hasVisibleResponsibility = (@($responsibilities.supervised).Count + @($responsibilities.backup).Count) -gt 0
         if ($isScopedManager) {
@@ -450,7 +459,7 @@ function Get-EmployeeDirectoryListUncached {
                 ForEach-Object { [string]$_.projectCode } |
                 Sort-Object -Unique
         )
-        $entryStats = Get-EmployeeDirectoryStats -Entries $entries
+        $entryStats = if ($null -ne $contribution) { $contribution.stats } else { Get-EmployeeDirectoryStats -Entries $entries }
         $responsibleProjectCodes = @(
             @($responsibilities.all) |
                 ForEach-Object { [string]$_.projectCode } |
@@ -503,8 +512,8 @@ function Get-EmployeeDirectoryList {
 
     $cacheKey = "employee-directory-list|{0}|{1}" -f [bool]$IncludeDisabled, $userScopeKey
     if (Get-Command -Name Invoke-ReadModelCache -ErrorAction SilentlyContinue) {
-        return (Invoke-ReadModelCache -Key $cacheKey -Factory {
-            Get-EmployeeDirectoryListUncached -IncludeDisabled:$IncludeDisabled -CurrentUser $CurrentUser
+        return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
+            Get-EmployeeDirectoryListUncached -IncludeDisabled:$IncludeDisabled -CurrentUser $CurrentUser -ReuseContributions
         })
     }
 

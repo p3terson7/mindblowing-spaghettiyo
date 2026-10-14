@@ -15,7 +15,10 @@ function Clear-LocalProjectMutationCaches {
     # best-effort notification and must not be the only invalidation path.
     $script:ProjectsCache = $null
 
-    if ($null -ne (Get-Variable -Name ReadModelCache -Scope Script -ErrorAction SilentlyContinue)) {
+    if (Get-Command -Name Remove-DependentReadModels -ErrorAction SilentlyContinue) {
+        Remove-DependentReadModels -ChangedSources @("projects", "history")
+    }
+    elseif ($null -ne (Get-Variable -Name ReadModelCache -Scope Script -ErrorAction SilentlyContinue)) {
         $script:ReadModelCache = @{}
     }
 

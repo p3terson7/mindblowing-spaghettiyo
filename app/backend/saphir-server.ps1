@@ -5,6 +5,8 @@ $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 $script:saphirInstanceToken = [string]$env:SAPHIR_INSTANCE_TOKEN
 
 # Shared context + helpers + services
+. (Join-Path -Path $scriptDir -ChildPath "lib/PerformanceTrace.ps1")
+Start-SaphirPerformanceTrace -Name "startup"
 . (Join-Path -Path $scriptDir -ChildPath "lib/AppContext.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "lib/CommonHelpers.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "lib/ControlService.ps1")
@@ -27,6 +29,13 @@ $script:saphirInstanceToken = [string]$env:SAPHIR_INSTANCE_TOKEN
 . (Join-Path -Path $scriptDir -ChildPath "services/Gc179ImportService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/AnalyticsReportService.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "services/RouteDispatchService.ps1")
+Register-SaphirPerformanceFunctions -Names @(
+    "Get-AuthenticatedUserFromRequest", "Get-AuthSyncVersion", "Read-AuthArrayFileCached", "Get-UserLookupCache",
+    "Get-SyncState", "Read-SyncStateFromDisk", "Sync-ReadModelCaches", "Invoke-ReadModelCache",
+    "Get-EmployeeDataSnapshot", "Get-ScopedEmployeeDataSnapshot", "Get-CachedEmployeeEntriesForFile",
+    "Get-EmployeeDirectoryList", "Get-ProjectStatisticsOverview", "Get-EmployeeCompensationReadEstimates",
+    "Get-DashboardBootstrapModel", "Get-SelfBootstrapModel", "Write-HttpResponseSafely"
+)
 
 function Register-RouteScriptBlock {
     param([Parameter(Mandatory = $true)][string]$RelativePath)
@@ -68,6 +77,7 @@ catch {
     throw "Failed to start SAPHIR listener on $listenerPrefix. $($_.Exception.Message)"
 }
 Write-Host "SAPHIR Server running on $listenerPrefix"
+Stop-SaphirPerformanceTrace -StatusCode 200
 
 $shutdownRequested = $false
 try {
@@ -75,6 +85,8 @@ try {
         $context = $listener.GetContext()
         $request = $context.Request
         $response = $context.Response
+        Start-SaphirPerformanceTrace -Name ("{0} {1}" -f $request.HttpMethod, $request.Url.AbsolutePath)
+        if ($script:SaphirPerformanceRecord) { $response.Headers.Add("X-SAPHIR-Trace", [string]$script:SaphirPerformanceRecord.id) }
 
         try {
             $response.Headers.Add("X-SAPHIR-App", "SAPHIR")
@@ -173,6 +185,9 @@ try {
                 Write-Warning ("Unhandled HTTP request failure: {0}" -f $_.Exception.Message)
                 respondWithError $response 500 "The server could not complete this request."
             }
+        }
+        finally {
+            Stop-SaphirPerformanceTrace -StatusCode ([int]$response.StatusCode)
         }
     }
 }

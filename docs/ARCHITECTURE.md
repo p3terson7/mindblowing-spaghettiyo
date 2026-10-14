@@ -1,5 +1,12 @@
 # Architecture de SAPHIR
 
+L'audit mesuré du stockage réseau, les limites des caches actuels et le plan
+de performance progressif se trouvent dans [PERFORMANCE-SMB-AUDIT.md](PERFORMANCE-SMB-AUDIT.md).
+L'implémentation des dépendances, ses garanties de réconciliation et ses mesures
+sont décrites dans [DEPENDENCY-CACHE-IMPLEMENTATION.md](DEPENDENCY-CACHE-IMPLEMENTATION.md).
+Le chargement à froid, les lectures bornées et la capacité mesurée du cache
+sont documentés dans [COLD-DASHBOARD-PERFORMANCE.md](COLD-DASHBOARD-PERFORMANCE.md).
+
 Ce document décrit les frontières que le code doit respecter pendant la
 modernisation progressive de SAPHIR. Le but n'est pas de réécrire
 l'application d'un seul coup, mais de pouvoir isoler une responsabilité à la

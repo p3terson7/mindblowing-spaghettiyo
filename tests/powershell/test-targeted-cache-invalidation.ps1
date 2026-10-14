@@ -254,8 +254,8 @@ try {
     Assert-CoreFileCached -Path $script:projectsFile -Expected:$true -Message "Bug-report changes should preserve the project catalog cache."
     Assert-CoreFileCached -Path $script:usersFile -Expected:$true -Message "Bug-report changes should preserve the users cache."
 
-    # If this process misses one or more publications, the last category cannot
-    # describe every changed core file. Fall back to a complete core reset.
+    # Cumulative category revisions preserve untouched core files across gaps.
+    # Legacy vectors are tested below and still take the conservative path.
     Prime-CoreFileCaches
     $script:AuthRuntimeClearCount = 0
     Publish-DataChange -Category "history" -Resource "gap-history" | Out-Null
@@ -273,9 +273,10 @@ try {
         $script:budgetPeriodsFile,
         $script:bugReportsFile
     )) {
-        Assert-CoreFileCached -Path $corePath -Expected:$false -Message "A skipped sync revision should conservatively clear every core file cache."
+        $affected = $corePath -in @($script:projectsFile, $script:historyFile)
+        Assert-CoreFileCached -Path $corePath -Expected:(-not $affected) -Message "A category vector must invalidate only history/project sources across a gap."
     }
-    Assert-Equal -Expected 1 -Actual $script:AuthRuntimeClearCount -Message "A skipped sync revision should conservatively clear authentication caches."
+    Assert-Equal -Expected 0 -Actual $script:AuthRuntimeClearCount -Message "A complete vector must preserve unrelated authentication caches."
 
     # Cumulative revisions must retain multiple employee changes even when this
     # process skips intermediate employee/history versions.

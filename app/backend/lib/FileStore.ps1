@@ -95,6 +95,7 @@ function Get-FileItemWithRetry {
     $lastError = $null
     for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
         try {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.metadata" -Path $Path }
             return (Get-Item -LiteralPath $Path -ErrorAction Stop)
         }
         catch {
@@ -105,6 +106,7 @@ function Get-FileItemWithRetry {
                 # PathNotFound even though the business file still exists.
                 $parentPath = Split-Path -Path $Path -Parent
                 try {
+                    if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.metadata" -Path $parentPath }
                     $parentItem = Get-Item -LiteralPath $parentPath -ErrorAction Stop
                     if ($null -ne $parentItem -and [bool]$parentItem.PSIsContainer) {
                         # Two observations with a reachable parent are enough
@@ -157,6 +159,7 @@ function Get-SaphirChildFilesWithRetry {
     $lastError = $null
     for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
         try {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.enumerate" -Path $Path }
             return @(Get-ChildItem -LiteralPath $Path -Filter $Filter -File -ErrorAction Stop)
         }
         catch {
@@ -176,6 +179,7 @@ function Read-TextFileWithRetry {
     $lastError = $null
     for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
         try {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.read" -Path $Path }
             return [System.IO.File]::ReadAllText($Path)
         }
         catch {
@@ -195,6 +199,7 @@ function Read-FileBytesWithRetry {
     $lastError = $null
     for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
         try {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.read" -Path $Path }
             return [System.IO.File]::ReadAllBytes($Path)
         }
         catch {
@@ -239,6 +244,7 @@ function Get-FileMetadataSnapshot {
     if ($cacheEntry -and $cacheEntry.ValidatedAtUtc) {
         $cacheAgeMs = ($nowUtc - $cacheEntry.ValidatedAtUtc).TotalMilliseconds
         if ($cacheAgeMs -lt $script:FileMetadataValidationIntervalMs) {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.metadata.hit" }
             return $cacheEntry.Metadata
         }
     }
@@ -246,6 +252,7 @@ function Get-FileMetadataSnapshot {
     # A failed SMB probe must never be cached as a missing file. The retrying
     # lookup confirms that the parent is reachable before returning null.
     try {
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.metadata.miss" }
         $item = Get-FileItemWithRetry -Path $Path
     }
     catch {
@@ -271,6 +278,7 @@ function Get-FileMetadataSnapshot {
         LastWriteUtc   = $item.LastWriteTimeUtc
         LastWriteTicks = $item.LastWriteTimeUtc.Ticks
         Length         = $item.Length
+        ObservedAtUtc  = $nowUtc
     }
     $script:FileMetadataCache[$Path] = [PSCustomObject]@{
         ValidatedAtUtc = $nowUtc
@@ -278,6 +286,26 @@ function Get-FileMetadataSnapshot {
     }
 
     return $metadata
+}
+
+function Prime-EmployeeFileMetadata {
+    param([string[]]$Paths)
+    # Only cold files. Do not turn a single change into a directory scan or
+    # renew already-observed metadata. Missing files still use the normal
+    # reachable-parent/retry checks, never absence inferred from a listing.
+    $cold = @{}
+    foreach ($path in $Paths) {
+        if (-not $script:FileMetadataCache.ContainsKey($path) -and (Get-HeldResourceLockCount $path) -eq 0) { $cold[$path] = $true }
+    }
+    if ($cold.Count -lt 8) { return }
+    $observed = [DateTime]::UtcNow
+    foreach ($item in @(Get-SaphirChildFilesWithRetry -Path $sharedFolder -Filter "*_data.json")) {
+        $path = [string]$item.FullName
+        if (-not $cold.ContainsKey($path)) { continue }
+        $metadata = [PSCustomObject]@{ Path = $path; LastWriteUtc = $item.LastWriteTimeUtc; LastWriteTicks = $item.LastWriteTimeUtc.Ticks; Length = $item.Length; ObservedAtUtc = $observed }
+        $script:FileMetadataCache[$path] = [PSCustomObject]@{ ValidatedAtUtc = $observed; Metadata = $metadata }
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.metadata.primed" }
+    }
 }
 
 function Clear-CachedFileContent {
@@ -329,10 +357,12 @@ function Read-TextFileCached {
 
         $cacheEntry = $script:TextFileCache[$Path]
         if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.text.hit" }
             return [string]$cacheEntry.Content
         }
 
         try {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.text.miss" }
             $content = Read-TextFileWithRetry -Path $Path
             $script:TextFileCache[$Path] = [PSCustomObject]@{
                 LastWriteTicks = $metadata.LastWriteTicks
@@ -365,6 +395,7 @@ function Read-FileBytesCached {
 
         $cacheEntry = $script:BinaryFileCache[$Path]
         if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.bytes.hit" }
             return $cacheEntry.Bytes
         }
 
@@ -505,6 +536,7 @@ function Acquire-ResourceLock {
                 # The lock only serializes writers; it does not make this process's
                 # metadata/text cache current. Always discard any pre-lock snapshot
                 # before a read-modify-write transaction starts.
+                if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.lock-acquire" -Path $ResourcePath }
                 Clear-CachedFileContent -Path $ResourcePath
 
                 $heldCount = Get-HeldResourceLockCount -ResourcePath $ResourcePath
@@ -625,6 +657,7 @@ function Write-TextAtomic {
         $lastTempWriteError = $null
         for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
             try {
+                if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.write-temp" -Path $Path }
                 [System.IO.File]::WriteAllText($tempPath, $Content, $utf8NoBom)
                 $tempWritten = $true
                 break
@@ -643,12 +676,14 @@ function Write-TextAtomic {
         try {
             # File.Replace itself establishes whether the destination exists.
             # Avoid a separate Test-Path before every commit.
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.replace" -Path $Path }
             [System.IO.File]::Replace($tempPath, $Path, $null, $true)
         }
         catch {
             # New files and network filesystems without File.Replace support
             # use the same terminating fallback.
             try {
+                if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.move" -Path $Path }
                 Move-Item -Path $tempPath -Destination $Path -Force -ErrorAction Stop
             }
             catch {
@@ -672,6 +707,10 @@ function Write-TextAtomic {
 
         $tempNeedsCleanup = $false
         Clear-CachedFileContent -Path $Path
+        if (Get-Command -Name Notify-ReadModelSourceCommitted -ErrorAction SilentlyContinue) {
+            try { Notify-ReadModelSourceCommitted -Path $Path }
+            catch { Write-Warning "File committed; local model notification failed. Periodic reconciliation remains active." }
+        }
     }
     finally {
         if ($tempNeedsCleanup) {
@@ -699,6 +738,7 @@ function Write-JsonAtomic {
         # -InputObject preserves the collection itself. Piping a one-item
         # collection enumerates it first and incorrectly stores a JSON object
         # instead of a one-element JSON array.
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "json.serialize.storage" }
         $json = ConvertTo-Json -InputObject $Value -Depth $Depth
         if ([string]::IsNullOrWhiteSpace([string]$json) -and ($Value -is [System.Collections.IEnumerable]) -and -not ($Value -is [string])) {
             $json = "[]"
@@ -731,6 +771,7 @@ function Read-JsonArrayFile {
     }
 
     try {
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "json.parse.storage" }
         $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
@@ -749,4 +790,12 @@ function Read-JsonArrayFile {
         return @($parsed)
     }
     return @($parsed)
+}
+
+if ($script:SaphirPerformanceEnabled) {
+    Register-SaphirPerformanceFunctions -Names @(
+        "Get-FileItemWithRetry", "Get-FileMetadataSnapshot", "Get-SaphirChildFilesWithRetry",
+        "Read-TextFileWithRetry", "Read-TextFileCached", "Read-FileBytesWithRetry", "Read-FileBytesCached",
+        "Read-JsonArrayFile", "Write-JsonAtomic", "Write-TextAtomic", "Acquire-ResourceLock", "Release-ResourceLock"
+    )
 }

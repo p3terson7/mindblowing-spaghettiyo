@@ -42,7 +42,7 @@
                 $updatedProfile = Get-Gc179ProfileFromUserRecord -UserRecord $updatedUser
                 $postCommitWarnings = New-Object System.Collections.ArrayList
                 $compensationWarning = Invoke-PostCommitActionSafely -Description "Profile saved, but overtime estimates could not be refreshed" -Action {
-                    Update-EmployeeApprovedCompensationSnapshots -EmployeeCode ([string]$currentUser.employeeCode) | Out-Null
+                    Update-EmployeeApprovedCompensationSnapshots -EmployeeCode ([string]$currentUser.employeeCode) -DeferPublication | Out-Null
                 }
                 if (-not [string]::IsNullOrWhiteSpace($compensationWarning)) {
                     [void]$postCommitWarnings.Add($compensationWarning)

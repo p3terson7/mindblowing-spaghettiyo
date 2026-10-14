@@ -1181,6 +1181,7 @@ function Get-AuthenticatedUserFromRequest {
         if ($cacheAgeMs -lt $script:AuthenticatedUserRequestCacheTtlMs -and
             $cachedAuth.ExpiresAtUtc -gt $nowUtc -and
             $syncVersionMatches) {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.authentication.hit" }
             return $cachedAuth.User
         }
 
@@ -1195,6 +1196,7 @@ function Get-AuthenticatedUserFromRequest {
         }
     }
 
+    if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.authentication.miss" }
     $session = $null
     foreach ($candidateSession in @(Get-Sessions)) {
         if ([string]$candidateSession.tokenHash -ne $tokenHash) {
@@ -1258,6 +1260,16 @@ function Test-CurrentUserRole {
     return ($AllowedRoles -contains (Get-NormalizedRoleName -Role ([string]$CurrentUser.role)))
 }
 
+function Publish-SessionChangeSafely {
+    # Session commit and publication are separate. Do not turn a successful
+    # login/logout into a retryable failure. Readers also reconcile the source
+    # files periodically, including when publication or this process fails.
+    if (Get-Command -Name Publish-DataChange -ErrorAction SilentlyContinue) {
+        try { Publish-DataChange -Category "sessions" -Resource "shared" | Out-Null }
+        catch { Write-Warning "Session saved; refresh publication failed. Source-file reconciliation remains active." }
+    }
+}
+
 function New-SessionForUser {
     param($UserRecord)
 
@@ -1290,6 +1302,7 @@ function New-SessionForUser {
         Release-ResourceLock -LockHandle $lockHandle
     }
 
+    Publish-SessionChangeSafely
     return $token
 }
 
@@ -1311,6 +1324,7 @@ function Revoke-SessionToken {
     finally {
         Release-ResourceLock -LockHandle $lockHandle
     }
+    Publish-SessionChangeSafely
 }
 
 function Revoke-SessionsForUsername {
@@ -1344,6 +1358,7 @@ function Revoke-SessionsForUsername {
     finally {
         Release-ResourceLock -LockHandle $lockHandle
     }
+    Publish-SessionChangeSafely
 }
 
 function Set-UserPassword {

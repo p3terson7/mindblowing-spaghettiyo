@@ -390,7 +390,7 @@ function Update-EmployeeApprovedCompensationSnapshots {
         the canonical commit; a failure here is reported as a post-commit
         warning by the route instead of making the saved profile look failed.
     #>
-    param([Parameter(Mandatory = $true)][string]$EmployeeCode)
+    param([Parameter(Mandatory = $true)][string]$EmployeeCode, [switch]$DeferPublication)
 
     $dataFile = Get-EmployeeDataFilePath -EmployeeCode $EmployeeCode
     if (-not (Test-SaphirFileExists -Path $dataFile)) {
@@ -411,7 +411,7 @@ function Update-EmployeeApprovedCompensationSnapshots {
             }
         }
 
-        return [PSCustomObject]@{
+        $result = [PSCustomObject]@{
             changed            = $changed
             approvedEntryCount = @($entries | Where-Object {
                 $entryType = if ($_.PSObject.Properties.Name -contains "entryType") { ([string]$_.entryType).Trim().ToLowerInvariant() } else { "overtime" }
@@ -422,4 +422,9 @@ function Update-EmployeeApprovedCompensationSnapshots {
     finally {
         Release-ResourceLock -LockHandle $lockHandle
     }
+    if ($changed -and -not $DeferPublication -and (Get-Command Publish-DataChange -ErrorAction SilentlyContinue)) {
+        try { Publish-DataChange -Category "employee" -Resource $EmployeeCode | Out-Null }
+        catch { Write-Warning "Snapshots saved; refresh publication failed. Source-file reconciliation remains active." }
+    }
+    return $result
 }

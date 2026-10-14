@@ -338,6 +338,11 @@ function getViewsAffectedBySyncState(syncState) {
   if (category === "seed") {
     return getAllowedViewsForUser(user);
   }
+  if (category === "sessions") {
+    // /sync/status has already authenticated this session. Session lifecycle
+    // events do not change hours or permissions; auth events remain separate.
+    return [];
+  }
 
   if (category === "history") {
     return isManagerUser(user)

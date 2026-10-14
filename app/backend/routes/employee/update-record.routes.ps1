@@ -43,7 +43,7 @@
 
                 if ($null -ne $gc179Profile) {
                     $compensationWarning = Invoke-PostCommitActionSafely -Description "Employee profile saved, but approved overtime estimates could not be refreshed" -Action {
-                        Update-EmployeeApprovedCompensationSnapshots -EmployeeCode $employeeCode | Out-Null
+                        Update-EmployeeApprovedCompensationSnapshots -EmployeeCode $employeeCode -DeferPublication | Out-Null
                     }
                     if (-not [string]::IsNullOrWhiteSpace($compensationWarning)) {
                         [void]$postCommitWarnings.Add($compensationWarning)
