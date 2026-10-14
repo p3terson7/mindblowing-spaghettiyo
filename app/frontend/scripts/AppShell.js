@@ -1,3 +1,133 @@
+// Local-only browser diagnostics. No telemetry endpoint, request headers,
+// bodies, URLs with queries, storage values, or identities are recorded.
+(function installSaphirBrowserPerformance() {
+  if (typeof window === "undefined" || typeof performance === "undefined") return;
+  let mode = "off";
+  try { mode = new URLSearchParams(window.location.search).get("saphirTrace") || "off"; } catch (_) { /* no diagnostics in non-browser harnesses */ }
+  let enabled = mode === "summary" || mode === "detailed";
+  if (!enabled) return; // no fetch proxy, buffers, timers or diagnostic UI
+  const events = [];
+  const limit = 20000;
+  let dropped = 0;
+  const workflows = {};
+  let synchronousParent = null;
+  function id() {
+    return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+  }
+  const traceId = enabled ? id() : null;
+  function event(type, frame, extra = {}) {
+    if (!enabled) return;
+    if (events.length >= limit) { dropped++; return; }
+    events.push({ schemaVersion: 2, source: "browser", event: type, traceId, spanId: frame.id,
+      parentSpanId: frame.parentId, operation: frame.name, component: frame.component,
+      operationType: frame.type, timestampUtc: new Date().toISOString(), offsetMs: performance.now(), ...extra });
+  }
+  function begin(name, component = "Browser", type = "function", parent) {
+    if (!enabled) return null;
+    const frame = { id: id(), parentId: parent || synchronousParent || workflows.dashboard || workflows.bootstrap || workflows.authentication || null,
+      name, component, type, start: performance.now() };
+    event("span_start", frame);
+    return frame;
+  }
+  function end(frame, status = "success", extra = {}) {
+    if (!frame) return;
+    const now = performance.now();
+    event("span_end", frame, { status, startOffsetMs: frame.start, endOffsetMs: now, durationMs: now - frame.start, ...extra });
+  }
+  const segments = new Set(["auth", "login", "me", "logout", "change-password", "dashboard", "bootstrap", "sync", "status", "health", "employees", "employee", "review", "projects", "self", "profile", "scripts", "assets"]);
+  function safePath(resource) {
+    try { return new URL(typeof resource === "string" ? resource : resource.url, window.location.href).pathname.split("/").map(part => !part || segments.has(part) ? part : "{resource}").join("/"); }
+    catch (_) { return "/{resource}"; }
+  }
+  function wrap(name, component, workflow) {
+    const original = window[name];
+    if (typeof original !== "function" || original.saphirDiagnosticWrapper) return;
+    const wrapped = function (...args) {
+      if (!enabled) return original.apply(this, args);
+      const frame = begin(name, component, workflow ? "workflow" : "function");
+      if (workflow) workflows[workflow] = frame.id;
+      const previous = synchronousParent;
+      synchronousParent = frame.id;
+      let value;
+      try { value = original.apply(this, args); }
+      catch (error) { end(frame, "error"); if (workflow) delete workflows[workflow]; throw error; }
+      finally { synchronousParent = previous; }
+      const finish = result => {
+        end(frame, result === false ? "error" : "success");
+        if (workflow) delete workflows[workflow];
+        if (workflow === "dashboard" && result !== false) {
+          const paint = begin("Dashboard.UsableAfterPaint", "Dashboard", "render", frame.id);
+          const raf = window.requestAnimationFrame || (callback => setTimeout(callback, 0));
+          raf(() => raf(() => end(paint)));
+        }
+        return result;
+      };
+      if (value && typeof value.then === "function") return value.then(finish, error => { end(frame, "error"); if (workflow) delete workflows[workflow]; throw error; });
+      return finish(value);
+    };
+    wrapped.saphirDiagnosticWrapper = true;
+    window[name] = wrapped;
+  }
+  function observeDashboard() {
+    if (!enabled) return;
+    wrap("refreshDashboardView", "Dashboard", "dashboard");
+    for (const name of ["loadDashboardCollections", "fetchEmployeeData", "applyDashboardBootstrap"]) wrap(name, "Dashboard");
+    if (mode === "detailed") for (const name of ["renderDashboardOverview", "renderDashboardResponsibleProjects", "renderDashboardApprovalQueue", "renderDashboardActiveSessions", "renderDashboardRecentActivity", "renderEmployeeEntries", "populateDashboardEmployeeControls", "populateDashboardProjectFilter"]) wrap(name, "Dashboard");
+  }
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = function (resource, options) {
+    if (!enabled) return originalFetch(resource, options);
+    const frame = begin(`HTTP ${String(options && options.method || resource && resource.method || "GET").toUpperCase()} ${safePath(resource)}`, "Browser.Network", "http");
+    try {
+      return originalFetch(resource, options).then(response => {
+        const backendId = response.headers.get("X-SAPHIR-Trace");
+        const correlation = /^[0-9a-f]{32}$/i.test(backendId || "") ? { backendTraceId: backendId } : {};
+        end(frame, response.ok ? "success" : "error", { ...correlation, httpStatus: response.status, observation: "request-to-response-headers" });
+        return response;
+      }, error => { end(frame, error && error.name === "AbortError" ? "cancelled" : "error"); throw error; });
+    } catch (error) { end(frame, "error"); throw error; }
+  };
+  function parseJson(text) {
+    if (!enabled) return JSON.parse(text);
+    const frame = begin("Browser.ParseJson", "Browser", "json");
+    try { const value = JSON.parse(text); end(frame); return value; }
+    catch (error) { end(frame, "error"); throw error; }
+  }
+  function readText(response) {
+    if (!enabled) return response.text();
+    const frame = begin("Browser.ReadResponseBody", "Browser.Network", "http-body");
+    return response.text().then(text => { end(frame); return text; }, error => { end(frame, "error"); throw error; });
+  }
+  function exportTrace() {
+    const navigation = performance.getEntriesByType("navigation")[0];
+    const safeNavigation = navigation ? { startTime: navigation.startTime, responseEnd: navigation.responseEnd, domContentLoadedEventEnd: navigation.domContentLoadedEventEnd, loadEventEnd: navigation.loadEventEnd } : null;
+    const header = { schemaVersion: 2, source: "browser", event: "browser_summary", traceId, level: mode, dropped, navigation: safeNavigation };
+    const text = [header, ...events].map(item => JSON.stringify(item)).join("\n") + "\n";
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson" }));
+    link.href = url; link.download = `SAPHIR-browser-performance-${traceId}.jsonl`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return text;
+  }
+  window.SaphirPerformance = { begin, end, parseJson, readText, observeDashboard, export: exportTrace, enabled: () => enabled };
+  if (enabled) {
+    const initialize = begin("Browser.ApplicationInitialize", "Browser", "workflow");
+    document.addEventListener("DOMContentLoaded", () => {
+      wrap("bootstrapApplication", "AppShell", "bootstrap");
+      wrap("restoreSession", "Authentication", "authentication");
+      wrap("submitLogin", "Authentication", "authentication");
+      wrap("applySession", "Authentication");
+      wrap("loadAuthenticatedWorkspace", "AppShell");
+      const button = document.createElement("button");
+      button.type = "button"; button.textContent = "Export performance trace";
+      button.className = "btn btn-sm btn-outline-secondary";
+      button.style.cssText = "position:fixed;bottom:12px;right:12px;z-index:2000";
+      button.addEventListener("click", exportTrace); document.body.appendChild(button);
+      end(initialize);
+    }, { once: true });
+  }
+})();
+
 const APP_API_URL_KEY = "saphirAppApiUrl";
 const APP_SESSION_KEY = "saphirAppSession";
 const APP_THEME_KEY = "saphirAppTheme";
@@ -1703,6 +1833,7 @@ function scheduleNextSyncPoll(delayMs) {
 async function runViewRefresh(viewId) {
   try {
     await ensureManagerAssetsForView(viewId);
+    if (window.SaphirPerformance) window.SaphirPerformance.observeDashboard();
   } catch (error) {
     console.error(`Unable to load assets for ${viewId}:`, error);
     setSyncStatus(t("status.syncPaused"));

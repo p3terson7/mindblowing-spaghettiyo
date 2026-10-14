@@ -1437,13 +1437,13 @@ function getLookupCacheScopeKey() {
 
 function parseResponse(response) {
   if (!response.ok) {
-    return response.text().then(text => {
+    return (typeof window !== "undefined" && window.SaphirPerformance ? window.SaphirPerformance.readText(response) : response.text()).then(text => {
       if (!text) {
         throw new Error(t("error.requestFailedStatus", { status: response.status }));
       }
 
       try {
-        const payload = JSON.parse(text);
+        const payload = typeof window !== "undefined" && window.SaphirPerformance ? window.SaphirPerformance.parseJson(text) : JSON.parse(text);
         throw new Error(payload.error || text);
       } catch (error) {
         if (error instanceof SyntaxError) {
@@ -1454,11 +1454,11 @@ function parseResponse(response) {
     });
   }
 
-  return response.text().then(text => {
+  return (typeof window !== "undefined" && window.SaphirPerformance ? window.SaphirPerformance.readText(response) : response.text()).then(text => {
     if (!text) {
       return {};
     }
-    return JSON.parse(text);
+    return typeof window !== "undefined" && window.SaphirPerformance ? window.SaphirPerformance.parseJson(text) : JSON.parse(text);
   });
 }
 

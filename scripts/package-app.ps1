@@ -432,6 +432,9 @@ try {
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "app") -Destination (Join-Path -Path $runtimeRoot -ChildPath "app") -Recurse
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "docs/GC179.pdf") -Destination (Join-Path -Path $runtimeRoot -ChildPath "docs/GC179.pdf")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/launch-app.ps1") -Destination (Join-Path -Path $runtimeRoot -ChildPath "scripts/launch-app.ps1")
+    foreach ($diagnosticScript in @("start-performance-capture.ps1", "analyze-performance-trace.ps1")) {
+        Copy-PackageItem -Source (Join-Path $repoRoot ("scripts/" + $diagnosticScript)) -Destination (Join-Path $runtimeRoot ("scripts/" + $diagnosticScript))
+    }
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/lib/RuntimeLayout.ps1") -Destination (Join-Path -Path $runtimeRoot -ChildPath "scripts/lib/RuntimeLayout.ps1")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/lib/ServerControl.ps1") -Destination (Join-Path -Path $runtimeRoot -ChildPath "scripts/lib/ServerControl.ps1")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/lib/ApplicationLayout.ps1") -Destination (Join-Path -Path $runtimeRoot -ChildPath "scripts/lib/ApplicationLayout.ps1")

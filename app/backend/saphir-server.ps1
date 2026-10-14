@@ -7,28 +7,20 @@ $script:saphirInstanceToken = [string]$env:SAPHIR_INSTANCE_TOKEN
 # Shared context + helpers + services
 . (Join-Path -Path $scriptDir -ChildPath "lib/PerformanceTrace.ps1")
 Start-SaphirPerformanceTrace -Name "startup"
-. (Join-Path -Path $scriptDir -ChildPath "lib/AppContext.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "lib/CommonHelpers.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "lib/ControlService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "lib/FileStore.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "lib/ResponseHelpers.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/AuthService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/EntryService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/ReadModelService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/EmployeeDirectoryService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/SyncService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/CompensationGridService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/OvertimeCostSnapshotService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/BudgetPeriodService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/BugReportService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/ProjectStatsService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/HistoryService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/SeedService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/ProjectMutationService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/Gc179ExportService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/Gc179ImportService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/AnalyticsReportService.ps1")
-. (Join-Path -Path $scriptDir -ChildPath "services/RouteDispatchService.ps1")
+try {
+foreach ($startupScript in @(
+    "lib/AppContext.ps1", "lib/CommonHelpers.ps1", "lib/ControlService.ps1", "lib/FileStore.ps1", "lib/ResponseHelpers.ps1",
+    "services/AuthService.ps1", "services/EntryService.ps1", "services/ReadModelService.ps1", "services/EmployeeDirectoryService.ps1",
+    "services/SyncService.ps1", "services/CompensationGridService.ps1", "services/OvertimeCostSnapshotService.ps1", "services/BudgetPeriodService.ps1",
+    "services/BugReportService.ps1", "services/ProjectStatsService.ps1", "services/HistoryService.ps1", "services/SeedService.ps1",
+    "services/ProjectMutationService.ps1", "services/Gc179ExportService.ps1", "services/Gc179ImportService.ps1", "services/AnalyticsReportService.ps1", "services/RouteDispatchService.ps1"
+)) {
+    $startupSpan = if ($script:SaphirPerformanceEnabled) { Start-SaphirPerformanceSpan -Name ("Startup.Load." + [IO.Path]::GetFileNameWithoutExtension($startupScript)) -Component "Startup" -Type "infrastructure" } else { $null }
+    $startupStatus = "success"; $startupFailure = $null
+    try { . (Join-Path $scriptDir $startupScript) }
+    catch { $startupStatus = "error"; $startupFailure = $_; throw }
+    finally { if ($startupSpan) { Stop-SaphirPerformanceSpan $startupSpan -Status $startupStatus -ErrorRecord $startupFailure } }
+}
 Register-SaphirPerformanceFunctions -Names @(
     "Get-AuthenticatedUserFromRequest", "Get-AuthSyncVersion", "Read-AuthArrayFileCached", "Get-UserLookupCache",
     "Get-SyncState", "Read-SyncStateFromDisk", "Sync-ReadModelCaches", "Invoke-ReadModelCache",
@@ -36,6 +28,7 @@ Register-SaphirPerformanceFunctions -Names @(
     "Get-EmployeeDirectoryList", "Get-ProjectStatisticsOverview", "Get-EmployeeCompensationReadEstimates",
     "Get-DashboardBootstrapModel", "Get-SelfBootstrapModel", "Write-HttpResponseSafely"
 )
+Register-SaphirPerformanceFunctions -BackendRoot $scriptDir
 
 function Register-RouteScriptBlock {
     param([Parameter(Mandatory = $true)][string]$RelativePath)
@@ -56,7 +49,9 @@ function Invoke-CachedRouteScript {
 }
 
 $script:RouteScriptBlocks = @{}
+$routeLoadSpan = if ($script:SaphirPerformanceEnabled) { Start-SaphirPerformanceSpan -Name "Startup.CompileRoutes" -Component "Startup" -Type "infrastructure" } else { $null }
 @(Get-AdminRouteScriptPaths) | ForEach-Object { Register-RouteScriptBlock -RelativePath $_ }
+if ($routeLoadSpan) { Stop-SaphirPerformanceSpan $routeLoadSpan }
 
 # Initialize HTTP listener
 $listener = New-Object System.Net.HttpListener
@@ -71,9 +66,12 @@ catch {
 }
 $listener.Prefixes.Add($listenerPrefix)
 try {
+    $listenerSpan = if ($script:SaphirPerformanceEnabled) { Start-SaphirPerformanceSpan -Name "Startup.StartHttpListener" -Component "Startup" -Type "infrastructure" } else { $null }
     $listener.Start()
+    if ($listenerSpan) { Stop-SaphirPerformanceSpan $listenerSpan }
 }
 catch {
+    if ($listenerSpan) { Stop-SaphirPerformanceSpan $listenerSpan -Status "error" -ErrorRecord $_ }
     throw "Failed to start SAPHIR listener on $listenerPrefix. $($_.Exception.Message)"
 }
 Write-Host "SAPHIR Server running on $listenerPrefix"
@@ -86,7 +84,10 @@ try {
         $request = $context.Request
         $response = $context.Response
         Start-SaphirPerformanceTrace -Name ("{0} {1}" -f $request.HttpMethod, $request.Url.AbsolutePath)
-        if ($script:SaphirPerformanceRecord) { $response.Headers.Add("X-SAPHIR-Trace", [string]$script:SaphirPerformanceRecord.id) }
+        if ($script:SaphirPerformanceRecord) {
+            $response.Headers.Add("X-SAPHIR-Trace", [string]$script:SaphirPerformanceRecord.id)
+            $response.Headers.Add("X-SAPHIR-Trace-Level", [string]$script:SaphirPerformanceRecord.level)
+        }
 
         try {
             $response.Headers.Add("X-SAPHIR-App", "SAPHIR")
@@ -154,7 +155,11 @@ try {
             }
 
             if (-not [string]::IsNullOrWhiteSpace($routeScriptPath)) {
-                . $script:RouteScriptBlocks[$routeScriptPath]
+                $dispatchSpan = if ($script:SaphirPerformanceEnabled) { Start-SaphirPerformanceSpan -Name ("Http.Dispatch." + [IO.Path]::GetFileNameWithoutExtension($routeScriptPath)) -Component "Http" -Type "dispatch" } else { $null }
+                $dispatchStatus = "success"; $dispatchFailure = $null
+                try { . $script:RouteScriptBlocks[$routeScriptPath] }
+                catch { $dispatchStatus = "error"; $dispatchFailure = $_; throw }
+                finally { if ($dispatchSpan) { Stop-SaphirPerformanceSpan $dispatchSpan -Status $dispatchStatus -ErrorRecord $dispatchFailure } }
             }
 
             respondWithError $response 404 "Route not found."
@@ -196,6 +201,16 @@ finally {
         $listener.Stop()
     }
     $listener.Close()
+    Close-SaphirPerformanceWriter
 }
 
 Write-Host "SAPHIR Server stopped."
+}
+catch {
+    if ($script:SaphirPerformanceRecord) {
+        Write-SaphirPerformanceEvent "error" $null @{ status = "error"; errorCategory = $_.Exception.GetType().FullName }
+        Stop-SaphirPerformanceTrace -StatusCode 500
+    }
+    throw
+}
+finally { Close-SaphirPerformanceWriter }

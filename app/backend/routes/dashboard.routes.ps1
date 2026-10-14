@@ -14,7 +14,8 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/dashboard
         $query = [System.Web.HttpUtility]::ParseQueryString($request.Url.Query)
         $employeeCode = $query["employeeCode"]
         $payload = Get-DashboardBootstrapModel -SelectedEmployeeCode $employeeCode -CurrentUser $currentUser
-        respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
+        $json = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Http.SerializeDashboard" -Component "Http" -Type "json" -Action { $payload | ConvertTo-Json -Depth 8 } } else { $payload | ConvertTo-Json -Depth 8 }
+        respondWithSuccess $response $json
     }
     catch {
         Rethrow-HttpStatusException -Exception $_.Exception
@@ -66,7 +67,8 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/review/bo
             history   = @(Get-HistoryEntriesSnapshot)
             projects  = @(Get-ProjectsForCurrentUser -CurrentUser $currentUser -Scope "all")
         }
-        respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
+        $json = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Http.SerializeReview" -Component "Http" -Type "json" -Action { $payload | ConvertTo-Json -Depth 8 } } else { $payload | ConvertTo-Json -Depth 8 }
+        respondWithSuccess $response $json
     }
     catch {
         Rethrow-HttpStatusException -Exception $_.Exception

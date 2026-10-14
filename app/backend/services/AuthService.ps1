@@ -878,7 +878,7 @@ function Test-AuthJsonArrayNeedsInitialization {
     }
 
     try {
-        $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
+        $parsed = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Auth.ParseInitializationJson" -Component "AuthService" -Type "json" -Path $Path -Action { $raw | ConvertFrom-Json -ErrorAction Stop } } else { $raw | ConvertFrom-Json -ErrorAction Stop }
     }
     catch {
         return $false

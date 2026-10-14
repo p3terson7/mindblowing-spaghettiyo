@@ -8,9 +8,11 @@ $frontendRoot = Join-Path -Path $appRoot -ChildPath "frontend"
 $frontendDefaultDocument = Join-Path -Path $frontendRoot -ChildPath "index.html"
 
 $config = @{}
+$configurationSpan = if ($script:SaphirPerformanceEnabled) { Start-SaphirPerformanceSpan -Name "Startup.LoadConfiguration" -Component "Configuration" -Type "infrastructure" } else { $null }
 if (Test-Path -Path $configPath) {
     $config = Import-PowerShellDataFile -Path $configPath
 }
+if ($configurationSpan) { Stop-SaphirPerformanceSpan $configurationSpan }
 if (-not $config) {
     $config = @{}
 }
@@ -72,7 +74,8 @@ else {
 # Ensure the shared folder exists without first interpreting a failed SMB
 # existence probe as a missing folder. CreateDirectory is idempotent.
 try {
-    [System.IO.Directory]::CreateDirectory($sharedFolder) | Out-Null
+    if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Startup.EnsureDataDirectory" -Path $sharedFolder -Action { [IO.Directory]::CreateDirectory($sharedFolder) } | Out-Null }
+    else { [IO.Directory]::CreateDirectory($sharedFolder) | Out-Null }
 }
 catch {
     throw (New-Object System.IO.IOException(

@@ -26,6 +26,7 @@ function Add-ReadModelDependenciesToParent {
 
 function Remove-DependentReadModels {
     param([string[]]$ChangedSources = @("*"))
+    $diagnosticAffectedModels = 0
     foreach ($key in @($script:ReadModelCache.Keys)) {
         $dependencies = $script:ReadModelDependencies[$key]
         $invalidate = $ChangedSources -contains "*" -or $null -eq $dependencies -or $dependencies -contains "*"
@@ -35,12 +36,14 @@ function Remove-DependentReadModels {
             if ($source -eq "employee:*" -and @($dependencies | Where-Object { $_.StartsWith("employee:") }).Count -gt 0) { $invalidate = $true }
         }
         if ($invalidate) {
+            $diagnosticAffectedModels++
             $script:ReadModelCache.Remove($key) | Out-Null
             $script:ReadModelDependencies.Remove($key) | Out-Null
             $script:ReadModelLastAccess.Remove($key) | Out-Null
-            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.model.invalidated" }
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.model.invalidated" -Fields @{ modelId = Get-SaphirPerformanceModelId $key; modelCategory = ($key -split '\|')[0]; reason = "dependency-source-change" } }
         }
     }
+    if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.invalidation" -Fields @{ affectedModels = $diagnosticAffectedModels; cacheSize = $script:ReadModelCache.Count; reason = if ($ChangedSources -contains "*") { "conservative-reset" } else { "dependency-source-change" } } }
     if ($ChangedSources -contains "*" -and $script:SaphirPerformanceEnabled) {
         Add-SaphirPerformanceOperation -Kind "cache.reconciliation.full"
     }
@@ -64,20 +67,27 @@ function Invoke-ReadModelCache {
         [string[]]$Dependencies = @("*")
     )
     if ($script:ReadModelFactoryDepth -le 0) { Sync-ReadModelCaches }
+    $lookupSpan = if ($script:SaphirPerformanceRecord.level -eq "detailed") { Start-SaphirPerformanceSpan -Name "ReadModelCache.Lookup" -Component "ReadModelCacheService" -Type "cache" -Fields @{ cacheSize = $script:ReadModelCache.Count; modelId = Get-SaphirPerformanceModelId $Key; modelCategory = ($Key -split '\|')[0]; filesystemAccess = $false } } else { $null }
     if ($script:ReadModelCache.ContainsKey($Key)) {
+        if ($lookupSpan) { $lookupSpan.fields.cache = "hit"; $lookupSpan.fields.servedFromCache = $true; Stop-SaphirPerformanceSpan $lookupSpan }
         $script:ReadModelAccessSequence++
         $script:ReadModelLastAccess[$Key] = $script:ReadModelAccessSequence
         Add-ReadModelDependenciesToParent -Dependencies $script:ReadModelDependencies[$Key]
-        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.readmodel.hit" }
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.readmodel.hit" -Fields @{ modelId = Get-SaphirPerformanceModelId $Key; modelCategory = ($Key -split '\|')[0]; cacheSize = $script:ReadModelCache.Count } }
         return $script:ReadModelCache[$Key]
     }
+    if ($lookupSpan) { $lookupSpan.fields.cache = "miss"; $lookupSpan.fields.servedFromCache = $false; Stop-SaphirPerformanceSpan $lookupSpan }
     $frame = @{}
     foreach ($dependency in $Dependencies) { $frame[$dependency] = $true }
     [void]$script:ReadModelDependencyFrames.Add($frame)
     $script:ReadModelFactoryDepth++
-    if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.readmodel.miss" }
+    if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.readmodel.miss" -Fields @{ modelId = Get-SaphirPerformanceModelId $Key; modelCategory = ($Key -split '\|')[0]; cacheSize = $script:ReadModelCache.Count; reason = "absent-or-invalidated" } }
+    $factorySpan = if ($script:SaphirPerformanceRecord.level -eq "detailed") { Start-SaphirPerformanceSpan -Name "ReadModelCache.Construct" -Component "ReadModelCacheService" -Type "function" -Fields @{ modelId = Get-SaphirPerformanceModelId $Key; modelCategory = ($Key -split '\|')[0] } } else { $null }
+    $factoryStatus = "success"; $factoryError = $null
     try { $value = & $Factory }
+    catch { $factoryStatus = "error"; $factoryError = $_; throw }
     finally {
+        if ($factorySpan) { Stop-SaphirPerformanceSpan $factorySpan -Status $factoryStatus -ErrorRecord $factoryError }
         $script:ReadModelFactoryDepth--
         $script:ReadModelDependencyFrames.RemoveAt($script:ReadModelDependencyFrames.Count - 1)
     }
@@ -93,7 +103,7 @@ function Invoke-ReadModelCache {
         $script:ReadModelCache.Remove($oldest) | Out-Null
         $script:ReadModelDependencies.Remove($oldest) | Out-Null
         $script:ReadModelLastAccess.Remove($oldest) | Out-Null
-        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.model.evicted" }
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.model.evicted" -Fields @{ reason = "lru-capacity"; cacheSize = $script:ReadModelCache.Count } }
     }
     $script:ReadModelCache[$Key] = $value
     $script:ReadModelDependencies[$Key] = @($frame.Keys)
@@ -176,6 +186,7 @@ function Invoke-ReadModelSourceReconciliation {
     # No new shared files, durable outbox, or distributed transaction is needed.
     $now = [DateTime]::UtcNow
     if (($now - $script:ReadModelContentReconciledUtc).TotalSeconds -ge 300) {
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.reconciliation.fallback" -Fields @{ reason = "periodic-content-safety" } }
         Remove-DependentReadModels
         Clear-AllEmployeeEntryCaches
         Clear-AllReadModelCoreFileCaches
@@ -202,6 +213,7 @@ function Invoke-ReadModelSourceReconciliation {
             ($now - $cachedMetadata.ObservedAtUtc).TotalMilliseconds -lt $script:FileMetadataValidationIntervalMs) { continue }
         try { $item = Get-FileItemWithRetry -Path $path }
         catch {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.reconciliation.fallback" -Fields @{ reason = "metadata-probe-failure" } }
             # Never mark a failed probe as a successful validation. The next
             # sync reconnect is also a conservative reset.
             Remove-DependentReadModels

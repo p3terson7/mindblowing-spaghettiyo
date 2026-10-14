@@ -16,7 +16,8 @@
                 }
             }
 
-            respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
+            $json = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Http.SerializePersonnel" -Component "Http" -Type "json" -Action { $payload | ConvertTo-Json -Depth 8 } } else { $payload | ConvertTo-Json -Depth 8 }
+            respondWithSuccess $response $json
             continue
         }
 

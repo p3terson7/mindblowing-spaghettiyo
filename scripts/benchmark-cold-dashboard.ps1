@@ -5,7 +5,9 @@ param(
     [ValidateSet(1, 2, 4, 8)][int[]]$Concurrency = @(1),
     [int]$CacheCapacity = 0,
     [string]$ApplicationRoot = "",
-    [string]$ReportPath = "output/cold-dashboard.json"
+    [string]$ReportPath = "output/cold-dashboard.json",
+    [ValidateSet("disabled", "summary", "detailed")][string]$TraceMode = "summary",
+    [string]$TraceDirectory = ""
 )
 $ErrorActionPreference = "Stop"
 $repo = Split-Path $PSScriptRoot -Parent
@@ -19,6 +21,9 @@ $source = if ($ApplicationRoot) { [IO.Path]::GetFullPath($ApplicationRoot) } els
 $rows = New-Object Collections.ArrayList
 $process = $null
 $oldTrace = $env:SAPHIR_PERF_TRACE
+$oldPersistentTrace = $env:SAPHIR_PERFORMANCE_TRACE
+$oldTraceLevel = $env:SAPHIR_TRACE_LEVEL
+$oldTraceDirectory = $env:SAPHIR_TRACE_DIR
 $oldConcurrency = $env:SAPHIR_EMPLOYEE_READ_CONCURRENCY
 $oldToken = $env:SAPHIR_INSTANCE_TOKEN
 $oldSyncMs = $env:SAPHIR_SYNC_STATE_CACHE_MS
@@ -32,7 +37,7 @@ function Write-ColdFixture([string]$Path, $Value) {
 function Save-ColdReport {
     $report = [PSCustomObject]@{
         schemaVersion = 1; measuredAtUtc = [DateTime]::UtcNow.ToString("o")
-        applicationRoot = $source; iterations = $Iterations; cacheCapacity = $CacheCapacity; rows = @($rows.ToArray())
+        applicationRoot = $source; iterations = $Iterations; cacheCapacity = $CacheCapacity; traceMode = $TraceMode; rows = @($rows.ToArray())
         policy = "Synthetic isolated SMB subfolder; fresh HTTP backend per cold sample. Login/startup excluded from cold request time. All caches start empty except startup/auth naturally populated. Traces include filesystem API attempts, not SMB packets. No OS/SMB cache purge; no competing suite. Memory is endpoint process working set/private/managed, not peak. p95 nearest rank. DTO equality and expected totals checked."
     }
     [IO.Directory]::CreateDirectory((Split-Path ([IO.Path]::GetFullPath($ReportPath)) -Parent)) | Out-Null
@@ -68,6 +73,7 @@ function Invoke-ColdRequest([string]$Method, [string]$Path, [string]$Token = "",
     } finally { $response.Dispose() }
 }
 function Read-ColdTrace([string]$Id) {
+    if (-not $Id) { return $null }
     return @(Get-Content $stdout | Where-Object { $_.StartsWith("SAPHIR_PERF ") } | ForEach-Object { $_.Substring(12) | ConvertFrom-Json } | Where-Object id -eq $Id)[0]
 }
 function Get-ColdDtoHash($Body) {
@@ -83,7 +89,10 @@ try {
     try { $rng.GetBytes($salt) } finally { $rng.Dispose() }
     $derive = New-Object Security.Cryptography.Rfc2898DeriveBytes($password, $salt, 120000)
     try { $hash = $derive.GetBytes(32) } finally { $derive.Dispose() }
-    $env:SAPHIR_PERF_TRACE = "1"; $env:SAPHIR_INSTANCE_TOKEN = $controlToken
+    $env:SAPHIR_PERF_TRACE = if ($TraceMode -eq "disabled") { "0" } else { "1" }
+    $env:SAPHIR_PERFORMANCE_TRACE = $env:SAPHIR_PERF_TRACE
+    $env:SAPHIR_TRACE_LEVEL = $TraceMode
+    $env:SAPHIR_INSTANCE_TOKEN = $controlToken
     $env:SAPHIR_SYNC_STATE_CACHE_MS = "1000"
     if ($CacheCapacity -gt 0) { $env:SAPHIR_READ_MODEL_CACHE_CAPACITY = [string]$CacheCapacity }
     foreach ($count in $EmployeeCounts) {
@@ -124,6 +133,9 @@ try {
                 [IO.File]::WriteAllText((Join-Path $runtime "app/backend/saphir-config.psd1"), "@{ ListenerPrefix = '$baseUri/'; DataFolderPath = '$($data.Replace("'", "''"))'; EnableDemoSeed = `$false; EnableGc179Import = `$false }", $utf8)
                 $stdout = Join-Path $runtimeRoot "stdout-$count-$level-$iteration.log"
                 $stderr = Join-Path $runtimeRoot "stderr-$count-$level-$iteration.log"
+                $sampleTraceDirectory = if ($TraceDirectory) { Join-Path (Join-Path $TraceDirectory $run) "$TraceMode-$count-$level-$iteration" } else { "" }
+                if ($sampleTraceDirectory) { $env:SAPHIR_TRACE_DIR = $sampleTraceDirectory }
+                $startupWatch = [Diagnostics.Stopwatch]::StartNew()
                 $process = Start-Process (Get-Command pwsh).Source -ArgumentList @("-NoProfile", "-File", (Join-Path $runtime "app/backend/saphir-server.ps1")) -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
                 $deadline = [DateTime]::UtcNow.AddSeconds(90)
                 $ready = $false
@@ -132,9 +144,13 @@ try {
                     try { Invoke-WebRequest "$baseUri/" -UseBasicParsing -TimeoutSec 2 | Out-Null; $ready = $true; break } catch { Start-Sleep -Milliseconds 100 }
                 }
                 if (-not $ready) { throw "Backend did not start." }
+                $startupWatch.Stop()
                 $login = Invoke-ColdRequest POST /auth/login "" @{ username = "cold-super"; password = $password }
                 $token = [string]$login.body.token
+                $process.Refresh(); $cpuBeforeColdMs = $process.TotalProcessorTime.TotalMilliseconds
                 $cold = Invoke-ColdRequest GET /dashboard/bootstrap $token
+                $process.Refresh(); $coldCpuMs = $process.TotalProcessorTime.TotalMilliseconds - $cpuBeforeColdMs
+                $coldWorkingSetBytes = $process.WorkingSet64
                 $dtoHash = Get-ColdDtoHash $cold.body
                 if ($expectedHash -and $dtoHash -ne $expectedHash) { throw "Cold DTO changed across samples for $count/$level." }
                 $expectedHash = $dtoHash
@@ -154,7 +170,10 @@ try {
                     Write-Warning "Owned benchmark backend did not exit after shutdown; stopping it after the completed read measurements."
                     Stop-Process -Id $process.Id -Force
                 }
-                [void]$rows.Add([PSCustomObject]@{ employeeCount = $count; concurrency = $level; iteration = $iteration; dtoHash = $dtoHash; gracefulShutdown = $gracefulShutdown; coldClientMs = $cold.clientMs; cold = Read-ColdTrace $cold.traceId; warm = Read-ColdTrace $warm.traceId; warm2 = Read-ColdTrace $warm2.traceId; changed = Read-ColdTrace $changed.traceId })
+                $traceFiles = if ($sampleTraceDirectory -and [IO.Directory]::Exists($sampleTraceDirectory)) { @(Get-ChildItem -LiteralPath $sampleTraceDirectory -Filter "*.jsonl") } else { @() }
+                $traceEvents = 0
+                foreach ($traceFile in $traceFiles) { foreach ($line in [IO.File]::ReadLines($traceFile.FullName)) { $traceEvents++ } }
+                [void]$rows.Add([PSCustomObject]@{ employeeCount = $count; concurrency = $level; iteration = $iteration; dtoHash = $dtoHash; gracefulShutdown = $gracefulShutdown; startupClientMs = $startupWatch.Elapsed.TotalMilliseconds; loginClientMs = $login.clientMs; coldCpuMs = $coldCpuMs; coldWorkingSetBytes = $coldWorkingSetBytes; traceBytes = ($traceFiles | Measure-Object Length -Sum).Sum; traceEventCount = $traceEvents; traceDirectory = $sampleTraceDirectory; coldClientMs = $cold.clientMs; cold = Read-ColdTrace $cold.traceId; warm = Read-ColdTrace $warm.traceId; warm2 = Read-ColdTrace $warm2.traceId; changed = Read-ColdTrace $changed.traceId })
                 Save-ColdReport
                 Write-Host "Measured cold $count employees / concurrency $level / $iteration of $Iterations : $([Math]::Round($cold.clientMs)) ms"
             }
@@ -170,6 +189,7 @@ try {
     throw
 } finally {
     $env:SAPHIR_PERF_TRACE = $oldTrace; $env:SAPHIR_EMPLOYEE_READ_CONCURRENCY = $oldConcurrency; $env:SAPHIR_INSTANCE_TOKEN = $oldToken
+    $env:SAPHIR_PERFORMANCE_TRACE = $oldPersistentTrace; $env:SAPHIR_TRACE_LEVEL = $oldTraceLevel; $env:SAPHIR_TRACE_DIR = $oldTraceDirectory
     $env:SAPHIR_SYNC_STATE_CACHE_MS = $oldSyncMs
     $env:SAPHIR_READ_MODEL_CACHE_CAPACITY = $oldCapacity
     if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }

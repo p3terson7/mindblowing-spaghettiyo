@@ -77,7 +77,9 @@ function Start-SharedDataRetryDelay {
     param([int]$Attempt)
 
     $multiplier = [Math]::Max(1, [Math]::Min(4, $Attempt))
-    Start-Sleep -Milliseconds ($script:SharedDataRetryDelayMs * $multiplier)
+    if ($script:SaphirPerformanceEnabled) {
+        Invoke-SaphirDiagnosticCall -Name "FileStore.RetryDelay" -Type "wait" -Action { Start-Sleep -Milliseconds ($script:SharedDataRetryDelayMs * $multiplier) }
+    } else { Start-Sleep -Milliseconds ($script:SharedDataRetryDelayMs * $multiplier) }
 }
 
 function Get-HeldResourceLockCount {
@@ -96,6 +98,7 @@ function Get-FileItemWithRetry {
     for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
         try {
             if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.metadata" -Path $Path }
+            if ($script:SaphirPerformanceEnabled) { return (Invoke-SaphirDiagnosticCall -Name "FileStore.GetMetadata" -Path $Path -RetryCount ($attempt - 1) -Action { Get-Item -LiteralPath $Path -ErrorAction Stop }) }
             return (Get-Item -LiteralPath $Path -ErrorAction Stop)
         }
         catch {
@@ -107,7 +110,7 @@ function Get-FileItemWithRetry {
                 $parentPath = Split-Path -Path $Path -Parent
                 try {
                     if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.metadata" -Path $parentPath }
-                    $parentItem = Get-Item -LiteralPath $parentPath -ErrorAction Stop
+                    $parentItem = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.GetParentMetadata" -Path $parentPath -RetryCount ($attempt - 1) -Action { Get-Item -LiteralPath $parentPath -ErrorAction Stop } } else { Get-Item -LiteralPath $parentPath -ErrorAction Stop }
                     if ($null -ne $parentItem -and [bool]$parentItem.PSIsContainer) {
                         # Two observations with a reachable parent are enough
                         # to classify a genuinely absent optional file. Using
@@ -160,6 +163,7 @@ function Get-SaphirChildFilesWithRetry {
     for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
         try {
             if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.enumerate" -Path $Path }
+            if ($script:SaphirPerformanceEnabled) { return @(Invoke-SaphirDiagnosticCall -Name "FileStore.EnumerateDirectory" -Path $Path -RetryCount ($attempt - 1) -Action { Get-ChildItem -LiteralPath $Path -Filter $Filter -File -ErrorAction Stop }) }
             return @(Get-ChildItem -LiteralPath $Path -Filter $Filter -File -ErrorAction Stop)
         }
         catch {
@@ -180,6 +184,7 @@ function Read-TextFileWithRetry {
     for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
         try {
             if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.read" -Path $Path }
+            if ($script:SaphirPerformanceEnabled) { return (Invoke-SaphirDiagnosticCall -Name "FileStore.ReadText" -Path $Path -RetryCount ($attempt - 1) -Action { [IO.File]::ReadAllText($Path) }) }
             return [System.IO.File]::ReadAllText($Path)
         }
         catch {
@@ -200,6 +205,7 @@ function Read-FileBytesWithRetry {
     for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
         try {
             if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.read" -Path $Path }
+            if ($script:SaphirPerformanceEnabled) { return (Invoke-SaphirDiagnosticCall -Name "FileStore.ReadBytes" -Path $Path -RetryCount ($attempt - 1) -Action { [IO.File]::ReadAllBytes($Path) }) }
             return [System.IO.File]::ReadAllBytes($Path)
         }
         catch {
@@ -240,11 +246,11 @@ function Get-FileMetadataSnapshot {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $nowUtc = (Get-Date).ToUniversalTime()
-    $cacheEntry = $script:FileMetadataCache[$Path]
+    $cacheEntry = if ($script:SaphirPerformanceRecord.level -eq "detailed") { Get-SaphirDiagnosticCacheEntry -Name "FileStore.MetadataCacheLookup" -Cache $script:FileMetadataCache -Key $Path -Path $Path } else { $script:FileMetadataCache[$Path] }
     if ($cacheEntry -and $cacheEntry.ValidatedAtUtc) {
         $cacheAgeMs = ($nowUtc - $cacheEntry.ValidatedAtUtc).TotalMilliseconds
         if ($cacheAgeMs -lt $script:FileMetadataValidationIntervalMs) {
-            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.metadata.hit" }
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.metadata.hit" -Path $Path -Fields @{ cacheSize = $script:FileMetadataCache.Count } }
             return $cacheEntry.Metadata
         }
     }
@@ -252,7 +258,7 @@ function Get-FileMetadataSnapshot {
     # A failed SMB probe must never be cached as a missing file. The retrying
     # lookup confirms that the parent is reachable before returning null.
     try {
-        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.metadata.miss" }
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.metadata.miss" -Path $Path -Fields @{ cacheSize = $script:FileMetadataCache.Count; reason = "absent-or-expired" } }
         $item = Get-FileItemWithRetry -Path $Path
     }
     catch {
@@ -264,6 +270,7 @@ function Get-FileMetadataSnapshot {
             $_.Exception.Data.Contains("SaphirHttpStatusCode") -and
             [int]$_.Exception.Data["SaphirHttpStatusCode"] -eq 503
         if ($isSharedDataFailure -and $cacheEntry -and $cacheEntry.Metadata) {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.metadata.fallback" -Path $Path -Fields @{ reason = "transient-filesystem-failure" } }
             $cacheEntry.ValidatedAtUtc = $nowUtc
             return $cacheEntry.Metadata
         }
@@ -310,6 +317,7 @@ function Prime-EmployeeFileMetadata {
 
 function Clear-CachedFileContent {
     param([Parameter(Mandatory = $true)][string]$Path)
+    if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.file.invalidated" -Path $Path -Fields @{ reason = "explicit-invalidation" } }
 
     if ($script:TextFileCache.ContainsKey($Path)) {
         $script:TextFileCache.Remove($Path) | Out-Null
@@ -355,14 +363,14 @@ function Read-TextFileCached {
             return $null
         }
 
-        $cacheEntry = $script:TextFileCache[$Path]
+        $cacheEntry = if ($script:SaphirPerformanceRecord.level -eq "detailed") { Get-SaphirDiagnosticCacheEntry -Name "FileStore.TextCacheLookup" -Cache $script:TextFileCache -Key $Path -Path $Path } else { $script:TextFileCache[$Path] }
         if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
-            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.text.hit" }
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.text.hit" -Path $Path -Fields @{ cacheSize = $script:TextFileCache.Count; fileSizeBytes = $metadata.Length } }
             return [string]$cacheEntry.Content
         }
 
         try {
-            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.text.miss" }
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.text.miss" -Path $Path -Fields @{ cacheSize = $script:TextFileCache.Count; fileSizeBytes = $metadata.Length; reason = "absent-or-file-revision" } }
             $content = Read-TextFileWithRetry -Path $Path
             $script:TextFileCache[$Path] = [PSCustomObject]@{
                 LastWriteTicks = $metadata.LastWriteTicks
@@ -393,13 +401,14 @@ function Read-FileBytesCached {
             return $null
         }
 
-        $cacheEntry = $script:BinaryFileCache[$Path]
+        $cacheEntry = if ($script:SaphirPerformanceRecord.level -eq "detailed") { Get-SaphirDiagnosticCacheEntry -Name "FileStore.BinaryCacheLookup" -Cache $script:BinaryFileCache -Key $Path -Path $Path } else { $script:BinaryFileCache[$Path] }
         if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
-            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.bytes.hit" }
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.bytes.hit" -Path $Path -Fields @{ cacheSize = $script:BinaryFileCache.Count; fileSizeBytes = $metadata.Length } }
             return $cacheEntry.Bytes
         }
 
         try {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.bytes.miss" -Path $Path -Fields @{ cacheSize = $script:BinaryFileCache.Count; fileSizeBytes = $metadata.Length } }
             $bytes = Read-FileBytesWithRetry -Path $Path
             $script:BinaryFileCache[$Path] = [PSCustomObject]@{
                 LastWriteTicks = $metadata.LastWriteTicks
@@ -428,7 +437,8 @@ function Get-LockFilePath {
     # preparation if an administrator removes it while the server is running.
     if ([string]$script:PreparedLockFolderPath -ne [string]$lockFolder) {
         try {
-            [System.IO.Directory]::CreateDirectory($lockFolder) | Out-Null
+            if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.CreateLockDirectory" -Path $lockFolder -Action { [IO.Directory]::CreateDirectory($lockFolder) } | Out-Null }
+            else { [IO.Directory]::CreateDirectory($lockFolder) | Out-Null }
             $script:PreparedLockFolderPath = [string]$lockFolder
         }
         catch {
@@ -498,6 +508,7 @@ function Test-AndRemoveOrphanedResourceLock {
     # DeleteOnClose is expected to remove the path as the probe closes. If a
     # filesystem delays or rejects that cleanup, let the caller use its normal
     # bounded wait rather than spinning forever on the same orphan.
+    if ($script:SaphirPerformanceEnabled) { return (-not (Invoke-SaphirDiagnosticCall -Name "FileStore.ExistsLock" -Path $LockPath -Action { [IO.File]::Exists($LockPath) })) }
     return (-not [System.IO.File]::Exists($LockPath))
 }
 
@@ -516,7 +527,9 @@ function Acquire-ResourceLock {
             $stream = $null
             $writer = $null
             try {
-                $stream = [System.IO.FileStream]::new(
+                $openLockFrame = if ($script:SaphirPerformanceEnabled) { Start-SaphirFilesystemSpan -Operation "OpenLock" -Path $ResourcePath } else { $null }
+                $openLockStatus = "success"; $openLockError = $null
+                try { $stream = [System.IO.FileStream]::new(
                     $lockPath,
                     [System.IO.FileMode]::CreateNew,
                     [System.IO.FileAccess]::ReadWrite,
@@ -526,12 +539,19 @@ function Acquire-ResourceLock {
                     # ownership handle. An old owner can therefore never delete a
                     # lock file created by the next contender.
                     [System.IO.FileOptions]::DeleteOnClose
-                )
+                ) }
+                catch { $openLockStatus = "error"; $openLockError = $_; throw }
+                finally { if ($openLockFrame) { Stop-SaphirPerformanceSpan $openLockFrame -Status $openLockStatus -ErrorRecord $openLockError } }
                 $writer = New-Object System.IO.StreamWriter($stream, [System.Text.Encoding]::UTF8)
+                $lockMetadataFrame = if ($script:SaphirPerformanceEnabled) { Start-SaphirFilesystemSpan -Operation "WriteLockMetadata" -Path $ResourcePath } else { $null }
+                $lockMetadataStatus = "success"; $lockMetadataError = $null
+                try {
                 $writer.WriteLine("host=$env:COMPUTERNAME")
                 $writer.WriteLine("pid=$PID")
                 $writer.WriteLine("utc=" + (Get-Date).ToUniversalTime().ToString("o"))
                 $writer.Flush()
+                } catch { $lockMetadataStatus = "error"; $lockMetadataError = $_; throw }
+                finally { if ($lockMetadataFrame) { Stop-SaphirPerformanceSpan $lockMetadataFrame -Status $lockMetadataStatus -ErrorRecord $lockMetadataError } }
 
                 # The lock only serializes writers; it does not make this process's
                 # metadata/text cache current. Always discard any pre-lock snapshot
@@ -578,7 +598,8 @@ function Acquire-ResourceLock {
             if (((Get-Date) - $start).TotalMilliseconds -ge $TimeoutMs) {
                 throw (New-SharedDataUnavailableException -Operation "acquire resource lock" -Path $ResourcePath)
             }
-            Start-Sleep -Milliseconds 100
+            if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.LockWait" -Type "wait" -Path $ResourcePath -Action { Start-Sleep -Milliseconds 100 } }
+            else { Start-Sleep -Milliseconds 100 }
         }
         catch [System.IO.IOException] {
             # Do not wait for an age threshold. Exclusive open is definitive:
@@ -591,13 +612,15 @@ function Acquire-ResourceLock {
             if (((Get-Date) - $start).TotalMilliseconds -ge $TimeoutMs) {
                 throw (New-SharedDataUnavailableException -Operation "acquire resource lock" -Path $ResourcePath -InnerException $_.Exception)
             }
-            Start-Sleep -Milliseconds 100
+            if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.LockWait" -Type "wait" -Path $ResourcePath -Action { Start-Sleep -Milliseconds 100 } }
+            else { Start-Sleep -Milliseconds 100 }
         }
         catch {
             if (((Get-Date) - $start).TotalMilliseconds -ge $TimeoutMs) {
                 throw (New-SharedDataUnavailableException -Operation "acquire resource lock" -Path $ResourcePath -InnerException $_.Exception)
             }
-            Start-Sleep -Milliseconds 100
+            if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.LockWait" -Type "wait" -Path $ResourcePath -Action { Start-Sleep -Milliseconds 100 } }
+            else { Start-Sleep -Milliseconds 100 }
         }
     }
 }
@@ -642,7 +665,8 @@ function Write-TextAtomic {
         try {
             # CreateDirectory is idempotent and avoids treating a transient
             # Test-Path false as proof that the shared folder is absent.
-            [System.IO.Directory]::CreateDirectory($parent) | Out-Null
+            if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.CreateWriteDirectory" -Path $parent -Action { [IO.Directory]::CreateDirectory($parent) } | Out-Null }
+            else { [IO.Directory]::CreateDirectory($parent) | Out-Null }
         }
         catch {
             throw (New-SharedDataUnavailableException -Operation "prepare write folder" -Path $Path -InnerException $_.Exception)
@@ -658,7 +682,8 @@ function Write-TextAtomic {
         for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
             try {
                 if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.write-temp" -Path $Path }
-                [System.IO.File]::WriteAllText($tempPath, $Content, $utf8NoBom)
+                if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.WriteTemporaryFile" -Path $Path -RetryCount ($attempt - 1) -Action { [IO.File]::WriteAllText($tempPath, $Content, $utf8NoBom) } }
+                else { [IO.File]::WriteAllText($tempPath, $Content, $utf8NoBom) }
                 $tempWritten = $true
                 break
             }
@@ -677,14 +702,16 @@ function Write-TextAtomic {
             # File.Replace itself establishes whether the destination exists.
             # Avoid a separate Test-Path before every commit.
             if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.replace" -Path $Path }
-            [System.IO.File]::Replace($tempPath, $Path, $null, $true)
+            if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.ReplaceFile" -Path $Path -Action { [IO.File]::Replace($tempPath, $Path, $null, $true) } }
+            else { [IO.File]::Replace($tempPath, $Path, $null, $true) }
         }
         catch {
             # New files and network filesystems without File.Replace support
             # use the same terminating fallback.
             try {
                 if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.move" -Path $Path }
-                Move-Item -Path $tempPath -Destination $Path -Force -ErrorAction Stop
+                if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.MoveFile" -Path $Path -Action { Move-Item -Path $tempPath -Destination $Path -Force -ErrorAction Stop } }
+                else { Move-Item -Path $tempPath -Destination $Path -Force -ErrorAction Stop }
             }
             catch {
                 $commitError = $_
@@ -693,7 +720,7 @@ function Write-TextAtomic {
                     # A network client can receive an error after the server
                     # committed the rename. Verify that ambiguous outcome
                     # instead of repeating a non-idempotent destination write.
-                    $destinationMatches = [System.IO.File]::ReadAllText($Path) -eq $Content
+                    $destinationMatches = $(if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.VerifyAmbiguousCommit" -Path $Path -Action { [IO.File]::ReadAllText($Path) } } else { [IO.File]::ReadAllText($Path) }) -eq $Content
                 }
                 catch {
                     $destinationMatches = $false
@@ -739,7 +766,7 @@ function Write-JsonAtomic {
         # collection enumerates it first and incorrectly stores a JSON object
         # instead of a one-element JSON array.
         if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "json.serialize.storage" }
-        $json = ConvertTo-Json -InputObject $Value -Depth $Depth
+        $json = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.SerializeJson" -Type "json" -Path $Path -Action { ConvertTo-Json -InputObject $Value -Depth $Depth } } else { ConvertTo-Json -InputObject $Value -Depth $Depth }
         if ([string]::IsNullOrWhiteSpace([string]$json) -and ($Value -is [System.Collections.IEnumerable]) -and -not ($Value -is [string])) {
             $json = "[]"
         }
@@ -772,7 +799,7 @@ function Read-JsonArrayFile {
 
     try {
         if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "json.parse.storage" }
-        $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
+        $parsed = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.ParseJson" -Type "json" -Path $Path -Action { $raw | ConvertFrom-Json -ErrorAction Stop } } else { $raw | ConvertFrom-Json -ErrorAction Stop }
     }
     catch {
         $parseError = $_.Exception

@@ -10,8 +10,16 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
 }
 
 $scriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
+$launcherTracing = [string]$env:SAPHIR_PERFORMANCE_TRACE -eq "1" -or [string]$env:SAPHIR_PERF_TRACE -eq "1"
+if ($launcherTracing) {
+    . (Join-Path $scriptDir "../app/backend/lib/PerformanceTrace.ps1")
+    Start-SaphirPerformanceTrace "Launcher.StartApplication"
+}
+$launcherTraceStatus = 200
+try {
 . (Join-Path -Path $scriptDir -ChildPath "lib/ServerControl.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "lib/RuntimeLayout.ps1")
+if ($launcherTracing) { Register-SaphirPerformanceFunctions -BackendRoot $scriptDir }
 
 function Test-FrontendUrlAvailable {
     param([Parameter(Mandatory = $true)][string]$Url)
@@ -78,7 +86,9 @@ else {
         throw "Port $($service.Port) is already used by another program. SAPHIR did not stop or replace that program."
     }
 
-    Start-ManagedService -Name $service.Name -DisplayName $service.DisplayName -ServerScript $service.ServerScript -Port $service.Port -PidFile $service.PidFile -StdOutLog $service.StdOutLog -StdErrLog $service.StdErrLog -WorkingDirectory $service.WorkingDirectory -Force:([bool]$launchPlan.ForceRestart) | Out-Null
+    if ($launcherTracing) {
+        Invoke-SaphirDiagnosticCall -Name "Launcher.StartManagedProcessAndWaitReady" -Component "Launcher" -Type "infrastructure" -Action { Start-ManagedService -Name $service.Name -DisplayName $service.DisplayName -ServerScript $service.ServerScript -Port $service.Port -PidFile $service.PidFile -StdOutLog $service.StdOutLog -StdErrLog $service.StdErrLog -WorkingDirectory $service.WorkingDirectory -Force:([bool]$launchPlan.ForceRestart) } | Out-Null
+    } else { Start-ManagedService -Name $service.Name -DisplayName $service.DisplayName -ServerScript $service.ServerScript -Port $service.Port -PidFile $service.PidFile -StdOutLog $service.StdOutLog -StdErrLog $service.StdErrLog -WorkingDirectory $service.WorkingDirectory -Force:([bool]$launchPlan.ForceRestart) | Out-Null }
 }
 
 if (-not (Test-FrontendUrlAvailable -Url $service.FrontendUrl)) {
@@ -110,3 +120,8 @@ if (-not $NoBrowser) {
     }
 }
 Write-Host "SAPHIR is ready at $($service.FrontendUrl)"
+}
+catch { $launcherTraceStatus = 500; throw }
+finally {
+    if ($launcherTracing) { Stop-SaphirPerformanceTrace $launcherTraceStatus; Close-SaphirPerformanceWriter }
+}

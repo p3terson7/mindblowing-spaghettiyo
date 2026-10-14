@@ -6,6 +6,8 @@ L'implémentation des dépendances, ses garanties de réconciliation et ses mesu
 sont décrites dans [DEPENDENCY-CACHE-IMPLEMENTATION.md](DEPENDENCY-CACHE-IMPLEMENTATION.md).
 Le chargement à froid, les lectures bornées et la capacité mesurée du cache
 sont documentés dans [COLD-DASHBOARD-PERFORMANCE.md](COLD-DASHBOARD-PERFORMANCE.md).
+La capture locale persistante, le guide Windows et les limites des mesures
+sont décrits dans [PERFORMANCE-TRACING.md](PERFORMANCE-TRACING.md).
 
 Ce document décrit les frontières que le code doit respecter pendant la
 modernisation progressive de SAPHIR. Le but n'est pas de réécrire

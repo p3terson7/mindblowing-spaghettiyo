@@ -11,7 +11,8 @@ function Write-HttpResponseSafely {
         $Response.ContentType = $ContentType
         $Response.ContentLength64 = $Bytes.Length
         if ($Bytes.Length -gt 0) {
-            $Response.OutputStream.Write($Bytes, 0, $Bytes.Length)
+            if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Http.WriteResponse" -Component "Http" -Type "response" -Action { $Response.OutputStream.Write($Bytes, 0, $Bytes.Length) } }
+            else { $Response.OutputStream.Write($Bytes, 0, $Bytes.Length) }
         }
     }
     catch {

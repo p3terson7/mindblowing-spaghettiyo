@@ -22,7 +22,8 @@
 
             try {
                 $payload = Get-ProjectsBootstrapModel -StartDate $startDate -EndDate $endDate -SelectedProjectCode $projectCode -Scope $scope -IncludeDetail:$includeDetail -CurrentUser $currentUser
-                respondWithSuccess $response ($payload | ConvertTo-Json -Depth 8)
+                $json = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Http.SerializeProjects" -Component "Http" -Type "json" -Action { $payload | ConvertTo-Json -Depth 8 } } else { $payload | ConvertTo-Json -Depth 8 }
+                respondWithSuccess $response $json
             }
             catch {
                 Rethrow-HttpStatusException -Exception $_.Exception

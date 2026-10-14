@@ -146,7 +146,7 @@ function Read-SyncStateFromDisk {
         }
 
         if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "json.parse.sync" }
-        $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
+        $parsed = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Sync.ParseStateJson" -Component "SyncService" -Type "json" -Path $syncStateFile -Action { $raw | ConvertFrom-Json -ErrorAction Stop } } else { $raw | ConvertFrom-Json -ErrorAction Stop }
         $parsedVersion = 0
         if ($null -eq $parsed -or
             -not ($parsed.PSObject.Properties.Name -contains "version") -or
@@ -198,7 +198,7 @@ function Initialize-SyncStateWatcher {
 
     $script:SyncStateWatcherInitialized = $true
     $watchFolder = Split-Path -Path $syncStateFile -Parent
-    if ([string]::IsNullOrWhiteSpace($watchFolder) -or -not (Test-Path -Path $watchFolder)) {
+    if ([string]::IsNullOrWhiteSpace($watchFolder) -or -not $(if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Sync.WatcherDirectoryExists" -Path $watchFolder -Action { Test-Path -Path $watchFolder } } else { Test-Path -Path $watchFolder })) {
         return
     }
 
@@ -246,11 +246,13 @@ function Read-SyncStateUnsafe {
     if ($script:CachedSyncState -and -not $script:SyncStateDirty -and $script:SyncStateLastValidatedUtc) {
         $cacheAgeMs = ($nowUtc - $script:SyncStateLastValidatedUtc).TotalMilliseconds
         if ($cacheAgeMs -lt $script:SyncStateValidationIntervalMs) {
+            if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.sync.hit" -Path $syncStateFile -Fields @{ cacheSize = 1 } }
             return $script:CachedSyncState
         }
     }
 
     try {
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.sync.miss" -Path $syncStateFile -Fields @{ reason = "absent-dirty-or-expired" } }
         # The watcher is only an optimization. At validation expiry, bypass the
         # text/metadata caches so timestamp-preserving replacements are observed.
         $parsed = Read-SyncStateFromDisk -ThrowOnError:$true
@@ -265,6 +267,7 @@ function Read-SyncStateUnsafe {
         # a fresh change identity. Retain the last known-good state, or create a
         # single stable bootstrap state if no valid state has ever been read.
         $script:SyncStateReadFailed = $true
+        if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.sync.fallback" -Path $syncStateFile -Fields @{ reason = "state-read-failure" } }
         if (-not $script:CachedSyncState) {
             $script:CachedSyncState = New-DefaultSyncState
         }
@@ -331,14 +334,17 @@ function Read-SyncStateForPublication {
         # data. Preserve its corrupt bytes before rebuilding it so one damaged
         # notification file cannot permanently disable every future publish.
         $recoveryFolder = Join-Path -Path $sharedFolder -ChildPath ".recovery"
-        New-Item -ItemType Directory -Path $recoveryFolder -Force -ErrorAction Stop | Out-Null
+        if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Sync.CreateRecoveryDirectory" -Path $recoveryFolder -Action { New-Item -ItemType Directory -Path $recoveryFolder -Force -ErrorAction Stop } | Out-Null }
+        else { New-Item -ItemType Directory -Path $recoveryFolder -Force -ErrorAction Stop | Out-Null }
         $recoveryName = "sync-state.corrupt.{0}.{1}.json" -f (
             (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ"),
             [Guid]::NewGuid().ToString("N")
         )
         $recoveryPath = Join-Path -Path $recoveryFolder -ChildPath $recoveryName
-        if (Test-Path -LiteralPath $syncStateFile -PathType Leaf) {
-            Copy-Item -LiteralPath $syncStateFile -Destination $recoveryPath -ErrorAction Stop
+        $recoverySourceExists = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Sync.RecoverySourceExists" -Path $syncStateFile -Action { Test-Path -LiteralPath $syncStateFile -PathType Leaf } } else { Test-Path -LiteralPath $syncStateFile -PathType Leaf }
+        if ($recoverySourceExists) {
+            if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Sync.CopyRecoveryFile" -Path $syncStateFile -Action { Copy-Item -LiteralPath $syncStateFile -Destination $recoveryPath -ErrorAction Stop } }
+            else { Copy-Item -LiteralPath $syncStateFile -Destination $recoveryPath -ErrorAction Stop }
         }
 
         Write-Warning "Recovered invalid sync-state metadata. The original was preserved at $recoveryPath"
