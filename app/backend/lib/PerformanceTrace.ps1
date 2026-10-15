@@ -20,6 +20,7 @@ function Get-SaphirPerformanceSetting {
 function Initialize-SaphirPerformanceWriter {
     if (-not $script:SaphirPerformanceEnabled -or $script:SaphirPerformanceWriterAttempted) { return }
     $script:SaphirPerformanceWriterAttempted = $true
+    $initializationStep = "validate-local-directory"
     try {
         $localRoot = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
         if ([string]::IsNullOrWhiteSpace($localRoot)) { throw "Local diagnostics root unavailable." }
@@ -45,10 +46,13 @@ function Initialize-SaphirPerformanceWriter {
             $ancestor = [IO.Path]::GetDirectoryName($ancestor)
         }
         if ($null -eq ("Saphir.Diagnostics.TraceWriter" -as [type])) {
+            $initializationStep = "compile-writer"
             Add-Type -Path (Join-Path $PSScriptRoot "PerformanceTraceWriter.cs") -ErrorAction Stop
         }
+        $initializationStep = "create-local-directory"
         [IO.Directory]::CreateDirectory($directory) | Out-Null
         if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+            $initializationStep = "set-local-permissions"
             $identity = [Security.Principal.WindowsIdentity]::GetCurrent().User
             $acl = New-Object Security.AccessControl.DirectorySecurity
             $acl.SetAccessRuleProtection($true, $false)
@@ -61,11 +65,17 @@ function Initialize-SaphirPerformanceWriter {
         $maxMb = Get-SaphirPerformanceSetting "SAPHIR_TRACE_MAX_MB" 16 1 128
         $files = Get-SaphirPerformanceSetting "SAPHIR_TRACE_MAX_FILES" 8 1 32
         $days = Get-SaphirPerformanceSetting "SAPHIR_TRACE_RETENTION_DAYS" 7 1 90
+        $initializationStep = "start-writer"
         $script:SaphirPerformanceWriter = New-Object Saphir.Diagnostics.TraceWriter($directory, ([long]$maxMb * 1048576), $files, $days, 4096, 250)
         $script:SaphirPerformanceDirectory = $directory
     } catch {
         $script:SaphirPerformanceWriterFailed = $true
-        Write-Warning "SAPHIR local performance diagnostics could not be initialized; normal application behavior is unchanged."
+        # Include safe failure identifiers, never arbitrary exception messages,
+        # paths, compiler source, arguments or business content.
+        $failureType = [string]$_.CategoryInfo.Reason
+        $failureCode = [string]$_.FullyQualifiedErrorId -replace '[^A-Za-z0-9._,-]', ''
+        if ($failureCode.Length -gt 160) { $failureCode = $failureCode.Substring(0, 160) }
+        Write-Warning ("SAPHIR local performance diagnostics could not be initialized (step={0}; type={1}; code={2}; language={3}); normal application behavior is unchanged." -f $initializationStep, $failureType, $failureCode, $ExecutionContext.SessionState.LanguageMode)
     }
 }
 

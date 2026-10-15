@@ -720,8 +720,8 @@ function applyDashboardBootstrap(payload) {
 }
 
 async function fetchEmployees() {
-  const response = await fetch(apiUrl + "employees");
-  const employees = await parseResponse(response);
+  const response = await fetch(apiUrl + "employees/bootstrap?scope=active");
+  const employees = (await parseResponse(response)).employees;
   dashboardState.employees = Array.isArray(employees) ? employees : [];
   populateDashboardEmployeeControls(dashboardState.employees);
 

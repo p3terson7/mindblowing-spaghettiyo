@@ -1,4 +1,4 @@
-$entryStateModuleManifest = Join-Path -Path $PSScriptRoot -ChildPath "../modules/Saphir.EntryState.psd1"
+﻿$entryStateModuleManifest = Join-Path -Path $PSScriptRoot -ChildPath "../modules/Saphir.EntryState.psd1"
 if ($null -eq (Get-Module -Name "Saphir.EntryState")) {
     Import-Module -Name $entryStateModuleManifest -ErrorAction Stop | Out-Null
 }
@@ -847,8 +847,9 @@ function Get-CachedEmployeeEntriesForFile {
 }
 
 function Get-EmployeeDataSnapshot {
-    param([switch]$IncludeMonetary)
+    param([switch]$IncludeMonetary, [switch]$SkipProjection)
     $cacheKey = if ($IncludeMonetary) { "employee-data-snapshot|monetary" } else { "employee-data-snapshot" }
+    if ($SkipProjection) { $cacheKey += "|raw" }
     return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth") -Factory {
         if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.snapshot.assembled" }
         $employeesList = New-Object System.Collections.ArrayList
@@ -861,7 +862,7 @@ function Get-EmployeeDataSnapshot {
         Prefetch-EmployeeFileText -Paths $filePaths
 
         foreach ($user in $users) {
-            $contribution = Get-EmployeeReadContribution -User $user -IncludeMonetary:$IncludeMonetary
+            $contribution = Get-EmployeeReadContribution -User $user -IncludeMonetary:$IncludeMonetary -SkipProjection:$SkipProjection
             [void]$employeesList.Add($contribution.employee)
             $entriesByEmployee[[string]$contribution.employee.code] = @($contribution.entries)
             foreach ($entry in @($contribution.projectedEntries)) { [void]$flattenedEntriesList.Add($entry) }
@@ -904,7 +905,7 @@ function Get-ScopedEmployeeDataSnapshot {
     if ($IncludeMonetary) { $cacheKey += "|monetary" }
 
     return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects") -Factory {
-        $snapshot = Get-EmployeeDataSnapshot -IncludeMonetary:$IncludeMonetary
+        $snapshot = Get-EmployeeDataSnapshot -IncludeMonetary:$IncludeMonetary -SkipProjection
         $employeesList = New-Object System.Collections.ArrayList
         $entriesByEmployee = @{}
         $flattenedEntriesList = New-Object System.Collections.ArrayList
@@ -1068,16 +1069,65 @@ function Get-SortedHistoryEntriesSnapshot {
     })
 }
 
+function Get-RawSortedHistorySnapshot {
+    return (Invoke-ReadModelCache -Key "history-raw-sorted" -Dependencies @("history") -Factory {
+        return @(Read-JsonArrayFile -Path $historyFile | Where-Object { $null -ne $_ } | Sort-Object {
+            try { [DateTime]::Parse(($_.timestamp -replace " ", "T")) } catch { [DateTime]::MinValue }
+        } -Descending)
+    })
+}
+
+function Get-HistoryPage {
+    param([int]$Page = 1, [string]$Category = "all", [string]$Search = "", [string]$StartDate = "", [string]$EndDate = "")
+    if ($Page -lt 1 -or $Page -gt 100000 -or $Category -notin @("all", "add", "update", "approval", "delete") -or $Search.Length -gt 200) { throw [ArgumentException]::new("Invalid history page or filter.") }
+    foreach ($date in @($StartDate, $EndDate)) {
+        if ($date) { $parsed = [DateTime]::MinValue; if (-not [DateTime]::TryParseExact($date, "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) { throw [ArgumentException]::new("Invalid history date.") } }
+    }
+    # Reconcile before reading the raw cache. Never load employee entry files.
+    $raw = @(Get-RawSortedHistorySnapshot)
+    $names = if (Get-Command Get-EmployeeNameMap -ErrorAction SilentlyContinue) { Get-EmployeeNameMap } else { [PSCustomObject]@{} }
+    $counts = @{ all = 0; add = 0; update = 0; approval = 0; delete = 0 }
+    $filtered = New-Object Collections.ArrayList
+    $tokens = @($Search.Trim() -split '\s+' | Where-Object { $_ })
+    $actionLabels = @{ add = "Added Ajoutée"; update = "Updated Modifiée"; approved = "Approved Approuvée"; rejected = "Rejected Rejetée"; delete = "Deleted Supprimée"; event = "Event Événement" }
+    foreach ($entry in $raw) {
+        $date = ([string]$entry.timestamp -split '[ T]')[0]
+        if (($StartDate -and $date -lt $StartDate) -or ($EndDate -and $date -gt $EndDate)) { continue }
+        if ($tokens.Count) {
+            $projection = New-HistoryEntryReadModel -Entry $entry -EmployeeNameMap $names
+            $text = ($projection.PSObject.Properties.Value -join " ") + " " + $actionLabels[([string]$entry.action).ToLowerInvariant()]
+            $displayDate = [DateTime]::MinValue
+            if ([DateTime]::TryParse([string]$entry.timestamp, [ref]$displayDate)) {
+                foreach ($culture in @("fr-CA", "en-CA")) { $text += " " + $displayDate.ToString("D", [Globalization.CultureInfo]::GetCultureInfo($culture)) }
+            }
+            $matches = $true
+            foreach ($token in $tokens) { if ([Globalization.CultureInfo]::InvariantCulture.CompareInfo.IndexOf($text, $token, ([Globalization.CompareOptions]::IgnoreCase -bor [Globalization.CompareOptions]::IgnoreNonSpace)) -lt 0) { $matches = $false; break } }
+            if (-not $matches) { continue }
+        }
+        $action = ([string]$entry.action).ToLowerInvariant()
+        $group = if ($action -in @("approved", "rejected")) { "approval" } else { $action }
+        $counts.all++
+        if ($counts.ContainsKey($group) -and $group -ne "all") { $counts[$group]++ }
+        if ($Category -eq "all" -or $group -eq $Category) { [void]$filtered.Add($entry) }
+    }
+    $pages = [Math]::Max(1, [int][Math]::Ceiling($filtered.Count / 25.0))
+    $resolved = [Math]::Min($Page, $pages)
+    $items = @($filtered | Select-Object -Skip (($resolved - 1) * 25) -First 25 | ForEach-Object { New-HistoryEntryReadModel -Entry $_ -EmployeeNameMap $names })
+    return [PSCustomObject]@{ items = $items; page = $resolved; pageSize = 25; total = $filtered.Count; totalPages = $pages; counts = [PSCustomObject]$counts }
+}
+
 function Get-RecentHistoryEntriesSnapshot {
     param([int]$Limit = 7)
 
-    $entries = @(Get-SortedHistoryEntriesSnapshot)
+    $entries = @(Get-RawSortedHistorySnapshot)
 
     if ($Limit -le 0) {
-        return $entries
+        $selected = $entries
+    } else {
+        $selected = @($entries | Select-Object -First $Limit)
     }
-
-    return @($entries | Select-Object -First $Limit)
+    $names = if (Get-Command Get-EmployeeNameMap -ErrorAction SilentlyContinue) { Get-EmployeeNameMap } else { [PSCustomObject]@{} }
+    return @($selected | ForEach-Object { New-HistoryEntryReadModel -Entry $_ -EmployeeNameMap $names })
 }
 
 function Get-DashboardBootstrapModel {
@@ -1148,15 +1198,15 @@ function Get-DashboardBootstrapModel {
 }
 
 function Get-ApprovalsEntriesModel {
-    param($CurrentUser)
+    param($CurrentUser, [bool]$IncludeMonetary = $true)
 
     $accessModel = Get-ProjectAccessModelForCurrentUser -CurrentUser $CurrentUser
     $modifyAccessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $CurrentUser
     $scopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@($accessModel.ProjectCodes) -join ",") }
     $modifyScopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
-    return (Invoke-ReadModelCache -Key "approvals-entries|$scopeKey|$modifyScopeKey|$userScopeKey" -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
-        return @((Get-ScopedEmployeeDataSnapshot -CurrentUser $CurrentUser -IncludeMonetary).flattenedEntries | Sort-Object { Get-EntryDateTimeOrMin -Entry $_ } -Descending)
+    return (Invoke-ReadModelCache -Key "approvals-entries|$scopeKey|$modifyScopeKey|$userScopeKey|$IncludeMonetary" -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
+        return @((Get-ScopedEmployeeDataSnapshot -CurrentUser $CurrentUser -IncludeMonetary:$IncludeMonetary).flattenedEntries | Sort-Object { Get-EntryDateTimeOrMin -Entry $_ } -Descending)
     })
 }
 
@@ -1297,6 +1347,18 @@ function Get-ProjectStatisticsEntriesSnapshot {
         $entriesList = New-Object System.Collections.ArrayList
         $seenEmployeeCodes = @{}
         $users = @(Get-Users | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode "" } | Sort-Object username)
+        # Reuse the existing cold metadata batch instead of stat-ing every
+        # employee file separately. This adds no workers; small/warm/one-file
+        # changes retain the helper's no-scan path and expiry guarantees.
+        if (Get-Command Prime-EmployeeFileMetadata -ErrorAction SilentlyContinue) {
+            try { Prime-EmployeeFileMetadata -Paths @($users | ForEach-Object { Get-EmployeeDataFilePath -EmployeeCode (Get-UserEmployeeCodeValue $_) }) }
+            catch {
+                # Listing permissions/SMB enumeration can differ from direct
+                # file access. Priming is optional; normal file checks below
+                # still enforce freshness and surface actual read failures.
+                if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.metadata.batch.fallback" }
+            }
+        }
 
         foreach ($user in $users) {
             $employeeCode = Get-UserEmployeeCodeValue -UserRecord $user

@@ -1,5 +1,6 @@
 let allApprovalEntries = [];
 let approvalScopedProjects = [];
+let reviewMonetaryLoaded = false;
 
 function buildApprovalEmployeeOptions(entries) {
   const currentValue = document.getElementById("reviewEmployeeFilter")?.value || "";
@@ -116,27 +117,15 @@ async function loadReviewView() {
     setLoadingState("attentionContainer", "queue", 2);
     setLoadingState("rejectedContainer", "queue", 2);
     setLoadingState("approvedContainer", "queue", 2);
-    setLoadingState("allHistoryContainer", "activity", 4);
-    setLoadingState("addHistoryContainer", "activity", 3);
-    setLoadingState("editHistoryContainer", "activity", 3);
-    setLoadingState("approveHistoryContainer", "activity", 3);
-    setLoadingState("deleteHistoryContainer", "activity", 3);
-
-    const payload = await fetch(apiUrl + "review/bootstrap").then(parseResponse);
+    const monetary = document.getElementById("approved-tab")?.classList.contains("active") || false;
+    const payload = await fetch(apiUrl + "review/bootstrap" + (monetary ? "?includeMonetary=true" : "")).then(parseResponse);
+    reviewMonetaryLoaded = monetary;
     allApprovalEntries = Array.isArray(payload && payload.approvals) ? payload.approvals : [];
     approvalScopedProjects = Array.isArray(payload && payload.projects) ? payload.projects : [];
     document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(allApprovalEntries);
     populateApprovalProjectFilter(approvalScopedProjects, allApprovalEntries);
     applyApprovalFilters();
 
-    if (typeof renderHistoryTabs === "function") {
-      allHistoryEntries = Array.isArray(payload && payload.history) ? payload.history : [];
-      if (typeof applyHistoryFilters === "function") {
-        applyHistoryFilters();
-      } else {
-        renderHistoryTabs(allHistoryEntries);
-      }
-    }
     return true;
   } catch (error) {
     console.error("Error loading review workspace:", error);
@@ -146,6 +135,9 @@ async function loadReviewView() {
 }
 
 window.loadReviewView = loadReviewView;
+document.getElementById("approvalTabs")?.addEventListener("shown.bs.tab", event => {
+  if (event.target.id === "approved-tab" && !reviewMonetaryLoaded) loadReviewView();
+});
 
 function updateApprovalTabLabels(pendingEntries, attentionEntries, rejectedEntries, approvedEntries) {
   document.getElementById("pending-tab").textContent = t("review.pending", { count: pendingEntries.length });

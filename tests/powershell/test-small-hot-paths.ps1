@@ -147,7 +147,7 @@ try {
     $coldHistoryMs = (Measure-Command { $script:FirstRecentHistory = @(Get-RecentHistoryEntriesSnapshot -Limit 7) }).TotalMilliseconds
     Assert-Equal -Expected 7 -Actual $script:FirstRecentHistory.Count -Message "Recent history returned the wrong limit."
     Assert-Equal -Expected "History 4999" -Actual $script:FirstRecentHistory[0].message -Message "Recent history returned the wrong order."
-    Assert-Equal -Expected $true -Actual $script:ReadModelCache.ContainsKey("history-entries-sorted") -Message "The sorted history projection was not cached."
+    Assert-Equal -Expected $true -Actual $script:ReadModelCache.ContainsKey("history-raw-sorted") -Message "The raw sorted history was not cached."
 
     $warmHistoryMs = Get-MedianMilliseconds -Iterations 5 -Action {
         @(Get-RecentHistoryEntriesSnapshot -Limit 20).Count

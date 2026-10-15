@@ -34,6 +34,7 @@ function Invoke-BenchmarkRequest {
             $stream = $request.GetRequestStream()
             try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
         }
+        elseif ($Method -eq "POST") { $request.ContentLength = 0 }
         try { $response = $request.GetResponse() }
         catch [Net.WebException] {
             if ($null -eq $_.Exception.Response) { $category = [string]$_.Exception.Status }
@@ -89,6 +90,7 @@ try {
         try { $null = Invoke-BenchmarkRequest -Path "auth/logout" -Method POST } catch { Write-Warning "Benchmark session logout could not complete." }
         $token = ""
     }
+    try {
     $rows = @($results.ToArray())
     $rows | Export-Csv -LiteralPath (Join-Path $capture "requests.csv") -NoTypeInformation -Encoding UTF8
     $rows | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $capture "requests.json") -Encoding UTF8
@@ -100,14 +102,30 @@ try {
     $stdout = Join-Path $runtime "logs/app.stdout.log"
     $ids = @{}; foreach ($row in $rows) { if ($row.backendTraceId) { $ids[$row.backendTraceId] = $true } }
     $summaries = New-Object Collections.ArrayList
+    $collectionWarning = ""
+    try {
     if ([IO.File]::Exists($stdout)) {
-        foreach ($line in [IO.File]::ReadLines($stdout)) {
+        $logStream = $null; $logReader = $null
+        try {
+        # Redirected process stdout is still open for writing on Windows.
+        # ReadLines uses FileShare.Read and conflicts with that writer.
+        $logStream = [IO.FileStream]::new($stdout, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+        $logReader = [IO.StreamReader]::new($logStream)
+        while ($null -ne ($line = $logReader.ReadLine())) {
             if (-not $line.StartsWith("SAPHIR_PERF ")) { continue }
             try {
                 $summary = $line.Substring(12) | ConvertFrom-Json
                 if ($ids.ContainsKey([string]$summary.id)) { [void]$summaries.Add($line.Substring(12)) }
             } catch { }
         }
+        } finally {
+            if ($logReader) { $logReader.Dispose() }
+            elseif ($logStream) { $logStream.Dispose() }
+        }
+    }
+    } catch {
+        $collectionWarning = "Backend log collection unavailable; HTTP timings are preserved. Error type: " + [string]$_.CategoryInfo.Reason
+        Write-Warning $collectionWarning
     }
     # Export only sanitized aggregates for these requests, never raw stdout or payloads.
     [IO.File]::WriteAllLines((Join-Path $capture "backend-summary.jsonl"), [string[]]$summaries.ToArray())
@@ -121,6 +139,7 @@ try {
     foreach ($row in $rows) { $report.Add(("| {0} | {1} /{2} | {3} | {4:N2} |" -f $row.round, $row.method, $row.endpoint, $row.status, ($row.durationMs / 1000))) }
     $report.Add("")
     $report.Add(("Matching backend summaries: {0}. HTTP 403 means this account cannot access that section; HTTP 0 means a connection/timeout failure. Non-2xx responses are not successful loads." -f $summaries.Count))
+    if ($collectionWarning) { $report.Add($collectionWarning) }
     $report.Add("")
     $report.Add("## Backend work (matching requests only)")
     $report.Add("Function durations below are inclusive and can overlap. They are not CPU measurements; do not add them together.")
@@ -134,6 +153,11 @@ try {
         }
     }
     [IO.File]::WriteAllLines((Join-Path $capture "report.md"), $report)
+    $archive = $capture + ".zip"
+    Compress-Archive -Path (Join-Path $capture "*") -DestinationPath $archive
+    Write-Host "Finished. Send this file: $archive"
+    } finally {
+    try {
     if ($restarted) {
         # Leave the workstation in normal, untraced mode after capturing.
         $env:SAPHIR_PERFORMANCE_TRACE = "0"; $env:SAPHIR_PERF_TRACE = "0"
@@ -141,8 +165,8 @@ try {
         if (-not (Test-Path -LiteralPath $restart -PathType Leaf)) { $restart = Join-Path $PSScriptRoot "launch-app.ps1" }
         try { & $restart -Force -NoBrowser } catch { Write-Warning "Normal restart failed. Restart SAPHIR normally to disable tracing." }
     }
+    } finally {
     foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
-    $archive = $capture + ".zip"
-    Compress-Archive -Path (Join-Path $capture "*") -DestinationPath $archive
-    Write-Host "Finished. Send this file: $archive"
+    }
+    }
 }

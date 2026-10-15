@@ -12,9 +12,19 @@ if ($request.Url.AbsolutePath -eq "/history" -or $request.Url.AbsolutePath -eq "
     # GET /history Endpoint
     if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/history") {
         try {
-            $historyContent = ConvertTo-Json -InputObject @(Get-HistoryEntriesSnapshot) -Depth 6
+            $query = [System.Web.HttpUtility]::ParseQueryString($request.Url.Query)
+            if ($null -ne $query["page"]) {
+                $page = 0
+                if (-not [int]::TryParse($query["page"], [ref]$page)) { throw [ArgumentException]::new("Invalid history page.") }
+                $category = if ($query["category"]) { $query["category"] } else { "all" }
+                $historyContent = Get-HistoryPage -Page $page -Category $category -Search ([string]$query["search"]) -StartDate ([string]$query["startDate"]) -EndDate ([string]$query["endDate"]) | ConvertTo-Json -Depth 6
+            } else {
+                # Legacy full export API; the interactive UI always requests a page.
+                $historyContent = ConvertTo-Json -InputObject @(Get-HistoryEntriesSnapshot) -Depth 6
+            }
             respondWithSuccess $response $historyContent
         }
+        catch [ArgumentException] { respondWithError $response 400 $_.Exception.Message }
         catch {
             Rethrow-HttpStatusException -Exception $_.Exception
             Write-Warning ("Unable to read history: {0}" -f $_.Exception.Message)

@@ -585,10 +585,10 @@
             <section class="employee-analytics-panel" id="employeeAnalyticsPanel">
               <div class="panel-header-row">
                 <div>
-                  <div class="panel-kicker" data-i18n="employees.analytics">Overtime Analytics</div>
+                  <button id="loadEmployeeAnalyticsBtn" type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="false" aria-controls="employeeAnalyticsBody" data-i18n="employees.analytics">Overtime Analytics</button>
                 </div>
               </div>
-              <div class="employee-analytics-grid">
+              <div class="employee-analytics-grid d-none" id="employeeAnalyticsBody">
                 <article class="employee-analytics-card">
                   <div class="employee-analytics-card-header">
                     <strong data-i18n="employees.overtimeShare">Overtime Share</strong>
@@ -670,12 +670,13 @@
             <section id="historySection" class="panel-shell">
               <div class="panel-header-row">
                 <div>
-                  <div class="panel-kicker" data-i18n="history.auditTrail">Audit Trail</div>
+                  <button id="loadHistoryBtn" type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="false" aria-controls="historyWorkspace" data-i18n="history.auditTrail">Audit Trail</button>
                 </div>
                 <div class="panel-header-actions">
                   <button id="refreshHistoryBtn" class="btn btn-outline-secondary btn-sm" data-i18n="action.refresh">Refresh</button>
                 </div>
               </div>
+              <div id="historyWorkspace" class="d-none">
               <ul class="nav nav-tabs ide-tabs" id="historyTabs" role="tablist">
                 <li class="nav-item" role="presentation">
                   <button class="nav-link active" id="all-history-tab" data-bs-toggle="tab" data-bs-target="#allHistoryContainer" type="button" role="tab" aria-controls="allHistoryContainer" aria-selected="true">All</button>
@@ -717,6 +718,8 @@
                 <div class="tab-pane fade" id="editHistoryContainer" role="tabpanel" aria-labelledby="edit-history-tab"></div>
                 <div class="tab-pane fade" id="approveHistoryContainer" role="tabpanel" aria-labelledby="approve-history-tab"></div>
                 <div class="tab-pane fade" id="deleteHistoryContainer" role="tabpanel" aria-labelledby="delete-history-tab"></div>
+              </div>
+              <nav id="historyPagination" class="d-flex gap-2 align-items-center mt-3" aria-label="History pages"></nav>
               </div>
             </section>
           </div>
@@ -1703,8 +1706,8 @@
   <!-- Preserve the historical feature-version prefix; the new suffix still
        produces a different URL and invalidates cached JavaScript. -->
   <script src="scripts/Utilities.js?v=20261008-loading-performance-v1-trace-20261014-v1"></script>
-  <script src="scripts/AppShell.js?v=20261008-loading-performance-v1-trace-20261014-v1"></script>
-  <script src="scripts/Views/ViewSwitching.js?v=20261008-loading-performance-v1"></script>
+  <script src="scripts/AppShell.js?v=20261008-loading-performance-v1-trace-20261014-v1-views-20261015-v1"></script>
+  <script src="scripts/Views/ViewSwitching.js?v=20261008-loading-performance-v1-views-20261015-v1"></script>
   <script src="scripts/Views/SelfView.js?v=20261008-loading-performance-v1"></script>
 </body>
 </html>

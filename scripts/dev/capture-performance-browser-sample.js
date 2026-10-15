@@ -44,6 +44,8 @@ async function main() {
   browser = await playwright.chromium.launch({ headless: true, ...(process.env.SAPHIR_CHROMIUM_EXECUTABLE ? { executablePath: process.env.SAPHIR_CHROMIUM_EXECUTABLE } : {}) });
   const page = await browser.newPage();
   const errors = [];
+  const requested = [];
+  page.on("request", request => requested.push(new URL(request.url()).pathname + new URL(request.url()).search));
   page.on("pageerror", error => errors.push(error.message));
   await page.goto(origin + "/?saphirTrace=detailed", { waitUntil: "domcontentloaded" });
   await page.locator("#usernameInput").fill("audit-super");
@@ -53,6 +55,35 @@ async function main() {
   await page.waitForTimeout(300);
   const state = await page.evaluate(() => ({ count: dashboardState.bootstrap.trackedEmployees, pending: dashboardState.bootstrap.pendingApprovals, total: dashboardState.bootstrap.totalOvertime }));
   assert.equal(state.count, 40); assert.equal(state.pending, 40);
+  if (process.env.SAPHIR_VALIDATE_LAZY_VIEWS === "1") {
+    const start = requested.length;
+    let response = page.waitForResponse(reply => reply.url().includes("/employees/bootstrap"));
+    await page.locator("#navEmployees").click();
+    const directory = await (await response).json();
+    assert(!directory.lookups && directory.employees.every(employee => employee.statsLoaded === false));
+    await page.locator(".employee-open-button").first().waitFor();
+    assert(!requested.slice(start).some(url => /\/employee\/\d+/.test(url)));
+    assert(!requested.slice(start).some(url => url.includes("chart.umd")));
+    await page.locator(".employee-open-button").first().click();
+    await page.locator(".employee-detail-card").waitFor();
+    response = page.waitForResponse(reply => reply.url().includes("/employees/bootstrap") && reply.url().includes("includeStats=true"));
+    await page.locator("#loadEmployeeAnalyticsBtn").click();
+    await response;
+    await page.waitForFunction(() => typeof Chart === "function");
+    response = page.waitForResponse(reply => reply.url().includes("/review/bootstrap"));
+    await page.locator("#navAdmin").click();
+    assert(!Object.prototype.hasOwnProperty.call(await (await response).json(), "history"));
+    assert(!requested.some(url => /^\/history\?/.test(url)));
+    response = page.waitForResponse(reply => reply.url().includes("/history?page="));
+    await page.locator("#loadHistoryBtn").click();
+    const history = await (await response).json();
+    assert(history.items.length <= 25 && history.pageSize === 25);
+    response = page.waitForResponse(reply => reply.url().includes("/projects/bootstrap"));
+    await page.locator("#navProjects").click();
+    assert.equal((await (await response).json()).detailIncluded, false);
+    assert(!requested.some(url => url.includes("/stats/budget-periods")));
+    console.log("Real-browser lazy directory/detail/analytics, Review/history and Projects smoke passed.");
+  }
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export performance trace" }).click();
   const download = await downloadPromise;

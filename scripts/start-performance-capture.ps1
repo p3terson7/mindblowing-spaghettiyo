@@ -32,7 +32,7 @@ try {
     $directory = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "SAPHIR/diagnostics/performance"
     Write-Host "Performance capture is enabled for this backend process."
     Write-Host "Local traces: $directory"
-    Write-Host "Use 'Export performance trace' in the browser after loading finishes."
+    if (-not $NoBrowser) { Write-Host "Use 'Export performance trace' in the browser after loading finishes." }
     Write-Host "To stop tracing, restart SAPHIR normally without diagnostic environment variables."
 } finally {
     $env:SAPHIR_PERFORMANCE_TRACE = $savedTrace; $env:SAPHIR_PERF_TRACE = $savedLegacy; $env:SAPHIR_TRACE_LEVEL = $savedLevel

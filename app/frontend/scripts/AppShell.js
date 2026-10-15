@@ -147,15 +147,15 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20261008-loading-performance-v1",
-  dashboard: "scripts/Views/DashboardView.js?v=20261008-loading-performance-v1",
-  approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1",
-  history: "scripts/Views/HistoryView.js?v=20261008-loading-performance-v1",
+  employees: "scripts/Views/EmployeesView.js?v=20261008-loading-performance-v1-views-20261015-v1",
+  dashboard: "scripts/Views/DashboardView.js?v=20261008-loading-performance-v1-views-20261015-v1",
+  approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1-views-20261015-v1",
+  history: "scripts/Views/HistoryView.js?v=20261008-loading-performance-v1-views-20261015-v1",
   projects: "scripts/Views/ProjectsView.js?v=20261008-loading-performance-v1",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
-  employeesView: [MANAGER_SCRIPT_SOURCE.dashboard, MANAGER_SCRIPT_SOURCE.chart, MANAGER_SCRIPT_SOURCE.employees],
+  employeesView: [MANAGER_SCRIPT_SOURCE.dashboard, MANAGER_SCRIPT_SOURCE.employees],
   adminView: [MANAGER_SCRIPT_SOURCE.dashboard, MANAGER_SCRIPT_SOURCE.approvals, MANAGER_SCRIPT_SOURCE.history],
   projectsView: [MANAGER_SCRIPT_SOURCE.chart, MANAGER_SCRIPT_SOURCE.projects],
 };
@@ -390,6 +390,8 @@ function ensureManagerAssetsForView(viewId, user = getCurrentUser()) {
 
 function resetViewState() {
   appShellState.viewState = {};
+  window.resetReviewHistory?.();
+  window.resetEmployeesViewData?.();
 }
 
 function clearClientLookupCaches() {
@@ -476,7 +478,7 @@ function getViewsAffectedBySyncState(syncState) {
 
   if (category === "history") {
     return isManagerUser(user)
-      ? ["dashboardView", "adminView"]
+      ? ["dashboardView"]
       : [];
   }
 
@@ -492,7 +494,7 @@ function getViewsAffectedBySyncState(syncState) {
 
   if (category === "project") {
     return isManagerUser(user)
-      ? ["dashboardView", "projectsView", "adminView"]
+      ? ["dashboardView", "projectsView", "adminView", "employeesView"]
       : ["selfView"];
   }
 
@@ -508,7 +510,8 @@ function getViewsAffectedBySyncState(syncState) {
 
   if (category === "employee") {
     if (isManagerUser(user)) {
-      const affectedViews = ["dashboardView", "employeesView", "adminView", "projectsView"];
+      const affectedViews = ["dashboardView", "employeesView", "adminView", "projectsView"].filter(view =>
+        view !== "employeesView" || typeof window === "undefined" || typeof window.employeeDirectoryNeedsEntryRefresh !== "function" || window.employeeDirectoryNeedsEntryRefresh());
       if (userHasEmployeeWorkspace(user) && (resource === "*" || user.employeeCode === resource)) {
         affectedViews.push("selfView");
       }
@@ -2043,6 +2046,8 @@ async function refreshActiveView(options) {
 
   const activeViewId = document.querySelector(".view.active")?.id || localStorage.getItem("activeView") || resolvePreferredView(user);
   await refreshViewById(activeViewId, options);
+  if (!document.hidden && activeViewId === "adminView") await window.refreshReviewHistoryIfVisible?.();
+  if (!document.hidden && activeViewId === "employeesView") await window.refreshSelectedEmployeeIfStale?.();
 }
 
 async function rerenderActiveViewForLanguageChange(user = getCurrentUser()) {
@@ -2104,6 +2109,13 @@ async function pollSyncState() {
 
       if (typeof window.handleSyncStateChange === "function") {
         window.handleSyncStateChange(routedSyncState);
+      }
+      if (["project", "auth", "seed"].includes(routedSyncState.category)) {
+        if (typeof clearClientLookupCaches === "function") clearClientLookupCaches();
+        window.invalidateEmployeesViewEntryCache?.("*");
+      }
+      if (["history", "employee", "project", "auth", "employee-directory", "seed"].includes(routedSyncState.category)) {
+        window.invalidateReviewHistory?.();
       }
       if (isSequentialChange) {
         markViewsStale(getViewsAffectedBySyncState(syncState));

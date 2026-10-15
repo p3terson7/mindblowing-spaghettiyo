@@ -12,6 +12,11 @@ const employeesViewState = {
   projectSearchTextByCode: {},
   employeeFilterTimerId: null,
   employeeAnalyticsSignature: "",
+  statisticsRequested: false,
+  loadSequence: 0,
+  entryGeneration: 0,
+  detailRequests: {},
+  entryVersions: {},
   gc179Import: {
     fdfContent: "",
     fileName: "",
@@ -29,18 +34,44 @@ const employeesViewState = {
   },
 };
 let pendingEmployeeAnalyticsFrameId = null;
+window.resetEmployeesViewData = function () {
+  employeesViewState.loadSequence++;
+  employeesViewState.entryGeneration++;
+  employeesViewState.detailRequests = {};
+  employeesViewState.entryVersions = {};
+  employeesViewState.allEmployees = []; employeesViewState.employees = [];
+  employeesViewState.entriesByEmployee = {}; employeesViewState.currentMonthByEmployee = {};
+  employeesViewState.selectedEmployeeCode = ""; employeesViewState.selectedProjectCode = "";
+  employeesViewState.statisticsRequested = false; employeesViewState.entryLookups = null;
+  document.getElementById("employeeAnalyticsBody")?.classList.add("d-none");
+  document.getElementById("loadEmployeeAnalyticsBtn")?.setAttribute("aria-expanded", "false");
+  document.getElementById("employeeDetailContainer")?.replaceChildren();
+  document.getElementById("employeesDirectoryContainer")?.replaceChildren();
+};
 const employeeAnalyticsChartInstances = {};
 const employeeAnalyticsPalette = ["#0868d7", "#16865a", "#7558d8", "#008994", "#c27a00", "#c43840", "#c94f8a", "#4f72d8", "#7f6b52", "#0f8f7a"];
 window.invalidateEmployeesViewEntryCache = function (resource) {
   const employeeCode = String(resource || "").trim();
   if (!employeeCode || employeeCode === "*") {
+    employeesViewState.entryGeneration++;
+    employeesViewState.detailRequests = {};
+    employeesViewState.entryVersions = {};
     employeesViewState.entriesByEmployee = {};
     employeesViewState.currentMonthByEmployee = {};
   } else {
+    employeesViewState.entryVersions[employeeCode] = (employeesViewState.entryVersions[employeeCode] || 0) + 1;
+    delete employeesViewState.detailRequests[employeeCode];
     employeesViewState.entriesByEmployee[employeeCode] = undefined;
     employeesViewState.currentMonthByEmployee[employeeCode] = undefined;
   }
   employeesViewState.employeeAnalyticsSignature = "";
+};
+window.employeeDirectoryNeedsEntryRefresh = function () {
+  return employeesViewState.statisticsRequested || Boolean(employeesViewState.selectedProjectCode);
+};
+window.refreshSelectedEmployeeIfStale = function () {
+  const code = employeesViewState.selectedEmployeeCode;
+  if (code && !employeesViewState.entriesByEmployee[code]) return loadEmployeeDetail(code);
 };
 
 function canManageEmployeeProfiles() {
@@ -1287,7 +1318,7 @@ async function previewGc179Import() {
 }
 
 async function refreshGc179ImportTarget(employeeCode, monthKey) {
-  employeesViewState.entriesByEmployee[employeeCode] = undefined;
+  window.invalidateEmployeesViewEntryCache(employeeCode);
   if (monthKey) {
     employeesViewState.currentMonthByEmployee[employeeCode] = monthKey;
   }
@@ -1818,13 +1849,13 @@ function renderEmployeeDirectoryCard(employee) {
           <span class="employee-card-info-label">${escapeHtml(t("employees.employeeCode"))}</span>
           <span class="employee-card-info-value mono"><span class="employee-card-info-prefix">${escapeHtml(t("employees.employeeCode"))}</span>${escapeHtml(employee.code)}</span>
         </div>
-        <div class="employee-card-info-row">
+        ${employee.entryCount == null ? "" : `<div class="employee-card-info-row">
           <span class="employee-card-info-label">${escapeHtml(t("employees.entriesShort"))}</span>
           <span class="employee-card-info-value">${escapeHtml(t("employees.entryCount", { count: employee.entryCount || 0 }))}</span>
-        </div>
+        </div>`}
         ${isArchivedEmployee(employee) ? `<div class="employee-card-info-row"><span class="employee-card-info-label">${escapeHtml(t("employees.scope"))}</span><span class="status-badge rejected">${escapeHtml(t("employees.archived"))}</span></div>` : ""}
       </div>
-      ${renderMonetarySummary(monetary, employeesViewState.selectedProjectCode || t("money.allApproved"))}
+      ${employee.statsLoaded === false ? "" : renderMonetarySummary(monetary, employeesViewState.selectedProjectCode || t("money.allApproved"))}
     </article>
   `;
 }
@@ -2226,6 +2257,7 @@ function buildEmployeeAnalyticsSignature(employees) {
 }
 
 function renderEmployeeAnalytics(employees, options = {}) {
+  if (!employeesViewState.statisticsRequested || document.getElementById("employeeAnalyticsBody")?.classList.contains("d-none")) return;
   const sourceEmployees = Array.isArray(employees) ? employees : employeesViewState.filteredEmployees;
   const signature = buildEmployeeAnalyticsSignature(sourceEmployees);
   if (!options.force && signature === employeesViewState.employeeAnalyticsSignature) {
@@ -2666,7 +2698,7 @@ async function refreshPeopleEmployeeDetail(employeeCode) {
     return;
   }
 
-  employeesViewState.entriesByEmployee[employeeCode] = undefined;
+  window.invalidateEmployeesViewEntryCache(employeeCode);
   if (typeof dashboardState !== "undefined") {
     dashboardState.entriesByEmployee[employeeCode] = undefined;
     dashboardState.historyLoaded = false;
@@ -2674,16 +2706,15 @@ async function refreshPeopleEmployeeDetail(employeeCode) {
   }
 
   const currentSearchValue = document.getElementById("employeesSearchInput").value;
-  const currentScope = document.getElementById("employeesScopeSelect").value || "active";
   employeesViewState.selectedEmployeeCode = employeeCode;
 
   try {
-    const response = await fetch(apiUrl + "employees?scope=all");
-    const employees = await parseResponse(response);
-    employeesViewState.employees = filterEmployeesByScope(employees, currentScope);
     document.getElementById("employeesSearchInput").value = currentSearchValue;
-    applyEmployeeSearchFilter();
-    await loadEmployeeDetail(employeeCode);
+    if (employeesViewState.statisticsRequested || employeesViewState.selectedProjectCode) {
+      await loadEmployeesView({ rethrowOnError: true });
+    } else {
+      await loadEmployeeDetail(employeeCode);
+    }
   } catch (error) {
     console.error("Error refreshing people employee detail:", error);
     showToast(t("employees.loadError"), "error");
@@ -3013,19 +3044,26 @@ async function loadEmployeeDetail(employeeCode) {
     renderEmployeeDetail(employee);
     return true;
   }
+  if (employeesViewState.detailRequests[employeeCode]) return employeesViewState.detailRequests[employeeCode];
+  const generation = employeesViewState.entryGeneration;
+  const version = employeesViewState.entryVersions[employeeCode] || 0;
 
   setLoadingState("employeeDetailContainer", "detail", 1);
 
-  try {
+  const request = (async () => { try {
     const entries = await fetchEmployeeDetailEntries(employeeCode);
+    if (generation !== employeesViewState.entryGeneration || version !== (employeesViewState.entryVersions[employeeCode] || 0)) return false;
     employeesViewState.entriesByEmployee[employeeCode] = Array.isArray(entries) ? entries : [];
-    renderEmployeeDetail(employee);
+    if (employeesViewState.selectedEmployeeCode === employeeCode) renderEmployeeDetail(employee);
     return true;
   } catch (error) {
+    if (generation !== employeesViewState.entryGeneration || version !== (employeesViewState.entryVersions[employeeCode] || 0)) return false;
     console.error("Error loading employee detail entries:", error);
     container.innerHTML = createEmptyState(t("dashboard.timelineLoadError"));
     return false;
-  }
+  } })();
+  employeesViewState.detailRequests[employeeCode] = request;
+  try { return await request; } finally { if (employeesViewState.detailRequests[employeeCode] === request) delete employeesViewState.detailRequests[employeeCode]; }
 }
 
 function applyEmployeeSearchFilter() {
@@ -3068,26 +3106,28 @@ function scheduleEmployeeSearchFilter() {
 }
 
 function applyEmployeeScopeFilterFromState() {
-  const scope = document.getElementById("employeesScopeSelect").value || "active";
-  employeesViewState.employees = filterEmployeesByScope(employeesViewState.allEmployees, scope);
-  applyEmployeeSearchFilter();
+  return loadEmployeesView();
 }
 
 function loadEmployeesView({ rethrowOnError = false } = {}) {
+  const sequence = ++employeesViewState.loadSequence;
   setLoadingState("employeesDirectoryContainer", "grid", 4);
-  setEmployeeAnalyticsLoadingState();
+  if (employeesViewState.statisticsRequested && !document.getElementById("employeeAnalyticsBody")?.classList.contains("d-none")) setEmployeeAnalyticsLoadingState();
   employeesViewState.employeeAnalyticsSignature = "";
   document.getElementById("employeeDetailContainer").innerHTML = "";
   const scope = document.getElementById("employeesScopeSelect").value || "active";
-  return fetch(apiUrl + "employees/bootstrap?scope=all")
+  const includeStats = employeesViewState.statisticsRequested || Boolean(employeesViewState.selectedProjectCode);
+  return fetch(apiUrl + "employees/bootstrap?scope=" + encodeURIComponent(scope) + (includeStats ? "&includeStats=true" : ""))
     .then(parseResponse)
     .then(async payload => {
+      if (sequence !== employeesViewState.loadSequence) return false;
+      // Once requested, amounts/counts remain visible on the directory cards
+      // even if the chart closes; keep those visible aggregates synchronized.
+      if (includeStats) employeesViewState.statisticsRequested = true;
       const employees = Array.isArray(payload && payload.employees) ? payload.employees : [];
-      const lookups = payload && payload.lookups ? payload.lookups : {};
       const scopedProjects = Array.isArray(payload && payload.projects) ? payload.projects : [];
       const projectItems = Array.isArray(scopedProjects) ? scopedProjects : [];
       employeesViewState.entryLookups = {
-        ...(lookups || {}),
         projects: projectItems,
       };
       populateEmployeesProjectFilter(projectItems);
@@ -3139,7 +3179,8 @@ async function openPeopleProjectFilter(employeeCode, projectCode, entryId = "") 
   if (searchInput) {
     searchInput.value = "";
   }
-
+  // Direct entry links can target archived staff; fetch that scope explicitly.
+  document.getElementById("employeesScopeSelect").value = "all";
   await loadEmployeesView();
   if (employeeCode) {
     employeesViewState.selectedEmployeeCode = employeeCode;
@@ -3643,10 +3684,28 @@ document.getElementById("employeeEditorProjectAssignmentsList").addEventListener
 });
 document.getElementById("employeesSearchInput").addEventListener("input", scheduleEmployeeSearchFilter);
 document.getElementById("employeesScopeSelect").addEventListener("change", applyEmployeeScopeFilterFromState);
-document.getElementById("employeesProjectSelect").addEventListener("change", () => {
+document.getElementById("employeesProjectSelect").addEventListener("change", async () => {
   employeesViewState.selectedProjectCode = getEmployeesProjectFilterValue();
   employeesViewState.autoOpenProjectCode = employeesViewState.selectedProjectCode;
-  applyEmployeeSearchFilter();
+  if (employeesViewState.employees.some(employee => employee.statsLoaded === false) && employeesViewState.selectedProjectCode) await loadEmployeesView();
+  else applyEmployeeSearchFilter();
+});
+document.getElementById("loadEmployeeAnalyticsBtn")?.addEventListener("click", async event => {
+  const body = document.getElementById("employeeAnalyticsBody");
+  const opening = body.classList.contains("d-none");
+  body.classList.toggle("d-none", !opening);
+  event.currentTarget.setAttribute("aria-expanded", String(opening));
+  if (opening) {
+    const hasStatistics = employeesViewState.employees.length > 0 && employeesViewState.employees.every(employee => employee.statsLoaded !== false);
+    employeesViewState.statisticsRequested = true;
+    try {
+      await loadScriptOnce(MANAGER_SCRIPT_SOURCE.chart);
+      if (!body.classList.contains("d-none")) {
+        if (hasStatistics) renderEmployeeAnalytics(employeesViewState.filteredEmployees, { force: true });
+        else await loadEmployeesView();
+      }
+    } catch (error) { showToast(t("projects.chartLibraryFailed"), "error"); }
+  }
 });
 document.getElementById("employeesResetFiltersBtn").addEventListener("click", () => {
   document.getElementById("employeesSearchInput").value = "";

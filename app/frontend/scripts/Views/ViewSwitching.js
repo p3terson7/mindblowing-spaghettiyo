@@ -110,6 +110,8 @@ function showView(viewId) {
 
   localStorage.setItem("activeView", resolvedViewId);
   updateWorkspaceHeading(resolvedViewId);
+  if (resolvedViewId === "adminView") window.refreshReviewHistoryIfVisible?.();
+  if (resolvedViewId === "employeesView") window.refreshSelectedEmployeeIfStale?.();
   return resolvedViewId;
 }
 

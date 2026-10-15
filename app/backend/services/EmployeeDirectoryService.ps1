@@ -406,7 +406,9 @@ function Get-EmployeeDirectoryListUncached {
     param(
         [bool]$IncludeDisabled = $false,
         $CurrentUser,
-        [switch]$ReuseContributions
+        [switch]$ReuseContributions,
+        [switch]$MetadataOnly,
+        [string]$Scope = "all"
     )
 
     $directoryList = New-Object System.Collections.ArrayList
@@ -434,9 +436,23 @@ function Get-EmployeeDirectoryListUncached {
         if ($isArchived -and -not $IncludeDisabled) {
             continue
         }
+        if (($Scope -eq "active" -and $isArchived) -or ($Scope -eq "archived" -and -not $isArchived)) { continue }
 
         $employeeCode = Get-UserEmployeeCodeValue -UserRecord $user
         $displayName = if ($user.displayName) { [string]$user.displayName } else { [string](Get-EmployeeName $employeeCode) }
+        if ($MetadataOnly) {
+            $responsibilities = Get-EmployeeDirectoryProjectResponsibilities -Index $responsibilityIndex -EmployeeCode $employeeCode
+            if ($isScopedManager -and $visibleProjectCodeSet.Count -eq 0 -and @($responsibilities.all).Count -eq 0) { continue }
+            [void]$directoryList.Add([PSCustomObject]@{
+                code = $employeeCode; name = $displayName; role = Get-EffectiveUserRole -UserRecord $user
+                archived = $isArchived; statsLoaded = $false
+                supervisedProjects = @($responsibilities.supervised); backupProjects = @($responsibilities.backup); responsibleProjects = @($responsibilities.all)
+                responsibleProjectCodes = @($responsibilities.all | ForEach-Object { [string]$_.projectCode })
+                timeEntryTypes = @(Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $user)
+                gc179Profile = Get-Gc179ProfileFromUserRecord -UserRecord $user
+            })
+            continue
+        }
         $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
         $contribution = $null
         if ($ReuseContributions -and (Get-Command -Name Get-EmployeeDirectoryContribution -ErrorAction SilentlyContinue)) {
@@ -497,7 +513,9 @@ function Get-EmployeeDirectoryListUncached {
 function Get-EmployeeDirectoryList {
     param(
         [bool]$IncludeDisabled = $false,
-        $CurrentUser
+        $CurrentUser,
+        [switch]$MetadataOnly,
+        [string]$Scope = "all"
     )
 
     $userScopeKey = if ($null -ne $CurrentUser -and (Get-Command -Name Get-ProjectAccessCacheUserKey -ErrorAction SilentlyContinue)) {
@@ -510,14 +528,16 @@ function Get-EmployeeDirectoryList {
         "anonymous"
     }
 
-    $cacheKey = "employee-directory-list|{0}|{1}" -f [bool]$IncludeDisabled, $userScopeKey
+    $cacheKey = "employee-directory-list|{0}|{1}|{2}|{3}" -f [bool]$IncludeDisabled, $userScopeKey, [bool]$MetadataOnly, $Scope
     if (Get-Command -Name Invoke-ReadModelCache -ErrorAction SilentlyContinue) {
-        return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
-            Get-EmployeeDirectoryListUncached -IncludeDisabled:$IncludeDisabled -CurrentUser $CurrentUser -ReuseContributions
+        $dependencies = @("directory", "auth", "projects")
+        if (-not $MetadataOnly) { $dependencies += "compensation" }
+        return (Invoke-ReadModelCache -Key $cacheKey -Dependencies $dependencies -Factory {
+            Get-EmployeeDirectoryListUncached -IncludeDisabled:$IncludeDisabled -CurrentUser $CurrentUser -ReuseContributions -MetadataOnly:$MetadataOnly -Scope $Scope
         })
     }
 
-    return (Get-EmployeeDirectoryListUncached -IncludeDisabled:$IncludeDisabled -CurrentUser $CurrentUser)
+    return (Get-EmployeeDirectoryListUncached -IncludeDisabled:$IncludeDisabled -CurrentUser $CurrentUser -MetadataOnly:$MetadataOnly -Scope $Scope)
 }
 
 function Get-EmployeeDirectoryRecordMetadata {

@@ -1,19 +1,15 @@
         # GET /employees/bootstrap: Return People view data in one response.
         if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/employees/bootstrap") {
-            $employees = @(Get-EmployeeDirectoryList -IncludeDisabled:$true -CurrentUser $currentUser)
+            $query = [System.Web.HttpUtility]::ParseQueryString($request.Url.Query)
+            $scope = if ($query["scope"]) { [string]$query["scope"] } else { "active" }
+            if ($scope -notin @("active", "archived", "all")) { respondWithError $response 400 "Invalid employee scope."; continue }
+            $employees = @(Get-EmployeeDirectoryList -IncludeDisabled:($scope -ne "active") -CurrentUser $currentUser -MetadataOnly:($query["includeStats"] -ne "true") -Scope $scope)
             # Include archived references for historical entries; mutation
             # controls filter them out before offering a new assignment.
             $scopedProjects = @(Get-ProjectsForCurrentUser -CurrentUser $currentUser -Scope "all")
             $payload = [PSCustomObject]@{
                 employees = $employees
                 projects  = $scopedProjects
-                lookups   = [PSCustomObject]@{
-                    projects       = $scopedProjects
-                    overtimeCodes  = @(Get-OvertimeCodes)
-                    paymentOptions = @(Get-PaymentOptions)
-                    reasonCodes    = @(Get-ReasonCodes)
-                    timeEntryTypes = @("overtime")
-                }
             }
 
             $json = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Http.SerializePersonnel" -Component "Http" -Type "json" -Action { $payload | ConvertTo-Json -Depth 8 } } else { $payload | ConvertTo-Json -Depth 8 }
@@ -31,7 +27,8 @@
                 $includeDisabled = $true
             }
 
-            $employees = @(Get-EmployeeDirectoryList -IncludeDisabled:$includeDisabled -CurrentUser $currentUser)
+            $directoryScope = if ($scope -in @("all", "archived")) { $scope } else { "active" }
+            $employees = @(Get-EmployeeDirectoryList -IncludeDisabled:$includeDisabled -CurrentUser $currentUser -Scope $directoryScope)
             if ($scope -eq "archived") {
                 $employees = @($employees | Where-Object { [bool]$_.archived })
             }

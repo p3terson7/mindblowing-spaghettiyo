@@ -253,7 +253,7 @@ assert.doesNotMatch(
   `, context);
   const affected = category => Array.from(context.getViewsAffectedBySyncStateForTest({ category, resource: "EMP-1" }));
 
-  assert.deepEqual(affected("project"), ["dashboardView", "projectsView", "adminView"]);
+  assert.deepEqual(affected("project"), ["dashboardView", "projectsView", "adminView", "employeesView"]);
   assert.deepEqual(affected("employee-directory"), ["dashboardView", "employeesView", "adminView"]);
   assert.deepEqual(affected("auth"), ["employeesView", "adminView"]);
   assert.deepEqual(affected("employee"), ["dashboardView", "employeesView", "adminView", "projectsView", "selfView"]);

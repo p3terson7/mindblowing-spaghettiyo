@@ -1,6 +1,22 @@
 let allHistoryEntries = [];
 let filteredHistoryEntriesByCategory = createEmptyHistoryCategories();
 let historyFilterTimerId = null;
+const historyPageState = { requested: false, stale: true, page: 1, sequence: 0, key: "", pending: null };
+window.resetReviewHistory = function () {
+  historyPageState.sequence++;
+  Object.assign(historyPageState, { requested: false, stale: true, page: 1, key: "", pending: null });
+  allHistoryEntries = [];
+  document.getElementById("historyWorkspace")?.classList.add("d-none");
+  document.getElementById("loadHistoryBtn")?.setAttribute("aria-expanded", "false");
+  Object.values(HISTORY_TAB_CONFIG).forEach(config => document.getElementById(config.containerId)?.replaceChildren());
+};
+window.invalidateReviewHistory = function () {
+  historyPageState.stale = true;
+  historyPageState.sequence++;
+};
+window.refreshReviewHistoryIfVisible = function () {
+  if (document.getElementById("adminView")?.classList.contains("active") && !document.getElementById("historyWorkspace")?.classList.contains("d-none")) return fetchHistory(historyPageState.page);
+};
 
 const HISTORY_FILTER_DEBOUNCE_MS = 150;
 const HISTORY_TAB_CONFIG = {
@@ -11,19 +27,42 @@ const HISTORY_TAB_CONFIG = {
   "delete-history-tab": { category: "delete", containerId: "deleteHistoryContainer", skeletonCount: 3 },
 };
 
-async function fetchHistory() {
+async function fetchHistory(page = 1) {
+  historyPageState.requested = true;
+  const config = getActiveHistoryTabConfig();
+  const query = new URLSearchParams({ page: String(page), category: config.category,
+    search: document.getElementById("historySearchInput").value,
+    startDate: document.getElementById("historyStartDate").value,
+    endDate: document.getElementById("historyEndDate").value });
+  const key = query.toString();
+  if (!historyPageState.stale && key === historyPageState.key) return historyPageState.pending || true;
+  if (historyPageState.pending && key === historyPageState.key && !historyPageState.stale) return historyPageState.pending;
+  const sequence = ++historyPageState.sequence;
+  historyPageState.key = key;
+  historyPageState.stale = false;
+  const work = (async () => {
   try {
     setActiveHistoryLoadingState();
-    const response = await fetch(apiUrl + "history");
-    const historyEntries = await parseResponse(response);
-    allHistoryEntries = Array.isArray(historyEntries) ? historyEntries : [];
-    applyHistoryFilters();
+    const payload = await fetch(apiUrl + "history?" + key).then(parseResponse);
+    if (sequence !== historyPageState.sequence) return false;
+    allHistoryEntries = Array.isArray(payload.items) ? payload.items : [];
+    historyPageState.page = payload.page;
+    renderHistoryTabs(allHistoryEntries, config);
+    const counts = payload.counts || {};
+    [ ["all-history-tab", "history.all", counts.all], ["add-history-tab", "history.added", counts.add], ["edit-history-tab", "history.updated", counts.update], ["approve-history-tab", "history.approvedRejected", counts.approval], ["delete-history-tab", "history.deleted", counts.delete] ].forEach(([id, label, count]) => { document.getElementById(id).textContent = t(label, { count: count || 0 }); });
+    const pager = document.getElementById("historyPagination");
+    if (pager) pager.innerHTML = `<button type="button" class="btn btn-outline-secondary btn-sm" data-history-page="${payload.page - 1}" ${payload.page <= 1 ? "disabled" : ""} aria-label="Previous page">‹</button><span>${payload.page} / ${payload.totalPages} · ${payload.total}</span><button type="button" class="btn btn-outline-secondary btn-sm" data-history-page="${payload.page + 1}" ${payload.page >= payload.totalPages ? "disabled" : ""} aria-label="Next page">›</button>`;
     return true;
   } catch (error) {
+    if (sequence !== historyPageState.sequence) return false;
+    historyPageState.stale = true;
     console.error("Error fetching history:", error);
     showToast(t("history.fetchError"), "error");
     return false;
   }
+  })();
+  historyPageState.pending = work;
+  try { return await work; } finally { if (sequence === historyPageState.sequence) historyPageState.pending = null; }
 }
 
 function formatHistoryTimestamp(timestamp) {
@@ -181,6 +220,11 @@ function renderHistoryTabs(historyEntries, targetConfig, clearInactive = true) {
 }
 
 function applyHistoryFilters(targetConfig, clearInactive = true) {
+  if (historyPageState.requested) {
+    historyPageState.stale = true;
+    if (!document.getElementById("historyWorkspace")?.classList.contains("d-none")) return fetchHistory(1);
+    return;
+  }
   if (historyFilterTimerId !== null) {
     window.clearTimeout(historyFilterTimerId);
     historyFilterTimerId = null;
@@ -219,6 +263,7 @@ document.getElementById("historyTabs").addEventListener("show.bs.tab", event => 
   if (!targetConfig) {
     return;
   }
+  if (historyPageState.requested) return;
 
   if (isHistoryLoading()) {
     setLoadingState(targetConfig.containerId, "activity", targetConfig.skeletonCount);
@@ -236,18 +281,28 @@ document.getElementById("historyTabs").addEventListener("show.bs.tab", event => 
 document.getElementById("historyTabs").addEventListener("shown.bs.tab", event => {
   const targetConfig = getHistoryTabConfig(event.target);
   if (targetConfig) {
+    if (historyPageState.requested) { fetchHistory(1); return; }
     clearInactiveHistoryContainers(targetConfig.category);
   }
 });
 
 document.getElementById("refreshHistoryBtn").addEventListener("click", async event => {
   await runButtonAction(event.currentTarget, async () => {
-    if (typeof loadReviewView === "function") {
-      await loadReviewView();
-      return;
-    }
-
+    document.getElementById("historyWorkspace")?.classList.remove("d-none");
+    document.getElementById("loadHistoryBtn")?.setAttribute("aria-expanded", "true");
+    historyPageState.stale = true;
     await fetchHistory();
   }, { key: "review-refresh" });
 });
 updateHistoryTabLabels([], [], [], [], []);
+document.getElementById("loadHistoryBtn")?.addEventListener("click", async event => {
+  const workspace = document.getElementById("historyWorkspace");
+  const opening = workspace.classList.contains("d-none");
+  workspace.classList.toggle("d-none", !opening);
+  event.currentTarget.setAttribute("aria-expanded", String(opening));
+  if (opening) await fetchHistory(historyPageState.page);
+});
+document.getElementById("historyPagination")?.addEventListener("click", event => {
+  const button = event.target.closest("[data-history-page]");
+  if (button && !button.disabled) fetchHistory(Number(button.dataset.historyPage));
+});

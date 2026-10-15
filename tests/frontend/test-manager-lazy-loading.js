@@ -42,7 +42,7 @@ const managerViewSources = JSON.parse(JSON.stringify(constantContext.managerView
 assert.deepEqual(managerViewIds, ["dashboardView", "employeesView", "adminView", "projectsView"]);
 assert.deepEqual(managerViewSources, {
   dashboardView: [managerScriptSource.dashboard],
-  employeesView: [managerScriptSource.dashboard, managerScriptSource.chart, managerScriptSource.employees],
+  employeesView: [managerScriptSource.dashboard, managerScriptSource.employees],
   adminView: [managerScriptSource.dashboard, managerScriptSource.approvals, managerScriptSource.history],
   projectsView: [managerScriptSource.chart, managerScriptSource.projects],
 });
@@ -206,10 +206,10 @@ async function testPerViewLoading() {
   ];
   const expectedDiscoveryOrder = [
     managerScriptSource.dashboard,
-    managerScriptSource.chart,
     managerScriptSource.employees,
     managerScriptSource.approvals,
     managerScriptSource.history,
+    managerScriptSource.chart,
     managerScriptSource.projects,
   ];
   assert.deepEqual(harness.requestedSources, expectedDiscoveryOrder, "all required requests must be discovered before any load settles");

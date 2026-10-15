@@ -15,7 +15,7 @@ function Get-EmployeeReadContribution {
         $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile -IncludeMonetary:$IncludeMonetary)
         $projectCodes = @($entries | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.projectCode) } | ForEach-Object { [string]$_.projectCode } | Sort-Object -Unique)
         $projected = if ($SkipProjection) { @() } else { @($entries | ForEach-Object { New-EmployeeEntryProjection -EmployeeCode $employeeCode -EmployeeName $name -Entry $_ -EmployeeRole $role }) }
-        $types = if ($SkipProjection) { @("overtime") } else { @(Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $User) }
+        $types = Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $User
         return [PSCustomObject]@{
             employee = [PSCustomObject]@{ code = $employeeCode; name = $name; role = $role; entryCount = $entries.Count; projectCodes = $projectCodes; timeEntryTypes = $types }
             entries = $entries

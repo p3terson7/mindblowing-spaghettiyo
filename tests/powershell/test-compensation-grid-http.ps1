@@ -203,7 +203,7 @@ try {
     Assert-Equal -Expected 200 -Actual $adminBudgetRead.StatusCode -Message "Managers must be able to read the budget calendar used by project statistics."
     $adminBudgetWrite = Invoke-TestRequest -Method "PUT" -Uri "$baseUri/budget-periods" -Token $adminToken -Body @{ cycleLabel = "blocked"; periods = @() }
     Assert-Equal -Expected 403 -Actual $adminBudgetWrite.StatusCode -Message "Only super admins may change budget dates."
-    $employeeBootstrap = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employees/bootstrap" -Token $adminToken
+    $employeeBootstrap = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employees/bootstrap?includeStats=true" -Token $adminToken
     Assert-Equal -Expected 200 -Actual $employeeBootstrap.StatusCode -Message "Manager employee bootstrap request failed."
     Assert-True -Condition ($employeeBootstrap.Body -notmatch "annualSalary|compensation-grid") -Message "Manager employee bootstrap exposed compensation data."
 
@@ -215,14 +215,14 @@ try {
     Assert-Equal -Expected 200 -Actual $legacyAmounts.StatusCode -Message "Legacy monetary read failed."
     $legacyAmountBefore = @($legacyAmounts.Json)[0].monetary.totalAmountCents
     Assert-True -Condition ([long]$legacyAmountBefore -gt 0) -Message "A configured legacy approval should show money without resaving its profile."
-    $legacyDirectory = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employees/bootstrap" -Token $superToken
+    $legacyDirectory = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employees/bootstrap?includeStats=true" -Token $superToken
     $legacyEmployee = @($legacyDirectory.Json.employees | Where-Object code -eq "000000002")[0]
     Assert-Equal -Expected $legacyAmountBefore -Actual $legacyEmployee.monetary.totalAmountCents -Message "Personnel directory did not expose the historical amount."
     Assert-Equal -Expected $legacyAmountBefore -Actual $legacyEmployee.projectStats[0].monetary.totalAmountCents -Message "Personnel project filter totals are missing."
     $legacyList = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employees?scope=all" -Token $superToken
     Assert-Equal -Expected $legacyAmountBefore -Actual @($legacyList.Json | Where-Object code -eq "000000002")[0].projectStats[0].monetary.totalAmountCents -Message "The employee list truncated its nested monetary aggregate."
     Assert-Equal -Expected $legacyDataBefore -Actual ([System.IO.File]::ReadAllText($legacyDataFile)) -Message "A read-only monetary request wrote to the employee file."
-    $scopedDirectory = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employees/bootstrap" -Token $adminToken
+    $scopedDirectory = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employees/bootstrap?includeStats=true" -Token $adminToken
     $managerLegacy = @($scopedDirectory.Json.employees | Where-Object code -eq "000000002")[0]
     Assert-Equal -Expected $legacyAmountBefore -Actual $managerLegacy.monetary.totalAmountCents -Message "Existing read-only manager access lost the monetary summary."
     Assert-True -Condition ($scopedDirectory.Body -notmatch 'annualSalaryCents|hourlyRateCents|compensationSnapshot') -Message "Personnel directory exposed private salary inputs."
@@ -427,7 +427,24 @@ try {
     $selfBootstrapAfterPromotion = Invoke-TestRequest -Method "GET" -Uri "$baseUri/self/bootstrap" -Token $employeeToken
     Assert-True -Condition ($selfBootstrapAfterPromotion.Body -notmatch 'monetary|annualSalary|compensationSnapshot') -Message "The employee bootstrap exposed private monetary data after classification was configured."
 
-    Write-Host "Business settings and bug-report HTTP integration passed: access, validation, revisions, statistics, and targeted sync are correct."
+    $lightDirectory = Invoke-TestRequest -Method GET -Uri "$baseUri/employees/bootstrap?scope=active" -Token $superToken
+    Assert-True -Condition ($lightDirectory.Json.PSObject.Properties.Name -notcontains "lookups") -Message "Personnel eagerly loaded entry-form lookups."
+    Assert-True -Condition (@($lightDirectory.Json.employees)[0].PSObject.Properties.Name -notcontains "monetary") -Message "Initial Personnel request eagerly calculated monetary statistics."
+    Write-TestJson -Path (Join-Path $dataRoot "history.json") -Value @(foreach ($index in 1..67) { @{ timestamp = "2026-10-01 12:00:00"; action = "Add"; employee = "000000001"; message = "Page action $index" } })
+    foreach ($path in @("history?page=1", "review/bootstrap", "employees/bootstrap")) {
+        $unauthenticated = Invoke-TestRequest -Method GET -Uri "$baseUri/$path"
+        Assert-Equal -Expected 401 -Actual $unauthenticated.StatusCode -Message "Lazy read endpoint allowed anonymous access."
+        $forbidden = Invoke-TestRequest -Method GET -Uri "$baseUri/$path" -Token $employeeToken
+        Assert-Equal -Expected 403 -Actual $forbidden.StatusCode -Message "Lazy read endpoint allowed employee manager access."
+    }
+    $page = Invoke-TestRequest -Method GET -Uri "$baseUri/history?page=1" -Token $adminToken
+    Assert-Equal -Expected 200 -Actual $page.StatusCode -Message "Manager could not request history page."
+    Assert-Equal -Expected 25 -Actual @($page.Json.items).Count -Message "History page exceeds 25 entries."
+    $badPage = Invoke-TestRequest -Method GET -Uri "$baseUri/history?page=0" -Token $superToken
+    Assert-Equal -Expected 400 -Actual $badPage.StatusCode -Message "History accepted invalid pagination."
+    $review = Invoke-TestRequest -Method GET -Uri "$baseUri/review/bootstrap" -Token $superToken
+    Assert-True -Condition ($review.Json.PSObject.Properties.Name -notcontains "history") -Message "Review still eagerly reads history."
+    Write-Host "Business settings and bug-report HTTP integration passed: access, validation, revisions, statistics, lazy pages and targeted sync are correct."
 }
 finally {
     $env:SAPHIR_INSTANCE_TOKEN = $previousInstanceToken

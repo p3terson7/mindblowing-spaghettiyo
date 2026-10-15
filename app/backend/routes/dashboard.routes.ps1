@@ -63,8 +63,7 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/review/bo
 
     try {
         $payload = [PSCustomObject]@{
-            approvals = @(Get-ApprovalsEntriesModel -CurrentUser $currentUser)
-            history   = @(Get-HistoryEntriesSnapshot)
+            approvals = @(Get-ApprovalsEntriesModel -CurrentUser $currentUser -IncludeMonetary:([System.Web.HttpUtility]::ParseQueryString($request.Url.Query)["includeMonetary"] -eq "true"))
             projects  = @(Get-ProjectsForCurrentUser -CurrentUser $currentUser -Scope "all")
         }
         $json = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Http.SerializeReview" -Component "Http" -Type "json" -Action { $payload | ConvertTo-Json -Depth 8 } } else { $payload | ConvertTo-Json -Depth 8 }
