@@ -5,9 +5,9 @@ param(
 )
 
 $repoRoot = Split-Path -Path $PSScriptRoot -Parent
-$scriptDir = Join-Path -Path $repoRoot -ChildPath "apps/admin/backend"
+$scriptDir = Join-Path -Path $repoRoot -ChildPath "app/backend"
 
-. (Join-Path -Path $scriptDir -ChildPath "lib/AdminContext.ps1")
+. (Join-Path -Path $scriptDir -ChildPath "lib/AppContext.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "lib/CommonHelpers.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "lib/FileStore.ps1")
 . (Join-Path -Path $scriptDir -ChildPath "lib/ResponseHelpers.ps1")
