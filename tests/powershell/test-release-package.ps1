@@ -85,6 +85,9 @@ try {
     $manifestPath = Join-Path -Path $distributionRoot -ChildPath "deployment/current.json"
 
     Assert-Equal -Expected $distributionRoot -Actual $result.DistributionFolder -Message "publisher must return the stable distribution folder"
+    foreach ($diagnosticFile in @("Benchmark SAPHIR.bat", "scripts/start-performance-capture.ps1", "scripts/analyze-performance-trace.ps1")) {
+        Assert-True -Condition (Test-Path -LiteralPath (Join-Path $distributionRoot $diagnosticFile) -PathType Leaf) -Message "deployment must expose $diagnosticFile for live captures"
+    }
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.vbs") -PathType Leaf) -Message "distribution must contain the stable launcher"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "SAPHIR Launcher.vbs") -PathType Leaf) -Message "distribution must contain the graphical launcher entry point"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "SAPHIR Launcher Host.vbs") -PathType Leaf) -Message "distribution must contain the self-updating launcher host"

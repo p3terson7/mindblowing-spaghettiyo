@@ -366,6 +366,10 @@ try {
         Copy-PackageItem -Source (Join-Path -Path $launcherSourceRoot -ChildPath $launcherName) -Destination (Join-Path -Path $bootstrapRoot -ChildPath $launcherName)
     }
     Write-PackagePlainTextGuide -Source (Join-Path -Path $repoRoot -ChildPath "docs/EMPLOYEE-QUICK-START.md") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "GUIDE-DEMARRAGE-SAPHIR.txt")
+    Copy-PackageItem -Source (Join-Path $launcherSourceRoot "Benchmark SAPHIR.bat") -Destination (Join-Path $bootstrapRoot "Benchmark SAPHIR.bat")
+    foreach ($diagnosticScript in @("start-performance-capture.ps1", "analyze-performance-trace.ps1")) {
+        Copy-PackageItem -Source (Join-Path $repoRoot ("scripts/" + $diagnosticScript)) -Destination (Join-Path $bootstrapRoot ("scripts/" + $diagnosticScript))
+    }
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/launch-cached-app.ps1") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "scripts/launch-cached-app.ps1")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/saphir-launcher.ps1") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "scripts/saphir-launcher.ps1")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/stop-all.ps1") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "scripts/stop-all.ps1")
@@ -375,6 +379,9 @@ try {
     Convert-PackagePowerShellFilesToUtf8Bom -Root $bootstrapRoot
 
     $launcherFingerprintPaths = @(
+        "Benchmark SAPHIR.bat",
+        "scripts/start-performance-capture.ps1",
+        "scripts/analyze-performance-trace.ps1",
         "scripts/lib/ApplicationLayout.ps1",
         "scripts/lib/RuntimeLayout.ps1",
         "scripts/lib/ServerControl.ps1",

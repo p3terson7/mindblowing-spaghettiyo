@@ -4,6 +4,21 @@ This is diagnostic instrumentation, not another application optimization. Cachin
 
 ## How to capture a real SAPHIR performance trace on a corporate Windows workstation
 
+After a full deployment, double-click **Benchmark SAPHIR.bat** in the deployed
+`SAPHIR-Distribution` folder. It uses the normal launcher to start the published,
+locally installed release against its real shared DATA; it does not generate test
+employees or replace data. It restarts SAPHIR on your workstation with detailed
+tracing enabled. Sign in, reproduce the delay, and export the browser trace.
+Send that export **and** the backend JSONL files from
+`%LOCALAPPDATA%\SAPHIR\diagnostics\performance`. Restart normally afterward to
+disable tracing. Detailed timings include instrumentation overhead.
+
+For summary mode from that same deployed folder, run
+`.\scripts\start-performance-capture.ps1 -Level summary`.
+The PowerShell command also works from the installed application folder. A bootstrap-only
+deployment cannot add instrumentation to an older application release: publish a
+full release containing diagnostics first.
+
 1. Install/publish the version containing these diagnostics first. Open its installed application folder—the folder containing `app` and `scripts`. With the cached launcher, it is under `%LOCALAPPDATA%\SAPHIR\versions\<installed-release>`. Use the release shown by the launcher, not an arbitrary old version.
 2. Open PowerShell in that folder and run:
 
