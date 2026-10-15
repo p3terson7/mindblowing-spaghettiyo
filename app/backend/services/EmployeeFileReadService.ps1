@@ -70,7 +70,10 @@ function Prefetch-EmployeeFileText {
                 [void]$jobs.Add([PSCustomObject]@{ shell = $shell; handle = $handle })
             }
             foreach ($job in $jobs) {
-                $output = if ($script:SaphirPerformanceEnabled) { @(Invoke-SaphirDiagnosticCall -Name "Runspaces.CollectWorker" -Component "Runspaces" -Type "wait" -Action { $job.shell.EndInvoke($job.handle) }) } else { @($job.shell.EndInvoke($job.handle)) }
+                # Wrap the entire conditional: arrays inside its branches are
+                # enumerated again by if. A single PSCustomObject has no Count
+                # in Windows PowerShell 5.1 and would be rejected as a failure.
+                $output = @(if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Runspaces.CollectWorker" -Component "Runspaces" -Type "wait" -Action { $job.shell.EndInvoke($job.handle) } } else { $job.shell.EndInvoke($job.handle) })
                 # HadErrors also records handled Get-Item misses/retries; the
                 # worker returns an explicit terminal failure after FileStore.
                 if ($output.Count -ne 1) {

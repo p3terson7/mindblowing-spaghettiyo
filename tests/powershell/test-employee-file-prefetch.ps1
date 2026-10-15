@@ -12,6 +12,37 @@ function Assert-Prefetch($Condition, [string]$Message) { if (-not $Condition) { 
 try {
     . (Join-Path $repo "tests/lib/CacheCoherenceFixture.ps1") -FixtureFolder $fixture -Create -EmployeeCount 12
     . (Join-Path $repo "app/backend/services/EmployeeFileReadService.ps1")
+    # Exercise the actual collector assignment, not a copy of its expression.
+    # PS7 gives scalar PSCustomObjects a synthetic Count=1; an explicit null
+    # Count reproduces the Windows PowerShell 5.1 behavior on every test host.
+    $collectorAssignments = @((Get-Command Prefetch-EmployeeFileText).ScriptBlock.Ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+            $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+            $node.Left.VariablePath.UserPath -eq "output"
+    }, $true))
+    Assert-Prefetch ($collectorAssignments.Count -eq 1) "Worker collector assignment was not found."
+    $collectWorker = [scriptblock]::Create($collectorAssignments[0].Extent.Text)
+    $originalTracing = $script:SaphirPerformanceEnabled
+    try {
+        foreach ($tracing in @($false, $true)) {
+            $script:SaphirPerformanceEnabled = $tracing
+            foreach ($resultCount in @(1, 0, 2)) {
+                $results = @(for ($index = 0; $index -lt $resultCount; $index++) {
+                    [PSCustomObject]@{ path = "synthetic-worker-$index"; Count = $null }
+                })
+                $fakeShell = [PSCustomObject]@{ Results = $results }
+                $fakeShell | Add-Member -MemberType ScriptMethod -Name EndInvoke -Value { param($handle) return $this.Results }
+                $job = [PSCustomObject]@{ shell = $fakeShell; handle = $null }
+                . $collectWorker
+                Assert-Prefetch ($output -is [array]) "Worker results were unwrapped (tracing=$tracing, results=$resultCount)."
+                Assert-Prefetch ($output.Count -eq $resultCount) "Worker result count changed (tracing=$tracing, results=$resultCount)."
+                if ($resultCount -eq 1) {
+                    Assert-Prefetch ($null -eq $output[0].Count -and $output[0].path -eq "synthetic-worker-0") "Collector changed the worker result instead of preserving its array."
+                }
+            }
+        }
+    } finally { $script:SaphirPerformanceEnabled = $originalTracing }
     $paths = @(1..12 | ForEach-Object { Join-Path $fixture ("{0:000000000}_data.json" -f (710000 + $_)) })
     $script:TextFileCache = @{}; $script:FileMetadataCache = @{}
     Prime-EmployeeFileMetadata $paths
