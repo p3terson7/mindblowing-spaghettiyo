@@ -18,6 +18,19 @@ try {
     . (Join-Path $backend "lib/PerformanceTrace.ps1")
     Start-SaphirPerformanceTrace "GET /employee/Private-Employee-Name?token=private-token"
     Assert-Trace ($null -ne $script:SaphirPerformanceWriter) "Local persistent writer failed to initialize."
+    $savedSink = $script:SaphirPerformanceRecord.sink
+    $savedPending = $script:SaphirPerformanceRecord.pending
+    try {
+        $script:SaphirPerformanceRecord.sink = $null
+        $script:SaphirPerformanceRecord.pending = New-Object Collections.ArrayList
+        $script:SaphirPerformanceWriterFailed = $true
+        Write-SaphirPerformanceEvent -Event "span_start" -Fields @{}
+        Assert-Trace ($script:SaphirPerformanceRecord.pending.Count -eq 0) "Failed writer continued constructing unsavable events."
+    } finally {
+        $script:SaphirPerformanceRecord.sink = $savedSink
+        $script:SaphirPerformanceRecord.pending = $savedPending
+        $script:SaphirPerformanceWriterFailed = $false
+    }
     $traceId = $script:SaphirPerformanceRecord.id
     function Test-InlineTraceParameters($first, $second = "default") { return "$first|$second" }
     function Test-TraceVariableArguments { return ($args -join "|") }

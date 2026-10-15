@@ -5,13 +5,23 @@ This is diagnostic instrumentation, not another application optimization. Cachin
 ## How to capture a real SAPHIR performance trace on a corporate Windows workstation
 
 After a full deployment, double-click **Benchmark SAPHIR.bat** in the deployed
-`SAPHIR-Distribution` folder. It uses the normal launcher to start the published,
-locally installed release against its real shared DATA; it does not generate test
-employees or replace data. It restarts SAPHIR on your workstation with detailed
-tracing enabled. Sign in, reproduce the delay, and export the browser trace.
-Send that export **and** the backend JSONL files from
-`%LOCALAPPDATA%\SAPHIR\diagnostics\performance`. Restart normally afterward to
-disable tracing. Detailed timings include instrumentation overhead.
+`SAPHIR-Distribution` folder. Enter your SAPHIR username/password once (password
+hidden). It starts the published app against its real shared DATA, automatically
+tests the main GET endpoints twice, and saves a report ZIP under
+`%LOCALAPPDATA%\SAPHIR\diagnostics`. Send that ZIP. No browser exports or manual
+log collection are needed. It restores normal, untraced operation afterward.
+
+The report includes request duration/status/response size and matching sanitized
+backend stdout aggregates, when available. A failed optional JSONL writer does
+not prevent the HTTP benchmark or stdout aggregates. No response bodies, names,
+salary values, password or token are exported. Business endpoints are GET-only;
+the only POSTs are normal login and logout for the benchmark's own session.
+Use an administrator account to measure management views; access-denied and
+server-error responses are reported as failures, not successful load times.
+This is an API benchmark, not a browser-render or isolated-cold-load benchmark.
+Summary tracing still adds overhead. Do not run alongside other work in SAPHIR.
+
+For manual browser tracing instead:
 
 For summary mode from that same deployed folder, run
 `.\scripts\start-performance-capture.ps1 -Level summary`.

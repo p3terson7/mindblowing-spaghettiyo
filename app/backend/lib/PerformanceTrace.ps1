@@ -73,6 +73,9 @@ function Write-SaphirPerformanceEvent {
     param([string]$Event, $Frame, $Fields)
     $record = $script:SaphirPerformanceRecord
     if ($null -eq $record) { return }
+    # Keep the useful stdout aggregates, but do not serialize unsavable events
+    # after initialization fails (or after its bounded startup buffer is full).
+    if (-not $record.sink -and ($script:SaphirPerformanceWriterFailed -or $null -eq $record.pending -or $record.pending.Count -ge 64)) { return }
     try {
         $ticks = [Diagnostics.Stopwatch]::GetTimestamp()
         $item = [ordered]@{
