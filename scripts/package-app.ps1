@@ -43,6 +43,31 @@ function Copy-PackageItem {
     Copy-Item -LiteralPath $Source -Destination $Destination -Force -Recurse:$Recurse -ErrorAction Stop
 }
 
+function Complete-PackageBootstrapLayout {
+    param([string]$DistributionRoot)
+    # Retire only these publisher-owned duplicate entry points. Preserve them
+    # in a recoverable archive; never recursively clean the distribution/DATA.
+    $archiveRoot = $null
+    foreach ($name in @('Launch SAPHIR.bat', 'Launch SAPHIR.vbs', 'SAPHIR Launcher.vbs', 'SAPHIR Launcher Host.vbs', 'Stop SAPHIR.bat', 'Stop SAPHIR.vbs', 'Benchmark SAPHIR.bat', 'SAPHIR.ico')) {
+        $path = Join-Path $DistributionRoot $name
+        if (-not [IO.File]::Exists($path)) { continue }
+        if (-not $archiveRoot) {
+            $archiveRoot = Join-Path $DistributionRoot ('deployment/legacy-bootstrap/' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfff') + '-' + [Guid]::NewGuid().ToString('N'))
+            Ensure-PackageDirectory $archiveRoot
+        }
+        Move-Item -LiteralPath $path -Destination (Join-Path $archiveRoot $name) -ErrorAction Stop
+    }
+    # Older already-installed hosts have these two paths hardcoded. Retaining
+    # a hidden forwarding shim avoids forcing everybody to reinstall once.
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        foreach ($name in @('Install SAPHIR Shortcut.vbs', 'launcher-version.txt')) {
+            $path = Join-Path $DistributionRoot $name
+            [IO.File]::SetAttributes($path, ([IO.File]::GetAttributes($path) -bor [IO.FileAttributes]::Hidden))
+        }
+    }
+    if ($archiveRoot) { Write-Host "Previous duplicate launcher files were moved to $archiveRoot (recoverable)." }
+}
+
 function Write-PackagePlainTextGuide {
     param(
         [Parameter(Mandatory = $true)][string]$Source,
@@ -362,11 +387,15 @@ try {
     # until the release ZIP has also been built and validated successfully.
     Ensure-PackageDirectory -Path $bootstrapRoot
     Ensure-PackageDirectory -Path (Join-Path -Path $bootstrapRoot -ChildPath "scripts/lib")
-    foreach ($launcherName in @("Launch SAPHIR.bat", "Launch SAPHIR.vbs", "SAPHIR Launcher.vbs", "SAPHIR Launcher Host.vbs", "Stop SAPHIR.bat", "Stop SAPHIR.vbs", "Install SAPHIR Shortcut.vbs", "Installer SAPHIR sur le Bureau.vbs", "SAPHIR.ico")) {
-        Copy-PackageItem -Source (Join-Path -Path $launcherSourceRoot -ChildPath $launcherName) -Destination (Join-Path -Path $bootstrapRoot -ChildPath $launcherName)
+    foreach ($launcherName in @("SAPHIR Launcher.vbs", "SAPHIR Launcher Host.vbs", "Install SAPHIR Shortcut.vbs", "SAPHIR.ico")) {
+        Copy-PackageItem -Source (Join-Path $launcherSourceRoot $launcherName) -Destination (Join-Path $bootstrapRoot ("deployment/launcher/" + $launcherName))
     }
+    Copy-PackageItem -Source (Join-Path $launcherSourceRoot "Installer SAPHIR sur le Bureau.vbs") -Destination (Join-Path $bootstrapRoot "Installer SAPHIR sur le Bureau.vbs")
+    Copy-PackageItem -Source (Join-Path $launcherSourceRoot "Installer SAPHIR sur le Bureau.vbs") -Destination (Join-Path $bootstrapRoot "Install SAPHIR Shortcut.vbs")
     Write-PackagePlainTextGuide -Source (Join-Path -Path $repoRoot -ChildPath "docs/EMPLOYEE-QUICK-START.md") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "GUIDE-DEMARRAGE-SAPHIR.txt")
-    Copy-PackageItem -Source (Join-Path $launcherSourceRoot "Benchmark SAPHIR.bat") -Destination (Join-Path $bootstrapRoot "Benchmark SAPHIR.bat")
+    Copy-PackageItem -Source (Join-Path $launcherSourceRoot "Benchmark SAPHIR.bat") -Destination (Join-Path $bootstrapRoot "tools/Benchmark SAPHIR.bat")
+    Copy-PackageItem -Source (Join-Path $launcherSourceRoot "backfill-compensation.ps1") -Destination (Join-Path $bootstrapRoot "scripts/backfill-compensation.ps1")
+    Copy-PackageItem -Source (Join-Path $repoRoot "docs/COMPENSATION-BACKFILL.md") -Destination (Join-Path $bootstrapRoot "tools/COMPENSATION-BACKFILL.md")
     foreach ($diagnosticScript in @("start-performance-capture.ps1", "analyze-performance-trace.ps1", "benchmark-live-app.ps1")) {
         Copy-PackageItem -Source (Join-Path $repoRoot ("scripts/" + $diagnosticScript)) -Destination (Join-Path $bootstrapRoot ("scripts/" + $diagnosticScript))
     }
@@ -379,7 +408,9 @@ try {
     Convert-PackagePowerShellFilesToUtf8Bom -Root $bootstrapRoot
 
     $launcherFingerprintPaths = @(
-        "Benchmark SAPHIR.bat",
+        "tools/Benchmark SAPHIR.bat",
+        "tools/COMPENSATION-BACKFILL.md",
+        "scripts/backfill-compensation.ps1",
         "scripts/start-performance-capture.ps1",
         "scripts/analyze-performance-trace.ps1",
         "scripts/benchmark-live-app.ps1",
@@ -392,15 +423,12 @@ try {
         "scripts/launch-cached-app.ps1",
         "scripts/saphir-launcher.ps1",
         "GUIDE-DEMARRAGE-SAPHIR.txt",
-        "SAPHIR.ico",
-        "SAPHIR Launcher.vbs",
-        "SAPHIR Launcher Host.vbs",
+        "deployment/launcher/SAPHIR.ico",
+        "deployment/launcher/SAPHIR Launcher.vbs",
+        "deployment/launcher/SAPHIR Launcher Host.vbs",
+        "deployment/launcher/Install SAPHIR Shortcut.vbs",
         "Install SAPHIR Shortcut.vbs",
-        "Installer SAPHIR sur le Bureau.vbs",
-        "Stop SAPHIR.bat",
-        "Stop SAPHIR.vbs",
-        "Launch SAPHIR.bat",
-        "Launch SAPHIR.vbs"
+        "Installer SAPHIR sur le Bureau.vbs"
     )
     $launcherFingerprint = Get-PackageLauncherFingerprint -Root $bootstrapRoot -RelativePaths $launcherFingerprintPaths
     [System.IO.File]::WriteAllText(
@@ -408,18 +436,20 @@ try {
         $launcherFingerprint,
         (New-Object System.Text.UTF8Encoding($false))
     )
+    Copy-PackageItem -Source (Join-Path $bootstrapRoot "launcher-version.txt") -Destination (Join-Path $bootstrapRoot "deployment/launcher/launcher-version.txt")
     # Publish the version marker last. A local launcher will only attempt an
     # automatic upgrade after every file for that fingerprint is visible.
-    $bootstrapRelativePaths = @($launcherFingerprintPaths) + @("launcher-version.txt")
+    $bootstrapRelativePaths = @($launcherFingerprintPaths) + @("deployment/launcher/launcher-version.txt", "launcher-version.txt")
 
     if ($BootstrapOnly) {
         foreach ($relativePath in $bootstrapRelativePaths) {
             Publish-PackageFileAtomic -Source (Join-Path -Path $bootstrapRoot -ChildPath $relativePath) -Destination (Join-Path -Path $distributionRoot -ChildPath $relativePath)
         }
+        Complete-PackageBootstrapLayout -DistributionRoot $distributionRoot
 
         Write-Host "SAPHIR launcher bootstrap published successfully."
         Write-Host "No application ZIP, current.json pointer, or DATA file was changed."
-        Write-Host "Existing workstations need one final run of 'Installer SAPHIR sur le Bureau.vbs'. Future launcher updates install themselves automatically."
+        Write-Host "Existing self-updating launchers retain automatic updates. New workstations use 'Installer SAPHIR sur le Bureau.vbs'."
 
         [PSCustomObject]@{
             DistributionFolder = $distributionRoot
@@ -557,6 +587,7 @@ try {
     foreach ($relativePath in $bootstrapRelativePaths) {
         Publish-PackageFileAtomic -Source (Join-Path -Path $bootstrapRoot -ChildPath $relativePath) -Destination (Join-Path -Path $distributionRoot -ChildPath $relativePath)
     }
+    Complete-PackageBootstrapLayout -DistributionRoot $distributionRoot
 
     # Publish the small pointer last. Employees either see the previous complete
     # release or this complete, checksummed release—never a half-copied update.
@@ -587,7 +618,19 @@ try {
             if (Test-Path -LiteralPath $outerZipPath) {
                 Remove-Item -LiteralPath $outerZipPath -Force
             }
-            Compress-Archive -Path (Join-Path -Path $distributionRoot -ChildPath "*") -DestinationPath $outerZipPath -CompressionLevel Optimal -Force
+            # Compress-Archive omits hidden files on Windows, including the legacy
+            # update bridge. Include only publisher-owned files, explicitly.
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $outerFiles = @($bootstrapRelativePaths) + @('deployment/current.json') + @(
+                Get-ChildItem -LiteralPath $releasesRoot -Filter 'SAPHIR-*.zip' -File |
+                    ForEach-Object { 'deployment/releases/' + $_.Name }
+            )
+            $outerArchive = [IO.Compression.ZipFile]::Open($outerZipPath, [IO.Compression.ZipArchiveMode]::Create)
+            try {
+                foreach ($relativePath in @($outerFiles | Select-Object -Unique)) {
+                    [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($outerArchive, (Join-Path $distributionRoot $relativePath), $relativePath.Replace('\', '/'), [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+                }
+            } finally { $outerArchive.Dispose() }
 
             $oldDistributionZips = @(Get-ChildItem -LiteralPath $OutputRoot -Filter "SAPHIR-Distribution-*.zip" -File -ErrorAction SilentlyContinue |
                 Where-Object { $_.FullName -ne $outerZipPath } |

@@ -3,6 +3,7 @@ Option Explicit
 Dim shell
 Dim fso
 Dim distributionRoot
+Dim launcherPayloadRoot
 Dim sourceLauncherEntryPath
 Dim sourceLauncherHostPath
 Dim sourceLauncherVersionPath
@@ -126,16 +127,21 @@ Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 
 distributionRoot = fso.GetAbsolutePathName(fso.GetParentFolderName(WScript.ScriptFullName))
-sourceLauncherEntryPath = fso.BuildPath(distributionRoot, "SAPHIR Launcher.vbs")
-sourceLauncherHostPath = fso.BuildPath(distributionRoot, "SAPHIR Launcher Host.vbs")
-sourceLauncherVersionPath = fso.BuildPath(distributionRoot, "launcher-version.txt")
+launcherPayloadRoot = distributionRoot
+If LCase(fso.GetFileName(distributionRoot)) = "launcher" And _
+   LCase(fso.GetFileName(fso.GetParentFolderName(distributionRoot))) = "deployment" Then
+    distributionRoot = fso.GetParentFolderName(fso.GetParentFolderName(distributionRoot))
+End If
+sourceLauncherEntryPath = fso.BuildPath(launcherPayloadRoot, "SAPHIR Launcher.vbs")
+sourceLauncherHostPath = fso.BuildPath(launcherPayloadRoot, "SAPHIR Launcher Host.vbs")
+sourceLauncherVersionPath = fso.BuildPath(launcherPayloadRoot, "launcher-version.txt")
 sourceLauncherScriptPath = fso.BuildPath(distributionRoot, "scripts\saphir-launcher.ps1")
 sourceLauncherControlPath = fso.BuildPath(distributionRoot, "scripts\lib\LauncherControl.ps1")
 sourceApplicationLayoutPath = fso.BuildPath(distributionRoot, "scripts\lib\ApplicationLayout.ps1")
 sourceCachedLaunchPath = fso.BuildPath(distributionRoot, "scripts\launch-cached-app.ps1")
 sourceLocalCachePath = fso.BuildPath(distributionRoot, "scripts\lib\LocalAppCache.ps1")
 sourceServerControlPath = fso.BuildPath(distributionRoot, "scripts\lib\ServerControl.ps1")
-sourceIconPath = fso.BuildPath(distributionRoot, "SAPHIR.ico")
+sourceIconPath = fso.BuildPath(launcherPayloadRoot, "SAPHIR.ico")
 
 If Not fso.FileExists(sourceLauncherEntryPath) Then
     shell.Popup "SAPHIR Launcher.vbs is missing from the distribution folder.", 0, "SAPHIR", 16

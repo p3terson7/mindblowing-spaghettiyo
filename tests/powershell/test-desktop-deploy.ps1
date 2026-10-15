@@ -77,7 +77,7 @@ try {
     $manifestPath = Join-Path $distribution 'deployment/current.json'
     $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
     Assert-Deploy ($manifest.releaseId -eq 'desktop-test-a' -and $manifest.sha256 -eq (Get-FileHash -LiteralPath $result.ReleasePackage).Hash.ToLowerInvariant()) 'Manifest/package mismatch.'
-    Assert-Deploy ([IO.File]::Exists((Join-Path $distribution 'Launch SAPHIR.vbs'))) 'Launchers were not published.'
+    Assert-Deploy ([IO.File]::Exists((Join-Path $distribution 'Installer SAPHIR sur le Bureau.vbs'))) 'Single installer was not published.'
     Assert-Deploy (@(Get-ChildItem -LiteralPath $outputRoot -Directory).Count -eq 1) 'Source folders were copied onto the share.'
     Assert-Deploy (@(Get-ChildItem -LiteralPath $stageRoot -Directory).Count -eq 0) 'Successful staging was not cleaned.'
     Assert-Deploy ((Get-FileHash -LiteralPath $zipPath).Hash -ceq $downloadHash) 'Downloaded ZIP changed.'

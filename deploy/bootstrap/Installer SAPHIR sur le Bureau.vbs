@@ -13,9 +13,12 @@ Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 
 distributionRoot = fso.GetAbsolutePathName(fso.GetParentFolderName(WScript.ScriptFullName))
-installerPath = fso.BuildPath(distributionRoot, "Install SAPHIR Shortcut.vbs")
-
+installerPath = fso.BuildPath(distributionRoot, "deployment\launcher\Install SAPHIR Shortcut.vbs")
 If Not fso.FileExists(installerPath) Then
+    installerPath = fso.BuildPath(distributionRoot, "Install SAPHIR Shortcut.vbs")
+End If
+
+If Not fso.FileExists(installerPath) Or StrComp(installerPath, WScript.ScriptFullName, vbTextCompare) = 0 Then
     shell.Popup "L'installateur SAPHIR principal est introuvable dans ce dossier." & vbCrLf & vbCrLf & _
         "The main SAPHIR installer is missing from this folder.", 0, "SAPHIR", 16
     WScript.Quit 1

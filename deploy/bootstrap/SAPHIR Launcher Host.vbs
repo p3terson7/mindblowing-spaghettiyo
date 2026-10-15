@@ -148,10 +148,12 @@ If updateCheckOnly Then
     End If
 
     If Len(distributionRoot) > 0 Then
-        sharedVersionPath = fso.BuildPath(distributionRoot, "launcher-version.txt")
+        sharedVersionPath = fso.BuildPath(distributionRoot, "deployment\launcher\launcher-version.txt")
+        If Not fso.FileExists(sharedVersionPath) Then sharedVersionPath = fso.BuildPath(distributionRoot, "launcher-version.txt")
         sharedVersion = ReadTextFile(sharedVersionPath, False)
         If Len(sharedVersion) > 0 And StrComp(sharedVersion, localVersion, vbTextCompare) <> 0 Then
-            sharedInstallerPath = fso.BuildPath(distributionRoot, "Install SAPHIR Shortcut.vbs")
+            sharedInstallerPath = fso.BuildPath(distributionRoot, "deployment\launcher\Install SAPHIR Shortcut.vbs")
+            If Not fso.FileExists(sharedInstallerPath) Then sharedInstallerPath = fso.BuildPath(distributionRoot, "Install SAPHIR Shortcut.vbs")
             If fso.FileExists(sharedInstallerPath) Then
                 windowsScriptHost = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\wscript.exe")
                 If Not fso.FileExists(windowsScriptHost) Then

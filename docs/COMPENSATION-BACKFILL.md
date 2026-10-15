@@ -4,6 +4,14 @@
 
 ## 1. Preview
 
+From the deployed `SAPHIR-Distribution` folder, run:
+
+```powershell
+.\scripts\backfill-compensation.ps1
+```
+
+The deployed wrapper uses the current published release, verifies/extracts it into the local application cache if needed, and reads the DATA path from the deployment manifest. It does not start SAPHIR. After stopping SAPHIR on every computer, apply with `.\scripts\backfill-compensation.ps1 -Apply -AppStopped`. A full release is required to publish the migration code; BootstrapOnly is not enough when upgrading from a release without it. The guide is also published under `tools/COMPENSATION-BACKFILL.md`.
+
 Run from the repository or an extracted application release (the directory containing `app` and `scripts`). Replace the example DATA path with the actual shared DATA folder:
 
 ```powershell

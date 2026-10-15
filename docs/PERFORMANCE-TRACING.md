@@ -4,7 +4,7 @@ This is diagnostic instrumentation, not another application optimization. Cachin
 
 ## How to capture a real SAPHIR performance trace on a corporate Windows workstation
 
-After a full deployment, double-click **Benchmark SAPHIR.bat** in the deployed
+After a full deployment, double-click **tools/Benchmark SAPHIR.bat** in the deployed
 `SAPHIR-Distribution` folder. Enter your SAPHIR username/password once (password
 hidden). It starts the published app against its real shared DATA, automatically
 tests the main GET endpoints twice, and saves a report ZIP under

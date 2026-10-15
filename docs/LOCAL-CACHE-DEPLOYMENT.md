@@ -30,7 +30,7 @@ This creates the stable employee folder:
 \\server\department\Applications\SAPHIR-Distribution
 ```
 
-The folder contains the clearly named `Installer SAPHIR sur le Bureau.vbs`, its compatibility installer, the graphical launcher, diagnostic launch/stop files, the Windows icon, employee guide, release pointer and current release ZIP. It does not contain production data, tests, reset scripts or source-only administration utilities. Employees use this `SAPHIR-Distribution` folder—not the source-code repository.
+The only visible top-level installer is `Installer SAPHIR sur le Bureau.vbs`. Launcher internals and the icon live under `deployment/launcher`; the benchmark and migration guide live under `tools`. Administrative commands, including `scripts/backfill-compensation.ps1`, remain under `scripts`. A hidden root compatibility installer and version marker preserve older launchers' automatic updates. Obsolete root launch/stop files are moved to `deployment/legacy-bootstrap` during publication, not deleted. Employees use this `SAPHIR-Distribution` folder—not the source-code repository. It contains no production data or tests.
 
 If your department only exposes a mapped R: drive, use the equivalent command:
 
@@ -47,7 +47,7 @@ These permissions do not add runtime encryption or expensive security checks. Th
 
 ## First shortcut installation
 
-`SAPHIR-Distribution` is a new stable folder. Existing Desktop shortcuts do not retarget themselves, so send employees the exact new network path and ask them to run `Installer SAPHIR sur le Bureau.vbs` once. This installs a zero-admin launcher under `%LOCALAPPDATA%\SAPHIR\launcher`, creates the **SAPHIR** Desktop shortcut and opens the launcher automatically. The local window opens before any network probe; launcher-update, application-update and data checks happen in the background. Keep the previous distribution available during the pilot, then archive it according to your normal retention process after everyone has confirmed the new shortcut. After this installation, the stable local host detects a newer launcher fingerprint and installs the new immutable launcher bundle automatically. Employees do not need to rerun the installer for later launcher or application updates. `Install SAPHIR Shortcut.vbs` remains beside it for launcher compatibility and automated background upgrades.
+`SAPHIR-Distribution` is a stable folder. When moving to a different network path, ask employees to run `Installer SAPHIR sur le Bureau.vbs` once. This installs a zero-admin launcher under `%LOCALAPPDATA%\SAPHIR\launcher`, creates the **SAPHIR** Desktop shortcut and opens the launcher automatically. Later updates at the same distribution path remain automatic, including this layout change. The hidden `Install SAPHIR Shortcut.vbs` bridge supports older installed hosts; do not remove it.
 
 The launcher uses Windows Script Host, Windows PowerShell 5.1 and WPF already included with supported Windows workstations. It does not require PowerShell 7, .NET SDK, an Internet download, a package manager or administrator rights.
 

@@ -80,29 +80,37 @@ try {
     [System.IO.File]::WriteAllText((Join-Path $dataFolder "users.json"), '[{"hrmis":"000123456","gc179Profile":{"group":"AS","subGroup":"03","level":"1"}}]')
     [System.IO.File]::WriteAllText((Join-Path $dataFolder "000123456_data.json"), '[{"entryId":"preserve-existing-entry","status":"approved"}]')
     $dataFingerprintBefore = Get-TestDataFingerprint -Path $dataFolder
-    $result = & $publisherPath -OutputRoot $outputRoot -DataFolderPath $dataFolder -ReleaseId "package-test-a" -NoZip -AllowLocalDataPath
+    $result = & $publisherPath -OutputRoot $outputRoot -DataFolderPath $dataFolder -ReleaseId "package-test-a" -AllowLocalDataPath
     $distributionRoot = Join-Path -Path $outputRoot -ChildPath "SAPHIR-Distribution"
     $manifestPath = Join-Path -Path $distributionRoot -ChildPath "deployment/current.json"
+    $outerArchive = [IO.Compression.ZipFile]::OpenRead((Join-Path $outputRoot 'SAPHIR-Distribution-package-test-a.zip'))
+    try {
+        $outerNames = @($outerArchive.Entries | ForEach-Object { $_.FullName })
+        foreach ($required in @('Install SAPHIR Shortcut.vbs', 'launcher-version.txt', 'scripts/backfill-compensation.ps1', 'deployment/launcher/Install SAPHIR Shortcut.vbs')) {
+            Assert-True -Condition ($outerNames -contains $required) -Message "outer ZIP must include $required, even when hidden on Windows"
+        }
+        Assert-True -Condition (-not ($outerNames -contains 'Launch SAPHIR.vbs')) -Message 'outer ZIP must omit duplicate root launcher'
+    } finally { $outerArchive.Dispose() }
 
     Assert-Equal -Expected $distributionRoot -Actual $result.DistributionFolder -Message "publisher must return the stable distribution folder"
-    foreach ($diagnosticFile in @("Benchmark SAPHIR.bat", "scripts/start-performance-capture.ps1", "scripts/analyze-performance-trace.ps1", "scripts/benchmark-live-app.ps1")) {
+    foreach ($diagnosticFile in @("tools/Benchmark SAPHIR.bat", "scripts/start-performance-capture.ps1", "scripts/analyze-performance-trace.ps1", "scripts/benchmark-live-app.ps1", "scripts/backfill-compensation.ps1")) {
         Assert-True -Condition (Test-Path -LiteralPath (Join-Path $distributionRoot $diagnosticFile) -PathType Leaf) -Message "deployment must expose $diagnosticFile for live captures"
     }
-    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.vbs") -PathType Leaf) -Message "distribution must contain the stable launcher"
-    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "SAPHIR Launcher.vbs") -PathType Leaf) -Message "distribution must contain the graphical launcher entry point"
-    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "SAPHIR Launcher Host.vbs") -PathType Leaf) -Message "distribution must contain the self-updating launcher host"
+    Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $distributionRoot "Launch SAPHIR.vbs"))) -Message "duplicate launcher must not appear at the distribution root"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $distributionRoot "deployment/launcher/SAPHIR Launcher.vbs") -PathType Leaf) -Message "distribution must contain the internal graphical launcher"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $distributionRoot "deployment/launcher/SAPHIR Launcher Host.vbs") -PathType Leaf) -Message "distribution must contain the internal self-updating host"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "launcher-version.txt") -PathType Leaf) -Message "distribution must contain the launcher version marker"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "Install SAPHIR Shortcut.vbs") -PathType Leaf) -Message "distribution must contain the desktop-shortcut installer"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "Installer SAPHIR sur le Bureau.vbs") -PathType Leaf) -Message "distribution must expose a clearly named French desktop installer"
-    Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "SAPHIR.ico") -PathType Leaf) -Message "distribution must contain the SAPHIR Windows icon"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $distributionRoot "deployment/launcher/SAPHIR.ico") -PathType Leaf) -Message "distribution must contain the internal Windows icon"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "scripts/saphir-launcher.ps1") -PathType Leaf) -Message "distribution must contain the graphical launcher interface"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "scripts/lib/LauncherControl.ps1") -PathType Leaf) -Message "distribution must contain the launcher controller"
-    $packagedBatchLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.bat"))
-    $packagedSilentLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Launch SAPHIR.vbs"))
-    $packagedGraphicalLauncher = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "SAPHIR Launcher.vbs"))
-    $packagedLauncherHost = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "SAPHIR Launcher Host.vbs"))
+    $packagedBatchLauncher = [System.IO.File]::ReadAllText((Join-Path $repoRoot "deploy/bootstrap/Launch SAPHIR.bat"))
+    $packagedSilentLauncher = [System.IO.File]::ReadAllText((Join-Path $repoRoot "deploy/bootstrap/Launch SAPHIR.vbs"))
+    $packagedGraphicalLauncher = [System.IO.File]::ReadAllText((Join-Path $distributionRoot "deployment/launcher/SAPHIR Launcher.vbs"))
+    $packagedLauncherHost = [System.IO.File]::ReadAllText((Join-Path $distributionRoot "deployment/launcher/SAPHIR Launcher Host.vbs"))
     $packagedLauncherInterface = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "scripts/saphir-launcher.ps1"))
-    $packagedShortcutInstaller = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Install SAPHIR Shortcut.vbs"))
+    $packagedShortcutInstaller = [System.IO.File]::ReadAllText((Join-Path $distributionRoot "deployment/launcher/Install SAPHIR Shortcut.vbs"))
     $packagedFriendlyInstaller = [System.IO.File]::ReadAllText((Join-Path -Path $distributionRoot -ChildPath "Installer SAPHIR sur le Bureau.vbs"))
     $packagedLauncherVersion = (Get-Content -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "launcher-version.txt") -Raw).Trim()
     Assert-True -Condition ($packagedLauncherVersion -match '^[a-f0-9]{64}$') -Message "launcher version must be a deterministic SHA-256 fingerprint"
@@ -149,7 +157,7 @@ try {
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('"Version du lanceur : " & bundleId', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer confirmation must identify the installed launcher bundle"
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('localIconPath & ",0"', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must use the locally cached icon"
     Assert-True -Condition ([regex]::IsMatch($publisherSource, '"SAPHIR Launcher\.vbs",\s*"SAPHIR Launcher Host\.vbs"')) -Message "publisher must expose the graphical entry point and stable host together"
-    Assert-True -Condition ($publisherSource.IndexOf('$bootstrapRelativePaths = @($launcherFingerprintPaths) + @("launcher-version.txt")', [System.StringComparison]::Ordinal) -ge 0) -Message "publisher must expose the launcher fingerprint only after all launcher files"
+    Assert-True -Condition ($publisherSource.IndexOf('$bootstrapRelativePaths = @($launcherFingerprintPaths) + @("deployment/launcher/launcher-version.txt", "launcher-version.txt")', [System.StringComparison]::Ordinal) -ge 0) -Message "publisher must expose both launcher fingerprints only after all payload files"
     $employeeGuidePath = Join-Path -Path $distributionRoot -ChildPath "GUIDE-DEMARRAGE-SAPHIR.txt"
     Assert-True -Condition (Test-Path -LiteralPath $employeeGuidePath -PathType Leaf) -Message "distribution must contain a guide that opens in Notepad"
     $employeeGuideText = Get-Content -LiteralPath $employeeGuidePath -Raw -Encoding UTF8
@@ -244,7 +252,8 @@ try {
     # without altering either the release pointer or any immutable ZIP.
     $distributionInstallerPath = Join-Path -Path $distributionRoot -ChildPath "Install SAPHIR Shortcut.vbs"
     $distributionLayoutResolverPath = Join-Path -Path $distributionRoot -ChildPath "scripts/lib/ApplicationLayout.ps1"
-    Set-Content -LiteralPath $distributionInstallerPath -Value "' legacy transition fixture" -Encoding ASCII
+    Set-Content -LiteralPath $distributionInstallerPath -Value "' legacy transition fixture" -Encoding ASCII -Force
+    [IO.File]::WriteAllText((Join-Path $distributionRoot "Launch SAPHIR.bat"), '@echo old-launcher')
     Remove-Item -LiteralPath $distributionLayoutResolverPath -Force
 
     $manifestBeforeBootstrapOnly = [System.IO.File]::ReadAllBytes($manifestPath)
@@ -283,9 +292,18 @@ try {
         -Actual ($releaseHashesAfterBootstrapOnly -join "|") `
         -Message "bootstrap-only publication must leave every existing release ZIP byte-for-byte unchanged"
     Assert-True -Condition (Test-Path -LiteralPath $distributionLayoutResolverPath -PathType Leaf) -Message "bootstrap-only publication must publish the topology compatibility resolver"
-    $bootstrapOnlyInstaller = [System.IO.File]::ReadAllText($distributionInstallerPath)
+    $bootstrapOnlyInstaller = [System.IO.File]::ReadAllText((Join-Path $distributionRoot 'deployment/launcher/Install SAPHIR Shortcut.vbs'))
     Assert-True -Condition ($bootstrapOnlyInstaller.IndexOf('sourceApplicationLayoutPath', [System.StringComparison]::Ordinal) -ge 0) -Message "bootstrap-only publication must replace the historical installer with the canonical/legacy transition installer"
     Assert-True -Condition ($bootstrapOnlyInstaller.IndexOf('fso.DeleteFile markerPath, True', [System.StringComparison]::Ordinal) -ge 0) -Message "bootstrap-only publication must expose the installer retry contract that clears a stale failed-release marker"
+    Assert-True -Condition (-not [IO.File]::Exists((Join-Path $distributionRoot 'Launch SAPHIR.bat'))) -Message "old duplicate launcher must be removed from the visible root"
+    $archivedLaunchers = @(Get-ChildItem -LiteralPath (Join-Path $distributionRoot 'deployment/legacy-bootstrap') -Recurse -File | Where-Object Name -eq 'Launch SAPHIR.bat')
+    Assert-True -Condition ($archivedLaunchers.Count -eq 1 -and [IO.File]::ReadAllText($archivedLaunchers[0].FullName) -eq '@echo old-launcher') -Message "obsolete launchers must be archived recoverably, not deleted"
+    $bridgeText = [IO.File]::ReadAllText($distributionInstallerPath)
+    Assert-True -Condition ($bridgeText.Contains('deployment\launcher\Install SAPHIR Shortcut.vbs')) -Message "legacy hidden installer must forward to the current internal installer"
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        $visibleScripts = @(Get-ChildItem -LiteralPath $distributionRoot -File | Where-Object { $_.Extension -in @('.vbs', '.bat', '.ps1') })
+        Assert-True -Condition ($visibleScripts.Count -eq 1 -and $visibleScripts[0].Name -eq 'Installer SAPHIR sur le Bureau.vbs') -Message "Windows users must see only the single installer"
+    }
 
     & $publisherPath -OutputRoot $outputRoot -DataFolderPath $dataFolder -ReleaseId "package-test-b" -NoZip -AllowLocalDataPath | Out-Null
     $updatedManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
