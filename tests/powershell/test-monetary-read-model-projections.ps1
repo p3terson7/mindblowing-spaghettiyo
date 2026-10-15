@@ -104,23 +104,6 @@ Assert-Equal 1 $directoryStats.monetary.unavailableEntryCount "Personnel must no
 Assert-Equal 12345 @($directoryStats.projectStats | Where-Object projectCode -eq "P001")[0].monetary.totalAmountCents "Personnel project filters need scoped monetary totals."
 Assert-True (($directoryStats | ConvertTo-Json -Depth 12 -Compress) -notmatch 'annualSalaryCents|hourlyRateCents|compensationSnapshot') "Personnel statistics leaked private salary inputs."
 
-$script:estimateReadCalls = 0
-function Get-EmployeeCompensationReadEstimates {
-    param([string]$EmployeeCode, $Entries)
-    $script:estimateReadCalls++
-    return $Entries
-}
-$script:ReadModelFactoryDepth = 1
-$metadata = [PSCustomObject]@{ LastWriteTicks = 100; Length = 200 }
-Get-CachedEmployeeMonetaryEntries -DataFile "000100001_data.json" -Metadata $metadata -Entries @($approvedEntry) | Out-Null
-Get-CachedEmployeeMonetaryEntries -DataFile "000100001_data.json" -Metadata $metadata -Entries @($approvedEntry) | Out-Null
-Assert-Equal 1 $script:estimateReadCalls "Warm monetary requests must not repeat salary calculations."
-$script:ReadModelCache = @{}
-Get-CachedEmployeeMonetaryEntries -DataFile "000100001_data.json" -Metadata $metadata -Entries @($approvedEntry) | Out-Null
-Assert-Equal 1 $script:estimateReadCalls "An unrelated view refresh must preserve monetary estimates."
-$script:EmployeeMonetaryEntryCache = @{}
-Get-CachedEmployeeMonetaryEntries -DataFile "000100001_data.json" -Metadata $metadata -Entries @($approvedEntry) | Out-Null
-Assert-Equal 2 $script:estimateReadCalls "A monetary source invalidation must refresh derived estimates."
-$script:ReadModelFactoryDepth = 0
+Assert-True ($null -eq (Get-Command Get-CachedEmployeeMonetaryEntries -ErrorAction SilentlyContinue)) "Read-time monetary fallback must not exist."
 
 Write-Host "Monetary read-model projection tests passed."

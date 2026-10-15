@@ -12,7 +12,6 @@ function Clear-CompensationGridRuntimeCache {
     $script:CompensationGridRuntimeCache = $null
     $script:CompensationSalaryBandIndexCache = $null
     $script:CompensationGridSourceCache = $null
-    $script:EmployeeMonetaryEntryCache = @{}
 }
 
 function Read-CompensationGridDocumentFromDisk {

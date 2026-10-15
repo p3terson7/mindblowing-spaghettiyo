@@ -64,6 +64,9 @@ function New-UnavailableEntryCompensationSnapshot {
         classification                    = if ($null -ne $Assignment) { [PSCustomObject][ordered]@{ group = [string]$Assignment.group; subGroup = [string]$Assignment.subGroup; level = [string]$Assignment.level } } else { $null }
         sourceFingerprint                  = $SourceFingerprint
         unavailableReason                 = $Reason
+        totalAmountCents                  = $null
+        cashAmountCents                   = $null
+        compensatoryLeaveValueCents       = $null
         calculatedAtUtc                   = $CalculatedAtUtc
     }
 }
@@ -355,34 +358,6 @@ function Set-ApprovedEntryCompensationSnapshots {
     return $Entries
 }
 
-function Get-EmployeeCompensationReadEstimates {
-    <#
-        Legacy approvals can be displayed without a write/backfill on a shared
-        drive. Calculate on private copies of the whole employee document (not
-        the filtered project/date slice, which would reset daily thresholds).
-        Captured final snapshots remain authoritative and are never replaced.
-    #>
-    param(
-        [Parameter(Mandatory = $true)][string]$EmployeeCode,
-        [Parameter(Mandatory = $true)][AllowEmptyCollection()]$Entries
-    )
-
-    $sourceEntries = @($Entries)
-    $needsEstimate = @($sourceEntries | Where-Object {
-        [string]$_.status -eq "approved" -and [string]$_.entryType -ne "diverse" -and
-        ($_.PSObject.Properties.Name -notcontains "compensationSnapshot" -or [string]$_.compensationSnapshot.snapshotStatus -ne "final")
-    }).Count -gt 0
-    if (-not $needsEstimate) { return $sourceEntries }
-
-    $copies = @($sourceEntries | ForEach-Object {
-        $properties = [ordered]@{}
-        foreach ($property in $_.PSObject.Properties) { $properties[$property.Name] = $property.Value }
-        [PSCustomObject]$properties
-    })
-    Set-ApprovedEntryCompensationSnapshots -EmployeeCode $EmployeeCode -Entries $copies -MissingSnapshotsOnly | Out-Null
-    return $copies
-}
-
 function Update-EmployeeApprovedCompensationSnapshots {
     <#
         Reconciles historical approved entries after a super admin changes an
@@ -400,8 +375,16 @@ function Update-EmployeeApprovedCompensationSnapshots {
     $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile
     try {
         $entries = @(Read-JsonArrayFile -Path $dataFile)
+        $needsRefresh = @($entries | Where-Object {
+            ([string]$_.status).Trim().ToLowerInvariant() -eq 'approved' -and
+            ([string]$_.entryType).Trim().ToLowerInvariant() -ne 'diverse' -and
+            [string]$_.compensationSnapshot.snapshotStatus -ne 'final'
+        }).Count -gt 0
+        if (-not $needsRefresh) { return [PSCustomObject]@{ changed = $false; approvedEntryCount = @($entries | Where-Object status -eq 'approved').Count } }
         $before = ConvertTo-Json -InputObject @($entries) -Depth 8 -Compress
-        Set-ApprovedEntryCompensationSnapshots -EmployeeCode $EmployeeCode -Entries $entries | Out-Null
+        # Profile/grid corrections retry only missing or unavailable results.
+        # Never reprice a previously captured final amount on a settings save.
+        Set-ApprovedEntryCompensationSnapshots -EmployeeCode $EmployeeCode -Entries $entries -MissingSnapshotsOnly | Out-Null
         $after = ConvertTo-Json -InputObject @($entries) -Depth 8 -Compress
         $changed = ($before -ne $after)
         if ($changed) {
@@ -427,4 +410,24 @@ function Update-EmployeeApprovedCompensationSnapshots {
         catch { Write-Warning "Snapshots saved; refresh publication failed. Source-file reconciliation remains active." }
     }
     return $result
+}
+
+function Update-UnavailableCompensationSnapshotsForGrid {
+    # Only a settings-write workflow calls this. Views never scan salary
+    # settings or retry N/A results. Final snapshots retain their captured pay.
+    $changedCodes = New-Object Collections.ArrayList
+    $warnings = New-Object Collections.ArrayList
+    foreach ($file in @(Get-ChildItem -LiteralPath $sharedFolder -File -Filter '*_data.json' -ErrorAction Stop)) {
+        if ($file.BaseName -notmatch '^(\d+)_data$') { continue }
+        $code = $Matches[1]
+        try {
+            $result = Update-EmployeeApprovedCompensationSnapshots -EmployeeCode $code -DeferPublication
+            if ($result.changed) { [void]$changedCodes.Add($code) }
+        }
+        catch {
+            Write-Warning ("Unable to refresh stored compensation for employee {0}: {1}" -f $code, $_.Exception.Message)
+            [void]$warnings.Add("Stored amounts could not be refreshed for employee $code. Save that employee's classification again to retry.")
+        }
+    }
+    return [PSCustomObject]@{ changedEmployeeCodes = @($changedCodes.ToArray()); warnings = @($warnings.ToArray()) }
 }

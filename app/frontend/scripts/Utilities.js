@@ -1394,7 +1394,7 @@ function renderMonetaryEntryValue(entry) {
   if (!entry.monetary) return "";
   return entry.monetary.status === "final" && entry.monetary.totalAmountCents != null
     ? `<span class="entry-monetary-value" title="${escapeHtml(t("money.salaryOnlyEstimate"))}">${escapeHtml(formatCurrencyCents(entry.monetary.totalAmountCents, entry.monetary.currency))}</span>`
-    : `<span class="entry-monetary-value monetary-unavailable-text">${escapeHtml(getMonetaryUnavailableLabel(entry.monetary.unavailableReason))}</span>`;
+    : `<span class="entry-monetary-value monetary-unavailable-text" title="${escapeHtml(getMonetaryUnavailableLabel(entry.monetary.unavailableReason))}">${escapeHtml(t("money.unavailable"))}</span>`;
 }
 
 function getEntryDurationSeconds(entry) {

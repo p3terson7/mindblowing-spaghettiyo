@@ -28,9 +28,7 @@ try {
     $band = $external.bands[0]
     $resolved = Saphir.CompensationGrid\Resolve-CompensationSalaryBand -SalaryBandIndex $updatedIndex -Group $band.group -SubGroup $band.subGroup -Level $band.level -AsOfDate ([DateTime]$band.effectiveFrom)
     Assert-True ($resolved.annualSalaryCents -eq $band.annualSalaryCents) "The refreshed index returned the old salary."
-    $script:EmployeeMonetaryEntryCache = @{ synthetic = $true }
     Clear-CompensationGridRuntimeCache
-    Assert-True ($script:EmployeeMonetaryEntryCache.Count -eq 0) "A grid save must immediately invalidate derived amounts."
     Assert-True ($null -eq $script:CompensationGridRuntimeCache -and $null -eq $script:CompensationSalaryBandIndexCache -and $null -eq $script:CompensationGridSourceCache) "Explicit grid invalidation left a stale runtime dependency."
     Write-Host "Compensation-grid runtime cache passed: validated documents, index reuse, content keys and exact updated rates."
 } finally {

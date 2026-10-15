@@ -260,7 +260,7 @@ cache frontend n'est une autorité d'accès ni de persistance.
 | Auth `LoginThrottleState` | Échecs par principal/client | Fenêtre 300 s, nettoyage/plafond ~4096 | Aucun SMB; contrôle de sécurité, pas cache redondant à retirer. |
 | ReadModel `ReadModelCache` | Dashboard, snapshots, listes/détails/statistiques | Aucun TTL propre; TOUT vidé sur nouveau changeId | Sync d'abord; rebuild peut reparcourir tous les employés. Plusieurs représentations et clés de filtres. |
 | ReadModel `EmployeeEntryFileCache` | Entrées normalisées, snapshots privés internes | Taille/timestamp; epoch + révisions employé pour invalidation ciblée | Metadata par fichier lors d'un rebuild, contenu réutilisé sinon; une collection par employé. |
-| ReadModel `EmployeeMonetaryEntryCache` | Estimations | Fichier + grille + classe si estimations non figées; invalidations ciblées | Réutilisation des métadonnées/texte de grille; collection supplémentaire seulement si demandée. |
+| Montants persistés (`compensationSnapshot`) | Résultat ou N/A | Révision du fichier employé | Remplace l'ancien `EmployeeMonetaryEntryCache` : aucun calcul ni lecture de classification/grille pour afficher un montant. Voir `COMPENSATION-BACKFILL.md`. |
 | Compensation `CompensationGridRuntimeCache` | Document normalisé + raw | Identité du contenu/purge après changement | FileStore metadata puis texte; conserve une copie raw. |
 | Compensation `CompensationGridSourceCache` | Hash de grille + raw | Seulement recalculé si contenu différent | Même source FileStore; pas de hash par entrée. |
 | Compensation `CompensationSalaryBandIndexCache` | Index de bandes | Identité du document de grille | Aucun SMB supplémentaire; index utile pour calculs répétés. |

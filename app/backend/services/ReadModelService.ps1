@@ -22,10 +22,6 @@ if (-not $script:EmployeeEntryFileCache) {
     $script:EmployeeEntryFileCache = @{}
 }
 
-if (-not $script:EmployeeMonetaryEntryCache) {
-    $script:EmployeeMonetaryEntryCache = @{}
-}
-
 if (-not $script:ReadModelSyncState) {
     $script:ReadModelSyncState = $null
 }
@@ -172,7 +168,6 @@ function Clear-EmployeeEntryCacheForCode {
     if ($script:EmployeeEntryFileCache.ContainsKey($dataFile)) {
         $script:EmployeeEntryFileCache.Remove($dataFile) | Out-Null
     }
-    $script:EmployeeMonetaryEntryCache.Remove($dataFile) | Out-Null
     return $true
 }
 
@@ -199,7 +194,6 @@ function Clear-AllEmployeeEntryCaches {
         Clear-CachedFileContent -Path ([string]$path)
     }
     $script:EmployeeEntryFileCache = @{}
-    $script:EmployeeMonetaryEntryCache = @{}
     $script:ReadModelSourceStamps = @{}
 }
 
@@ -212,11 +206,6 @@ function Clear-ReadModelFileCache {
 }
 
 function Clear-AllReadModelCoreFileCaches {
-    # With a grid-content key, coalesced changes can retain unrelated estimates.
-    # Without that dependency reader (standalone consumers), fail conservatively.
-    if (-not (Get-Command -Name Get-CompensationGridCacheKey -ErrorAction SilentlyContinue)) {
-        $script:EmployeeMonetaryEntryCache = @{}
-    }
     foreach ($corePath in @(
         $projectsFile,
         $mappingFile,
@@ -297,10 +286,9 @@ function Clear-ReadModelCoreCachesForChange {
             }
         }
         "compensation" {
-            # Keep raw employee files warm, but invalidate the dedicated
-            # monetary cache because editable salary bands have changed.
+            # Amounts are persisted in employee files, never derived on reads.
+            # The grid-save workflow publishes employee revisions when needed.
             Clear-ReadModelFileCache -Path $compensationGridFile
-            $script:EmployeeMonetaryEntryCache = @{}
             Clear-ReadModelFileCache -Path $historyFile
             if (Get-Command -Name Clear-CompensationGridRuntimeCache -ErrorAction SilentlyContinue) {
                 Clear-CompensationGridRuntimeCache
@@ -747,55 +735,6 @@ function New-EmployeeEntryProjectionForAccessModel {
     return $projection
 }
 
-function Get-CachedEmployeeMonetaryEntries {
-    param([string]$DataFile, $Metadata, [AllowEmptyCollection()]$Entries)
-
-    $employeeCode = [System.IO.Path]::GetFileName($DataFile) -replace "_data\.json$", ""
-    if (-not (Test-ReadModelEmployeeCode -Value $employeeCode) -or
-        -not (Get-Command -Name Get-EmployeeCompensationReadEstimates -ErrorAction SilentlyContinue)) {
-        return $Entries
-    }
-    $cached = $script:EmployeeMonetaryEntryCache[$DataFile]
-    $sameFile = $cached -and $cached.LastWriteTicks -eq $Metadata.LastWriteTicks -and $cached.Length -eq $Metadata.Length
-    if ($sameFile -and -not $cached.DependsOnCurrentData) {
-        return $cached.Entries
-    }
-    $dependsOnCurrentData = if ($sameFile) { $cached.DependsOnCurrentData } else {
-        @($Entries | Where-Object {
-            [string]$_.status -eq "approved" -and [string]$_.entryType -ne "diverse" -and
-            ($_.PSObject.Properties.Name -notcontains "compensationSnapshot" -or [string]$_.compensationSnapshot.snapshotStatus -ne "final")
-        }).Count -gt 0
-    }
-    $gridKey = ""
-    $classificationKey = ""
-    if ($dependsOnCurrentData) {
-        if (Get-Command -Name Get-CompensationGridCacheKey -ErrorAction SilentlyContinue) {
-            try { $gridKey = Get-CompensationGridCacheKey } catch { $gridKey = "#unavailable" }
-        }
-        if ((Get-Command -Name Get-EmployeeUserByCode -ErrorAction SilentlyContinue) -and
-            (Get-Command -Name Get-EmployeeClassificationFromUserRecord -ErrorAction SilentlyContinue)) {
-            try {
-                $user = Get-EmployeeUserByCode -EmployeeCode $employeeCode
-                $classification = if ($null -ne $user) { Get-EmployeeClassificationFromUserRecord -UserRecord $user } else { $null }
-                $classificationKey = if ($null -ne $classification) { "{0}|{1}|{2}" -f $classification.group, $classification.subGroup, $classification.level } else { "#missing" }
-            } catch { $classificationKey = "#invalid" }
-        }
-    }
-    if ($sameFile -and $cached.GridKey -ceq $gridKey -and $cached.ClassificationKey -ceq $classificationKey) {
-        return $cached.Entries
-    }
-    $estimates = @(Get-EmployeeCompensationReadEstimates -EmployeeCode $employeeCode -Entries @($Entries))
-    $script:EmployeeMonetaryEntryCache[$DataFile] = [PSCustomObject]@{
-        LastWriteTicks = $Metadata.LastWriteTicks
-        Length = $Metadata.Length
-        Entries = $estimates
-        DependsOnCurrentData = [bool]$dependsOnCurrentData
-        GridKey = $gridKey
-        ClassificationKey = $classificationKey
-    }
-    return $estimates
-}
-
 function Get-CachedEmployeeEntriesForFile {
     param([Parameter(Mandatory = $true)][string]$DataFile, [switch]$IncludeMonetary)
 
@@ -810,15 +749,11 @@ function Get-CachedEmployeeEntriesForFile {
         if ($script:EmployeeEntryFileCache.ContainsKey($DataFile)) {
             $script:EmployeeEntryFileCache.Remove($DataFile) | Out-Null
         }
-        $script:EmployeeMonetaryEntryCache.Remove($DataFile) | Out-Null
         return @()
     }
 
     $cacheEntry = $script:EmployeeEntryFileCache[$DataFile]
     if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
-        if ($IncludeMonetary) {
-            return (Get-CachedEmployeeMonetaryEntries -DataFile $DataFile -Metadata $metadata -Entries @($cacheEntry.Entries))
-        }
         return $cacheEntry.Entries
     }
 
@@ -840,9 +775,8 @@ function Get-CachedEmployeeEntriesForFile {
         Entries        = $entries
     }
 
-    if ($IncludeMonetary) {
-        return (Get-CachedEmployeeMonetaryEntries -DataFile $DataFile -Metadata $metadata -Entries $entries)
-    }
+    # IncludeMonetary remains accepted for existing callers. Both modes read
+    # exactly the same persisted snapshot; no salary/settings lookup occurs.
     return $entries
 }
 

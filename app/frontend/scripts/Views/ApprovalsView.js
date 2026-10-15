@@ -1,6 +1,5 @@
 let allApprovalEntries = [];
 let approvalScopedProjects = [];
-let reviewMonetaryLoaded = false;
 
 function buildApprovalEmployeeOptions(entries) {
   const currentValue = document.getElementById("reviewEmployeeFilter")?.value || "";
@@ -117,9 +116,7 @@ async function loadReviewView() {
     setLoadingState("attentionContainer", "queue", 2);
     setLoadingState("rejectedContainer", "queue", 2);
     setLoadingState("approvedContainer", "queue", 2);
-    const monetary = document.getElementById("approved-tab")?.classList.contains("active") || false;
-    const payload = await fetch(apiUrl + "review/bootstrap" + (monetary ? "?includeMonetary=true" : "")).then(parseResponse);
-    reviewMonetaryLoaded = monetary;
+    const payload = await fetch(apiUrl + "review/bootstrap").then(parseResponse);
     allApprovalEntries = Array.isArray(payload && payload.approvals) ? payload.approvals : [];
     approvalScopedProjects = Array.isArray(payload && payload.projects) ? payload.projects : [];
     document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(allApprovalEntries);
@@ -135,9 +132,6 @@ async function loadReviewView() {
 }
 
 window.loadReviewView = loadReviewView;
-document.getElementById("approvalTabs")?.addEventListener("shown.bs.tab", event => {
-  if (event.target.id === "approved-tab" && !reviewMonetaryLoaded) loadReviewView();
-});
 
 function updateApprovalTabLabels(pendingEntries, attentionEntries, rejectedEntries, approvedEntries) {
   document.getElementById("pending-tab").textContent = t("review.pending", { count: pendingEntries.length });

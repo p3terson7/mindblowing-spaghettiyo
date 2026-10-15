@@ -216,6 +216,8 @@ try {
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/backend/services/DataSchemaService.ps1") -PathType Leaf) -Message "runtime must include the data schema guard"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/frontend/assets/saphir-logo.png") -PathType Leaf) -Message "runtime UI must include the optimized SAPHIR logo"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "docs/GC179.pdf") -PathType Leaf) -Message "runtime must include the GC179 template"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $expandedRelease "scripts/backfill-compensation.ps1") -PathType Leaf) -Message "runtime must include the manual compensation backfill script"
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $expandedRelease "docs/COMPENSATION-BACKFILL.md") -PathType Leaf) -Message "runtime must include backfill safety instructions"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "data"))) -Message "runtime ZIP must exclude data"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps"))) -Message "new runtime ZIPs must contain only the canonical app tree"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps/employee"))) -Message "runtime ZIP must exclude the legacy employee application"

@@ -440,6 +440,8 @@ try {
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "app") -Destination (Join-Path -Path $runtimeRoot -ChildPath "app") -Recurse
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "docs/GC179.pdf") -Destination (Join-Path -Path $runtimeRoot -ChildPath "docs/GC179.pdf")
     Copy-PackageItem -Source (Join-Path -Path $repoRoot -ChildPath "scripts/launch-app.ps1") -Destination (Join-Path -Path $runtimeRoot -ChildPath "scripts/launch-app.ps1")
+    Copy-PackageItem -Source (Join-Path $repoRoot "scripts/backfill-compensation.ps1") -Destination (Join-Path $runtimeRoot "scripts/backfill-compensation.ps1")
+    Copy-PackageItem -Source (Join-Path $repoRoot "docs/COMPENSATION-BACKFILL.md") -Destination (Join-Path $runtimeRoot "docs/COMPENSATION-BACKFILL.md")
     foreach ($diagnosticScript in @("start-performance-capture.ps1", "analyze-performance-trace.ps1", "benchmark-live-app.ps1")) {
         Copy-PackageItem -Source (Join-Path $repoRoot ("scripts/" + $diagnosticScript)) -Destination (Join-Path $runtimeRoot ("scripts/" + $diagnosticScript))
     }

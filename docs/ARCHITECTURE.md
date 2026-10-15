@@ -392,6 +392,8 @@ DATA ne change pas.
 
 ## Dettes explicitement reportées
 
+Les montants utilisent maintenant un seul chemin : calcul et stockage lors des écritures, puis lecture de `compensationSnapshot` dans les vues. Un résultat indisponible est stocké explicitement et affiché N/A; compléter la classification ou confirmer l'horaire déclenche sa mise à jour, sans calcul au chargement. Voir [la transition des anciennes entrées](COMPENSATION-BACKFILL.md).
+
 Les travaux suivants ne font pas partie du premier lot de modularisation :
 
 - convertir les scripts de routes en fonctions;

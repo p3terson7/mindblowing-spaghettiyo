@@ -152,7 +152,8 @@ try {
     )
     $legacyDataFile = Join-Path $dataRoot "000000002_data.json"
     Write-TestJson -Path $legacyDataFile -Value @(
-        [PSCustomObject]@{ entryId = "legacy-read-only"; name = "Legacy Worker"; entryType = "overtime"; date = "2026-09-01"; punchIn = "17:00:00"; punchOut = "18:00:00"; overtime = "01:00:00"; status = "approved"; projectCode = "LEGACY"; overtimeCode = "260"; paymentOption = "cash"; workSchedule = "regular" }
+        [PSCustomObject]@{ entryId = "legacy-read-only"; name = "Legacy Worker"; entryType = "overtime"; date = "2026-09-01"; punchIn = "17:00:00"; punchOut = "18:00:00"; overtime = "01:00:00"; status = "approved"; projectCode = "LEGACY"; overtimeCode = "260"; paymentOption = "cash"; workSchedule = "regular" },
+        [PSCustomObject]@{ entryId = "schedule-na"; name = "Legacy Worker"; entryType = "overtime"; date = "2026-09-02"; punchIn = "17:00:00"; punchOut = "18:00:00"; overtime = "01:00:00"; status = "approved"; projectCode = "LEGACY"; overtimeCode = "260"; paymentOption = "cash"; workSchedule = "unconfirmed" }
     )
     $legacyDataBefore = [System.IO.File]::ReadAllText($legacyDataFile)
 
@@ -213,8 +214,9 @@ try {
 
     $legacyAmounts = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employee/000000002" -Token $superToken
     Assert-Equal -Expected 200 -Actual $legacyAmounts.StatusCode -Message "Legacy monetary read failed."
-    $legacyAmountBefore = @($legacyAmounts.Json)[0].monetary.totalAmountCents
-    Assert-True -Condition ([long]$legacyAmountBefore -gt 0) -Message "A configured legacy approval should show money without resaving its profile."
+    Assert-True -Condition ($null -eq @($legacyAmounts.Json)[0].monetary.totalAmountCents) -Message "Unmigrated entries must be N/A, never calculated on GET."
+    Assert-Equal -Expected 'snapshot-missing' -Actual @($legacyAmounts.Json)[0].monetary.unavailableReason -Message "Unmigrated entries need an explicit reason."
+    $legacyAmountBefore = 0
     $legacyDirectory = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employees/bootstrap?includeStats=true" -Token $superToken
     $legacyEmployee = @($legacyDirectory.Json.employees | Where-Object code -eq "000000002")[0]
     Assert-Equal -Expected $legacyAmountBefore -Actual $legacyEmployee.monetary.totalAmountCents -Message "Personnel directory did not expose the historical amount."
@@ -381,17 +383,27 @@ try {
     $validBands += [PSCustomObject]@{ id = "cr-04-01-2026-h2"; group = "CR"; subGroup = "04"; level = "1"; annualSalaryCents = 5900000; effectiveFrom = "2026-07-01"; effectiveTo = "" }
     $validSave = Invoke-TestRequest -Method "PUT" -Uri "$baseUri/compensation-grid" -Token $superToken -Body @{ bands = $validBands }
     Assert-Equal -Expected 200 -Actual $validSave.StatusCode -Message "A valid versioned compensation update failed."
-    $legacyAfterGridSave = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employee/000000002" -Token $superToken
-    Assert-True -Condition ([long]@($legacyAfterGridSave.Json)[0].monetary.totalAmountCents -gt [long]$legacyAmountBefore) -Message "Salary grid changes did not invalidate the legacy estimate cache."
-    Assert-Equal -Expected $legacyDataBefore -Actual ([System.IO.File]::ReadAllText($legacyDataFile)) -Message "Refreshing the derived monetary cache rewrote the employee file."
-    Assert-Equal -Expected 11 -Actual @($validSave.Json.bands).Count -Message "The valid compensation update returned the wrong band count."
-    Assert-Equal -Expected 5900000 -Actual (@($validSave.Json.bands | Where-Object { [string]$_.id -eq "cr-04-01-2026-h2" })[0]).annualSalaryCents -Message "The valid updated salary was not stored in cents."
-    Assert-True -Condition ($initialGridHash -ne (Get-FileHash -LiteralPath $gridPath -Algorithm SHA256).Hash) -Message "A valid compensation update did not persist."
-
     $updatedSync = Invoke-TestRequest -Method "GET" -Uri "$baseUri/sync/status" -Token $superToken
     Assert-Equal -Expected 200 -Actual $updatedSync.StatusCode -Message "Updated sync-state read failed."
     Assert-Equal -Expected "compensation" -Actual ([string]$updatedSync.Json.category) -Message "Compensation updates must publish their own sync category."
     Assert-Equal -Expected ([string]$initialSync.Json.employeeDataEpoch) -Actual ([string]$updatedSync.Json.employeeDataEpoch) -Message "Compensation updates must not invalidate every employee entry cache."
+    $legacyAfterGridSave = Invoke-TestRequest -Method "GET" -Uri "$baseUri/employee/000000002" -Token $superToken
+    $pricedLegacy = @($legacyAfterGridSave.Json | Where-Object entryId -eq 'legacy-read-only')[0]
+    Assert-True -Condition ([long]$pricedLegacy.monetary.totalAmountCents -gt 0) -Message "Salary grid save did not persist a previously unavailable amount."
+    $storedLegacy = @([System.IO.File]::ReadAllText($legacyDataFile) | ConvertFrom-Json)[0]
+    Assert-Equal -Expected $pricedLegacy.monetary.totalAmountCents -Actual $storedLegacy.compensationSnapshot.totalAmountCents -Message "GET must return the stored amount, not an independent estimate."
+    $unconfirmed = @($legacyAfterGridSave.Json | Where-Object entryId -eq 'schedule-na')[0]
+    Assert-Equal -Expected 'work-schedule-unconfirmed' -Actual $unconfirmed.monetary.unavailableReason -Message "Unknown schedules must remain N/A even with a valid profile."
+    $deniedSchedule = Invoke-TestRequest -Method PUT -Uri "$baseUri/employee/000000002/work-schedule/month" -Token ([string]$legacyLogin.Json.token) -Body @{ month = '2026-09'; workSchedule = 'compressed' }
+    Assert-Equal -Expected 403 -Actual $deniedSchedule.StatusCode -Message "N/A recovery must not bypass schedule-edit permissions."
+    $fixedSchedule = Invoke-TestRequest -Method PUT -Uri "$baseUri/employee/000000002/work-schedule/month" -Token $superToken -Body @{ month = '2026-09'; workSchedule = 'compressed' }
+    Assert-Equal -Expected 200 -Actual $fixedSchedule.StatusCode -Message "Bulk schedule correction failed."
+    $scheduleResult = @([IO.File]::ReadAllText($legacyDataFile) | ConvertFrom-Json | Where-Object entryId -eq 'schedule-na')[0]
+    Assert-Equal -Expected 'final' -Actual $scheduleResult.compensationSnapshot.snapshotStatus -Message "Bulk schedule correction did not persist the newly available amount."
+    Assert-True -Condition ($scheduleResult.compensationSnapshot.totalAmountCents -gt 0) -Message "Corrected schedule still has an N/A/zero amount."
+    Assert-Equal -Expected 11 -Actual @($validSave.Json.bands).Count -Message "The valid compensation update returned the wrong band count."
+    Assert-Equal -Expected 5900000 -Actual (@($validSave.Json.bands | Where-Object { [string]$_.id -eq "cr-04-01-2026-h2" })[0]).annualSalaryCents -Message "The valid updated salary was not stored in cents."
+    Assert-True -Condition ($initialGridHash -ne (Get-FileHash -LiteralPath $gridPath -Algorithm SHA256).Hash) -Message "A valid compensation update did not persist."
 
     $unsupportedMethod = Invoke-TestRequest -Method "POST" -Uri "$baseUri/compensation-grid" -Token $superToken -Body @{}
     Assert-Equal -Expected 405 -Actual $unsupportedMethod.StatusCode -Message "Compensation grid must accept only GET and PUT."

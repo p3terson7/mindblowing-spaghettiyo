@@ -55,6 +55,9 @@ if ($request.HttpMethod -eq "PUT" -and $request.Url.AbsolutePath -match "^/emplo
         }
 
         if ($updatedCount -gt 0) {
+            if (Get-Command -Name Set-ApprovedEntryCompensationSnapshots -ErrorAction SilentlyContinue) {
+                Set-ApprovedEntryCompensationSnapshots -EmployeeCode $employeeCode -Entries $entries | Out-Null
+            }
             Write-JsonArrayAtomic -Path $dataFile -Items $entries -Depth 8
         }
     }

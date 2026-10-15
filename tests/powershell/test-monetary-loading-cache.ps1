@@ -23,7 +23,7 @@ try {
     }
     function Get-SyncState { return $script:FixtureState }
     $script:FixtureGridKey = "grid-v1"
-    function Get-CompensationGridCacheKey { return $script:FixtureGridKey }
+    function Get-CompensationGridCacheKey { throw 'Entry reads must not inspect salary grid dependencies.' }
     $script:FixtureUsers = @{}
     function Get-EmployeeUserByCode { param([string]$EmployeeCode) return $script:FixtureUsers[$EmployeeCode] }
     function Get-EmployeeClassificationFromUserRecord { param($UserRecord) return $UserRecord.gc179Profile }
@@ -48,39 +48,39 @@ try {
     Get-CachedEmployeeEntriesForFile -DataFile $files[0] | Out-Null
     Assert-Equal 0 $script:EstimateCalls "Plain/self/GC179 reads must not load the monetary engine."
     foreach ($file in $files) { Get-CachedEmployeeEntriesForFile -DataFile $file -IncludeMonetary | Out-Null }
-    Assert-Equal 2 $script:EstimateCalls "Each monetary document should be calculated once."
+    Assert-Equal 0 $script:EstimateCalls "Cold monetary reads must never calculate amounts."
     foreach ($category in @("history", "project", "auth", "budget-periods", "bug-reports")) {
         Advance-FixtureRevision -Category $category
         foreach ($file in $files) { Get-CachedEmployeeEntriesForFile -DataFile $file -IncludeMonetary | Out-Null }
-        Assert-Equal 2 $script:EstimateCalls "$category refreshes must preserve unrelated financial calculations."
+        Assert-Equal 0 $script:EstimateCalls "$category refreshes must never calculate amounts."
     }
     Advance-FixtureRevision -Category "employee" -Resource "000000001" -EmployeeChanged
     foreach ($file in $files) { Get-CachedEmployeeEntriesForFile -DataFile $file -IncludeMonetary | Out-Null }
-    Assert-Equal 3 $script:EstimateCalls "An entry edit should invalidate only the affected employee."
+    Assert-Equal 0 $script:EstimateCalls "An employee refresh must read persisted amounts."
     Advance-FixtureRevision -Category "employee-directory" -Resource "000000002" -EmployeeChanged
     foreach ($file in $files) { Get-CachedEmployeeEntriesForFile -DataFile $file -IncludeMonetary | Out-Null }
-    Assert-Equal 4 $script:EstimateCalls "A profile/classification edit should invalidate the affected employee."
+    Assert-Equal 0 $script:EstimateCalls "Profile changes must not trigger read-time calculations."
     Advance-FixtureRevision -Category "compensation"
     foreach ($file in $files) { Get-CachedEmployeeEntriesForFile -DataFile $file -IncludeMonetary | Out-Null }
-    Assert-Equal 6 $script:EstimateCalls "A salary-grid change must invalidate all financial estimates."
+    Assert-Equal 0 $script:EstimateCalls "Grid changes must not trigger read-time calculations."
     Advance-FixtureRevision -Category "history" -Step 2
     foreach ($file in $files) { Get-CachedEmployeeEntriesForFile -DataFile $file -IncludeMonetary | Out-Null }
-    Assert-Equal 6 $script:EstimateCalls "Coalesced unrelated revisions must not recalculate unchanged monetary sources."
+    Assert-Equal 0 $script:EstimateCalls "Coalesced revisions must not calculate amounts."
     $script:FixtureGridKey = "grid-v2"
     Advance-FixtureRevision -Category "history" -Step 2
     foreach ($file in $files) { Get-CachedEmployeeEntriesForFile -DataFile $file -IncludeMonetary | Out-Null }
-    Assert-Equal 8 $script:EstimateCalls "A salary change hidden between notifications must invalidate via its content key."
+    Assert-Equal 0 $script:EstimateCalls "Hidden salary changes must not trigger read-time calculations."
     $script:FixtureUsers["000000001"].gc179Profile.level = "02"
     Advance-FixtureRevision -Category "auth"
     foreach ($file in $files) { Get-CachedEmployeeEntriesForFile -DataFile $file -IncludeMonetary | Out-Null }
-    Assert-Equal 9 $script:EstimateCalls "A classification source change must not reuse an old estimate, even without an entry revision."
+    Assert-Equal 0 $script:EstimateCalls "Classification changes must not trigger read-time calculations."
     Advance-FixtureRevision -Category "history" -RotateEpoch
     foreach ($file in $files) { Get-CachedEmployeeEntriesForFile -DataFile $file -IncludeMonetary | Out-Null }
-    Assert-Equal 11 $script:EstimateCalls "An employee epoch change must discard monetary estimates."
+    Assert-Equal 0 $script:EstimateCalls "Epoch changes must still only read persisted amounts."
     for ($index = 0; $index -lt $files.Count; $index++) {
         Assert-Equal $beforeFiles[$index] ([System.IO.File]::ReadAllText($files[$index])) "Read-cache invalidation wrote an employee file."
     }
-    Write-Host "Monetary loading cache tests passed: opt-in reads, targeted refreshes, grid/gap/epoch safety, and no shared writes."
+    Write-Host "Monetary loading tests passed: zero salary calculations on cold/warm reads or source invalidation, and no shared writes."
 } finally {
     if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }
 }

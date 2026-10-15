@@ -1,5 +1,7 @@
 # SAPHIR local-cache deployment
 
+For repeated deployments from a downloaded GitHub ZIP, use the [standalone Desktop deploy script](DESKTOP-DEPLOYMENT.md). Configure the shared paths once; it builds locally and invokes the existing full-release packager against the stable distribution.
+
 This deployment keeps only a small graphical launcher, `current.json`, and versioned release ZIPs on the shared network folder. Each employee automatically runs the application from `%LOCALAPPDATA%\SAPHIR\versions` while continuing to use the same shared data folder. The launcher itself is also copied to `%LOCALAPPDATA%\SAPHIR\launcher`, so its status window can still open when the deployment share is temporarily unavailable.
 
 New releases use the single canonical application tree, `app/backend` and

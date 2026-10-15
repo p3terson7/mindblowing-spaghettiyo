@@ -1,6 +1,8 @@
 # SAPHIR view-loading audit — 2026-10-15
 
 Baseline: `31a09b7`. Changes avoid work rather than increasing read concurrency.
+
+The measurements below describe the view-loading changes through `6897673`, before the persisted-money cutover. Current monetary behavior is documented in [COMPENSATION-BACKFILL.md](COMPENSATION-BACKFILL.md): no read-time salary calculation remains, and Approved-tab navigation no longer refetches the same stored amounts. Do not interpret these historical timings as a benchmark of that subsequent change.
 No DATA schema, lock, write protocol, sync protocol, reader limit, database,
 persistent index or additional threading changes.
 
@@ -68,11 +70,11 @@ Initial bootstrap now returns approvals and project-filter metadata only: no
 history read, history factory or audit-row projection. History is a closed
 disclosure, not loading skeletons for unrequested data.
 
-Initial approvals preserve stored final monetary results, but do not estimate
-missing legacy monetary snapshots. Opening the Approved tab requests the same
-bootstrap with `includeMonetary=true` once, using existing estimation/cache
-rules. If Approved is already visible, refresh includes its monetary data.
-The legacy `/approvals/entries` service retains full monetary behavior.
+Initial approvals preserve stored monetary results. In the measured version,
+the Approved tab requested `includeMonetary=true` to estimate missing legacy
+amounts. That behavior has since been removed: both bootstrap and the legacy
+`/approvals/entries` API read saved amounts or N/A, without estimation. Switching
+to Approved uses the already loaded entries, with no additional request.
 
 History opens through `/history?page=1&category=all`, manager-only, fixed at 25
 rows. Page/category/date/search validation, filtering, totals and category

@@ -35,6 +35,14 @@ if ($request.Url.AbsolutePath -match "^/compensation-grid/?$") {
 
             $grid = Set-CompensationGrid -Bands $payload.bands
             $postCommitWarnings = New-Object System.Collections.ArrayList
+            $refreshState = @{ codes = @() }
+            $refreshWarning = Invoke-PostCommitActionSafely -Description "Salary grid saved, but unavailable entry amounts could not be refreshed. Save the affected employee profiles to retry" -Action {
+                $refresh = Update-UnavailableCompensationSnapshotsForGrid
+                foreach ($warning in @($refresh.warnings)) { [void]$postCommitWarnings.Add($warning) }
+                # The action runs in a child scope; mutate this shared result.
+                $refreshState.codes = @($refresh.changedEmployeeCodes)
+            }
+            if ($refreshWarning) { [void]$postCommitWarnings.Add($refreshWarning) }
             $historyWarning = Invoke-PostCommitActionSafely -Description "Compensation grid saved, but history logging failed" -Action {
                 # Do not put salary amounts in the manager-visible history.
                 logHistory "Update" "Updated the shared compensation grid." ([string]$currentUser.displayName) -PublishChange:$false
@@ -44,7 +52,7 @@ if ($request.Url.AbsolutePath -match "^/compensation-grid/?$") {
             }
 
             $syncWarning = Invoke-PostCommitActionSafely -Description "Compensation grid saved, but cross-machine refresh publication failed" -Action {
-                Publish-DataChange -Category "compensation" -Resource "shared" | Out-Null
+                Publish-DataChange -Category "compensation" -Resource "shared" -AffectedEmployeeCodes @($refreshState.codes) | Out-Null
             }
             if (-not [string]::IsNullOrWhiteSpace($syncWarning)) {
                 [void]$postCommitWarnings.Add($syncWarning)

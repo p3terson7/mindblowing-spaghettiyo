@@ -19,6 +19,7 @@ const styles = fs.readFileSync(path.join(root, "app/frontend/assets/apple-ui.css
 assert(utilities.includes("function formatCurrencyCents"), "Monetary values need one localized cents formatter.");
 assert(approvals.includes("function renderEntryMonetaryPill"), "Review cards do not expose approved-entry estimates.");
 assert(approvals.includes("entry.monetary"), "Review must consume the server projection instead of recalculating salaries.");
+assert(!approvals.includes("reviewMonetaryLoaded") && !approvals.includes("?includeMonetary=true"), "Approved-tab navigation must not refetch the same stored amounts.");
 assert(!approvals.includes("annualSalaryCents") && !approvals.includes("hourlyRateCents"), "Review must not calculate from private salary details.");
 assert(projects.includes("renderProjectMonetarySummaryPill"), "Project cards do not show the compact monetary summary.");
 assert(projects.includes("monetaryTotalAmountCents"), "Project contributors cannot be compared by estimated value.");
@@ -57,6 +58,9 @@ assert(context.renderMonetarySummary(total, "scope").includes("money.partial"), 
 assert(context.getMonetaryCoverageNote(total).includes("money.unavailableReason.work-schedule-unconfirmed"), "The reason a total is incomplete must be visible.");
 const missing = context.summarizeEntryMonetaryValues([{ status: "approved" }]);
 assert(context.getMonetaryAmountLabel(missing) === "money.toComplete", "All missing estimates must not display zero dollars.");
+assert((i18n.match(/"money\.unavailable": "N\/A"/g) || []).length === 2, "Unavailable entry amounts must say N/A in both languages.");
+const unavailableRow = context.renderMonetaryEntryValue(entries[4]);
+assert(unavailableRow.includes("money.unavailable") && unavailableRow.includes('title="translated:money.unavailableReason.work-schedule-unconfirmed"'), "N/A must retain its reason in a tooltip.");
 assert(context.getMonetaryAmountLabel(context.summarizeEntryMonetaryValues([])).includes("0,00"), "An empty approved period should show a real zero.");
 const combined = context.summarizeMonetaryValues([total, total]);
 assert(combined.totalAmountCents === 24690 && combined.unavailableReasons["work-schedule-unconfirmed"] === 2, "Portfolio monetary totals must retain amounts and missing coverage.");

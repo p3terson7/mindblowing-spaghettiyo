@@ -25,7 +25,7 @@ Register-SaphirPerformanceFunctions -Names @(
     "Get-AuthenticatedUserFromRequest", "Get-AuthSyncVersion", "Read-AuthArrayFileCached", "Get-UserLookupCache",
     "Get-SyncState", "Read-SyncStateFromDisk", "Sync-ReadModelCaches", "Invoke-ReadModelCache",
     "Get-EmployeeDataSnapshot", "Get-ScopedEmployeeDataSnapshot", "Get-CachedEmployeeEntriesForFile",
-    "Get-EmployeeDirectoryList", "Get-ProjectStatisticsOverview", "Get-EmployeeCompensationReadEstimates",
+    "Get-EmployeeDirectoryList", "Get-ProjectStatisticsOverview", "Update-EmployeeApprovedCompensationSnapshots",
     "Get-DashboardBootstrapModel", "Get-SelfBootstrapModel", "Write-HttpResponseSafely"
 )
 Register-SaphirPerformanceFunctions -BackendRoot $scriptDir

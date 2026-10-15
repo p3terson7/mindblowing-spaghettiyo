@@ -27,20 +27,24 @@ for ($employeeIndex = 1; $employeeIndex -le $EmployeeCount; $employeeIndex++) {
         [PSCustomObject]@{ entryId = "entry-$index"; entryType = "overtime"; projectCode = "TEST"; date = ([DateTime]"2026-01-01").AddDays($index % 250).ToString("yyyy-MM-dd"); punchIn = "17:00:00"; punchOut = "18:00:00"; overtime = "01:00:00"; status = "approved"; overtimeCode = "260"; paymentOption = "cash"; workSchedule = "regular" }
     })
 }
-$metadata = [PSCustomObject]@{ LastWriteTicks = 100; Length = 200 }
+$prepare = [Diagnostics.Stopwatch]::StartNew()
+foreach ($code in $fixtures.Keys) {
+    Set-ApprovedEntryCompensationSnapshots -EmployeeCode $code -Entries $fixtures[$code] -EmployeeUser $script:FixtureUser | Out-Null
+}
+$prepare.Stop()
 function Measure-FixtureLoad {
     $beforeReads = $script:gridReads
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     foreach ($code in $fixtures.Keys) {
-        Get-CachedEmployeeMonetaryEntries -DataFile "$($code)_data.json" -Metadata $metadata -Entries $fixtures[$code] | Out-Null
+        foreach ($entry in $fixtures[$code]) { New-EntryMonetaryReadModel -Entry $entry | Out-Null }
     }
     $watch.Stop()
     return [PSCustomObject]@{ milliseconds = [math]::Round($watch.Elapsed.TotalMilliseconds, 1); salaryGridLoads = $script:gridReads - $beforeReads }
 }
 $cold = Measure-FixtureLoad
 $warm = Measure-FixtureLoad
-# Every shared revision clears the general view cache; the monetary cache
-# should survive this when none of its source data has changed.
+# Every shared revision may clear the view cache. It must never trigger salary
+# calculation: the read path simply projects persisted results.
 $script:ReadModelCache = @{}
 $afterUnrelatedChange = Measure-FixtureLoad
-[PSCustomObject]@{ employees = $EmployeeCount; entries = $EmployeeCount * $EntriesPerEmployee; cold = $cold; warm = $warm; afterUnrelatedChange = $afterUnrelatedChange } | ConvertTo-Json -Depth 5
+[PSCustomObject]@{ employees = $EmployeeCount; entries = $EmployeeCount * $EntriesPerEmployee; preparationMs = [math]::Round($prepare.Elapsed.TotalMilliseconds, 1); cold = $cold; warm = $warm; afterUnrelatedChange = $afterUnrelatedChange } | ConvertTo-Json -Depth 5

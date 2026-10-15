@@ -149,7 +149,7 @@ const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
   employees: "scripts/Views/EmployeesView.js?v=20261008-loading-performance-v1-views-20261015-v1",
   dashboard: "scripts/Views/DashboardView.js?v=20261008-loading-performance-v1-views-20261015-v1",
-  approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1-views-20261015-v1",
+  approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1-views-20261015-v1-money-v1",
   history: "scripts/Views/HistoryView.js?v=20261008-loading-performance-v1-views-20261015-v1",
   projects: "scripts/Views/ProjectsView.js?v=20261008-loading-performance-v1",
 };

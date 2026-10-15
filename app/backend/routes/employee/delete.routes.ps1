@@ -53,6 +53,9 @@
                         $filteredData += $existingData[$i]
                     }
                 }
+                    if (Get-Command -Name Set-ApprovedEntryCompensationSnapshots -ErrorAction SilentlyContinue) {
+                        Set-ApprovedEntryCompensationSnapshots -EmployeeCode $employeeCode -Entries $filteredData | Out-Null
+                    }
                     Write-JsonArrayAtomic -Path $dataFile -Items $filteredData -Depth 8
                     $entryMutationCommitted = $true
                     Release-ResourceLock -LockHandle $lockHandle
