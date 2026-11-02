@@ -54,6 +54,12 @@ A salary-grid save retries missing/unavailable results across employee files as 
 
 Run this migration while all backends are stopped before users start the new version. Both calculable and N/A rows can be migrated in one pass, so incomplete employee profiles do not block the transition. Repeated runs preserve both stable amounts and stable N/A results.
 
+## Recovering false `employee-user-missing` results on Windows
+
+Older migration versions could read the entire `users.json` array as one account under Windows PowerShell 5.1. This falsely reported existing employees as missing. The corrected migration normalizes the array before matching employee codes.
+
+Publish a **full updated release**, not BootstrapOnly, then rerun preview from the distribution's `scripts` folder. After checking the results and stopping SAPHIR everywhere, rerun with `-Apply -AppStopped`. Existing false N/A snapshots are retried; finalized amounts are preserved. Do not recreate employee accounts or restore backups just to clear this warning. Any remaining `employee-user-missing` warning requires checking that the employee file's code actually matches an account in the selected DATA folder's `users.json`.
+
 ## Backup and failure behavior
 
 Before the first employee write, a unique folder is created under:

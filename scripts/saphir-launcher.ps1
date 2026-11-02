@@ -1,6 +1,7 @@
 ﻿param(
     [string]$DistributionRoot = "",
-    [switch]$ValidateOnly
+    [switch]$ValidateOnly,
+    [ValidateSet("Dark", "Light", "System")][string]$Theme = "Dark"
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,7 +67,16 @@ try {
     $text = if ($isFrench) {
         @{
             WindowTitle       = "Lanceur SAPHIR"
-            Subtitle          = "Démarrage et état local"
+            Subtitle          = "Gestion des heures supplémentaires"
+            Connections       = "Connexions"
+            TechnicalDetails  = "Détails techniques"
+            VersionHeading    = "Version de l’application"
+            LastChecked       = "Dernière vérification · {0}"
+            ReadyTitle        = "Votre espace est prêt."
+            StoppedTitle      = "Prêt à démarrer ?"
+            UpdateTitle       = "Une mise à jour est prête."
+            NetworkTitle      = "Connexion réseau à vérifier."
+            NetworkDetail     = "Le dossier partagé ne répond pas. Vérifiez le réseau ou le VPN."
             Checking          = "Vérification en cours…"
             AppLabel          = "Application"
             DataLabel         = "Données partagées"
@@ -83,7 +93,7 @@ try {
             Refresh           = "A_ctualiser"
             Logs              = "_Journaux"
             Online            = "En ligne"
-            OnlineDetail      = "SAPHIR répond normalement et peut être ouvert."
+            OnlineDetail      = "Ouvrez SAPHIR pour commencer."
             Offline           = "Hors ligne"
             OfflineDetail     = "SAPHIR est arrêté sur cet ordinateur."
             Unresponsive      = "Ne répond pas"
@@ -128,7 +138,16 @@ try {
     else {
         @{
             WindowTitle       = "SAPHIR Launcher"
-            Subtitle          = "Local status and startup"
+            Subtitle          = "Overtime management"
+            Connections       = "Connections"
+            TechnicalDetails  = "Technical details"
+            VersionHeading    = "Application version"
+            LastChecked       = "Last checked · {0}"
+            ReadyTitle        = "Your workspace is ready."
+            StoppedTitle      = "Ready to start?"
+            UpdateTitle       = "An update is ready."
+            NetworkTitle      = "Check your network connection."
+            NetworkDetail     = "The shared folder is not responding. Check your network or VPN connection."
             Checking          = "Checking status…"
             AppLabel          = "Application"
             DataLabel         = "Shared data"
@@ -145,7 +164,7 @@ try {
             Refresh           = "_Refresh"
             Logs              = "_Logs"
             Online            = "Online"
-            OnlineDetail      = "SAPHIR is responding normally and is ready to open."
+            OnlineDetail      = "Open SAPHIR to get started."
             Offline           = "Offline"
             OfflineDetail     = "SAPHIR is stopped on this computer."
             Unresponsive      = "Not responding"
@@ -188,52 +207,87 @@ try {
         }
     }
 
+    function Get-LauncherThemePalette {
+        param([ValidateSet("Dark", "Light")][string]$Appearance = "Dark")
+        $palette = @{
+            ShellBrush = "#1C1D22"; SurfaceBrush = "#25262C"; SoftBrush = "#2C2D34"
+            TextBrush = "#ECECF0"; MutedBrush = "#A2A5B0"; LineBrush = "#3A3B44"
+            AccentBrush = "#65A9FF"; AccentTextBrush = "#10233B"; AccentHoverBrush = "#81B9FF"
+            SuccessBrush = "#64D9B1"; SuccessSoftBrush = "#243D37"
+            WarningBrush = "#EDC471"; WarningSoftBrush = "#403727"
+            DangerBrush = "#FA8991"; DangerSoftBrush = "#432C31"
+        }
+        if ($Appearance -eq "Light") {
+            $palette = @{
+                ShellBrush = "#F5F6F8"; SurfaceBrush = "#FFFFFF"; SoftBrush = "#F0F2F5"
+                TextBrush = "#202126"; MutedBrush = "#666A74"; LineBrush = "#DEDFE5"
+                AccentBrush = "#0767CF"; AccentTextBrush = "#FFFFFF"; AccentHoverBrush = "#075BB7"
+                SuccessBrush = "#16805A"; SuccessSoftBrush = "#E5F4EE"
+                WarningBrush = "#985F06"; WarningSoftBrush = "#FFF3DC"
+                DangerBrush = "#BA3D46"; DangerSoftBrush = "#FCEBED"
+            }
+        }
+        return $palette
+    }
+
     [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Name="LauncherWindow"
-        Width="570"
-        Height="680"
-        MinWidth="570"
-        MinHeight="680"
-        ResizeMode="NoResize"
-        WindowStartupLocation="CenterScreen"
-        Background="#F4F6F9"
-        FontFamily="Segoe UI"
-        FontSize="14"
-        UseLayoutRounding="True"
-        SnapsToDevicePixels="True">
+        x:Name="LauncherWindow" Width="520" Height="750" MinWidth="460" MinHeight="540"
+        ResizeMode="CanResizeWithGrip" WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource ShellBrush}" Foreground="{DynamicResource TextBrush}"
+        FontFamily="Segoe UI" FontSize="13" UseLayoutRounding="True" SnapsToDevicePixels="True">
     <Window.Resources>
+        <SolidColorBrush x:Key="ShellBrush" Color="#1C1D22"/>
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#25262C"/>
+        <SolidColorBrush x:Key="SoftBrush" Color="#2C2D34"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#ECECF0"/>
+        <SolidColorBrush x:Key="MutedBrush" Color="#A2A5B0"/>
+        <SolidColorBrush x:Key="LineBrush" Color="#3A3B44"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#65A9FF"/>
+        <SolidColorBrush x:Key="AccentTextBrush" Color="#10233B"/>
+        <SolidColorBrush x:Key="AccentHoverBrush" Color="#81B9FF"/>
+        <SolidColorBrush x:Key="SuccessBrush" Color="#64D9B1"/>
+        <SolidColorBrush x:Key="SuccessSoftBrush" Color="#243D37"/>
+        <SolidColorBrush x:Key="WarningBrush" Color="#EDC471"/>
+        <SolidColorBrush x:Key="WarningSoftBrush" Color="#403727"/>
+        <SolidColorBrush x:Key="DangerBrush" Color="#FA8991"/>
+        <SolidColorBrush x:Key="DangerSoftBrush" Color="#432C31"/>
+        <Style TargetType="{x:Type TextBlock}">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+        </Style>
         <Style x:Key="BaseButtonStyle" TargetType="{x:Type Button}">
-            <Setter Property="MinHeight" Value="40"/>
-            <Setter Property="Padding" Value="14,8"/>
-            <Setter Property="Margin" Value="0"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="MinHeight" Value="36"/>
+            <Setter Property="Padding" Value="9,7"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+            <Setter Property="AutomationProperties.Name" Value="{Binding ToolTip, RelativeSource={RelativeSource Self}}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type Button}">
-                        <Border x:Name="ButtonBorder"
-                                CornerRadius="9"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                                              RecognizesAccessKey="True"/>
+                        <Border x:Name="ButtonBorder" CornerRadius="7"
+                                Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="15" Text="{TemplateBinding Tag}"
+                                           Foreground="{TemplateBinding Foreground}" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                                <ContentPresenter RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.88"/>
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource SoftBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                             </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.72"/>
-                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.75"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.42"/>
                                 <Setter Property="Cursor" Value="Arrow"/>
@@ -243,35 +297,28 @@ try {
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="UtilityButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButtonStyle}"/>
         <Style x:Key="PrimaryButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="MinHeight" Value="46"/>
-            <Setter Property="FontSize" Value="15"/>
-            <Setter Property="Background" Value="#0071E3"/>
-            <Setter Property="BorderBrush" Value="#0071E3"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="MinHeight" Value="45"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type Button}">
-                        <Border x:Name="ButtonBorder"
-                                CornerRadius="11"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                Padding="{TemplateBinding Padding}">
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="17"
-                                           Text="{TemplateBinding Tag}" Margin="0,0,10,0"
-                                           VerticalAlignment="Center"/>
-                                <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        <Border x:Name="ButtonBorder" CornerRadius="9" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" Padding="{TemplateBinding Padding}">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="16" Text="{TemplateBinding Tag}"
+                                           Foreground="{TemplateBinding Foreground}" Margin="0,0,9,0" VerticalAlignment="Center"/>
+                                <ContentPresenter RecognizesAccessKey="True" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="#0A7BEA"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="#005FC1"/>
-                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource AccentHoverBrush}"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.8"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource TextBrush}"/></Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.42"/>
                                 <Setter Property="Cursor" Value="Arrow"/>
@@ -281,43 +328,24 @@ try {
                 </Setter.Value>
             </Setter>
         </Style>
-        <Style x:Key="IconButtonStyle" TargetType="{x:Type Button}">
-            <Setter Property="Width" Value="88"/>
-            <Setter Property="Height" Value="58"/>
-            <Setter Property="Padding" Value="6,7"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="FontWeight" Value="Normal"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Background" Value="#F6F7F9"/>
-            <Setter Property="BorderBrush" Value="#E1E4E8"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Foreground" Value="#36383D"/>
+        <Style x:Key="IconButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButtonStyle}">
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Padding" Value="8"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type Button}">
-                        <Border x:Name="ButtonBorder"
-                                CornerRadius="10"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                Padding="{TemplateBinding Padding}">
-                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="18"
-                                           Text="{TemplateBinding Tag}" HorizontalAlignment="Center"/>
-                                <ContentPresenter Margin="0,5,0,0" HorizontalAlignment="Center"
-                                                  VerticalAlignment="Center" RecognizesAccessKey="True"/>
-                            </StackPanel>
+                        <Border x:Name="ButtonBorder" CornerRadius="7" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" Padding="{TemplateBinding Padding}">
+                            <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="16" Text="{TemplateBinding Tag}"
+                                       Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="#EDF3FA"/>
-                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#C9DDF3"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="#DFEAF6"/>
-                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource SoftBrush}"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.75"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.38"/>
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.42"/>
                                 <Setter Property="Cursor" Value="Arrow"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -326,188 +354,176 @@ try {
             </Setter>
         </Style>
         <Style x:Key="DangerIconButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource IconButtonStyle}">
-            <Setter Property="Foreground" Value="#C5312D"/>
-            <Setter Property="Background" Value="#FFF8F7"/>
-            <Setter Property="BorderBrush" Value="#F1D7D5"/>
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
         </Style>
-        <Style x:Key="UtilityButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource IconButtonStyle}"/>
         <Style x:Key="InfoTileStyle" TargetType="{x:Type Border}">
-            <Setter Property="Background" Value="#F7F8FA"/>
-            <Setter Property="BorderBrush" Value="#E8EAED"/>
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="10"/>
-            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="CornerRadius" Value="11"/>
+            <Setter Property="Padding" Value="15"/>
+        </Style>
+        <Style x:Key="DetailValueStyle" TargetType="{x:Type TextBlock}">
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,3,0,10"/>
+        </Style>
+        <Style x:Key="DetailsExpanderStyle" TargetType="{x:Type Expander}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Expander}">
+                        <StackPanel>
+                            <ToggleButton x:Name="DetailsToggle" IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Content="{TemplateBinding Header}" Foreground="{DynamicResource MutedBrush}"
+                                          Background="Transparent" BorderBrush="Transparent" BorderThickness="1" Padding="1,8" Cursor="Hand">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                        <Border x:Name="ToggleBorder" BorderThickness="1" BorderBrush="{TemplateBinding BorderBrush}" Padding="{TemplateBinding Padding}">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" x:Name="Chevron" FontFamily="Segoe MDL2 Assets" Text="&#xE70D;"
+                                                           FontSize="11" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center"/>
+                                                <ContentPresenter RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                                            </DockPanel>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chevron" Property="Text" Value="&#xE70E;"/></Trigger>
+                                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ToggleBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Border x:Name="DetailsBody" Visibility="Collapsed" Margin="0,6,0,0" Padding="13,12,13,2"
+                                    Background="{DynamicResource SoftBrush}" CornerRadius="8">
+                                <ContentPresenter/>
+                            </Border>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True"><Setter TargetName="DetailsBody" Property="Visibility" Value="Visible"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
-    <Grid Margin="24,22,24,20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="16"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="14"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-
-        <Grid Grid.Row="0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="12"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <Border Width="44" Height="44" CornerRadius="12" Background="#0071E3">
-                <TextBlock Text="S" Foreground="White" FontSize="22" FontWeight="Bold"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
-            <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                <TextBlock Text="SAPHIR" FontSize="22" FontWeight="SemiBold" Foreground="#17191C"/>
-                <TextBlock x:Name="SubtitleText" Margin="0,2,0,0" FontSize="12" Foreground="#71757B"/>
-            </StackPanel>
-            <Border Grid.Column="3" x:Name="StatusBadge" CornerRadius="14" Padding="11,6"
-                    Background="#EFEFF4" VerticalAlignment="Center">
-                <StackPanel Orientation="Horizontal">
-                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#8E8E93"
-                             Margin="0,0,7,0" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="StatusBadgeText" FontSize="12" FontWeight="SemiBold"
-                               Foreground="#3A3A3C"/>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+        <StackPanel Margin="24,22,24,20">
+            <Grid Margin="0,0,0,22">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Image x:Name="BrandLogo" Width="46" Height="46" Margin="0,0,12,0" Stretch="Uniform"
+                       RenderOptions.BitmapScalingMode="HighQuality" AutomationProperties.Name="SAPHIR"/>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,10,0">
+                    <TextBlock Text="SAPHIR" FontSize="21" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="SubtitleText" Margin="0,2,0,0" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap"/>
                 </StackPanel>
-            </Border>
-        </Grid>
-
-        <Border Grid.Row="2" x:Name="MainCard" Background="White" BorderBrush="#E0E3E7"
-                BorderThickness="1" CornerRadius="16" Padding="20">
-            <Border.Effect>
-                <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.07" Color="#000000"/>
-            </Border.Effect>
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="16"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="10"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="14"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" x:Name="StateTitle" FontSize="21" FontWeight="SemiBold"
-                           Foreground="#17191C"/>
-                <TextBlock Grid.Row="1" x:Name="StateDetail" Margin="0,5,0,0" Foreground="#656A70"
-                           TextWrapping="Wrap" MinHeight="34"/>
-
-                <Grid Grid.Row="3">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="10"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0" Style="{StaticResource InfoTileStyle}">
-                        <StackPanel>
-                            <TextBlock x:Name="ApplicationLabel" FontSize="11" Foreground="#777B81"/>
-                            <TextBlock x:Name="ApplicationValue" Margin="0,4,0,0" FontWeight="SemiBold"
-                                       Foreground="#17191C" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                    </Border>
-                    <Border Grid.Column="2" Style="{StaticResource InfoTileStyle}">
-                        <StackPanel>
-                            <TextBlock x:Name="DataLabel" FontSize="11" Foreground="#777B81"/>
-                            <TextBlock x:Name="DataValue" Margin="0,4,0,0" FontWeight="SemiBold"
-                                       Foreground="#17191C" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock x:Name="DataPathText" Margin="0,2,0,0" FontSize="10"
-                                       Foreground="#92969C" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                    </Border>
-                </Grid>
-
-                <Grid Grid.Row="5">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="10"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0" Style="{StaticResource InfoTileStyle}">
-                        <StackPanel>
-                            <TextBlock x:Name="ReleaseLabel" FontSize="11" Foreground="#777B81"/>
-                            <TextBlock x:Name="ReleaseValue" Margin="0,4,0,0" FontWeight="SemiBold"
-                                       Foreground="#17191C" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                    </Border>
-                    <Border Grid.Column="2" Style="{StaticResource InfoTileStyle}">
-                        <StackPanel>
-                            <TextBlock x:Name="TargetReleaseLabel" FontSize="11" Foreground="#777B81"/>
-                            <TextBlock x:Name="TargetReleaseValue" Margin="0,4,0,0" FontWeight="SemiBold"
-                                       Foreground="#17191C" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                    </Border>
-                </Grid>
-
-                <Border Grid.Row="7" Style="{StaticResource InfoTileStyle}" Padding="12,9">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock x:Name="DistributionLabel" FontSize="11" Foreground="#777B81"/>
-                            <TextBlock x:Name="DistributionPathText" Margin="0,3,14,0" FontSize="10"
-                                       Foreground="#92969C" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                        <TextBlock Grid.Column="1" x:Name="DistributionValue" FontSize="12"
-                                   FontWeight="SemiBold" Foreground="#17191C" VerticalAlignment="Center"/>
-                    </Grid>
-                </Border>
-
-                <ProgressBar Grid.Row="8" x:Name="BusyProgress" Margin="0,12,0,0" Height="3"
-                             IsIndeterminate="True" Visibility="Collapsed"
-                             Foreground="#0071E3" Background="#E5E5EA"/>
-                <TextBlock Grid.Row="9" x:Name="BusyText" Margin="0,6,0,0"
-                           FontSize="12" Foreground="#656A70" Visibility="Collapsed"/>
-                <Border Grid.Row="10" x:Name="ErrorBanner" Margin="0,9,0,0"
-                        Padding="11,8" CornerRadius="8" Background="#FFF1F0"
-                        BorderBrush="#FFD0CC" BorderThickness="1" Visibility="Collapsed">
-                    <TextBlock x:Name="ErrorText" FontSize="12" Foreground="#A51C14" TextWrapping="Wrap"/>
-                </Border>
-            </Grid>
-        </Border>
-
-        <Border Grid.Row="4" Background="White" BorderBrush="#E0E3E7" BorderThickness="1"
-                CornerRadius="14" Padding="14,13">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="10"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <Grid Grid.Row="0">
-                    <Button x:Name="StartButton" Style="{StaticResource PrimaryButtonStyle}"
-                            Tag="&#xE768;" Width="300" HorizontalAlignment="Center"/>
-                    <Button x:Name="UpdateButton" Style="{StaticResource PrimaryButtonStyle}"
-                            Tag="&#xE895;" Width="300" HorizontalAlignment="Center"/>
-                    <Button x:Name="OpenButton" Style="{StaticResource PrimaryButtonStyle}"
-                            Tag="&#xE8A7;" Width="300" HorizontalAlignment="Center"/>
-                </Grid>
-                <StackPanel Grid.Row="2" x:Name="ActionToolbar" Orientation="Horizontal"
-                            HorizontalAlignment="Center">
-                    <StackPanel x:Name="RuntimeActionsPanel" Orientation="Horizontal">
-                        <Button x:Name="RestartButton" Style="{StaticResource IconButtonStyle}"
-                                Tag="&#xE72C;" Margin="0,0,7,0"/>
-                        <Button x:Name="StopButton" Style="{StaticResource DangerIconButtonStyle}"
-                                Tag="&#xE71A;" Margin="0,0,7,0"/>
+                <Border Grid.Column="2" x:Name="StatusBadge" CornerRadius="14" Padding="9,5" VerticalAlignment="Center"
+                        Background="{DynamicResource SoftBrush}" MaxWidth="150">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="StatusDot" Width="6" Height="6" Margin="0,0,6,0" Fill="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="StatusBadgeText" FontSize="11" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" MaxWidth="116"/>
                     </StackPanel>
-                    <Button x:Name="LogsButton" Style="{StaticResource UtilityButtonStyle}"
-                            Tag="&#xE8B7;" Margin="0,0,7,0"/>
-                    <Button x:Name="RepairButton" Style="{StaticResource UtilityButtonStyle}"
-                            Tag="&#xE90F;" Margin="0,0,7,0"/>
-                    <Button x:Name="RefreshButton" Style="{StaticResource UtilityButtonStyle}"
-                            Tag="&#xE895;"/>
-                </StackPanel>
+                </Border>
             </Grid>
-        </Border>
-    </Grid>
+            <StackPanel x:Name="MainCard">
+                <Grid Margin="0,4,0,20">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <Border x:Name="StateIconBadge" Width="42" Height="42" CornerRadius="12" Background="{DynamicResource SoftBrush}"
+                            Margin="0,0,13,0" VerticalAlignment="Top">
+                        <TextBlock x:Name="StateIcon" FontFamily="Segoe MDL2 Assets" FontSize="20" Text="&#xE72C;"
+                                   Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock x:Name="StateTitle" FontSize="21" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="StateDetail" Margin="0,5,0,0" Foreground="{DynamicResource MutedBrush}" FontSize="12" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Grid>
+                <Grid>
+                    <Button x:Name="StartButton" Style="{StaticResource PrimaryButtonStyle}" Tag="&#xE768;"/>
+                    <Button x:Name="UpdateButton" Style="{StaticResource PrimaryButtonStyle}" Tag="&#xE895;"/>
+                    <Button x:Name="OpenButton" Style="{StaticResource PrimaryButtonStyle}" Tag="&#xE8A7;"/>
+                </Grid>
+                <ProgressBar x:Name="BusyProgress" Margin="0,12,0,0" Height="3" IsIndeterminate="True" Visibility="Collapsed"
+                             Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource SoftBrush}"/>
+                <TextBlock x:Name="BusyText" Margin="0,6,0,0" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed"/>
+                <Border x:Name="ErrorBanner" Margin="0,12,0,0" Padding="12,10" CornerRadius="8"
+                        Background="{DynamicResource DangerSoftBrush}" BorderBrush="{DynamicResource DangerBrush}" BorderThickness="1" Visibility="Collapsed">
+                    <TextBlock x:Name="ErrorText" FontSize="12" Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap"
+                               AutomationProperties.LiveSetting="Polite"/>
+                </Border>
+            </StackPanel>
+            <TextBlock x:Name="ConnectionsLabel" FontSize="12" Margin="0,21,0,9" Foreground="{DynamicResource MutedBrush}"/>
+            <Border Style="{StaticResource InfoTileStyle}" Padding="0">
+                <StackPanel>
+                    <Grid Margin="14,12">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE7F4;" FontSize="16" Foreground="{DynamicResource MutedBrush}" Margin="0,0,11,0" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" x:Name="ApplicationLabel" FontSize="12" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" x:Name="ApplicationValue" FontSize="12" VerticalAlignment="Center"/>
+                        <Ellipse Grid.Column="3" x:Name="ApplicationDot" Width="6" Height="6" Margin="11,0,0,0" Fill="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Border Height="1" Background="{DynamicResource LineBrush}"/>
+                    <Grid Margin="14,12">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8B7;" FontSize="16" Foreground="{DynamicResource MutedBrush}" Margin="0,0,11,0" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" x:Name="DataLabel" FontSize="12" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" x:Name="DataValue" FontSize="12" VerticalAlignment="Center"/>
+                        <Ellipse Grid.Column="3" x:Name="DataDot" Width="6" Height="6" Margin="11,0,0,0" Fill="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource InfoTileStyle}" Margin="0,12,0,0">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,14">
+                        <TextBlock x:Name="VersionStatusText" DockPanel.Dock="Right" Foreground="{DynamicResource MutedBrush}" FontSize="11"/>
+                        <TextBlock x:Name="VersionHeading" FontSize="12" Foreground="{DynamicResource MutedBrush}"/>
+                    </DockPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock x:Name="ReleaseLabel" FontSize="11" Foreground="{DynamicResource MutedBrush}"/>
+                            <TextBlock x:Name="ReleaseValue" Margin="0,4,0,0" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Text="&#x2192;" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock x:Name="TargetReleaseLabel" FontSize="11" Foreground="{DynamicResource MutedBrush}"/>
+                            <TextBlock x:Name="TargetReleaseValue" Margin="0,4,0,0" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+            <Expander x:Name="TechnicalDetailsExpander" Style="{StaticResource DetailsExpanderStyle}" Margin="0,12,0,0" FontSize="12" IsExpanded="False">
+                <StackPanel>
+                    <TextBlock x:Name="ApplicationPathLabel" FontSize="11"/>
+                    <TextBlock x:Name="ApplicationPathText" Style="{StaticResource DetailValueStyle}"/>
+                    <TextBlock x:Name="DataPathLabel" FontSize="11"/>
+                    <TextBlock x:Name="DataPathText" Style="{StaticResource DetailValueStyle}"/>
+                    <DockPanel>
+                        <TextBlock x:Name="DistributionValue" DockPanel.Dock="Right" FontSize="11"/>
+                        <TextBlock x:Name="DistributionLabel" FontSize="11"/>
+                    </DockPanel>
+                    <TextBlock x:Name="DistributionPathText" Style="{StaticResource DetailValueStyle}"/>
+                </StackPanel>
+            </Expander>
+            <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Margin="0,15,0,0" Padding="0,12,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <WrapPanel VerticalAlignment="Center">
+                        <Button x:Name="RefreshButton" Style="{StaticResource UtilityButtonStyle}" Tag="&#xE895;"/>
+                        <Button x:Name="LogsButton" Style="{StaticResource UtilityButtonStyle}" Tag="&#xE8A5;"/>
+                    </WrapPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border Width="1" Height="16" Background="{DynamicResource LineBrush}" Margin="4,0,7,0"/>
+                        <StackPanel x:Name="RuntimeActionsPanel" Orientation="Horizontal">
+                            <Button x:Name="RestartButton" Style="{StaticResource IconButtonStyle}" Tag="&#xE72C;"/>
+                            <Button x:Name="StopButton" Style="{StaticResource DangerIconButtonStyle}" Tag="&#xE7E8;"/>
+                        </StackPanel>
+                        <Button x:Name="RepairButton" Style="{StaticResource IconButtonStyle}" Tag="&#xE90F;"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <TextBlock x:Name="LastCheckedText" Margin="1,10,0,0" FontSize="11" Foreground="{DynamicResource MutedBrush}"/>
+        </StackPanel>
+    </ScrollViewer>
 </Window>
 '@
 
@@ -516,6 +532,8 @@ try {
     $xmlReader.Close()
 
     $names = @(
+        "BrandLogo", "ConnectionsLabel", "TechnicalDetailsExpander", "VersionHeading", "VersionStatusText",
+        "StateIconBadge", "StateIcon", "ApplicationDot", "DataDot", "ApplicationPathLabel", "ApplicationPathText", "DataPathLabel", "LastCheckedText",
         "SubtitleText", "StatusBadge", "StatusDot", "StatusBadgeText", "MainCard",
         "StateTitle", "StateDetail", "ApplicationLabel", "ApplicationValue",
         "DataLabel", "DataValue", "DataPathText", "DistributionLabel",
@@ -525,11 +543,50 @@ try {
         "UpdateButton", "OpenButton", "RuntimeActionsPanel", "RestartButton", "StopButton", "LogsButton", "RepairButton", "RefreshButton"
     )
     foreach ($name in $names) {
-        Set-Variable -Name $name -Value $window.FindName($name) -Scope Script
+        $element = $window.FindName($name)
+        if ($null -eq $element) { throw "The launcher layout is missing control: $name" }
+        Set-Variable -Name $name -Value $element -Scope Script
     }
+
+    function New-Brush {
+        param([Parameter(Mandatory = $true)][string]$Color)
+        return [System.Windows.Media.BrushConverter]::new().ConvertFromString($Color)
+    }
+
+    $appearance = $Theme
+    if ($appearance -eq "System") {
+        $appearance = "Dark"
+        try {
+            $personalize = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -ErrorAction Stop
+            if ($personalize.AppsUseLightTheme -eq 1) { $appearance = "Light" }
+        } catch { }
+    }
+    $script:launcherPalette = Get-LauncherThemePalette -Appearance $appearance
+    if ([System.Windows.SystemParameters]::HighContrast) {
+        foreach ($key in @('ShellBrush', 'SurfaceBrush', 'SoftBrush', 'SuccessSoftBrush', 'WarningSoftBrush', 'DangerSoftBrush')) {
+            $script:launcherPalette[$key] = [System.Windows.SystemColors]::WindowColor.ToString()
+        }
+        foreach ($key in @('TextBrush', 'MutedBrush', 'SuccessBrush', 'WarningBrush', 'DangerBrush', 'LineBrush')) {
+            $script:launcherPalette[$key] = [System.Windows.SystemColors]::WindowTextColor.ToString()
+        }
+        $script:launcherPalette.AccentBrush = [System.Windows.SystemColors]::HighlightColor.ToString()
+        $script:launcherPalette.AccentHoverBrush = [System.Windows.SystemColors]::HighlightColor.ToString()
+        $script:launcherPalette.AccentTextBrush = [System.Windows.SystemColors]::HighlightTextColor.ToString()
+    }
+    foreach ($key in $script:launcherPalette.Keys) { $window.Resources[$key] = New-Brush -Color $script:launcherPalette[$key] }
+
+    # Fit short displays and enlarged Windows text without clipping the actions.
+    $workHeight = [System.Windows.SystemParameters]::WorkArea.Height
+    $window.MinHeight = [Math]::Min($window.MinHeight, $workHeight)
+    $window.Height = [Math]::Min($window.Height, $workHeight)
 
     $window.Title = $text.WindowTitle
     $script:SubtitleText.Text = $text.Subtitle
+    $script:ConnectionsLabel.Text = $text.Connections
+    $script:TechnicalDetailsExpander.Header = $text.TechnicalDetails
+    $script:VersionHeading.Text = $text.VersionHeading
+    $script:ApplicationPathLabel.Text = $text.AppLabel
+    $script:DataPathLabel.Text = $text.DataLabel
     $script:ApplicationLabel.Text = $text.AppLabel
     $script:DataLabel.Text = $text.DataLabel
     $script:DistributionLabel.Text = $text.DistributionLabel
@@ -557,35 +614,39 @@ try {
     }
 
     $iconCandidates = @(
+        (Join-Path -Path $launcherRoot -ChildPath "saphir-logo.png"),
+        (Join-Path -Path $launcherRoot -ChildPath "app/frontend/assets/saphir-logo.png"),
         (Join-Path -Path $launcherRoot -ChildPath "SAPHIR.ico"),
-        (Join-Path -Path (Split-Path -Path $launcherRoot -Parent) -ChildPath "assets/SAPHIR.ico")
+        (Join-Path -Path $launcherRoot -ChildPath "deploy/bootstrap/SAPHIR.ico")
     )
     foreach ($iconPath in $iconCandidates) {
         if (Test-Path -LiteralPath $iconPath -PathType Leaf) {
             try {
-                $iconUri = New-Object System.Uri($iconPath, [System.UriKind]::Absolute)
-                $window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create($iconUri)
+                # OnLoad releases the image file immediately, so launcher updates
+                # never have to replace an image held open by this window.
+                $imageStream = [IO.File]::OpenRead($iconPath)
+                try {
+                    $decoder = [System.Windows.Media.Imaging.BitmapDecoder]::Create($imageStream,
+                        [System.Windows.Media.Imaging.BitmapCreateOptions]::PreservePixelFormat,
+                        [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad)
+                    $image = @($decoder.Frames | Sort-Object PixelWidth -Descending)[0]
+                    $image.Freeze()
+                    $script:BrandLogo.Source = $image
+                    $window.Icon = $image
+                } finally { $imageStream.Dispose() }
+                break
             }
             catch {
             }
-            break
         }
     }
 
-    if ([System.Windows.SystemParameters]::HighContrast) {
-        $window.Background = [System.Windows.SystemColors]::WindowBrush
-        $script:MainCard.Background = [System.Windows.SystemColors]::ControlBrush
-        $script:MainCard.BorderBrush = [System.Windows.SystemColors]::ActiveBorderBrush
-    }
-
     if ($ValidateOnly) {
+        if ($null -eq $script:BrandLogo.Source) { throw "The local SAPHIR logo could not be loaded." }
+        $window.Measure([System.Windows.Size]::new($window.Width, $window.Height))
+        $window.Arrange([System.Windows.Rect]::new(0, 0, $window.Width, $window.Height))
         Write-Host "SAPHIR launcher validation passed."
         return
-    }
-
-    function New-Brush {
-        param([Parameter(Mandatory = $true)][string]$Color)
-        return [System.Windows.Media.BrushConverter]::new().ConvertFromString($Color)
     }
 
     function Set-Visible {
@@ -630,14 +691,14 @@ try {
         $script:ErrorText.Text = $Message
         $script:errorKind = $Kind
         if ($Kind -eq "Status") {
-            $script:ErrorBanner.Background = New-Brush -Color "#FFF6E5"
-            $script:ErrorBanner.BorderBrush = New-Brush -Color "#FFD59A"
-            $script:ErrorText.Foreground = New-Brush -Color "#8A4B00"
+            $script:ErrorBanner.Background = New-Brush -Color $script:launcherPalette.WarningSoftBrush
+            $script:ErrorBanner.BorderBrush = New-Brush -Color $script:launcherPalette.WarningBrush
+            $script:ErrorText.Foreground = New-Brush -Color $script:launcherPalette.WarningBrush
         }
         else {
-            $script:ErrorBanner.Background = New-Brush -Color "#FFF1F0"
-            $script:ErrorBanner.BorderBrush = New-Brush -Color "#FFD0CC"
-            $script:ErrorText.Foreground = New-Brush -Color "#A51C14"
+            $script:ErrorBanner.Background = New-Brush -Color $script:launcherPalette.DangerSoftBrush
+            $script:ErrorBanner.BorderBrush = New-Brush -Color $script:launcherPalette.DangerBrush
+            $script:ErrorText.Foreground = New-Brush -Color $script:launcherPalette.DangerBrush
         }
         Set-Visible -Element $script:ErrorBanner -Visible $true
     }
@@ -713,9 +774,9 @@ try {
     }
 
     function Set-CheckingPresentation {
-        $script:StatusBadge.Background = New-Brush -Color "#EFEFF4"
-        $script:StatusDot.Fill = New-Brush -Color "#8E8E93"
-        $script:StatusBadgeText.Foreground = New-Brush -Color "#3A3A3C"
+        $script:StatusBadge.Background = New-Brush -Color $script:launcherPalette.SoftBrush
+        $script:StatusDot.Fill = New-Brush -Color $script:launcherPalette.MutedBrush
+        $script:StatusBadgeText.Foreground = New-Brush -Color $script:launcherPalette.MutedBrush
         $script:StatusBadgeText.Text = $text.Checking
         $script:StateTitle.Text = $text.Checking
         $script:StateDetail.Text = ""
@@ -726,6 +787,9 @@ try {
         $script:DistributionPathText.Text = ""
         $script:ReleaseValue.Text = "—"
         $script:TargetReleaseValue.Text = "—"
+        $script:VersionStatusText.Text = "—"
+        $script:ApplicationPathText.Text = "—"
+        $script:StateIcon.Text = [char]0xE72C
         foreach ($button in @($script:StartButton, $script:UpdateButton, $script:OpenButton, $script:RestartButton, $script:StopButton, $script:RepairButton)) {
             Set-Visible -Element $button -Visible $false
         }
@@ -741,32 +805,40 @@ try {
         $script:lastStatus = $Status
         $state = [string]$Status.State
         $statusTitle = $text.Offline
+        $heroTitle = $text.StoppedTitle
+        $stateGlyph = [char]0xE768
         $detail = $text.OfflineDetail
-        $dotColor = "#8E8E93"
-        $badgeBackground = "#EFEFF4"
-        $badgeForeground = "#3A3A3C"
+        $dotColor = $script:launcherPalette.MutedBrush
+        $badgeBackground = $script:launcherPalette.SoftBrush
+        $badgeForeground = $script:launcherPalette.MutedBrush
 
         switch ($state) {
             "Online" {
                 $statusTitle = $text.Online
+                $heroTitle = $text.ReadyTitle
+                $stateGlyph = [char]0xE73E
                 $detail = $text.OnlineDetail
-                $dotColor = "#34C759"
-                $badgeBackground = "#EAF8EF"
-                $badgeForeground = "#176B35"
+                $dotColor = $script:launcherPalette.SuccessBrush
+                $badgeBackground = $script:launcherPalette.SuccessSoftBrush
+                $badgeForeground = $script:launcherPalette.SuccessBrush
             }
             "Unresponsive" {
                 $statusTitle = $text.Unresponsive
+                $heroTitle = $text.Unresponsive
+                $stateGlyph = [char]0xE7BA
                 $detail = $text.UnresponsiveDetail
-                $dotColor = "#FF9F0A"
-                $badgeBackground = "#FFF6E5"
-                $badgeForeground = "#8A4B00"
+                $dotColor = $script:launcherPalette.WarningBrush
+                $badgeBackground = $script:launcherPalette.WarningSoftBrush
+                $badgeForeground = $script:launcherPalette.WarningBrush
             }
             "PortConflict" {
                 $statusTitle = $text.Conflict
+                $heroTitle = $text.Conflict
+                $stateGlyph = [char]0xE783
                 $detail = $text.ConflictDetail
-                $dotColor = "#FF3B30"
-                $badgeBackground = "#FFF0EF"
-                $badgeForeground = "#A51C14"
+                $dotColor = $script:launcherPalette.DangerBrush
+                $badgeBackground = $script:launcherPalette.DangerSoftBrush
+                $badgeForeground = $script:launcherPalette.DangerBrush
             }
             default {
                 if ([string]::IsNullOrWhiteSpace([string]$Status.ReleaseId) -and
@@ -784,54 +856,77 @@ try {
                 $text.UpdateOnRestart -f [string]$Status.TargetReleaseId
             }
             $detail = "$detail $updateDetail"
+            if ($state -eq "Online" -or $state -eq "Offline") {
+                $heroTitle = $text.UpdateTitle
+                $stateGlyph = [char]0xE895
+            }
+        }
+
+        if (($state -eq "Online" -or $state -eq "Offline") -and
+            -not [string]::IsNullOrWhiteSpace([string]$Status.DataFolderPath) -and -not [bool]$Status.DataAvailable) {
+            $heroTitle = $text.NetworkTitle
+            $detail = $text.NetworkDetail
+            $stateGlyph = [char]0xE7BA
         }
 
         $script:StatusBadge.Background = New-Brush -Color $badgeBackground
         $script:StatusDot.Fill = New-Brush -Color $dotColor
         $script:StatusBadgeText.Foreground = New-Brush -Color $badgeForeground
         $script:StatusBadgeText.Text = $statusTitle
-        $script:StateTitle.Text = $statusTitle
+        $script:StateTitle.Text = $heroTitle
         $script:StateDetail.Text = $detail
         $script:ApplicationValue.Text = $statusTitle
+        $script:ApplicationDot.Fill = New-Brush -Color $dotColor
+        $script:StateIcon.Text = $stateGlyph
+        $script:StateIconBadge.Background = New-Brush -Color $badgeBackground
+        $script:StateIcon.Foreground = New-Brush -Color $badgeForeground
+        if ($heroTitle -eq $text.NetworkTitle -or $heroTitle -eq $text.UpdateTitle) {
+            $script:StateIconBadge.Background = New-Brush -Color $script:launcherPalette.WarningSoftBrush
+            $script:StateIcon.Foreground = New-Brush -Color $script:launcherPalette.WarningBrush
+        }
+        $script:ApplicationPathText.Text = [string]$Status.FrontendUrl
+        $script:ApplicationPathText.ToolTip = [string]$Status.FrontendUrl
+        $script:LastCheckedText.Text = $text.LastChecked -f (Get-Date -Format 'HH:mm')
 
         $dataPath = [string]$Status.DataFolderPath
         if ([string]::IsNullOrWhiteSpace($dataPath)) {
             $script:DataValue.Text = $text.NotConfigured
-            $script:DataValue.Foreground = New-Brush -Color "#8E8E93"
+            $script:DataValue.Foreground = New-Brush -Color $script:launcherPalette.MutedBrush
             $script:DataPathText.Text = ""
             $script:DataPathText.ToolTip = $null
         }
         elseif ([bool]$Status.DataAvailable) {
             $script:DataValue.Text = $text.Available
-            $script:DataValue.Foreground = New-Brush -Color "#248A3D"
+            $script:DataValue.Foreground = New-Brush -Color $script:launcherPalette.SuccessBrush
             $script:DataPathText.Text = $dataPath
             $script:DataPathText.ToolTip = $dataPath
         }
         else {
             $script:DataValue.Text = $text.Unavailable
-            $script:DataValue.Foreground = New-Brush -Color "#B25000"
+            $script:DataValue.Foreground = New-Brush -Color $script:launcherPalette.WarningBrush
             $script:DataPathText.Text = $dataPath
             $script:DataPathText.ToolTip = $dataPath
         }
+        $script:DataDot.Fill = $script:DataValue.Foreground
 
         $distributionPath = [string]$Status.DistributionRoot
         $script:DistributionPathText.Text = $distributionPath
         $script:DistributionPathText.ToolTip = $distributionPath
         if ([string]$Status.DeploymentState -eq "Development") {
             $script:DistributionValue.Text = $text.Development
-            $script:DistributionValue.Foreground = New-Brush -Color "#8E8E93"
+            $script:DistributionValue.Foreground = New-Brush -Color $script:launcherPalette.MutedBrush
         }
         elseif ([string]$Status.DeploymentState -eq "Ready") {
             $script:DistributionValue.Text = $text.Available
-            $script:DistributionValue.Foreground = New-Brush -Color "#248A3D"
+            $script:DistributionValue.Foreground = New-Brush -Color $script:launcherPalette.SuccessBrush
         }
         elseif ([bool]$Status.DistributionReachable) {
             $script:DistributionValue.Text = $text.NeedsAttention
-            $script:DistributionValue.Foreground = New-Brush -Color "#B25000"
+            $script:DistributionValue.Foreground = New-Brush -Color $script:launcherPalette.WarningBrush
         }
         else {
             $script:DistributionValue.Text = $text.Unavailable
-            $script:DistributionValue.Foreground = New-Brush -Color "#B25000"
+            $script:DistributionValue.Foreground = New-Brush -Color $script:launcherPalette.WarningBrush
         }
 
         $releaseId = [string]$Status.ReleaseId
@@ -848,26 +943,31 @@ try {
         if ([string]::IsNullOrWhiteSpace($targetReleaseId)) {
             $script:TargetReleaseValue.Text = "—"
             $script:TargetReleaseValue.ToolTip = $null
-            $script:TargetReleaseValue.Foreground = New-Brush -Color "#8E8E93"
+            $script:TargetReleaseValue.Foreground = New-Brush -Color $script:launcherPalette.MutedBrush
+            $script:VersionStatusText.Text = $text.Unavailable
         }
         elseif ([bool]$Status.TargetPreviouslyFailed) {
             $targetDisplay = "{0} · {1}" -f $targetReleaseId, $text.PreviousFailure
-            $script:TargetReleaseValue.Text = $targetDisplay
+            $script:TargetReleaseValue.Text = $targetReleaseId
             $script:TargetReleaseValue.ToolTip = $targetDisplay
-            $script:TargetReleaseValue.Foreground = New-Brush -Color "#B25000"
+            $script:TargetReleaseValue.Foreground = New-Brush -Color $script:launcherPalette.WarningBrush
+            $script:VersionStatusText.Text = $text.PreviousFailure
         }
         elseif ([bool]$Status.UpdateAvailable) {
             $targetDisplay = "{0} · {1}" -f $targetReleaseId, $text.UpdateAvailable
-            $script:TargetReleaseValue.Text = $targetDisplay
+            $script:TargetReleaseValue.Text = $targetReleaseId
             $script:TargetReleaseValue.ToolTip = $targetDisplay
-            $script:TargetReleaseValue.Foreground = New-Brush -Color "#0071E3"
+            $script:TargetReleaseValue.Foreground = New-Brush -Color $script:launcherPalette.AccentBrush
+            $script:VersionStatusText.Text = $text.UpdateAvailable
         }
         else {
             $targetDisplay = "{0} · {1}" -f $targetReleaseId, $text.CurrentRelease
-            $script:TargetReleaseValue.Text = $targetDisplay
+            $script:TargetReleaseValue.Text = $targetReleaseId
             $script:TargetReleaseValue.ToolTip = $targetDisplay
-            $script:TargetReleaseValue.Foreground = New-Brush -Color "#248A3D"
+            $script:TargetReleaseValue.Foreground = New-Brush -Color $script:launcherPalette.SuccessBrush
+            $script:VersionStatusText.Text = $text.CurrentRelease
         }
+        $script:VersionStatusText.Foreground = $script:TargetReleaseValue.Foreground
 
         $deploymentMessage = Get-DeploymentIssueMessage -Status $Status
         if (-not [string]::IsNullOrWhiteSpace($deploymentMessage)) {
@@ -881,6 +981,7 @@ try {
 
         $showUpdate = [bool]$Status.CanUpdate
         $script:UpdateButton.Content = if ($state -eq "Offline") { $text.UpdateAndStart } else { $text.UpdateAndRestart }
+        $script:UpdateButton.ToolTip = ([string]$script:UpdateButton.Content).Replace("_", "")
         Set-Visible -Element $script:StartButton -Visible ($state -eq "Offline" -and -not $showUpdate)
         Set-Visible -Element $script:UpdateButton -Visible $showUpdate
         Set-Visible -Element $script:OpenButton -Visible ($state -eq "Online" -and -not $showUpdate)

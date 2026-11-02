@@ -93,10 +93,10 @@ function getFilteredApprovalEntries() {
 
 async function loadApprovalsView() {
   try {
-    setLoadingState("pendingContainer", "queue", 3);
-    setLoadingState("attentionContainer", "queue", 2);
-    setLoadingState("rejectedContainer", "queue", 2);
-    setLoadingState("approvedContainer", "queue", 2);
+    setLoadingState("pendingContainer", "grid", 3);
+    setLoadingState("attentionContainer", "grid", 3);
+    setLoadingState("rejectedContainer", "grid", 3);
+    setLoadingState("approvedContainer", "grid", 3);
     const entries = await fetch(apiUrl + "approvals/entries").then(parseResponse);
     allApprovalEntries = Array.isArray(entries) ? entries : [];
     document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(allApprovalEntries);
@@ -112,10 +112,10 @@ async function loadApprovalsView() {
 
 async function loadReviewView() {
   try {
-    setLoadingState("pendingContainer", "queue", 3);
-    setLoadingState("attentionContainer", "queue", 2);
-    setLoadingState("rejectedContainer", "queue", 2);
-    setLoadingState("approvedContainer", "queue", 2);
+    setLoadingState("pendingContainer", "grid", 3);
+    setLoadingState("attentionContainer", "grid", 3);
+    setLoadingState("rejectedContainer", "grid", 3);
+    setLoadingState("approvedContainer", "grid", 3);
     const payload = await fetch(apiUrl + "review/bootstrap").then(parseResponse);
     allApprovalEntries = Array.isArray(payload && payload.approvals) ? payload.approvals : [];
     approvalScopedProjects = Array.isArray(payload && payload.projects) ? payload.projects : [];
@@ -251,23 +251,28 @@ function buildApprovalCard(entry, showActions) {
   return `
     <article class="review-card">
       <div class="review-card-header">
-        <div>
+        <div class="review-card-employee">
           <div class="review-card-title">${escapeHtml(entry.employeeName)}</div>
-          <div class="worklog-secondary">${escapeHtml(formatDateToWords(entry.date))} | ${escapeHtml(formatQueueTitle(entry))}</div>
-          ${exactTimeLabel ? `<div class="panel-note">${escapeHtml(exactTimeLabel)}</div>` : ""}
+          <div class="worklog-secondary">EMP ${escapeHtml(entry.employeeCode)}</div>
         </div>
         <span class="status-badge ${getStatusTone(entry)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
       </div>
+      <div class="review-card-timing">
+        <div>
+          <div class="review-card-date">${escapeHtml(formatDateToWords(entry.date))}</div>
+          <div class="worklog-secondary duration-value">${escapeHtml(formatQueueTitle(entry))}</div>
+          ${exactTimeLabel ? `<div class="panel-note">${escapeHtml(exactTimeLabel)}</div>` : ""}
+        </div>
+        <strong class="review-card-duration duration-value">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</strong>
+      </div>
+      <div class="review-card-project">${projectIdentity}</div>
       <div class="review-card-meta">
-        ${projectIdentity}
         ${!isDiverseEntry(entry) && entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : ""}
         ${!isDiverseEntry(entry) ? `<span class="meta-pill">${escapeHtml(formatPaymentOptionValue(entry.paymentOption || "cash"))}</span>` : ""}
         ${isDiverseEntry(entry) && entry.diverseReason ? `<span class="meta-pill">${escapeHtml(entry.diverseReason)}</span>` : ""}
         ${!isDiverseEntry(entry) && entry.reasonCode ? `<span class="meta-pill">${escapeHtml(entry.reasonCode)}</span>` : ""}
-        <span class="meta-pill duration-value">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
         ${renderEntryMonetaryPill(entry)}
         ${renderEntryWorkScheduleBadge(entry)}
-        <span class="meta-pill">EMP ${escapeHtml(entry.employeeCode)}</span>
       </div>
       ${renderReviewIssues(entry)}
       ${renderEntryWorkComment(entry)}
@@ -276,7 +281,7 @@ function buildApprovalCard(entry, showActions) {
           <div class="entry-work-comment-label">${escapeHtml(getEntrySupervisorNoteLabel(entry))}</div>
           <div>${escapeHtml(entry.message)}</div>
         </div>
-      ` : `<div class="panel-note">${escapeHtml(t("shared.noManagerNote"))}</div>`}
+      ` : ""}
       <div class="review-card-actions">
         ${canReview ? `
           <button class="btn btn-success btn-sm approvals-approve-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}</button>
@@ -300,7 +305,7 @@ function renderApprovalsList(containerId, entries, showActions, emptyMessage = "
     return;
   }
 
-  container.innerHTML = `<div class="queue-list">${entries.map(entry => buildApprovalCard(entry, showActions)).join("")}</div>`;
+  container.innerHTML = `<div class="review-card-grid">${entries.map(entry => buildApprovalCard(entry, showActions)).join("")}</div>`;
 }
 
 function renderApprovalTabsFromFiltered(entries) {

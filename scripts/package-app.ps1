@@ -390,6 +390,7 @@ try {
     foreach ($launcherName in @("SAPHIR Launcher.vbs", "SAPHIR Launcher Host.vbs", "Install SAPHIR Shortcut.vbs", "SAPHIR.ico")) {
         Copy-PackageItem -Source (Join-Path $launcherSourceRoot $launcherName) -Destination (Join-Path $bootstrapRoot ("deployment/launcher/" + $launcherName))
     }
+    Copy-PackageItem -Source (Join-Path $repoRoot "app/frontend/assets/saphir-logo.png") -Destination (Join-Path $bootstrapRoot "deployment/launcher/saphir-logo.png")
     Copy-PackageItem -Source (Join-Path $launcherSourceRoot "Installer SAPHIR sur le Bureau.vbs") -Destination (Join-Path $bootstrapRoot "Installer SAPHIR sur le Bureau.vbs")
     Copy-PackageItem -Source (Join-Path $launcherSourceRoot "Installer SAPHIR sur le Bureau.vbs") -Destination (Join-Path $bootstrapRoot "Install SAPHIR Shortcut.vbs")
     Write-PackagePlainTextGuide -Source (Join-Path -Path $repoRoot -ChildPath "docs/EMPLOYEE-QUICK-START.md") -Destination (Join-Path -Path $bootstrapRoot -ChildPath "GUIDE-DEMARRAGE-SAPHIR.txt")
@@ -424,6 +425,7 @@ try {
         "scripts/saphir-launcher.ps1",
         "GUIDE-DEMARRAGE-SAPHIR.txt",
         "deployment/launcher/SAPHIR.ico",
+        "deployment/launcher/saphir-logo.png",
         "deployment/launcher/SAPHIR Launcher.vbs",
         "deployment/launcher/SAPHIR Launcher Host.vbs",
         "deployment/launcher/Install SAPHIR Shortcut.vbs",

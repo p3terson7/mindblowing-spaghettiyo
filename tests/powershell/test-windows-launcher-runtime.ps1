@@ -47,6 +47,11 @@ try {
     if ($launcherLog -notmatch "SAPHIR launcher validation passed") {
         throw "The launcher did not complete WPF validation. Log: $launcherLog"
     }
+    # Validate the alternate palette and native measure/arrange as well. Neither
+    # invocation opens the UI, starts a backend, nor probes shared DATA.
+    $windowsPowerShell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+    & $windowsPowerShell -NoProfile -STA -File (Join-Path $repoRoot 'scripts/saphir-launcher.ps1') -ValidateOnly -Theme Light
+    if ($LASTEXITCODE -ne 0) { throw 'Compact launcher light-theme WPF validation failed.' }
 }
 finally {
     [System.Environment]::SetEnvironmentVariable(

@@ -14,6 +14,7 @@ Dim sourceCachedLaunchPath
 Dim sourceLocalCachePath
 Dim sourceServerControlPath
 Dim sourceIconPath
+Dim sourceLogoPath
 Dim localAppData
 Dim localRoot
 Dim localAssetsRoot
@@ -33,6 +34,7 @@ Dim localLauncherHostPath
 Dim localLauncherPointerPath
 Dim localLauncherVersionPath
 Dim localBundleIconPath
+Dim localBundleLogoPath
 Dim localLauncherScriptPath
 Dim localLauncherControlPath
 Dim localApplicationLayoutPath
@@ -142,9 +144,19 @@ sourceCachedLaunchPath = fso.BuildPath(distributionRoot, "scripts\launch-cached-
 sourceLocalCachePath = fso.BuildPath(distributionRoot, "scripts\lib\LocalAppCache.ps1")
 sourceServerControlPath = fso.BuildPath(distributionRoot, "scripts\lib\ServerControl.ps1")
 sourceIconPath = fso.BuildPath(launcherPayloadRoot, "SAPHIR.ico")
+sourceLogoPath = fso.BuildPath(launcherPayloadRoot, "saphir-logo.png")
+' The direct source checkout keeps the canonical logo with the frontend.
+If Not fso.FileExists(sourceLogoPath) Then
+    sourceLogoPath = fso.BuildPath(distributionRoot, "..\..\app\frontend\assets\saphir-logo.png")
+End If
 
 If Not fso.FileExists(sourceLauncherEntryPath) Then
     shell.Popup "SAPHIR Launcher.vbs is missing from the distribution folder.", 0, "SAPHIR", 16
+    WScript.Quit 1
+End If
+
+If Not fso.FileExists(sourceLogoPath) Then
+    shell.Popup "saphir-logo.png is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
@@ -241,6 +253,7 @@ EnsureFolder stagingLibraryRoot
 
 localLauncherEntryPath = fso.BuildPath(stagingRoot, "SAPHIR Launcher.vbs")
 localBundleIconPath = fso.BuildPath(stagingRoot, "SAPHIR.ico")
+localBundleLogoPath = fso.BuildPath(stagingRoot, "saphir-logo.png")
 localLauncherScriptPath = fso.BuildPath(stagingScriptsRoot, "saphir-launcher.ps1")
 localLauncherControlPath = fso.BuildPath(stagingLibraryRoot, "LauncherControl.ps1")
 localApplicationLayoutPath = fso.BuildPath(stagingLibraryRoot, "ApplicationLayout.ps1")
@@ -256,6 +269,7 @@ CopyLauncherFile sourceCachedLaunchPath, localCachedLaunchPath, "the cached appl
 CopyLauncherFile sourceLocalCachePath, localLocalCachePath, "the local application cache support"
 CopyLauncherFile sourceServerControlPath, localServerControlPath, "the local service controller"
 CopyLauncherFile sourceIconPath, localBundleIconPath, "the launcher icon"
+CopyLauncherFile sourceLogoPath, localBundleLogoPath, "the SAPHIR logo"
 CopyLauncherFile sourceLauncherEntryPath, localLauncherEntryPath, "the launcher"
 CopyLauncherFile sourceLauncherVersionPath, fso.BuildPath(stagingRoot, "launcher-version.txt"), "the launcher version"
 
@@ -283,6 +297,7 @@ End If
 ' Validate the complete staged bundle before one same-volume directory rename.
 If Not fso.FileExists(localLauncherEntryPath) Or _
    Not fso.FileExists(localBundleIconPath) Or _
+   Not fso.FileExists(localBundleLogoPath) Or _
    Not fso.FileExists(localLauncherScriptPath) Or _
    Not fso.FileExists(localLauncherControlPath) Or _
    Not fso.FileExists(localApplicationLayoutPath) Or _

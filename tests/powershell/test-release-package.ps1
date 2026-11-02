@@ -103,6 +103,9 @@ try {
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "Install SAPHIR Shortcut.vbs") -PathType Leaf) -Message "distribution must contain the desktop-shortcut installer"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "Installer SAPHIR sur le Bureau.vbs") -PathType Leaf) -Message "distribution must expose a clearly named French desktop installer"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $distributionRoot "deployment/launcher/SAPHIR.ico") -PathType Leaf) -Message "distribution must contain the internal Windows icon"
+    $packagedLogoPath = Join-Path $distributionRoot 'deployment/launcher/saphir-logo.png'
+    Assert-True -Condition ([IO.File]::Exists($packagedLogoPath)) -Message 'distribution must publish the canonical launcher logo'
+    Assert-Equal -Expected (Get-FileHash -LiteralPath (Join-Path $repoRoot 'app/frontend/assets/saphir-logo.png')).Hash -Actual (Get-FileHash -LiteralPath $packagedLogoPath).Hash -Message 'launcher must use the exact application logo'
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "scripts/saphir-launcher.ps1") -PathType Leaf) -Message "distribution must contain the graphical launcher interface"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $distributionRoot -ChildPath "scripts/lib/LauncherControl.ps1") -PathType Leaf) -Message "distribution must contain the launcher controller"
     $packagedBatchLauncher = [System.IO.File]::ReadAllText((Join-Path $repoRoot "deploy/bootstrap/Launch SAPHIR.bat"))

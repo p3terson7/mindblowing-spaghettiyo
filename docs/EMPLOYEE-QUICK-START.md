@@ -11,6 +11,8 @@
 
 Quand une nouvelle version est disponible, le lanceur affiche **Mettre à jour et démarrer** ou **Mettre à jour et redémarrer**. Il vérifie le téléchargement, conserve la version précédente au cas où la nouvelle ne démarre pas, puis ouvre SAPHIR. **Ouvrir SAPHIR** ouvre seulement le navigateur et ne redémarre pas une instance qui fonctionne déjà. **Arrêter** ferme le serveur SAPHIR local.
 
+Le lanceur compact affiche une seule action principale. **Actualiser** et **Journaux** sont en bas; les icônes permettent de redémarrer, arrêter ou réparer SAPHIR (survolez-les pour voir leur nom). **Détails techniques** déplie les adresses et chemins complets. Le logo et l’interface sont installés localement; une mise à jour du lanceur devient visible à sa prochaine ouverture.
+
 ## En cas de problème
 
 1. Vérifiez que vous êtes connecté au réseau du ministère.
@@ -35,6 +37,8 @@ Fermer le navigateur ne ferme pas nécessairement le petit serveur SAPHIR local.
 6. When the state changes to **Online**, select **Open SAPHIR**, then sign in normally.
 
 When a new release is available, the launcher displays **Update and start** or **Update and restart**. It validates the download, keeps the previous release for rollback, and then opens SAPHIR. **Open SAPHIR** only opens the browser and leaves a healthy running instance untouched. **Stop** closes the local SAPHIR server.
+
+The compact launcher shows one primary action. **Refresh** and **Logs** are at the bottom; the icons restart, stop or repair SAPHIR (hover for their names). **Technical details** expands the full addresses and paths. The logo and interface are installed locally; launcher updates appear the next time it opens.
 
 ## If SAPHIR does not start
 

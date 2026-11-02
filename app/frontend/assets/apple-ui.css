@@ -2737,10 +2737,106 @@ body.bug-report-image-viewer-open {
 
 .review-tab-content {
   margin-top: 14px;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+  container: review-cards / inline-size;
 }
 
-.review-card {
+.review-card-grid,
+.review-tab-content .loading-shell-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+@container review-cards (min-width: 680px) {
+  .review-card-grid,
+  .review-tab-content .loading-shell-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container review-cards (min-width: 1040px) {
+  .review-card-grid,
+  .review-tab-content .loading-shell-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.review-card-grid .review-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
   background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+.review-card-employee,
+.review-card-timing > div {
+  min-width: 0;
+}
+
+.review-card-header .status-badge {
+  flex-shrink: 0;
+}
+
+.review-card-timing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 10px;
+  border-block: 1px solid var(--separator);
+}
+
+.review-card-date {
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.review-card-duration {
+  color: var(--label-primary);
+  font-size: 1.12rem;
+  text-align: right;
+}
+
+.review-card-grid .review-card-meta {
+  padding-bottom: 0;
+}
+
+.review-card-grid .meta-pill,
+.review-card-grid .inline-code-pill,
+.review-card-grid .project-identity-pill {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.review-card-grid .review-card-actions {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--separator);
+}
+
+.review-card-grid .review-card-actions .btn {
+  white-space: normal;
+}
+
+@media (max-width: 760px) {
+  #approvalsSearchContainer .filter-toolbar-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #approvalsSearchContainer .filter-field,
+  #approvalsSearchContainer .filter-actions {
+    min-width: 0;
+    width: 100%;
+    margin-left: 0;
+  }
 }
 
 .review-card-attention {

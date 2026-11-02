@@ -132,9 +132,15 @@ foreach ($name in @("users.json", "compensation-grid.json")) {
 }
 $usersText = ([Text.UTF8Encoding]::new($false, $true)).GetString($inputs['users.json'].bytes).TrimStart([char]0xfeff)
 if (-not $usersText.Trim().StartsWith('[')) { throw "users.json must be an array." }
-$users = @(ConvertFrom-Json -InputObject $usersText -ErrorAction Stop)
+# Windows PowerShell 5.1 emits a JSON array as a single pipeline object.
+# Assign first, then normalize the value; wrapping the command directly in @()
+# nests the entire list and makes every employee lookup appear missing.
+$parsedUsers = ConvertFrom-Json -InputObject $usersText -ErrorAction Stop
+$users = @()
+if ($null -ne $parsedUsers) { $users = @($parsedUsers) }
 $userByCode = @{}
 foreach ($user in $users) {
+    if ($null -eq $user -or $user.GetType() -ne [System.Management.Automation.PSCustomObject]) { throw "users.json must contain account objects, not nested arrays or scalar values. No employee files were changed." }
     $code = Get-UserEmployeeCodeValue -UserRecord $user
     if (-not $code) { continue }
     if ($userByCode.ContainsKey($code)) { throw "Duplicate employee code in users.json; resolve it before migrating." }

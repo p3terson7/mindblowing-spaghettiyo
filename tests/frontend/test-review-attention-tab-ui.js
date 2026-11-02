@@ -99,7 +99,7 @@ assert.match(
   /const canReview = showActions && isPending && !isEntryForgottenClockOut\(entry\) && canApproveEntry\(entry\);/,
   "Historical entries shown in the attention tab must not receive pending-only approval actions.",
 );
-assert.match(approvalsSource, /setLoadingState\("attentionContainer", "queue", 2\);/, "The attention tab should show a loading state while Review refreshes.");
+assert.match(approvalsSource, /setLoadingState\("attentionContainer", "grid", 3\);/, "The attention tab should show card-grid placeholders while Review refreshes.");
 assert.match(cssSource, /#attentionContainer \.review-card\s*\{/, "Attention entries need the same visible review-card affordance as the other tabs.");
 
 for (const expectedCopy of [
