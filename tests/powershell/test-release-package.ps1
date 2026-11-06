@@ -155,7 +155,7 @@ try {
     $shortcutSavePosition = $packagedShortcutInstaller.IndexOf('shortcut.Save', [System.StringComparison]::Ordinal)
     $failedReleaseResetPosition = $packagedShortcutInstaller.IndexOf('failedReleasePath = fso.BuildPath(localRoot, "failed.json")', [System.StringComparison]::Ordinal)
     Assert-True -Condition ($failedReleaseResetPosition -gt $shortcutSavePosition) -Message "shortcut installer must only unlock a failed release after the new local bundle and shortcut are active"
-    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('If fso.FileExists(localApplicationLayoutPath) And fso.FileExists(failedReleasePath) Then', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must only unlock a failed release when its installed bundle contains the canonical/legacy resolver"
+    Assert-True -Condition ($packagedShortcutInstaller.IndexOf('If Not automaticInstall And fso.FileExists(localApplicationLayoutPath) And fso.FileExists(failedReleasePath) Then', [System.StringComparison]::Ordinal) -ge 0) -Message "manual recovery may unlock a failed release; automatic launcher updates must not reset it"
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('fso.DeleteFile markerPath, True', [System.StringComparison]::Ordinal) -ge 0) -Message "reinstalling the compatible launcher must allow the current manifest release to be retried"
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('"Version du lanceur : " & bundleId', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer confirmation must identify the installed launcher bundle"
     Assert-True -Condition ($packagedShortcutInstaller.IndexOf('localIconPath & ",0"', [System.StringComparison]::Ordinal) -ge 0) -Message "shortcut installer must use the locally cached icon"
@@ -228,6 +228,12 @@ try {
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "app/frontend/assets/saphir-logo.png") -PathType Leaf) -Message "runtime UI must include the optimized SAPHIR logo"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "docs/GC179.pdf") -PathType Leaf) -Message "runtime must include the GC179 template"
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $expandedRelease "scripts/backfill-compensation.ps1") -PathType Leaf) -Message "runtime must include the manual compensation backfill script"
+    foreach ($updateFile in @('scripts/update-launcher.ps1', 'scripts/lib/LauncherUpdate.ps1', 'scripts/launcher-origin.json', 'app/backend/services/ReviewService.ps1')) {
+        Assert-True -Condition ([IO.File]::Exists((Join-Path $expandedRelease $updateFile))) -Message "published runtime is missing $updateFile"
+    }
+    $launcherOrigin = [IO.File]::ReadAllText((Join-Path $expandedRelease 'scripts/launcher-origin.json')) | ConvertFrom-Json
+    Assert-Equal -Expected $distributionRoot -Actual $launcherOrigin.distributionRoot -Message 'even old launchers must find the current installer from publisher-owned release metadata'
+    Assert-Equal -Expected $packagedLauncherVersion -Actual $launcherOrigin.launcherFingerprint -Message 'an up-to-date local launcher must not need an extra worker/network check on every app start'
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $expandedRelease "docs/COMPENSATION-BACKFILL.md") -PathType Leaf) -Message "runtime must include backfill safety instructions"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "data"))) -Message "runtime ZIP must exclude data"
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path -Path $expandedRelease -ChildPath "apps"))) -Message "new runtime ZIPs must contain only the canonical app tree"

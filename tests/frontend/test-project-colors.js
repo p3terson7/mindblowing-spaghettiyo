@@ -135,14 +135,14 @@ assert(projects.includes("renderProjectEditorIdentityOptions(getProjectColorKey(
 assert(projects.includes("getProjectColorCssValue"), "Project charts do not consume persisted project colors.");
 assert(projects.includes("getProjectChartPointStyle"), "Project charts do not consume persisted project marker shapes.");
 assert(projects.includes("getProjectChartBorderDash"), "Project trend lines are not distinguishable between their points.");
-assert(projects.includes(": getProjectColorCssValue(projectIdentity);"), "Trend rows for legacy projects outside the catalog do not keep a stable code-derived color.");
+assert(projects.includes('findProjectByCode(projectsViewState.projects, code) || code') && projects.includes('getProjectColorCssValue(project)'), "Trend rows for legacy projects outside the catalog do not keep a stable code-derived color.");
 assert(projects.includes("generateLabels: chart => createProjectDoughnutLegendLabels(chart, chartItems)"), "The doughnut legend does not expose per-project marker shapes.");
 assert(projects.includes("getStableProjectChartColor(item.label)"), "Non-project chart colors are not stable by label.");
 assert(projects.includes('"#7f6b52", "#0f8f7a"'), "The generic chart palette does not expose all ten theme colors.");
 assert(projects.includes('const PROJECT_OTHER_TREND_KEY = "__SAPHIR_OTHER_PROJECTS__"'), "The grouped project dataset has no language-independent sentinel.");
 assert(projects.includes('const PROJECT_OTHER_CHART_POINT_STYLE = "crossRot"'), "The grouped project dataset has no reserved marker outside the assignable project shapes.");
-assert(projects.includes("const PROJECT_OTHER_CHART_BORDER_DASH = Object.freeze([3, 5])"), "The grouped project dataset has no fixed line pattern.");
-assert(projects.includes('label: isOther ? t("projects.other") : projectCode'), "The grouped project dataset does not separate its localized label from its stable identity.");
+assert(projects.includes('type: other ? "dotted" : "solid"'), "The grouped project dataset has no fixed line pattern.");
+assert(projects.includes('name: other ? t("projects.other") : code'), "The grouped project dataset does not separate its localized label from its stable identity.");
 assert(projects.includes("item.isOther ? theme.textMuted"), "The grouped doughnut arc can change color with the interface language.");
 assert(approvals.includes("renderProjectIdentityPill(projectRecord, projectCode)"), "Revision cards do not show project color identity.");
 assert(dashboard.includes("renderDashboardEntryProjectIdentity"), "Dashboard entries do not show project color identity.");

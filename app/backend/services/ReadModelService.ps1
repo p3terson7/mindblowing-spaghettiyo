@@ -32,6 +32,7 @@ if ($null -eq $script:ReadModelFactoryDepth) {
 . (Join-Path $PSScriptRoot "ReadModelCacheService.ps1")
 . (Join-Path $PSScriptRoot "EmployeeContributionService.ps1")
 . (Join-Path $PSScriptRoot "EmployeeFileReadService.ps1")
+. (Join-Path $PSScriptRoot "ProjectEntryReadService.ps1")
 
 function Get-ReadModelSyncStateKey {
     param($State)
@@ -723,12 +724,13 @@ function New-EmployeeEntryProjectionForAccessModel {
         [Parameter(Mandatory = $true)]$ModifyProjectCodeSet,
         [string]$EmployeeRole = "employee",
         [bool]$IsSuperAdmin = $false,
-        [bool]$CanApproveEmployeeRole = $true
+        [bool]$CanApproveEmployeeRole = $true,
+        [bool]$IncludeMonetary = $true
     )
 
     $projection = New-EmployeeEntryProjection -EmployeeCode $EmployeeCode -EmployeeName $EmployeeName -Entry $Entry -EmployeeRole $EmployeeRole
     $projection = Add-EntryPermissionProjectionFromAccessModel -Entry $projection -ModifyProjectCodeSet $ModifyProjectCodeSet -IsSuperAdmin:$IsSuperAdmin -CanApproveEmployeeRole:$CanApproveEmployeeRole
-    $monetary = New-EntryMonetaryReadModel -Entry $Entry
+    $monetary = if ($IncludeMonetary) { New-EntryMonetaryReadModel -Entry $Entry } else { $null }
     if ($null -ne $monetary) {
         $projection | Add-Member -NotePropertyName monetary -NotePropertyValue $monetary -Force
     }
@@ -1124,11 +1126,9 @@ function Get-DashboardBootstrapModel {
             selectedEmployeeEntries = $selectedEmployeeEntries
         }
     }
-    # History is independent: retain employee dashboard calculations on ticket
-    # edits while returning fresh recentHistory with the SAME public DTO.
-    $result = $dashboard.PSObject.Copy()
-    $result.recentHistory = @(Get-RecentHistoryEntriesSnapshot -Limit 7)
-    return $result
+    # recentHistory stays empty for older clients; audit history is loaded
+    # exclusively by Review on request, never as part of the dashboard.
+    return $dashboard
 }
 
 function Get-ApprovalsEntriesModel {
@@ -1167,6 +1167,7 @@ function Get-ProjectEntryStatus {
 function Test-ProjectEntryClosed {
     param($Entry)
 
+    if ($null -ne $Entry -and $Entry.PSObject.Properties.Name -contains "rawEntry") { $Entry = $Entry.rawEntry }
     if ($null -eq $Entry -or
         -not ($Entry.PSObject.Properties.Name -contains "punchOut") -or
         [string]::IsNullOrWhiteSpace([string]$Entry.punchOut)) {
@@ -1262,83 +1263,6 @@ function New-ProjectPeriodModel {
     }
 }
 
-function Get-ProjectStatisticsEntriesSnapshot {
-    param($CurrentUser)
-
-    if (-not (Test-CurrentUserManager -CurrentUser $CurrentUser)) {
-        return @()
-    }
-
-    $accessModel = Get-ProjectAccessModelForCurrentUser -CurrentUser $CurrentUser
-    $modifyAccessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $CurrentUser
-    $isSuperAdmin = Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser
-    $scopeKey = if ($isSuperAdmin) { "global" } else { (@($accessModel.ProjectCodes) -join ",") }
-    $modifyScopeKey = if ($isSuperAdmin) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
-    $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
-    $cacheKey = "project-statistics-entry-snapshot|{0}|{1}|{2}" -f $scopeKey, $modifyScopeKey, $userScopeKey
-
-    return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
-        $entriesList = New-Object System.Collections.ArrayList
-        $seenEmployeeCodes = @{}
-        $users = @(Get-Users | Where-Object { Test-EmployeeUserRecord -UserRecord $_ -EmployeeCode "" } | Sort-Object username)
-        # Reuse the existing cold metadata batch instead of stat-ing every
-        # employee file separately. This adds no workers; small/warm/one-file
-        # changes retain the helper's no-scan path and expiry guarantees.
-        if (Get-Command Prime-EmployeeFileMetadata -ErrorAction SilentlyContinue) {
-            try { Prime-EmployeeFileMetadata -Paths @($users | ForEach-Object { Get-EmployeeDataFilePath -EmployeeCode (Get-UserEmployeeCodeValue $_) }) }
-            catch {
-                # Listing permissions/SMB enumeration can differ from direct
-                # file access. Priming is optional; normal file checks below
-                # still enforce freshness and surface actual read failures.
-                if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.metadata.batch.fallback" }
-            }
-        }
-
-        foreach ($user in $users) {
-            $employeeCode = Get-UserEmployeeCodeValue -UserRecord $user
-            if ([string]::IsNullOrWhiteSpace($employeeCode) -or $seenEmployeeCodes.ContainsKey($employeeCode)) {
-                continue
-            }
-            $seenEmployeeCodes[$employeeCode] = $true
-
-            $employeeArchived = ($user.PSObject.Properties.Name -contains "disabled" -and [bool]$user.disabled)
-
-            $source = Get-EmployeeReadContribution -User $user -IncludeMonetary -SkipProjection
-            $contribution = Get-ScopedEmployeeReadContribution -Contribution $source -ScopeIdentity $cacheKey -AccessModel $accessModel -ModifyAccessModel $modifyAccessModel -CurrentUser $CurrentUser -IsSuperAdmin:$isSuperAdmin -IncludeMonetary:$true -Archived:$employeeArchived
-            foreach ($entry in @($contribution.entries)) {
-                if (-not [string]::IsNullOrWhiteSpace([string]$entry.projectCode)) { [void]$entriesList.Add($entry) }
-            }
-        }
-
-        return @($entriesList.ToArray())
-    })
-}
-
-function Get-ProjectStatisticsEntriesForPeriod {
-    param(
-        [AllowNull()][string]$StartDate,
-        [AllowNull()][string]$EndDate,
-        $CurrentUser
-    )
-
-    $start = ConvertTo-ProjectDateOrNull -Value $StartDate
-    $end = ConvertTo-ProjectDateOrNull -Value $EndDate
-    $entries = @(Get-ProjectStatisticsEntriesSnapshot -CurrentUser $CurrentUser)
-    if ($null -eq $start -and $null -eq $end) {
-        return $entries
-    }
-
-    $filteredList = New-Object System.Collections.ArrayList
-    foreach ($entry in $entries) {
-        $entryDate = Get-EntryDateOrNull -Entry $entry
-        if ($null -eq $entryDate -or ($null -ne $start -and $entryDate -lt $start) -or ($null -ne $end -and $entryDate -gt $end)) {
-            continue
-        }
-        [void]$filteredList.Add($entry)
-    }
-    return @($filteredList.ToArray())
-}
-
 function New-ProjectEntryDetailProjection {
     param(
         [Parameter(Mandatory = $true)]$Entry,
@@ -1390,6 +1314,8 @@ function Get-ProjectStatisticsOverview {
         [string]$StartDate,
         [string]$EndDate,
         [bool]$IncludeBreakdown = $true,
+        [string]$FilterProjectCode = "",
+        [bool]$IncludeEntryDetails = $true,
         $CurrentUser
     )
 
@@ -1400,11 +1326,12 @@ function Get-ProjectStatisticsOverview {
     $modifyScopeKey = if ($isSuperAdmin) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
     $detailKey = if ($IncludeBreakdown) { "detail" } else { "summary" }
-    $cacheKey = "project-statistics-overview|{0}|{1}|{2}|{3}|{4}|{5}" -f [string]$StartDate, [string]$EndDate, $scopeKey, $modifyScopeKey, $userScopeKey, $detailKey
+    $cacheKey = "project-statistics-overview|{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}" -f [string]$StartDate, [string]$EndDate, $scopeKey, $modifyScopeKey, $userScopeKey, $detailKey, $FilterProjectCode, $IncludeEntryDetails
     return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
         $stats = @{}
         $entries = @(Get-ProjectStatisticsEntriesForPeriod -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser)
         $visibleProjectCodeSet = $accessModel.ProjectCodeSet
+        $canApproveByEmployee = @{}
 
         foreach ($entry in $entries) {
             if ((Get-ProjectEntryType -Entry $entry) -ne "overtime") {
@@ -1415,6 +1342,7 @@ function Get-ProjectStatisticsOverview {
             }
 
             $projectCode = [string]$entry.projectCode
+            if (-not [string]::IsNullOrWhiteSpace($FilterProjectCode) -and $projectCode -ne $FilterProjectCode) { continue }
             if (-not $visibleProjectCodeSet.ContainsKey($projectCode)) {
                 continue
             }
@@ -1432,6 +1360,7 @@ function Get-ProjectStatisticsOverview {
                     maxSeconds     = $null
                     statusBuckets  = (New-ProjectStatusAccumulatorSet)
                     monetary       = (New-MonetaryAccumulator)
+                    approvedMonths = @{}
                     breakdown      = if ($IncludeBreakdown) { @{} } else { $null }
                 }
             }
@@ -1443,8 +1372,12 @@ function Get-ProjectStatisticsOverview {
             if ($statusBucket -eq "approved") {
                 $stats[$projectCode].totalSeconds += $seconds
                 $stats[$projectCode].approvedEntryCount++
-                $entryMonetary = if ($entry.PSObject.Properties.Name -contains "monetary") { $entry.monetary } else { $null }
+                $entryMonetary = Get-ProjectEntryMonetary -Entry $entry
                 Add-EntryMonetaryToAccumulator -Accumulator $stats[$projectCode].monetary -Monetary $entryMonetary
+                if ([string]$entry.date -match '^\d{4}-\d{2}') {
+                    $month = ([string]$entry.date).Substring(0, 7)
+                    $stats[$projectCode].approvedMonths[$month] = [long]$stats[$projectCode].approvedMonths[$month] + $seconds
+                }
                 if ($null -eq $stats[$projectCode].minSeconds -or $seconds -lt $stats[$projectCode].minSeconds) {
                     $stats[$projectCode].minSeconds = $seconds
                 }
@@ -1484,7 +1417,6 @@ function Get-ProjectStatisticsOverview {
             if ($statusBucket -eq "approved") {
                 $employeeBucket.totalSeconds += $seconds
                 $employeeBucket.approvedEntryCount++
-                $entryMonetary = if ($entry.PSObject.Properties.Name -contains "monetary") { $entry.monetary } else { $null }
                 Add-EntryMonetaryToAccumulator -Accumulator $employeeBucket.monetary -Monetary $entryMonetary
             }
             elseif ($statusBucket -eq "pending") {
@@ -1504,7 +1436,17 @@ function Get-ProjectStatisticsOverview {
                 }
             }
 
-            [void]$employeeBucket.entries.Add((New-ProjectEntryDetailProjection -Entry $entry -StatusBucket $statusBucket -DurationSeconds $seconds))
+            # Rich fields and permissions are needed only for an explicitly
+            # requested breakdown, after project/date/visibility filtering.
+            if ($IncludeEntryDetails) {
+                $detailEntry = ConvertTo-ProjectEntryAccessProjection -Entry $entry -CurrentUser $CurrentUser -ModifyAccessModel $modifyAccessModel -IsSuperAdmin:$isSuperAdmin -CanApproveByEmployee $canApproveByEmployee
+                [void]$employeeBucket.entries.Add((New-ProjectEntryDetailProjection -Entry $detailEntry -StatusBucket $statusBucket -DurationSeconds $seconds))
+            }
+            else {
+                # Internal references let the workspace select its recent 20
+                # before projecting permissions, notes and public money fields.
+                [void]$employeeBucket.entries.Add($entry)
+            }
         }
 
         return $stats
@@ -1670,7 +1612,7 @@ function New-ProjectComparisonModel {
     $previousPeriod = Get-ProjectPreviousEquivalentPeriod -StartDate $StartDate -EndDate $EndDate
     $previousSeconds = [long]0
     if ([bool]$previousPeriod.available) {
-        $previousStats = Get-ProjectStatisticsOverview -StartDate $previousPeriod.startDate -EndDate $previousPeriod.endDate -IncludeBreakdown:$false -CurrentUser $CurrentUser
+        $previousStats = Get-ProjectStatisticsOverview -StartDate $previousPeriod.startDate -EndDate $previousPeriod.endDate -IncludeBreakdown:$false -FilterProjectCode $ProjectCode -CurrentUser $CurrentUser
         if ($previousStats.ContainsKey($ProjectCode)) {
             $previousSeconds = [long]$previousStats[$ProjectCode].totalSeconds
         }
@@ -1713,13 +1655,28 @@ function Get-ProjectDetailModel {
         $CurrentUser
     )
 
+    $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
+    $key = "project-detail|$ProjectCode|$StartDate|$EndDate|$userScopeKey"
+    return (Invoke-ReadModelCache -Key $key -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
+        New-ProjectDetailModel -ProjectCode $ProjectCode -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser
+    })
+}
+
+function New-ProjectDetailModel {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectCode,
+        [string]$StartDate,
+        [string]$EndDate,
+        $CurrentUser
+    )
+
     $summaries = @(Get-ProjectSummaryList -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser)
     $projectSummary = $summaries | Where-Object { [string]$_.projectCode -eq [string]$ProjectCode } | Select-Object -First 1
     if ($null -eq $projectSummary) {
         return $null
     }
 
-    $stats = Get-ProjectStatisticsOverview -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser
+    $stats = Get-ProjectStatisticsOverview -StartDate $StartDate -EndDate $EndDate -FilterProjectCode $ProjectCode -IncludeEntryDetails:$false -CurrentUser $CurrentUser
     $projectStats = if ($stats.ContainsKey($ProjectCode)) { $stats[$ProjectCode] } else { $null }
     $contributorsList = New-Object System.Collections.ArrayList
     $recentEntriesList = New-Object System.Collections.ArrayList
@@ -1731,8 +1688,7 @@ function Get-ProjectDetailModel {
             $approvedEntryCount = [int]$employeeStats.approvedEntryCount
             $averageApprovedSeconds = if ($approvedEntryCount -gt 0) { [long][math]::Round($approvedSeconds / $approvedEntryCount) } else { [long]0 }
             $sharePercent = if ([long]$projectStats.totalSeconds -gt 0) { [math]::Round(($approvedSeconds / [double]$projectStats.totalSeconds) * 100, 2) } else { 0 }
-            $entries = @($employeeStats.entries | Sort-Object date, punchIn)
-            foreach ($entry in $entries) {
+            foreach ($entry in @($employeeStats.entries)) {
                 [void]$recentEntriesList.Add($entry)
             }
 
@@ -1754,7 +1710,6 @@ function Get-ProjectDetailModel {
                 monetary     = ConvertTo-MonetaryAggregateReadModel -Accumulator $employeeStats.monetary
                 lastActivityDate = [string]$employeeStats.lastActivityDate
                 lastActivityAt = [string]$employeeStats.lastActivityAt
-                entries      = $entries
             })
         }
     }
@@ -1763,9 +1718,16 @@ function Get-ProjectDetailModel {
         @{ Expression = { [long]$_.approvedSeconds }; Descending = $true }, `
         @{ Expression = { [string]$_.employee }; Descending = $false }, `
         @{ Expression = { [string]$_.employeeCode }; Descending = $false })
-    $recentEntries = @($recentEntriesList.ToArray() | Sort-Object `
+    $recentSources = @($recentEntriesList.ToArray() | Sort-Object `
         @{ Expression = { Get-EntryDateTimeOrMin -Entry $_ }; Descending = $true }, `
         @{ Expression = { [string]$_.entryId }; Descending = $false } | Select-Object -First 20)
+    $modifyAccessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $CurrentUser
+    $isSuperAdmin = Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser
+    $canApproveByEmployee = @{}
+    $recentEntries = @(foreach ($entry in $recentSources) {
+        $publicEntry = ConvertTo-ProjectEntryAccessProjection -Entry $entry -CurrentUser $CurrentUser -ModifyAccessModel $modifyAccessModel -IsSuperAdmin:$isSuperAdmin -CanApproveByEmployee $canApproveByEmployee
+        New-ProjectEntryDetailProjection -Entry $publicEntry -StatusBucket (Get-ProjectEntryStatusBucketName -Entry $entry) -DurationSeconds ([long](Get-OvertimeSecondsFromText -Value ([string]$entry.overtime)))
+    })
     $comparison = New-ProjectComparisonModel -CurrentSeconds ([long]$projectSummary.totalSeconds) -StartDate $StartDate -EndDate $EndDate -ProjectCode $ProjectCode -CurrentUser $CurrentUser
     $trendModel = Get-ProjectTrendModel -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser
     $approvedTrend = if ($trendModel.ContainsKey($ProjectCode)) { @($trendModel[$ProjectCode]) } else { @() }
@@ -1823,33 +1785,13 @@ function Get-ProjectTrendModel {
     $cacheKey = "project-trends|approved-closed|{0}|{1}|{2}|{3}" -f [string]$StartDate, [string]$EndDate, $scopeKey, $userScopeKey
     return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects", "compensation") -Factory {
         $trendStats = @{}
-        $entries = @(Get-ProjectStatisticsEntriesForPeriod -StartDate $StartDate -EndDate $EndDate -CurrentUser $CurrentUser)
-        $visibleProjectCodeSet = $accessModel.ProjectCodeSet
-
-        foreach ($entry in $entries) {
-            if ((Get-ProjectEntryType -Entry $entry) -ne "overtime" -or (Get-ProjectEntryStatusBucketName -Entry $entry) -ne "approved") {
-                continue
+        # The portfolio already aggregates this exact period. Reuse its month
+        # buckets instead of traversing and classifying every entry a second time.
+        $statistics = Get-ProjectStatisticsOverview -StartDate $StartDate -EndDate $EndDate -IncludeBreakdown:$false -CurrentUser $CurrentUser
+        foreach ($projectCode in @($statistics.Keys)) {
+            if ($statistics[$projectCode].approvedMonths.Count -gt 0) {
+                $trendStats[$projectCode] = $statistics[$projectCode].approvedMonths
             }
-            if ([string]::IsNullOrWhiteSpace([string]$entry.projectCode) -or [string]::IsNullOrWhiteSpace([string]$entry.date) -or [string]$entry.date -notmatch '^\d{4}-\d{2}') {
-                continue
-            }
-
-            if (-not $visibleProjectCodeSet.ContainsKey([string]$entry.projectCode)) {
-                continue
-            }
-
-            $month = $entry.date.Substring(0, 7)
-            $seconds = Get-OvertimeSecondsFromText -Value ([string]$entry.overtime)
-
-            if (-not $trendStats.ContainsKey([string]$entry.projectCode)) {
-                $trendStats[[string]$entry.projectCode] = @{}
-            }
-
-            if (-not $trendStats[[string]$entry.projectCode].ContainsKey($month)) {
-                $trendStats[[string]$entry.projectCode][$month] = 0
-            }
-
-            $trendStats[[string]$entry.projectCode][$month] += $seconds
         }
 
         $result = @{}

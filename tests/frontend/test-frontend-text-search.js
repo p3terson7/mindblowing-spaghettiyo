@@ -102,7 +102,6 @@ const historyFilterSource = sourceBetween(historySource, "function filterHistory
 const dashboardLabelSource = sourceBetween(dashboardSource, "function getDashboardEmployeeSearchLabel", "function buildDashboardEmployeeSearchOptions");
 const dashboardTextSource = sourceBetween(dashboardSource, "function getDashboardEmployeeSearchText", "function resolveDashboardEmployeeSearchValue");
 const dashboardResolverSource = sourceBetween(dashboardSource, "function resolveDashboardEmployeeSearchValue", "function syncDashboardEmployeeSearchInput");
-const dashboardRecentSource = sourceBetween(dashboardSource, "function renderDashboardRecentActivity", "function renderDashboardOverview");
 const employeeTokenSource = sourceBetween(employeesSource, "function tokenizeEmployeeSearch", "function getEmployeeSearchResult");
 const employeeResultSource = sourceBetween(employeesSource, "function getEmployeeSearchResult", "function employeeMatchesProjectFilter");
 const projectNormalizeSource = sourceBetween(projectsSource, "function normalizeProjectPortfolioSearchText", "function normalizeProjectPortfolioScope");
@@ -114,7 +113,6 @@ for (const [label, source] of [
   ["entry filter", filterEntriesSource],
   ["history filter", historyFilterSource],
   ["dashboard employee resolver", dashboardResolverSource],
-  ["dashboard recent activity", dashboardRecentSource],
   ["employee token helpers", employeeTokenSource],
   ["project portfolio search", projectSearchSource],
 ]) {
@@ -229,45 +227,6 @@ for (const query of ["", "E1", "Élodie Durand", "Élodie Durand | E1", "durand 
   const expected = legacyResolveDashboardEmployeeSearchValue(query, dashboardEmployees, dashboardResolverContext.getDashboardEmployeeSearchLabel, dashboardResolverContext.getDashboardEmployeeSearchText);
   assert.equal(dashboardResolverContext.resolveDashboardEmployeeSearchValue(query), expected, `Dashboard employee resolution changed for ${query}.`);
 }
-
-const dashboardRecentElements = {
-  dashboardRecentActivity: { innerHTML: "" },
-  dashboardRecentSearchInput: { value: "" },
-};
-const dashboardRecentContext = {
-  Array,
-  String,
-  dashboardState: { history: [] },
-  window: { Saphir: { textSearch } },
-  document: { getElementById(id) { return dashboardRecentElements[id]; } },
-  getHistorySearchText(entry) { return entry.searchText; },
-  getHistoryAuthorName(entry) { return entry.author; },
-  formatRelativeTime() { return "recent"; },
-  formatDateToWords(value) { return value; },
-  translateHistoryAction(value) { return value; },
-  renderHistorySubjectLine() { return ""; },
-  renderAuditMessage(value) { return value; },
-  createEmptyState(value) { return `EMPTY:${value}`; },
-  escapeHtml(value) { return String(value == null ? "" : value); },
-  t(key) { return key; },
-};
-vm.createContext(dashboardRecentContext);
-vm.runInContext(dashboardRecentSource, dashboardRecentContext);
-const recentEntries = [
-  { author: "Alice", timestamp: "2026-08-17 10:00:00", action: "add", message: "A", searchText: "alice p1 résumé" },
-  { author: "Bob", timestamp: "2026-08-18 10:00:00", action: "update", message: "B", searchText: "bob p2" },
-];
-dashboardRecentElements.dashboardRecentSearchInput.value = " ALICE P1 ";
-dashboardRecentContext.renderDashboardRecentActivity(recentEntries);
-assert.match(dashboardRecentElements.dashboardRecentActivity.innerHTML, /Alice/);
-assert.doesNotMatch(dashboardRecentElements.dashboardRecentActivity.innerHTML, /Bob/);
-dashboardRecentElements.dashboardRecentSearchInput.value = "resume";
-dashboardRecentContext.renderDashboardRecentActivity(recentEntries);
-assert.match(dashboardRecentElements.dashboardRecentActivity.innerHTML, /^EMPTY:/, "Dashboard recent search must remain accent-sensitive.");
-dashboardRecentElements.dashboardRecentSearchInput.value = "   ";
-dashboardRecentContext.renderDashboardRecentActivity(recentEntries);
-assert.match(dashboardRecentElements.dashboardRecentActivity.innerHTML, /Alice/);
-assert.match(dashboardRecentElements.dashboardRecentActivity.innerHTML, /Bob/);
 
 const employeeSearchContext = {
   String,

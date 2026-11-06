@@ -1469,6 +1469,22 @@ function createEmptyState(message) {
 function createLoadingState(variant = "list", count = 3) {
   const safeCount = Math.max(1, Number(count) || 1);
 
+  if (variant === "chartLine" || variant === "chartDonut") {
+    const drawing = variant === "chartDonut"
+      ? `<svg class="chart-placeholder-ring" viewBox="0 0 100 100" aria-hidden="true">
+          <circle class="chart-placeholder-ring-track" cx="50" cy="50" r="39" />
+          <circle class="chart-placeholder-ring-progress" cx="50" cy="50" r="39" />
+        </svg>`
+      : `<svg class="chart-placeholder-plot" viewBox="0 0 600 300" preserveAspectRatio="none" aria-hidden="true">
+          <path class="chart-placeholder-grid" d="M32 34H584 M32 92H584 M32 150H584 M32 208H584" />
+          <path class="chart-placeholder-axis" d="M32 20V266H584" />
+        </svg>`;
+    return `<div class="chart-placeholder chart-placeholder-${variant === "chartDonut" ? "donut" : "line"}" aria-hidden="true">
+      ${drawing}
+      <span class="chart-placeholder-status"><span class="chart-placeholder-dot"></span>${escapeHtml(t("shared.loading"))}</span>
+    </div>`;
+  }
+
   if (variant === "employeeBarChart") {
     return `
       <div class="loading-shell loading-shell-employee-chart" aria-hidden="true">
@@ -1551,7 +1567,7 @@ function setLoadingState(targetOrId, variant = "list", count = 3) {
   target.innerHTML = createLoadingState(variant, count);
 }
 
-function setChartLoadingState(containerId) {
+function setChartLoadingState(containerId, variant = "chart") {
   const container = document.getElementById(containerId);
   if (!container) {
     return;
@@ -1562,7 +1578,8 @@ function setChartLoadingState(containerId) {
     return;
   }
 
-  chartStage.innerHTML = createLoadingState("chart", 1);
+  if (variant === "chartLine") chartStage.setAttribute("aria-busy", "true");
+  chartStage.innerHTML = createLoadingState(variant, 1);
 }
 
 function getStatusTone(status) {

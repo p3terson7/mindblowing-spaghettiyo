@@ -30,8 +30,8 @@
   <link rel="icon" type="image/png" sizes="128x128" href="assets/saphir-logo.png?v=20260715-saphir" />
   <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260603-empty-timeline" />
   <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260603-empty-timeline" />
-  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20261008-loading-performance-v1">
-  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20261008-loading-performance-v1-review-cards-v1">
+  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20261008-loading-performance-v1-period-nav-v1-no-dashboard-history-v1-flat-summary-v1">
+  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20261008-loading-performance-v1-review-cards-v1-review-pages-v1-period-nav-v2-no-dashboard-history-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1">
 </head>
 <body>
   <div class="app-root">
@@ -463,25 +463,6 @@
 
             </div>
 
-            <aside class="dashboard-activity-rail">
-              <section class="panel-shell panel-shell-sticky dashboard-activity-card">
-                <div class="panel-header-row">
-                  <div>
-                    <div class="panel-kicker" data-i18n="dashboard.recentActivity">Recent Activity</div>
-                    <h4 data-i18n="dashboard.latestAudit">Latest audit trail entries</h4>
-                  </div>
-                </div>
-                <div class="filter-toolbar filter-toolbar-inline dashboard-activity-search-toolbar">
-                  <div class="filter-toolbar-row">
-                    <div class="field-block filter-field filter-field-grow">
-                      <label for="dashboardRecentSearchInput" class="filter-caption" data-i18n="filters.search">Search</label>
-                      <input type="text" id="dashboardRecentSearchInput" class="form-control" data-i18n-placeholder="dashboard.searchRecentActivity" placeholder="Filter recent activity by employee, action, or message"/>
-                    </div>
-                  </div>
-                </div>
-                <div id="dashboardRecentActivity" class="activity-feed dashboard-scroll-list"></div>
-              </section>
-            </aside>
             <section class="panel-shell dashboard-inspector-card">
               <div class="panel-header-row">
                 <div>
@@ -655,6 +636,7 @@
                   </div>
                   <div class="filter-actions filter-actions-inline">
                     <button id="approveFilteredBtn" class="btn btn-primary btn-sm" type="button" data-i18n="review.approveFiltered">Approve Filtered</button>
+                    <button id="reviewAllDatesBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="review.allDates">All dates</button>
                     <button id="reviewResetFiltersBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
                   </div>
                 </div>
@@ -665,6 +647,7 @@
                 <div class="tab-pane fade" id="rejectedContainer" role="tabpanel" aria-labelledby="rejected-tab"></div>
                 <div class="tab-pane fade" id="approvedContainer" role="tabpanel" aria-labelledby="approved-tab"></div>
               </div>
+              <nav id="reviewPagination" class="review-pagination" data-i18n-aria-label="review.pages" aria-label="Review pages"></nav>
             </section>
 
             <section id="historySection" class="panel-shell">
@@ -726,26 +709,43 @@
         </div>
 
         <div id="projectsView" class="view workspace-view">
-          <div id="projectPortfolioWorkspace" class="project-portfolio-workspace">
-          <section class="panel-shell project-analytics-bar" id="projectAnalyticsBar">
-            <div class="panel-header-row">
-              <div>
-                <div class="panel-kicker" data-i18n="projects.analytics">Project Analytics</div>
-                <div class="panel-note" id="projectAnalyticsExportHint" data-i18n="projects.analyticsExportHint">Uses the period selected in Trends.</div>
-                <div class="panel-note" id="projectDepartmentAnalyticsExportHint" data-i18n="projects.departmentAnalyticsExportHint">Global project view, without employee details.</div>
+          <nav id="projectPeriodNav" class="project-period-nav" aria-label="Project period" data-i18n-aria-label="projects.periodNav">
+            <span class="project-period-icon" aria-hidden="true"><i class="fa-regular fa-calendar"></i></span>
+            <div class="chip-group project-period-presets" id="projectQuickRangeButtons" role="group" aria-label="Period presets" data-i18n-aria-label="projects.periodPresets">
+              <button type="button" class="chip-button active" data-range="1M" aria-pressed="true" data-i18n="projects.range.1M">This Month</button>
+              <button type="button" class="chip-button" data-range="6M" aria-pressed="false" data-i18n="projects.range.6M">6 months</button>
+              <button type="button" class="chip-button" data-range="1Y" aria-pressed="false" data-i18n="projects.range.1Y">1 year</button>
+              <button type="button" class="chip-button" data-range="all" aria-pressed="false" data-i18n="projects.range.all">All</button>
+            </div>
+            <details id="projectCustomFilterPanel" class="project-period-custom">
+              <summary class="project-period-date-summary"><span id="projectPeriodRangeLabel"></span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i><span class="visually-hidden" data-i18n="projects.editPeriod">Change dates</span></summary>
+              <div class="project-period-date-panel">
+                <div class="project-period-date-fields">
+                  <div class="field-block"><label for="projectStartDate" class="filter-caption" data-i18n="filters.startDate">Start</label><input type="date" id="projectStartDate" class="form-control" /></div>
+                  <div class="field-block"><label for="projectEndDate" class="filter-caption" data-i18n="filters.endDate">End</label><input type="date" id="projectEndDate" class="form-control" /></div>
+                </div>
+                <div class="project-period-date-actions">
+                  <button id="projectClearCustomRangeButton" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
+                  <button id="projectApplyCustomRangeButton" class="btn btn-primary btn-sm" type="button" data-i18n="action.apply">Apply</button>
+                </div>
               </div>
-              <div class="panel-header-actions">
-                <button type="button" class="btn btn-outline-primary btn-sm" id="projectAnalyticsExportButton" aria-describedby="projectAnalyticsExportHint">
+            </details>
+          </nav>
+          <div id="projectPortfolioWorkspace" class="project-portfolio-workspace">
+          <section class="project-analytics-bar" id="projectAnalyticsBar" aria-label="Project Analytics" data-i18n-aria-label="projects.analytics">
+            <div id="projectInsightsSummary" class="project-insight-summary"></div>
+            <div class="project-analytics-actions">
+                <span class="visually-hidden" id="projectAnalyticsExportHint" data-i18n="projects.analyticsExportHint">Uses the selected period.</span>
+                <span class="visually-hidden" id="projectDepartmentAnalyticsExportHint" data-i18n="projects.departmentAnalyticsExportHint">Global project view, without employee details.</span>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="projectAnalyticsExportButton" aria-describedby="projectAnalyticsExportHint">
                   <i class="fa-solid fa-file-code" aria-hidden="true"></i>
                   <span data-i18n="projects.exportAnalyticsHtml">Export detailed report</span>
                 </button>
-                <button type="button" class="btn btn-primary btn-sm" id="projectDepartmentAnalyticsExportButton" aria-describedby="projectDepartmentAnalyticsExportHint">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="projectDepartmentAnalyticsExportButton" aria-describedby="projectDepartmentAnalyticsExportHint">
                   <i class="fa-solid fa-chart-pie" aria-hidden="true"></i>
                   <span data-i18n="projects.exportDepartmentAnalyticsHtml">Export department report</span>
                 </button>
-              </div>
             </div>
-            <div id="projectInsightsSummary" class="project-insight-summary"></div>
           </section>
 
           <section id="projectBudgetComparisonPanel" class="panel-shell project-budget-comparison-shell" aria-labelledby="projectBudgetComparisonTitle">
@@ -754,7 +754,7 @@
                 <div>
                   <div class="panel-kicker" data-i18n="projects.budgetComparisonKicker">Budget periods</div>
                   <h2 id="projectBudgetComparisonTitle" class="panel-title" data-i18n="projects.budgetComparisonTitle">Compare budget periods</h2>
-                  <p class="panel-note mb-0" data-i18n="projects.budgetComparisonHint">Select one or more configured periods. Values include approved, completed overtime only.</p>
+                  <p class="panel-note mb-0" data-i18n="projects.budgetComparisonHint">Compare budget periods independently of the global date filter. Approved, completed overtime only.</p>
                 </div>
                 <span class="project-budget-disclosure-actions">
                   <span id="projectBudgetCycleLabel" class="count-chip d-none"></span>
@@ -781,7 +781,7 @@
             <div class="panel-header-row">
               <div>
                 <div class="panel-kicker" data-i18n="projects.monthlyOvertime">Monthly Overtime by Project</div>
-                <p class="panel-note mb-0" id="projectTrendInteractionHint" data-i18n="projects.portfolioTrendInteractionHint">Hover a line for its exact value. Click a project in the legend to isolate it, then click it again to restore every project.</p>
+                <p class="panel-note mb-0" id="projectTrendInteractionHint" data-i18n="projects.portfolioTrendInteractionHint">Hover a month for exact values. Toggle projects in the legend and adjust the zoom below.</p>
               </div>
               <div class="panel-header-actions">
                 <button type="button" class="btn btn-primary btn-sm" id="addProjectButton">
@@ -790,31 +790,8 @@
                 </button>
               </div>
             </div>
-            <div class="filter-toolbar filter-toolbar-inline filter-toolbar-project" id="projectCustomFilterPanel">
-              <div class="filter-toolbar-row project-filter-row">
-                <div class="field-block filter-field project-filter-field">
-                  <span class="filter-caption" data-i18n="filters.period">Period</span>
-                  <div class="project-filter-controls">
-                    <div class="chip-group" id="projectQuickRangeButtons">
-                      <button type="button" class="chip-button" data-range="all" data-i18n="projects.range.all">All</button>
-                      <button type="button" class="chip-button active" data-range="1M" data-i18n="projects.range.1M">This Month</button>
-                      <button type="button" class="chip-button" data-range="6M" data-i18n="projects.range.6M">6 months</button>
-                      <button type="button" class="chip-button" data-range="1Y" data-i18n="projects.range.1Y">1 year</button>
-                    </div>
-                    <div class="filter-range-cluster project-filter-range-cluster">
-                      <input type="date" id="projectStartDate" class="form-control" data-i18n-aria-label="filters.startDate" aria-label="Start" />
-                      <input type="date" id="projectEndDate" class="form-control" data-i18n-aria-label="filters.endDate" aria-label="End" />
-                    </div>
-                  </div>
-                </div>
-                <div class="filter-actions project-filter-actions">
-                  <button id="projectApplyCustomRangeButton" class="btn btn-primary btn-sm" type="button" data-i18n="action.apply">Apply</button>
-                  <button id="projectClearCustomRangeButton" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
-                </div>
-              </div>
-            </div>
             <div class="chart-stage">
-              <canvas id="projectMultiLineChart" aria-describedby="projectTrendInteractionHint"></canvas>
+              <div id="projectMultiLineChart" class="project-main-trend-chart" aria-describedby="projectTrendInteractionHint"></div>
             </div>
           </div>
 
@@ -874,7 +851,7 @@
                 </div>
                 <button type="button" id="projectPortfolioResetButton" class="btn btn-outline-secondary btn-sm project-portfolio-reset" data-i18n="action.reset">Reset</button>
               </div>
-              <p class="project-portfolio-sort-hint" data-i18n="projects.sortActivityHint">Activity uses the period selected in Trends above.</p>
+              <p class="project-portfolio-sort-hint" data-i18n="projects.sortActivityHint">Activity uses the selected period.</p>
               <div id="projectsSummaryContainer" class="projects-grid"></div>
             </section>
           </div>
@@ -892,16 +869,6 @@
                 <p id="projectWorkspaceIdentity" class="panel-note"></p>
               </div>
               <div class="project-workspace-header-controls">
-                <div class="field-block project-workspace-period-control">
-                  <label for="projectWorkspaceRangeSelect" class="filter-caption" data-i18n="filters.period">Period</label>
-                  <select id="projectWorkspaceRangeSelect" class="form-select form-select-sm">
-                    <option value="all" data-i18n="projects.range.all">All</option>
-                    <option value="1M" data-i18n="projects.range.1M">This Month</option>
-                    <option value="6M" data-i18n="projects.range.6M">6 months</option>
-                    <option value="1Y" data-i18n="projects.range.1Y">1 year</option>
-                    <option value="custom" data-i18n="projects.range.custom">Custom</option>
-                  </select>
-                </div>
                 <div class="project-workspace-actions" aria-label="Project actions" data-i18n-aria-label="projects.workspaceActions">
                   <button type="button" id="projectWorkspaceReviewButton" class="btn btn-outline-primary btn-sm">
                     <i class="fa-solid fa-list-check" aria-hidden="true"></i>
@@ -1702,12 +1669,12 @@
       ? window.location.origin + "/"
       : "http://localhost:8081/";
   </script>
-  <script src="scripts/I18n.js?v=20261008-loading-performance-v1-money-20261015-v1"></script>
+  <script src="scripts/I18n.js?v=20261008-loading-performance-v1-money-20261015-v1-review-pages-v1-period-nav-v1-no-dashboard-history-v1-main-echarts-v1"></script>
   <!-- Preserve the historical feature-version prefix; the new suffix still
        produces a different URL and invalidates cached JavaScript. -->
-  <script src="scripts/Utilities.js?v=20261008-loading-performance-v1-trace-20261014-v1-money-20261015-v1"></script>
-  <script src="scripts/AppShell.js?v=20261008-loading-performance-v1-trace-20261014-v1-views-20261015-v1-money-v1-review-cards-v1"></script>
+  <script src="scripts/Utilities.js?v=20261008-loading-performance-v1-trace-20261014-v1-money-20261015-v1-chart-polish-v1"></script>
+  <script src="scripts/AppShell.js?v=20261008-loading-performance-v1-trace-20261014-v1-views-20261015-v1-money-v1-review-cards-v1-review-pages-v1-projects-lite-v1-period-nav-v1-no-dashboard-history-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1"></script>
   <script src="scripts/Views/ViewSwitching.js?v=20261008-loading-performance-v1-views-20261015-v1"></script>
-  <script src="scripts/Views/SelfView.js?v=20261008-loading-performance-v1"></script>
+  <script src="scripts/Views/SelfView.js?v=20261008-loading-performance-v1-calendar-chronological-v1"></script>
 </body>
 </html>

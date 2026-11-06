@@ -155,13 +155,13 @@ If updateCheckOnly Then
             sharedInstallerPath = fso.BuildPath(distributionRoot, "deployment\launcher\Install SAPHIR Shortcut.vbs")
             If Not fso.FileExists(sharedInstallerPath) Then sharedInstallerPath = fso.BuildPath(distributionRoot, "Install SAPHIR Shortcut.vbs")
             If fso.FileExists(sharedInstallerPath) Then
-                windowsScriptHost = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\wscript.exe")
+                windowsScriptHost = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\cscript.exe")
                 If Not fso.FileExists(windowsScriptHost) Then
-                    windowsScriptHost = "wscript.exe"
+                    windowsScriptHost = "cscript.exe"
                 End If
                 On Error Resume Next
-                installExitCode = shell.Run(Chr(34) & windowsScriptHost & Chr(34) & " " & _
-                    Chr(34) & sharedInstallerPath & Chr(34) & " /silent", 0, True)
+                installExitCode = shell.Run(Chr(34) & windowsScriptHost & Chr(34) & " //nologo " & _
+                    Chr(34) & sharedInstallerPath & Chr(34) & " /silent /automatic", 0, True)
                 Err.Clear
                 On Error GoTo 0
             End If

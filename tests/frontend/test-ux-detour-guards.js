@@ -86,7 +86,7 @@ assert.match(
 );
 for (const [label, source, functionName] of [
   ["dashboard", dashboardSource, "refreshDashboardView"],
-  ["review", approvalsSource, "loadReviewView"],
+  ["review", approvalsSource, "fetchReviewPage"],
   ["employees", employeesSource, "loadEmployeesView"],
   ["projects", projectsSource, "refreshProjectsView"],
   ["self", selfSource, "refreshSelfView"],
@@ -103,7 +103,7 @@ for (const [label, source, functionName] of [
 
 assert.match(approvalsSource, /function isPendingApprovalTabActive\(\)/, "Pending-tab guard is missing.");
 assert.match(approvalsSource, /button\.classList\.toggle\("d-none", !isPendingTab\)/, "Bulk approval remains visible on historical tabs.");
-assert.match(approvalsSource, /button\.disabled = !isPendingTab \|\| actionableCount === 0;/, "Bulk approval must be disabled when nothing visible is actionable.");
+assert.match(approvalsSource, /button\.disabled = reviewPageState.loading \|\| reviewPageState.selecting \|\| !isPendingTab \|\| actionableCount === 0;/, "Bulk approval must be disabled while loading/selecting, outside pending or without actionable entries.");
 assert.match(approvalsSource, /async function approveFilteredEntries[\s\S]*?if \(!isPendingApprovalTabActive\(\)\) \{\s*return;/, "The bulk handler itself is not protected by the active tab.");
 assert.match(approvalsSource, /"approvalTabs"\)\.addEventListener\("shown\.bs\.tab"/, "Bulk approval state is not refreshed after tab changes.");
 

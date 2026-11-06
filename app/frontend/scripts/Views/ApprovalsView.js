@@ -60,85 +60,148 @@ function populateApprovalProjectFilter(projects, entries) {
   }
 }
 
-async function refreshApprovalProjectFilter() {
-  try {
-    approvalScopedProjects = await fetchScopedProjects();
-  } catch (error) {
-    console.warn("Unable to load scoped projects for approvals:", error);
-    approvalScopedProjects = [];
-  }
+const REVIEW_TABS = Object.freeze({
+  pending: { id: "pending-tab", container: "pendingContainer", label: "review.pending" },
+  attention: { id: "attention-tab", container: "attentionContainer", label: "review.attentionTab" },
+  rejected: { id: "rejected-tab", container: "rejectedContainer", label: "review.rejected" },
+  approved: { id: "approved-tab", container: "approvedContainer", label: "review.approved" },
+});
+const reviewPageState = { page: 1, range: "default", sequence: 0, generation: 0, cache: new Map(), pending: new Map(), loading: false, selecting: false, payload: null, filterTimer: null };
+let approvalEmployeeFacets = [];
 
-  populateApprovalProjectFilter(approvalScopedProjects, allApprovalEntries);
+function getActiveReviewTab() {
+  return Object.keys(REVIEW_TABS).find(tab => document.getElementById(REVIEW_TABS[tab].id)?.classList.contains("active")) || "pending";
 }
 
-function getFilteredApprovalEntries() {
-  const searchTerm = document.getElementById("approvalsSearchInput").value;
-  const selectedEmployee = document.getElementById("reviewEmployeeFilter").value;
-  const selectedProject = document.getElementById("reviewProjectFilter")?.value || "";
-  const startDate = document.getElementById("reviewStartDate").value;
-  const endDate = document.getElementById("reviewEndDate").value;
+function buildReviewPageQuery(page = reviewPageState.page, selectionOnly = false) {
+  const query = new URLSearchParams({
+    tab: selectionOnly ? "pending" : getActiveReviewTab(), page: String(page), range: reviewPageState.range,
+    search: document.getElementById("approvalsSearchInput").value.trim(),
+    employeeCode: document.getElementById("reviewEmployeeFilter").value,
+    projectCode: document.getElementById("reviewProjectFilter")?.value || "",
+  });
+  if (reviewPageState.range === "custom") {
+    query.set("startDate", document.getElementById("reviewStartDate").value);
+    query.set("endDate", document.getElementById("reviewEndDate").value);
+  }
+  if (selectionOnly) query.set("selectionOnly", "true");
+  return query.toString();
+}
 
-  return filterEntries(allApprovalEntries, searchTerm).filter(entry => {
-    if (selectedEmployee && String(entry.employeeCode || "") !== selectedEmployee) {
-      return false;
-    }
-
-    if (selectedProject && String(entry.projectCode || "") !== selectedProject) {
-      return false;
-    }
-
-    return isDateWithinRange(entry.date, startDate, endDate);
+function updateApprovalTabLabels(counts = {}) {
+  Object.keys(REVIEW_TABS).forEach(tab => {
+    document.getElementById(REVIEW_TABS[tab].id).textContent = t(REVIEW_TABS[tab].label, { count: Number(counts[tab]) || 0 });
   });
 }
 
-async function loadApprovalsView() {
+function renderReviewPayload(payload) {
+  reviewPageState.payload = payload;
+  reviewPageState.page = Number(payload.page) || 1;
+  allApprovalEntries = Array.isArray(payload.approvals) ? payload.approvals : [];
+  approvalEmployeeFacets = Array.isArray(payload.employees) ? payload.employees : [];
+  approvalScopedProjects = Array.isArray(payload.projects) ? payload.projects : [];
+  document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(approvalEmployeeFacets);
+  populateApprovalProjectFilter(approvalScopedProjects, []);
+  document.getElementById("reviewStartDate").value = payload.startDate || "";
+  document.getElementById("reviewEndDate").value = payload.endDate || "";
+  updateApprovalTabLabels(payload.counts);
+  Object.keys(REVIEW_TABS).forEach(tab => {
+    if (tab !== payload.tab) document.getElementById(REVIEW_TABS[tab].container).replaceChildren();
+  });
+  renderApprovalsList(REVIEW_TABS[payload.tab].container, allApprovalEntries, ["pending", "attention"].includes(payload.tab),
+    payload.tab === "attention" ? t("review.noneAttention") : "");
+  const total = Number(payload.total) || 0;
+  const from = total ? (reviewPageState.page - 1) * 25 + 1 : 0;
+  const to = total ? from + allApprovalEntries.length - 1 : 0;
+  const previous = '<button type="button" class="btn btn-outline-secondary btn-sm" data-review-page="' + (reviewPageState.page - 1) + '" ' + (reviewPageState.page <= 1 ? "disabled" : "") + ' aria-label="' + escapeHtml(t("review.previousPage")) + '">‹</button>';
+  const next = '<button type="button" class="btn btn-outline-secondary btn-sm" data-review-page="' + (reviewPageState.page + 1) + '" ' + (reviewPageState.page >= payload.totalPages ? "disabled" : "") + ' aria-label="' + escapeHtml(t("review.nextPage")) + '">›</button>';
+  document.getElementById("reviewPagination").innerHTML = total ? previous + '<span role="status">' + escapeHtml(t("review.pageRange", { from, to, total })) + '</span>' + next : "";
+  updateApproveFilteredButtonState();
+}
+
+async function fetchReviewPage({ page = 1, force = false } = {}) {
+  if (force) { reviewPageState.generation++; reviewPageState.cache.clear(); }
+  reviewPageState.page = page;
+  const generation = reviewPageState.generation;
+  const sequence = ++reviewPageState.sequence;
+  const key = buildReviewPageQuery(page);
+  const pendingKey = generation + "|" + key;
+  if (!force && reviewPageState.cache.has(key)) {
+    reviewPageState.loading = false;
+    renderReviewPayload(reviewPageState.cache.get(key));
+    return true;
+  }
+  reviewPageState.loading = true;
+  updateApproveFilteredButtonState();
+  const containerId = REVIEW_TABS[getActiveReviewTab()].container;
+  setLoadingState(containerId, "grid", 3);
+  document.getElementById("reviewPagination").replaceChildren();
   try {
-    setLoadingState("pendingContainer", "grid", 3);
-    setLoadingState("attentionContainer", "grid", 3);
-    setLoadingState("rejectedContainer", "grid", 3);
-    setLoadingState("approvedContainer", "grid", 3);
-    const entries = await fetch(apiUrl + "approvals/entries").then(parseResponse);
-    allApprovalEntries = Array.isArray(entries) ? entries : [];
-    document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(allApprovalEntries);
-    await refreshApprovalProjectFilter();
-    applyApprovalFilters();
+    let work = reviewPageState.pending.get(pendingKey);
+    if (!work) {
+      work = fetch(apiUrl + "review/bootstrap?" + key + "&_refresh=" + generation).then(parseResponse);
+      reviewPageState.pending.set(pendingKey, work);
+    }
+    const payload = await work;
+    if (generation !== reviewPageState.generation) return false;
+    reviewPageState.cache.set(key, payload);
+    if (reviewPageState.cache.size > 12) reviewPageState.cache.delete(reviewPageState.cache.keys().next().value);
+    if (sequence !== reviewPageState.sequence) return false;
+    reviewPageState.loading = false;
+    renderReviewPayload(payload);
     return true;
   } catch (error) {
-    console.error("Error fetching employees for approvals:", error);
-    showToast(t("review.loadError"), "error");
+    if (sequence !== reviewPageState.sequence || generation !== reviewPageState.generation) return false;
+    reviewPageState.loading = false;
+    reviewPageState.payload = null;
+    allApprovalEntries = [];
+    document.getElementById(containerId).innerHTML = createEmptyState(t("review.loadError"));
+    showToast(error.message || t("review.loadError"), "error");
+    console.error("Error loading review page:", error);
     return false;
+  } finally {
+    reviewPageState.pending.delete(pendingKey);
+    if (sequence === reviewPageState.sequence) updateApproveFilteredButtonState();
   }
 }
 
-async function loadReviewView() {
-  try {
-    setLoadingState("pendingContainer", "grid", 3);
-    setLoadingState("attentionContainer", "grid", 3);
-    setLoadingState("rejectedContainer", "grid", 3);
-    setLoadingState("approvedContainer", "grid", 3);
-    const payload = await fetch(apiUrl + "review/bootstrap").then(parseResponse);
-    allApprovalEntries = Array.isArray(payload && payload.approvals) ? payload.approvals : [];
-    approvalScopedProjects = Array.isArray(payload && payload.projects) ? payload.projects : [];
-    document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(allApprovalEntries);
-    populateApprovalProjectFilter(approvalScopedProjects, allApprovalEntries);
-    applyApprovalFilters();
-
-    return true;
-  } catch (error) {
-    console.error("Error loading review workspace:", error);
-    showToast(t("review.loadError"), "error");
-    return false;
-  }
-}
-
+function loadReviewView() { return fetchReviewPage({ page: reviewPageState.page, force: true }); }
+function loadApprovalsView() { return loadReviewView(); }
 window.loadReviewView = loadReviewView;
-
-function updateApprovalTabLabels(pendingEntries, attentionEntries, rejectedEntries, approvedEntries) {
-  document.getElementById("pending-tab").textContent = t("review.pending", { count: pendingEntries.length });
-  document.getElementById("attention-tab").textContent = t("review.attentionTab", { count: attentionEntries.length });
-  document.getElementById("rejected-tab").textContent = t("review.rejected", { count: rejectedEntries.length });
-  document.getElementById("approved-tab").textContent = t("review.approved", { count: approvedEntries.length });
-}
+window.invalidateReviewWorkspace = function () {
+  reviewPageState.generation++; reviewPageState.sequence++; reviewPageState.cache.clear();
+};
+window.resetReviewWorkspace = function () {
+  window.invalidateReviewWorkspace();
+  clearTimeout(reviewPageState.filterTimer);
+  Object.assign(reviewPageState, { page: 1, range: "default", loading: false, selecting: false, payload: null, filterTimer: null });
+  reviewPageState.pending.clear();
+  allApprovalEntries = []; approvalEmployeeFacets = []; approvalScopedProjects = [];
+  Object.keys(REVIEW_TABS).forEach(tab => {
+    const active = tab === "pending";
+    const button = document.getElementById(REVIEW_TABS[tab].id);
+    button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active));
+    button.setAttribute("tabindex", active ? "0" : "-1");
+    const host = document.getElementById(REVIEW_TABS[tab].container);
+    host.classList.toggle("active", active); host.classList.toggle("show", active); host.replaceChildren();
+  });
+  ["approvalsSearchInput", "reviewEmployeeFilter", "reviewProjectFilter", "reviewStartDate", "reviewEndDate"].forEach(id => { document.getElementById(id).value = ""; });
+  document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions([]);
+  populateApprovalProjectFilter([], []);
+  document.getElementById("reviewPagination").replaceChildren();
+  updateApprovalTabLabels();
+  updateApproveFilteredButtonState();
+};
+window.openProjectReviewPage = async function (projectCode) {
+  window.resetReviewWorkspace();
+  const filter = document.getElementById("reviewProjectFilter");
+  if (!Array.from(filter.options).some(option => option.value === projectCode)) {
+    filter.add(new Option(projectCode, projectCode));
+  }
+  filter.value = projectCode;
+  const loaded = await fetchReviewPage({ page: 1, force: true });
+  return loaded && approvalScopedProjects.some(project => String(project.projectCode) === projectCode);
+};
 
 const REVIEW_ISSUE_I18N_KEYS = Object.freeze({
   shortovertime: "review.issue.shortOvertime",
@@ -308,28 +371,14 @@ function renderApprovalsList(containerId, entries, showActions, emptyMessage = "
   container.innerHTML = `<div class="review-card-grid">${entries.map(entry => buildApprovalCard(entry, showActions)).join("")}</div>`;
 }
 
-function renderApprovalTabsFromFiltered(entries) {
-  const pendingEntries = entries.filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry));
-  const attentionEntries = getReviewAttentionEntries(entries);
-  const rejectedEntries = entries.filter(entry => String(entry.status || "").toLowerCase() === "rejected");
-  const approvedEntries = entries.filter(entry => String(entry.status || "").toLowerCase() === "approved");
-
-  updateApprovalTabLabels(pendingEntries, attentionEntries, rejectedEntries, approvedEntries);
-  renderApprovalsList("pendingContainer", pendingEntries, true);
-  renderApprovalsList("attentionContainer", attentionEntries, true, t("review.noneAttention"));
-  renderApprovalsList("rejectedContainer", rejectedEntries, false);
-  renderApprovalsList("approvedContainer", approvedEntries, false);
-  updateApproveFilteredButtonState(entries);
-}
-
 function applyApprovalFilters() {
-  renderApprovalTabsFromFiltered(getFilteredApprovalEntries());
+  return fetchReviewPage({ page: 1 });
 }
 
 window.rerenderReviewViewForLanguageChange = function () {
-  document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(allApprovalEntries);
+  document.getElementById("reviewEmployeeFilter").innerHTML = buildApprovalEmployeeOptions(approvalEmployeeFacets);
   populateApprovalProjectFilter(approvalScopedProjects, allApprovalEntries);
-  applyApprovalFilters();
+  if (reviewPageState.payload) renderReviewPayload(reviewPageState.payload);
   if (typeof applyHistoryFilters === "function") {
     applyHistoryFilters();
   }
@@ -368,25 +417,16 @@ function isPendingApprovalTabActive() {
   return document.getElementById("pending-tab")?.classList.contains("active") === true;
 }
 
-function getActionableFilteredPendingEntries(entries = getFilteredApprovalEntries()) {
-  return (Array.isArray(entries) ? entries : []).filter(entry => (
-    String(entry.status || "pending").toLowerCase() === "pending"
-      && !isEntryOpen(entry)
-      && !isEntryForgottenClockOut(entry)
-      && canApproveEntry(entry)
-  ));
-}
-
-function updateApproveFilteredButtonState(entries = getFilteredApprovalEntries()) {
+function updateApproveFilteredButtonState() {
   const button = document.getElementById("approveFilteredBtn");
   if (!button) {
     return;
   }
 
   const isPendingTab = isPendingApprovalTabActive();
-  const actionableCount = getActionableFilteredPendingEntries(entries).length;
+  const actionableCount = Number(reviewPageState.payload?.actionableCount) || 0;
   button.classList.toggle("d-none", !isPendingTab);
-  button.disabled = !isPendingTab || actionableCount === 0;
+  button.disabled = reviewPageState.loading || reviewPageState.selecting || !isPendingTab || actionableCount === 0;
   button.textContent = `${t("review.approveFiltered")} (${actionableCount})`;
 }
 
@@ -394,8 +434,19 @@ async function approveFilteredEntries(button = document.getElementById("approveF
   if (!isPendingApprovalTabActive()) {
     return;
   }
+  if (reviewPageState.loading || reviewPageState.selecting) return;
 
-  const filteredPendingEntries = getActionableFilteredPendingEntries();
+  // Only selection keys cross the wire for bulk approval, across all pages.
+  const filterKey = buildReviewPageQuery(1);
+  let filteredPendingEntries;
+  reviewPageState.selecting = true;
+  updateApproveFilteredButtonState();
+  try {
+    const selection = await fetch(apiUrl + "review/bootstrap?" + buildReviewPageQuery(1, true)).then(parseResponse);
+    if (!isPendingApprovalTabActive() || buildReviewPageQuery(1) !== filterKey) return;
+    filteredPendingEntries = Array.isArray(selection.selection) ? selection.selection : [];
+  } catch (error) { showToast(error.message || t("review.batchApproveError"), "error"); return; }
+  finally { reviewPageState.selecting = false; updateApproveFilteredButtonState(); }
   if (filteredPendingEntries.length === 0) {
     showToast(t("review.approveFilteredNone"), "info");
     return;
@@ -439,7 +490,6 @@ async function approveFilteredEntries(button = document.getElementById("approveF
       }
       if (window.dashboardState) {
         dashboardState.bootstrap = null;
-        dashboardState.historyLoaded = false;
         filteredPendingEntries.forEach(entry => {
           dashboardState.entriesByEmployee[entry.employeeCode] = undefined;
         });
@@ -456,16 +506,25 @@ async function approveFilteredEntries(button = document.getElementById("approveF
   }
 }
 
-document.getElementById("approvalsSearchInput").addEventListener("input", applyApprovalFilters);
+document.getElementById("approvalsSearchInput").addEventListener("input", () => {
+  clearTimeout(reviewPageState.filterTimer);
+  reviewPageState.filterTimer = setTimeout(() => applyApprovalFilters(), 220);
+});
 document.getElementById("reviewEmployeeFilter").addEventListener("change", applyApprovalFilters);
 document.getElementById("reviewProjectFilter").addEventListener("change", applyApprovalFilters);
-document.getElementById("reviewStartDate").addEventListener("input", applyApprovalFilters);
-document.getElementById("reviewEndDate").addEventListener("input", applyApprovalFilters);
+function applyReviewDateFilter() { reviewPageState.range = "custom"; return applyApprovalFilters(); }
+document.getElementById("reviewStartDate").addEventListener("change", applyReviewDateFilter);
+document.getElementById("reviewEndDate").addEventListener("change", applyReviewDateFilter);
+document.getElementById("reviewAllDatesBtn").addEventListener("click", () => { reviewPageState.range = "all"; applyApprovalFilters(); });
+document.getElementById("reviewPagination").addEventListener("click", event => {
+  const button = event.target.closest("[data-review-page]");
+  if (button && !button.disabled) fetchReviewPage({ page: Number(button.dataset.reviewPage) });
+});
 document.getElementById("approveFilteredBtn").addEventListener("click", event => {
   approveFilteredEntries(event.currentTarget);
 });
 document.getElementById("approvalTabs").addEventListener("shown.bs.tab", () => {
-  updateApproveFilteredButtonState();
+  fetchReviewPage({ page: 1 });
 });
 document.getElementById("reviewResetFiltersBtn").addEventListener("click", () => {
   document.getElementById("approvalsSearchInput").value = "";
@@ -473,6 +532,7 @@ document.getElementById("reviewResetFiltersBtn").addEventListener("click", () =>
   document.getElementById("reviewProjectFilter").value = "";
   document.getElementById("reviewStartDate").value = "";
   document.getElementById("reviewEndDate").value = "";
+  reviewPageState.range = "default";
   applyApprovalFilters();
 });
 
@@ -525,5 +585,5 @@ document.getElementById("approvalsSection").addEventListener("click", event => {
   }
 });
 
-updateApprovalTabLabels([], [], [], []);
-updateApproveFilteredButtonState([]);
+updateApprovalTabLabels();
+updateApproveFilteredButtonState();

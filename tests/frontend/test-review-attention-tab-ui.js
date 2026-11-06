@@ -39,7 +39,7 @@ assert.deepEqual(
 );
 
 const labelsStart = approvalsSource.indexOf("function updateApprovalTabLabels");
-const labelsEnd = approvalsSource.indexOf("const REVIEW_ISSUE_I18N_KEYS", labelsStart);
+const labelsEnd = approvalsSource.indexOf("function renderReviewPayload", labelsStart);
 assert(labelsStart >= 0 && labelsEnd > labelsStart, "Unable to locate Review tab-label helper.");
 const tabElements = {
   "pending-tab": {},
@@ -48,6 +48,10 @@ const tabElements = {
   "approved-tab": {},
 };
 const labelsContext = {
+  REVIEW_TABS: {
+    pending: {id: "pending-tab", label: "review.pending"}, attention: {id: "attention-tab", label: "review.attentionTab"},
+    rejected: {id: "rejected-tab", label: "review.rejected"}, approved: {id: "approved-tab", label: "review.approved"},
+  },
   document: { getElementById: id => tabElements[id] },
   t: (key, values) => `${key}:${values.count}`,
 };
@@ -56,14 +60,14 @@ vm.runInContext(
   `${approvalsSource.slice(labelsStart, labelsEnd)}\nthis.updateApprovalTabLabels = updateApprovalTabLabels;`,
   labelsContext,
 );
-labelsContext.updateApprovalTabLabels([{}], [{}, {}], [{}, {}, {}], [{}, {}, {}, {}]);
+labelsContext.updateApprovalTabLabels({pending: 1, attention: 2, rejected: 3, approved: 4});
 assert.equal(tabElements["pending-tab"].textContent, "review.pending:1");
 assert.equal(tabElements["attention-tab"].textContent, "review.attentionTab:2", "The attention-tab count was not updated.");
 assert.equal(tabElements["rejected-tab"].textContent, "review.rejected:3");
 assert.equal(tabElements["approved-tab"].textContent, "review.approved:4");
 
 const listStart = approvalsSource.indexOf("function renderApprovalsList");
-const listEnd = approvalsSource.indexOf("function renderApprovalTabsFromFiltered", listStart);
+const listEnd = approvalsSource.indexOf("function applyApprovalFilters", listStart);
 assert(listStart >= 0 && listEnd > listStart, "Unable to locate Review list renderer.");
 const attentionContainer = {};
 const listContext = {
@@ -91,15 +95,15 @@ assert.match(
 );
 assert.match(
   approvalsSource,
-  /const attentionEntries = getReviewAttentionEntries\(entries\);[\s\S]*?renderApprovalsList\("attentionContainer", attentionEntries, true, t\("review.noneAttention"\)\);/,
-  "The attention tab must receive the same already-filtered entries as the state tabs.",
+  /renderApprovalsList\(REVIEW_TABS\[payload.tab\].container[\s\S]*?payload.tab === "attention" \? t\("review.noneAttention"\)/,
+  "The active attention page must retain its dedicated empty state.",
 );
 assert.match(
   approvalsSource,
   /const canReview = showActions && isPending && !isEntryForgottenClockOut\(entry\) && canApproveEntry\(entry\);/,
   "Historical entries shown in the attention tab must not receive pending-only approval actions.",
 );
-assert.match(approvalsSource, /setLoadingState\("attentionContainer", "grid", 3\);/, "The attention tab should show card-grid placeholders while Review refreshes.");
+assert.match(approvalsSource, /setLoadingState\(containerId, "grid", 3\);/, "Only the active tab should show card-grid placeholders while Review refreshes.");
 assert.match(cssSource, /#attentionContainer \.review-card\s*\{/, "Attention entries need the same visible review-card affordance as the other tabs.");
 
 for (const expectedCopy of [

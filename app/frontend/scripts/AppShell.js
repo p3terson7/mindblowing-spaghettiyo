@@ -72,7 +72,7 @@
     if (!enabled) return;
     wrap("refreshDashboardView", "Dashboard", "dashboard");
     for (const name of ["loadDashboardCollections", "fetchEmployeeData", "applyDashboardBootstrap"]) wrap(name, "Dashboard");
-    if (mode === "detailed") for (const name of ["renderDashboardOverview", "renderDashboardResponsibleProjects", "renderDashboardApprovalQueue", "renderDashboardActiveSessions", "renderDashboardRecentActivity", "renderEmployeeEntries", "populateDashboardEmployeeControls", "populateDashboardProjectFilter"]) wrap(name, "Dashboard");
+    if (mode === "detailed") for (const name of ["renderDashboardOverview", "renderDashboardResponsibleProjects", "renderDashboardApprovalQueue", "renderDashboardActiveSessions", "renderEmployeeEntries", "populateDashboardEmployeeControls", "populateDashboardProjectFilter"]) wrap(name, "Dashboard");
   }
   const originalFetch = window.fetch.bind(window);
   window.fetch = function (resource, options) {
@@ -147,11 +147,11 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20261008-loading-performance-v1-views-20261015-v1",
-  dashboard: "scripts/Views/DashboardView.js?v=20261008-loading-performance-v1-views-20261015-v1",
-  approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1-views-20261015-v1-money-v1-review-cards-v1",
+  employees: "scripts/Views/EmployeesView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-dashboard-history-v1",
+  dashboard: "scripts/Views/DashboardView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-history-v1",
+  approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1-views-20261015-v1-money-v1-review-cards-v1-review-pages-v1-no-dashboard-history-v1",
   history: "scripts/Views/HistoryView.js?v=20261008-loading-performance-v1-views-20261015-v1",
-  projects: "scripts/Views/ProjectsView.js?v=20261008-loading-performance-v1",
+  projects: "scripts/Views/ProjectsView.js?v=20261008-loading-performance-v1-projects-lite-v1-period-nav-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
@@ -391,6 +391,7 @@ function ensureManagerAssetsForView(viewId, user = getCurrentUser()) {
 function resetViewState() {
   appShellState.viewState = {};
   window.resetReviewHistory?.();
+  window.resetReviewWorkspace?.();
   window.resetEmployeesViewData?.();
 }
 
@@ -477,9 +478,7 @@ function getViewsAffectedBySyncState(syncState) {
   }
 
   if (category === "history") {
-    return isManagerUser(user)
-      ? ["dashboardView"]
-      : [];
+    return [];
   }
 
   if (category === "bug-reports") {
@@ -1957,6 +1956,11 @@ async function openProjectInReview(projectCode) {
   if (typeof showView === "function") {
     showView("adminView");
   }
+  if (typeof window.openProjectReviewPage === "function") {
+    if (!await window.openProjectReviewPage(normalizedProjectCode)) throw new Error(t("projects.projectUnavailableInReview"));
+    document.getElementById("reviewProjectFilter")?.focus({ preventScroll: true });
+    return true;
+  }
   const refreshed = await refreshViewById("adminView", { force: true });
   if (refreshed === false) {
     throw new Error(t("review.loadError"));
@@ -2116,6 +2120,9 @@ async function pollSyncState() {
       }
       if (["history", "employee", "project", "auth", "employee-directory", "seed"].includes(routedSyncState.category)) {
         window.invalidateReviewHistory?.();
+      }
+      if (["employee", "project", "auth", "employee-directory", "seed"].includes(routedSyncState.category)) {
+        window.invalidateReviewWorkspace?.();
       }
       if (isSequentialChange) {
         markViewsStale(getViewsAffectedBySyncState(syncState));

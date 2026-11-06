@@ -62,13 +62,16 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/review/bo
     }
 
     try {
-        $payload = [PSCustomObject]@{
-            approvals = @(Get-ApprovalsEntriesModel -CurrentUser $currentUser -IncludeMonetary:$false)
-            projects  = @(Get-ProjectsForCurrentUser -CurrentUser $currentUser -Scope "all")
-        }
+        $query = [System.Web.HttpUtility]::ParseQueryString($request.Url.Query)
+        $page = 1
+        if ($null -ne $query['page'] -and -not [int]::TryParse($query['page'], [ref]$page)) { throw [ArgumentException]::new('Invalid review page.') }
+        $tab = if ($query['tab']) { $query['tab'] } else { 'pending' }
+        $range = if ($query['range']) { $query['range'] } else { 'default' }
+        $payload = Get-ReviewPage -CurrentUser $currentUser -Tab $tab -Page $page -Range $range -Search ([string]$query['search']) -EmployeeCode ([string]$query['employeeCode']) -ProjectCode ([string]$query['projectCode']) -StartDate ([string]$query['startDate']) -EndDate ([string]$query['endDate']) -SelectionOnly:($query['selectionOnly'] -eq 'true')
         $json = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Http.SerializeReview" -Component "Http" -Type "json" -Action { $payload | ConvertTo-Json -Depth 8 } } else { $payload | ConvertTo-Json -Depth 8 }
         respondWithSuccess $response $json
     }
+    catch [ArgumentException] { respondWithError $response 400 $_.Exception.Message }
     catch {
         Rethrow-HttpStatusException -Exception $_.Exception
         Write-Warning ("Unable to build review data: {0}" -f $_.Exception.Message)

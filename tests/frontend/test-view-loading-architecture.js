@@ -57,6 +57,12 @@ function element() {
   const sync = { getCurrentUser: () => ({ role: 'admin' }), isManagerUser: () => true, userHasEmployeeWorkspace: () => false, window: { employeeDirectoryNeedsEntryRefresh: () => false } };
   vm.createContext(sync); vm.runInContext(section(shell, 'function getViewsAffectedBySyncState', 'function normalizeApiUrl'), sync);
   assert(!Array.from(sync.getViewsAffectedBySyncState({ category: 'history' })).includes('adminView'), 'History sync must not reload approvals');
+  assert(!Array.from(sync.getViewsAffectedBySyncState({ category: 'history' })).includes('dashboardView'), 'History sync must not reload the dashboard without its removed activity section');
+  const dashboard = read('Views/DashboardView.js');
+  const html = fs.readFileSync(path.resolve(__dirname, '../../app/frontend/index.html'), 'utf8');
+  assert(!dashboard.includes('renderDashboardRecentActivity') && !dashboard.includes('dashboardState.history'), 'Dashboard must not keep retired history rendering/state');
+  assert(!html.includes('dashboardRecentActivity') && !html.includes('dashboardRecentSearchInput'), 'Retired dashboard history markup remains');
+  assert(html.includes('id="historyWorkspace"') && html.includes('id="loadHistoryBtn"'), 'Review must keep its optional history workspace');
   assert(!Array.from(sync.getViewsAffectedBySyncState({ category: 'employee', resource: '2' })).includes('employeesView'), 'Entry sync must not reload metadata-only directory');
   sync.window.employeeDirectoryNeedsEntryRefresh = () => true;
   assert(Array.from(sync.getViewsAffectedBySyncState({ category: 'employee', resource: '2' })).includes('employeesView'), 'Visible analytics must still refresh');

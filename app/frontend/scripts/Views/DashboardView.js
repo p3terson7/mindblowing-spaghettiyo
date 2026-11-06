@@ -1,8 +1,6 @@
 const dashboardState = {
   employees: [],
   entriesByEmployee: {},
-  history: [],
-  historyLoaded: false,
   bootstrap: null,
   projects: [],
 };
@@ -465,7 +463,6 @@ function getFlattenedDashboardEntries() {
 function setDashboardLoadingState() {
   setLoadingState("dashboardApprovalQueue", "queue", 3);
   setLoadingState("dashboardActiveList", "queue", 3);
-  setLoadingState("dashboardRecentActivity", "activity", 4);
   setLoadingState("punchClockEntries", "entries", 3);
 }
 
@@ -519,7 +516,6 @@ async function saveDashboardNoteFromModal(saveButton = document.getElementById("
       });
       await parseResponse(response);
       dashboardState.entriesByEmployee[employeeCode] = undefined;
-      dashboardState.historyLoaded = false;
       showToast(t("dashboard.managerMessageSaved"), "success");
       const modalInstance = bootstrap.Modal.getInstance(document.getElementById("dashboardNoteModal"));
       if (modalInstance) {
@@ -628,42 +624,6 @@ function renderDashboardActiveSessions(entries) {
   }).join("");
 }
 
-function renderDashboardRecentActivity(entries) {
-  const container = document.getElementById("dashboardRecentActivity");
-  const recentEntries = Array.isArray(entries) ? entries : (dashboardState.history || []);
-  const searchInput = document.getElementById("dashboardRecentSearchInput");
-  const searchTerm = String(searchInput && searchInput.value || "").trim().toLowerCase();
-  const searchTokens = window.Saphir.textSearch.tokenize(searchTerm);
-  const filteredEntries = searchTerm
-    ? recentEntries.filter(entry => {
-      const combinedText = getHistorySearchText(entry);
-      return window.Saphir.textSearch.matchesAll(combinedText, searchTokens);
-    })
-    : recentEntries;
-
-  if (filteredEntries.length === 0) {
-    container.innerHTML = createEmptyState(t("dashboard.noRecentHistory"));
-    return;
-  }
-
-  container.innerHTML = filteredEntries.map(entry => {
-    const actionTone = String(entry.action || "").toLowerCase();
-    return `
-      <article class="activity-card">
-        <div class="review-card-header">
-          <div>
-            <strong>${escapeHtml(getHistoryAuthorName(entry))}</strong>
-            <div class="worklog-secondary">${escapeHtml(formatRelativeTime(entry.timestamp))} | ${escapeHtml(formatDateToWords(String(entry.timestamp || "").split(" ")[0] || ""))}</div>
-          </div>
-          <span class="action-badge ${escapeHtml(actionTone)}">${escapeHtml(translateHistoryAction(entry.action || "event"))}</span>
-        </div>
-        ${renderHistorySubjectLine(entry)}
-        <div class="timeline-card-message">${renderAuditMessage(entry.message || t("shared.noMessage"))}</div>
-      </article>
-    `;
-  }).join("");
-}
-
 function renderDashboardOverview(payload) {
   const model = payload || dashboardState.bootstrap || {};
   const totalSeconds = timeStringToSeconds(model.totalOvertime);
@@ -684,15 +644,12 @@ function renderDashboardOverview(payload) {
 
   renderDashboardApprovalQueue(model.pendingQueue || []);
   renderDashboardActiveSessions(model.activeSessions || []);
-  renderDashboardRecentActivity(model.recentHistory || []);
 }
 
 function applyDashboardBootstrap(payload) {
   const model = payload || {};
   dashboardState.bootstrap = model;
   dashboardState.employees = Array.isArray(model.employees) ? model.employees : [];
-  dashboardState.history = Array.isArray(model.recentHistory) ? model.recentHistory : [];
-  dashboardState.historyLoaded = true;
   dashboardState.projects = sortDashboardProjects(model.projects || []);
 
   populateDashboardEmployeeControls(dashboardState.employees);
@@ -994,8 +951,6 @@ window.handleSyncStateChange = function (syncState) {
   if (category === "seed") {
     dashboardState.employees = [];
     dashboardState.entriesByEmployee = {};
-    dashboardState.history = [];
-    dashboardState.historyLoaded = false;
     dashboardState.bootstrap = null;
     dashboardState.projects = [];
     if (typeof clearScopedProjectLookupCache === "function") {
@@ -1019,7 +974,6 @@ window.handleSyncStateChange = function (syncState) {
     if (typeof window.invalidateEmployeesViewEntryCache === "function") {
       window.invalidateEmployeesViewEntryCache(resource);
     }
-    dashboardState.historyLoaded = false;
     dashboardState.bootstrap = null;
     return;
   }
@@ -1039,7 +993,6 @@ window.handleSyncStateChange = function (syncState) {
   if (category === "employee-directory") {
     dashboardState.employees = [];
     dashboardState.entriesByEmployee = {};
-    dashboardState.historyLoaded = false;
     dashboardState.bootstrap = null;
     if (typeof window.invalidateEmployeesViewEntryCache === "function") {
       window.invalidateEmployeesViewEntryCache("*");
@@ -1047,10 +1000,6 @@ window.handleSyncStateChange = function (syncState) {
     return;
   }
 
-  if (category === "history") {
-    dashboardState.historyLoaded = false;
-    dashboardState.bootstrap = null;
-  }
 };
 
 async function populateEntryLookups(projectSelectId, overtimeCodeSelectId, selectedProjectCode = "", selectedOvertimeCode = "", paymentSelectId = "", reasonSelectId = "", selectedPaymentOption = "", selectedReasonCode = "") {
@@ -1235,7 +1184,6 @@ async function deleteEntry(button, employeeCodeOverride = "") {
       });
       await parseResponse(response);
       dashboardState.entriesByEmployee[employeeCode] = undefined;
-      dashboardState.historyLoaded = false;
       showToast(t("dashboard.entryDeleted"), "success");
       await refreshAfterEntryMutation(employeeCode);
     }, { key: getDashboardEntryActionKey(button, employeeCode) });
@@ -1272,7 +1220,6 @@ async function updateApprovalAction(button, newStatus) {
       });
       await parseResponse(response);
       dashboardState.entriesByEmployee[employeeCode] = undefined;
-      dashboardState.historyLoaded = false;
       showToast(t("dashboard.entryUpdated"), "success");
       await refreshAfterEntryMutation(employeeCode);
     }, { key: getDashboardEntryActionKey(button, employeeCode) });
@@ -1307,7 +1254,6 @@ async function updateApprovalActionInApprovals(button, employeeCode, newStatus) 
       });
       await parseResponse(response);
       dashboardState.entriesByEmployee[employeeCode] = undefined;
-      dashboardState.historyLoaded = false;
       showToast(t("dashboard.entryUpdated"), "success");
       await refreshAfterEntryMutation(employeeCode);
     }, { key: getDashboardEntryActionKey(button, employeeCode) });
@@ -1342,7 +1288,6 @@ async function updateApprovalActionInDashboardQueue(button, employeeCode, newSta
       });
       await parseResponse(response);
       dashboardState.entriesByEmployee[employeeCode] = undefined;
-      dashboardState.historyLoaded = false;
       showToast(t("dashboard.entryUpdated"), "success");
       await refreshAfterEntryMutation(employeeCode);
     }, { key: getDashboardEntryActionKey(button, employeeCode) });
@@ -1520,7 +1465,6 @@ document.getElementById("saveAddEntryBtn").addEventListener("click", async event
       addEntryForm.dataset.employeeCode = "";
       addEntryForm.dataset.refreshPeopleEmployee = "";
       dashboardState.entriesByEmployee[employeeCode] = undefined;
-      dashboardState.historyLoaded = false;
       showToast(t("dashboard.entryAdded"), "success");
       await refreshAfterEntryMutation(employeeCode, refreshPeopleEmployee);
     }, { key: `entry-add:${employeeCode}:${entryType}:${date}:${punchInTime}` });
@@ -1644,7 +1588,6 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
       document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee = "";
       document.getElementById("updateEntryForm").dataset.employeeCode = "";
       dashboardState.entriesByEmployee[employeeCode] = undefined;
-      dashboardState.historyLoaded = false;
       showToast(t("dashboard.entryUpdated"), "success");
       await refreshAfterEntryMutation(employeeCode, refreshPeopleEmployee);
     }, { key: `entry:${employeeCode}:${entryId || `${originalDate}:${originalPunchIn}`}` });
@@ -1727,7 +1670,4 @@ document.getElementById("dashboardActiveList").addEventListener("click", event =
 
 document.getElementById("dashboardSaveNoteBtn").addEventListener("click", event => {
   saveDashboardNoteFromModal(event.currentTarget);
-});
-document.getElementById("dashboardRecentSearchInput").addEventListener("input", () => {
-  renderDashboardRecentActivity(dashboardState.history || []);
 });

@@ -64,7 +64,7 @@ const server = http.createServer((req, res) => {
     const expected = await page.evaluate(() => formatCurrencyCents(123450));
     assert((await card.textContent()).includes(expected));
     assert((await card.textContent()).includes("Partiel"));
-    assert((await page.locator('.employee-card[data-employee-code="000000002"]').textContent()).includes("À compléter"));
+    assert((await page.locator('.employee-card[data-employee-code="000000002"]').textContent()).includes("N/A"));
     await card.locator(".employee-open-button").click();
     await page.waitForSelector("#employeeDetailContainer .self-stat-card-money");
     assert.equal(await page.locator("#employeeDetailContainer .self-stat-card-money").count(), 3);

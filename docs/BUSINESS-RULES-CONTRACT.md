@@ -16,6 +16,7 @@ Ce document décrit les valeurs stables introduites avant les prochains écrans 
 
 - Les entrées `diverse` terminées et non rejetées du mois sélectionné sont exportées avec leur date et leurs heures de début/fin. L'export utilise uniquement pour le formulaire les valeurs par défaut **260**, **Cash** et **D**; il ne modifie pas les entrées enregistrées.
 - Pour ces entrées `diverse`, toutes les colonnes de répartition des heures à 1×, 1,5×, 1,75× et 2× restent vides, à compléter manuellement. Un horaire non confirmé ne bloque pas cet export. Ces heures ne consomment pas les seuils de taux des entrées de projet et ne participent pas à la détection des jours de repos travaillés.
+- Une entrée `diverse` de plus de 7 h 30 entre son début et sa fin le même jour produit deux lignes : les premières 7 h 30, puis le reste (ex. 10 h–20 h → 10 h–17 h 30 et 17 h 30–20 h). Ce découpage précède la pagination et ne change ni l'entrée enregistrée ni les colonnes de taux, qui restent vides.
 - `260` remplit la catégorie **Jour ouvrable régulier**.
 - `261` remplit la catégorie **Premier jour de repos**.
 - `262` remplit la catégorie **Deuxième jour de repos subséquent**.

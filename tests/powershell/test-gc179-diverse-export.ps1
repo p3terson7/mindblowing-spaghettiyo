@@ -65,10 +65,10 @@ function Export-Fixture {
     return (New-Gc179FdfExportSet -EmployeeCode "123456789" -MonthKey "2026-11")
 }
 function Assert-DiverseRow {
-    param($Export, [int]$Index, [string]$Day = "05")
+    param($Export, [int]$Index, [string]$Day = "05", [string]$Start = "17:00", [string]$End = "19:00")
     Assert-TextField $Export.Content "DayofWeek.$Index" $Day
-    Assert-TextField $Export.Content "StartTime.$Index" "17:00"
-    Assert-TextField $Export.Content "EndTime.$Index" "19:00"
+    Assert-TextField $Export.Content "StartTime.$Index" $Start
+    Assert-TextField $Export.Content "EndTime.$Index" $End
     Assert-TextField $Export.Content "OvertimeCode.$Index" "260"
     Assert-TextField $Export.Content "OTCODE.$Index" "D"
     Assert-NameField $Export.Content (Get-Gc179PaymentFieldName -RowIndex $Index) "1"
@@ -152,4 +152,50 @@ Assert-NameField $scheduleForms.Exports[0].Content "WorkWeek" "1"
 Assert-NameField $scheduleForms.Exports[1].Content "WorkWeek" "2"
 Assert-NameField $scheduleForms.Exports[2].Content "WorkWeek" "Off"
 
-Write-Host "GC179 diverse export tests passed: defaults, blank rates, month, legacy schedules, filtering, pagination, source immutability and unchanged project rates."
+# Split only diverse clock intervals longer than 7.5 hours. Both rows keep
+# blank entitlement columns, source data stays intact, and exactly 7.5 stays
+# one row. No schedule or monetary settings are needed for this layout rule.
+foreach ($case in @(
+    @{ Schedule = "regular"; End = "20:00:00"; Rows = 2 },
+    @{ Schedule = "compressed"; End = "20:00:00"; Rows = 2 },
+    @{ Schedule = "unconfirmed"; End = "20:00:00"; Rows = 2 },
+    @{ Schedule = "regular"; End = "17:30:00"; Rows = 1 },
+    @{ Schedule = "regular"; End = "17:45:00"; Rows = 2 }
+)) {
+    $longEntry = New-TestEntry -Schedule $case.Schedule
+    $longEntry.punchIn = "10:00:00"; $longEntry.punchOut = $case.End
+    $longEntry.PSObject.Properties.Remove("overtime")
+    $script:FixtureEntries = @($longEntry)
+    $before = ConvertTo-Json -InputObject $script:FixtureEntries -Depth 10 -Compress
+    $split = Export-Fixture
+    Assert-Equal 1 @($split.Entries).Count "Export must retain the original entry count."
+    Assert-Equal $case.Rows $split.Exports[0].RowCount "Incorrect split at 7.5 hours."
+    Assert-DiverseRow $split.Exports[0] 0 "05" "10:00" "17:30"
+    if ($case.Rows -eq 2) { Assert-DiverseRow $split.Exports[0] 1 "05" "17:30" $case.End.Substring(0, 5) }
+    Assert-Equal $before (ConvertTo-Json -InputObject $script:FixtureEntries -Depth 10 -Compress) "Splitting mutated the original entry."
+}
+
+# Expansion must happen BEFORE the 16-row form limit, otherwise the tail of
+# the final entry would be silently truncated.
+$script:FixtureEntries = @(1..15 | ForEach-Object { New-TestEntry -Date ("2026-11-{0:00}" -f $_) })
+$lastLongEntry = New-TestEntry -Date "2026-11-16"
+$lastLongEntry.punchIn = "10:00:00"; $lastLongEntry.punchOut = "20:00:00"; $lastLongEntry.overtime = "10:00:00"
+$script:FixtureEntries += $lastLongEntry
+$splitPages = Export-Fixture
+Assert-Equal 16 @($splitPages.Entries).Count "Source count must not become the expanded row count."
+Assert-Equal 2 @($splitPages.Exports).Count "Split remainder was lost at the form boundary."
+Assert-Equal 16 $splitPages.Exports[0].RowCount "Incorrect first form size after splitting."
+Assert-Equal 1 $splitPages.Exports[1].RowCount "Incorrect remainder form size."
+Assert-DiverseRow $splitPages.Exports[0] 15 "16" "10:00" "17:30"
+Assert-DiverseRow $splitPages.Exports[1] 0 "16" "17:30" "20:00"
+
+$longProject = New-TestEntry -Type "overtime"
+$longProject.punchIn = "10:00:00"; $longProject.punchOut = "20:00:00"; $longProject.overtime = "10:00:00"
+$longProject.overtimeCode = "260"; $longProject.reasonCode = "B"; $longProject.paymentOption = "cash"
+$script:FixtureEntries = @($longProject)
+$unchangedProject = Export-Fixture
+Assert-Equal 1 $unchangedProject.Exports[0].RowCount "Diverse splitting changed project row layout."
+Assert-TextField $unchangedProject.Exports[0].Content "RegTimeHalf.0" "7.5"
+Assert-TextField $unchangedProject.Exports[0].Content "RegTimeDouble.0" "2.5"
+
+Write-Host "GC179 diverse export tests passed: defaults, blank rates, 7.5-hour split before pagination, month, schedules, filters, source immutability and unchanged project rates."

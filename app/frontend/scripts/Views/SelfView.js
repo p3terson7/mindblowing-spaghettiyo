@@ -339,7 +339,7 @@ function buildSelfCalendarDays(entries, activeMonthKey) {
     },
     getDurationSeconds: getEntryDurationSeconds,
     orderDayEntries(dayEntries) {
-      return sortEntriesByDateTime(dayEntries, true);
+      return sortEntriesByDateTime(dayEntries, false);
     },
   });
 }

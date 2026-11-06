@@ -53,7 +53,7 @@ const server = http.createServer((req, res) => {
     await page.waitForFunction(() => typeof refreshProjectsView === "function");
     await page.waitForTimeout(400);
     assert(!requests.some(request => request.url === "/stats/budget-periods"), "The collapsed comparison loaded all twelve periods before the workspace.");
-    assert(!requests.some(request => request.url.includes("echarts.min.js")), "ECharts loaded while comparison was closed.");
+    assert(!requests.some(request => request.url.includes("ProjectBudgetBeta.js")), "Budget comparison code loaded while comparison was closed.");
     await page.locator(".project-budget-comparison-disclosure > summary").click();
     await page.waitForSelector("#budgetBetaAnnualChart canvas");
     assert.equal(requests.filter(request => request.url === "/stats/budget-periods").length, 1);

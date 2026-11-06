@@ -1,7 +1,8 @@
 const projectDetailCache = {};
 let currentProjectFilter = "1M";
 let currentProjectCode = null;
-let pendingProjectChartFrameId = null;
+let projectTrendRenderVersion = 0;
+let projectTrendResizeObserver = null;
 let pendingProjectInsightFrameId = null;
 let pendingProjectDetailTimerId = null;
 let pendingProjectDetailRequest = null;
@@ -15,10 +16,6 @@ const PROJECT_PORTFOLIO_SEARCH_DEBOUNCE_MS = 140;
 const PROJECT_WORKSPACE_RECENT_ENTRY_LIMIT = 6;
 const PROJECT_OTHER_TREND_KEY = "__SAPHIR_OTHER_PROJECTS__";
 const PROJECT_OTHER_CHART_POINT_STYLE = "crossRot";
-const PROJECT_OTHER_CHART_BORDER_DASH = Object.freeze([3, 5]);
-const PROJECT_TREND_LINE_WIDTH = 3;
-const PROJECT_TREND_FOCUSED_LINE_WIDTH = 3.75;
-const PROJECT_TREND_MUTED_LINE_WIDTH = 1.5;
 const PROJECT_BUDGET_LOADING_COUNT = 6;
 let projectBudgetBetaRenderVersion = 0;
 const projectInsightChartInstances = {};
@@ -884,7 +881,7 @@ async function ensureProjectEditorEmployees(forceRefresh = false) {
     return;
   }
 
-  const response = await fetch(apiUrl + "employees?scope=all");
+  const response = await fetch(apiUrl + "employees?scope=all&includeStats=false");
   const employees = await parseResponse(response);
   projectsViewState.employees = Array.isArray(employees) ? employees : [];
 }
@@ -1060,7 +1057,7 @@ function ensureProjectChartCanvas() {
 
   let canvas = document.getElementById("projectMultiLineChart");
   if (!canvas) {
-    chartStage.innerHTML = '<canvas id="projectMultiLineChart" aria-describedby="projectTrendInteractionHint"></canvas>';
+    chartStage.innerHTML = '<div id="projectMultiLineChart" class="project-main-trend-chart" aria-describedby="projectTrendInteractionHint"></div>';
     canvas = document.getElementById("projectMultiLineChart");
   }
 
@@ -1069,6 +1066,14 @@ function ensureProjectChartCanvas() {
   }
 
   return canvas;
+}
+
+function destroyProjectPortfolioTrendChart() {
+  projectTrendRenderVersion++;
+  if (projectTrendResizeObserver) projectTrendResizeObserver.disconnect();
+  projectTrendResizeObserver = null;
+  if (window.projectChartInstance && !window.projectChartInstance.isDisposed()) window.projectChartInstance.dispose();
+  window.projectChartInstance = null;
 }
 
 function getProjectInsightStage(canvasId) {
@@ -1080,6 +1085,7 @@ function ensureProjectInsightCanvas(canvasId) {
   if (!stage) {
     return null;
   }
+  stage.setAttribute("aria-busy", "false");
 
   let canvas = document.getElementById(canvasId);
   if (!canvas) {
@@ -1101,14 +1107,24 @@ function setProjectInsightEmptyState(canvasId, messageKey = "projects.noChartDat
   destroyProjectInsightChart(canvasId);
   const stage = getProjectInsightStage(canvasId);
   if (stage) {
+    stage.setAttribute("aria-busy", "false");
     stage.innerHTML = createEmptyState(t(messageKey));
   }
 }
 
 function setProjectInsightsLoadingState() {
-  setLoadingState("projectInsightsSummary", "grid", 4);
+  if (pendingProjectInsightFrameId) {
+    window.cancelAnimationFrame(pendingProjectInsightFrameId);
+    pendingProjectInsightFrameId = null;
+  }
+  document.getElementById("projectInsightsSummary").innerHTML = Array.from({ length: 5 }, () => `
+    <div class="project-insight-stat project-insight-stat-loading" aria-hidden="true">
+      <span class="loading-bar loading-bar-title"></span><span class="loading-bar loading-bar-wide"></span>
+    </div>`).join("");
   document.querySelectorAll(".project-insight-stage").forEach(stage => {
-    stage.innerHTML = createLoadingState("chart", 1);
+    destroyProjectInsightChart(stage.getAttribute("data-project-insight-stage"));
+    stage.setAttribute("aria-busy", "true");
+    stage.innerHTML = createLoadingState("chartDonut", 1);
   });
 }
 
@@ -1288,7 +1304,9 @@ function renderProjectDoughnutInsight(canvasId, items, valueType = "count") {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
-      resizeDelay: 150,
+      // A delayed update can outlive a destroyed chart during period/view
+      // changes. Chart.js already coalesces its ResizeObserver callbacks.
+      resizeDelay: 0,
       cutout: "62%",
       plugins: {
         legend: {
@@ -1343,41 +1361,18 @@ function compactProjectTrendData(trendData, maxDatasets = 6) {
       if (!month) {
         return;
       }
-      otherByMonth[month] = (otherByMonth[month] || 0) + Number(item && item.overtime || 0);
+      const seconds = item && item.seconds != null ? Number(item.seconds) : Number(item && item.overtime || 0) * 3600;
+      otherByMonth[month] = (otherByMonth[month] || 0) + seconds;
     });
   });
 
   compacted[PROJECT_OTHER_TREND_KEY] = Object.keys(otherByMonth)
     .sort()
-    .map(month => ({ month, overtime: otherByMonth[month] }));
+    .map(month => ({ month, seconds: otherByMonth[month], overtime: otherByMonth[month] / 3600 }));
 
   return compacted;
 }
 
-function getProjectTrendColorWithOpacity(color, opacity = 1) {
-  const normalizedColor = String(color || "").trim();
-  const normalizedOpacity = Math.max(0, Math.min(1, Number(opacity)));
-  const hexMatch = normalizedColor.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (hexMatch) {
-    const hex = hexMatch[1];
-    const channels = hex.length === 3
-      ? hex.split("").map(channel => parseInt(`${channel}${channel}`, 16))
-      : [hex.slice(0, 2), hex.slice(2, 4), hex.slice(4, 6)].map(channel => parseInt(channel, 16));
-    return `rgba(${channels[0]}, ${channels[1]}, ${channels[2]}, ${normalizedOpacity})`;
-  }
-
-  const rgbMatch = normalizedColor.match(/^rgb\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/i);
-  if (rgbMatch) {
-    return `rgba(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]}, ${normalizedOpacity})`;
-  }
-
-  const rgbaMatch = normalizedColor.match(/^rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*[\d.]+\s*\)$/i);
-  if (rgbaMatch) {
-    return `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${normalizedOpacity})`;
-  }
-
-  return normalizedColor;
-}
 
 function formatProjectTrendHours(value) {
   const hours = Number(value);
@@ -1390,59 +1385,6 @@ function formatProjectTrendHours(value) {
   return `${formattedHours} h`;
 }
 
-function updateProjectTrendFocus(chart, focusedDatasetIndex = null) {
-  if (!chart || !chart.data || !Array.isArray(chart.data.datasets)) {
-    return;
-  }
-
-  const focusedIndex = Number.isInteger(focusedDatasetIndex) ? focusedDatasetIndex : null;
-  if (chart.$saphirFocusedDatasetIndex === focusedIndex) {
-    return;
-  }
-
-  chart.$saphirFocusedDatasetIndex = focusedIndex;
-  chart.data.datasets.forEach((dataset, index) => {
-    const isOther = Boolean(dataset.$saphirIsOther);
-    const isFocused = focusedIndex === index;
-    const isMuted = focusedIndex != null && !isFocused;
-    const opacity = isMuted ? (isOther ? 0.2 : 0.28) : (isOther ? 0.48 : 1);
-
-    dataset.borderColor = getProjectTrendColorWithOpacity(dataset.$saphirBaseColor, opacity);
-    dataset.backgroundColor = getProjectTrendColorWithOpacity(dataset.$saphirBaseColor, isMuted ? 0.28 : (isOther ? 0.5 : 1));
-    dataset.borderWidth = isOther
-      ? (isFocused ? 2.25 : 1.5)
-      : (isFocused ? PROJECT_TREND_FOCUSED_LINE_WIDTH : (isMuted ? PROJECT_TREND_MUTED_LINE_WIDTH : PROJECT_TREND_LINE_WIDTH));
-    dataset.pointRadius = isOther
-      ? (isFocused ? 4.25 : 2.5)
-      : (isFocused ? 5.5 : (isMuted ? 2.5 : 4));
-    dataset.pointHoverRadius = isOther ? 5.5 : 7;
-  });
-
-  if (typeof chart.update === "function") {
-    chart.update("none");
-  }
-}
-
-function toggleProjectTrendLegendDataset(chart, datasetIndex) {
-  if (!chart || !Number.isInteger(datasetIndex)) {
-    return;
-  }
-
-  const isRestoringAll = chart.$saphirIsolatedDatasetIndex === datasetIndex;
-  chart.$saphirIsolatedDatasetIndex = isRestoringAll ? null : datasetIndex;
-  if (typeof chart.show === "function" && typeof chart.hide === "function") {
-    chart.data.datasets.forEach((_, index) => {
-      if (isRestoringAll || index === datasetIndex) {
-        chart.show(index);
-      }
-      else {
-        chart.hide(index);
-      }
-    });
-  }
-
-  updateProjectTrendFocus(chart, isRestoringAll ? null : datasetIndex);
-}
 
 function renderProjectInsights(projects) {
   const projectList = Array.isArray(projects) ? projects : [];
@@ -1464,6 +1406,7 @@ function renderProjectInsights(projects) {
   const sectorMetrics = {};
   const totalSeconds = projectList.reduce((sum, project) => sum + getProjectTotalSeconds(project), 0);
   const monetary = summarizeMonetaryValues(projectList.map(getRecordMonetaryAggregate));
+  const monetaryCoverageNote = getMonetaryCoverageNote(monetary);
   const missingPrimaryCount = activeProjects.filter(project => normalizeProjectAssignmentCodes(project.admins).length === 0).length;
   const missingBackupCount = activeProjects.filter(project => normalizeProjectAssignmentCodes(project.backupAdmins).length === 0).length;
 
@@ -1475,7 +1418,7 @@ function renderProjectInsights(projects) {
     <div class="project-insight-stat project-insight-stat-money">
       <span class="metric-label">${escapeHtml(t("money.periodValue"))}</span>
       <strong class="metric-value money-value">${escapeHtml(getMonetaryAmountLabel(monetary))}</strong>
-      <span class="metric-hint">${escapeHtml(getMonetaryCoverageNote(monetary))}</span>
+      <span class="metric-hint" title="${escapeHtml(monetaryCoverageNote)}">${escapeHtml(monetaryCoverageNote)}</span>
     </div>
     <div class="project-insight-stat">
       <span class="metric-label">${escapeHtml(t("projects.insightTotalOvertime"))}</span>
@@ -1596,7 +1539,6 @@ function syncProjectWorkspaceHeader(project) {
   const title = document.getElementById("projectWorkspaceTitle");
   const identity = document.getElementById("projectWorkspaceIdentity");
   const workspace = document.getElementById("projectWorkspace");
-  const rangeSelect = document.getElementById("projectWorkspaceRangeSelect");
   const editButton = document.getElementById("projectWorkspaceEditButton");
   const normalizedProject = project || getProjectByCode(currentProjectCode) || { projectCode: currentProjectCode };
   const projectName = String(normalizedProject.projectName || "").trim();
@@ -1610,9 +1552,6 @@ function syncProjectWorkspaceHeader(project) {
   }
   if (workspace) {
     workspace.setAttribute("style", getProjectColorStyle(normalizedProject));
-  }
-  if (rangeSelect) {
-    rangeSelect.value = currentProjectFilter;
   }
   if (editButton) {
     editButton.classList.toggle("d-none", !canManageProjects());
@@ -1908,9 +1847,59 @@ function syncProjectCustomRangeInputs() {
   document.getElementById("projectEndDate").value = activeRange.endDate || "";
 }
 
+function formatProjectPeriodDate(value) {
+  const date = parseLocalDate(value);
+  return date ? date.toLocaleDateString(getCurrentLocale(), { day: "numeric", month: "short", year: "numeric" }) : String(value);
+}
+
 function syncProjectRangeButtons() {
   document.querySelectorAll("#projectQuickRangeButtons .chip-button").forEach(button => {
-    button.classList.toggle("active", button.getAttribute("data-range") === currentProjectFilter);
+    const active = button.getAttribute("data-range") === currentProjectFilter;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  const label = document.getElementById("projectPeriodRangeLabel");
+  const panel = document.getElementById("projectCustomFilterPanel");
+  const { startDate, endDate } = calculateDateRange(currentProjectFilter);
+  if (label) {
+    label.textContent = startDate || endDate
+      ? `${startDate ? formatProjectPeriodDate(startDate) : "…"} – ${endDate ? formatProjectPeriodDate(endDate) : "…"}`
+      : t("projects.range.custom");
+  }
+  if (panel) panel.classList.toggle("is-custom", currentProjectFilter === "custom");
+}
+
+function closeProjectPeriodEditor() {
+  const editor = document.getElementById("projectCustomFilterPanel");
+  const restoreFocus = editor.open && editor.contains(document.activeElement);
+  editor.open = false;
+  if (restoreFocus) editor.querySelector("summary").focus({ preventScroll: true });
+}
+
+function initializeProjectPeriodNav() {
+  const nav = document.getElementById("projectPeriodNav");
+  const chrome = document.querySelector(".app-sidebar");
+  const view = document.getElementById("projectsView");
+  if (!nav || !chrome || !view) return;
+  const updateLayout = () => {
+    const offset = Math.ceil(chrome.getBoundingClientRect().height);
+    nav.style.setProperty("--project-nav-offset", `${offset}px`);
+    view.style.setProperty("--project-scroll-offset", `${offset + Math.ceil(nav.getBoundingClientRect().height) + 16}px`);
+  };
+  updateLayout();
+  // Heights change with mobile navigation, translation and text zoom. No
+  // per-scroll listener or hard-coded application-header height is needed.
+  if (typeof ResizeObserver === "function") {
+    const observer = new ResizeObserver(updateLayout);
+    observer.observe(chrome);
+    observer.observe(nav);
+  } else {
+    window.addEventListener("resize", updateLayout);
+  }
+  document.getElementById("projectCustomFilterPanel").addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    event.currentTarget.open = false;
+    event.currentTarget.querySelector("summary").focus({ preventScroll: true });
   });
 }
 
@@ -1934,6 +1923,7 @@ function getMatchingPresetProjectRange(startDate, endDate) {
 
 async function setProjectRange(range) {
   currentProjectFilter = range;
+  closeProjectPeriodEditor();
   syncProjectRangeButtons();
   syncProjectCustomRangeInputs();
   await refreshProjectsView();
@@ -2057,7 +2047,8 @@ async function refreshProjectsView() {
     destroyProjectWorkspaceTrendChart();
     setLoadingState("projectDetailContainer", "detail", 1);
   }
-  setChartLoadingState("projectChartContainer");
+  destroyProjectPortfolioTrendChart();
+  setChartLoadingState("projectChartContainer", "chartLine");
   setProjectInsightsLoadingState();
 
   try {
@@ -2133,6 +2124,7 @@ async function refreshProjectsView() {
     document.getElementById("projectDetailContainer").innerHTML = createEmptyState(t("projects.statsUnavailable"));
     const chartStage = document.querySelector("#projectChartContainer .chart-stage");
     if (chartStage) {
+      chartStage.setAttribute("aria-busy", "false");
       chartStage.innerHTML = createEmptyState(t("projects.chartLoadError"));
     }
     document.getElementById("projectInsightsSummary").innerHTML = createEmptyState(t("projects.unableToLoad"));
@@ -2619,7 +2611,7 @@ function initializeProjectWorkspaceTrendChart(container, detail) {
         responsive: true,
         maintainAspectRatio: false,
         animation: false,
-        resizeDelay: 100,
+        resizeDelay: 0,
         locale: typeof getCurrentLocale === "function" ? getCurrentLocale() : undefined,
         interaction: {
           mode: "nearest",
@@ -3122,151 +3114,64 @@ async function deleteProject(project) {
 }
 
 function renderProjectMultiLineChart(trendData) {
-  const canvas = ensureProjectChartCanvas();
-  if (!canvas) {
-    return;
-  }
-
-  if (typeof Chart !== "function") {
-    const chartContainer = document.getElementById("projectChartContainer");
-    if (chartContainer) {
-      chartContainer.querySelector(".chart-stage").innerHTML = createEmptyState(t("projects.chartLibraryFailed"));
-    }
-    return;
-  }
-
-  if (pendingProjectChartFrameId) {
-    window.cancelAnimationFrame(pendingProjectChartFrameId);
-    pendingProjectChartFrameId = null;
-  }
-
-  const compactedTrendData = compactProjectTrendData(trendData);
-  const labelSet = new Set();
-  Object.keys(compactedTrendData || {}).forEach(projectCode => {
-    compactedTrendData[projectCode].forEach(item => labelSet.add(item.month));
-  });
-
-  const timeLabels = Array.from(labelSet).sort();
-  const formattedLabels = timeLabels.map(formatYMToWords);
-  const theme = getProjectChartTheme();
-
-  const datasets = Object.keys(compactedTrendData || {}).map(projectCode => {
-    const dataPoints = timeLabels.map(label => {
-      const entry = compactedTrendData[projectCode].find(item => item.month === label);
-      return entry ? entry.overtime : 0;
+  const version = ++projectTrendRenderVersion;
+  return loadScriptOnce("assets/vendor/echarts/echarts.min.js?v=6.1.0").then(() => {
+    if (version !== projectTrendRenderVersion) return;
+    const host = ensureProjectChartCanvas();
+    if (!host || !host.isConnected) return;
+    const theme = getProjectChartTheme();
+    const compacted = compactProjectTrendData(trendData);
+    const months = Array.from(new Set(Object.values(compacted).flatMap(points => points.map(point => point.month)))).sort();
+    const symbols = { rectRot: "diamond", rectRounded: "roundRect", cross: "pin", crossRot: "diamond", star: "triangle" };
+    const series = Object.keys(compacted).map(code => {
+      const other = code === PROJECT_OTHER_TREND_KEY;
+      const project = findProjectByCode(projectsViewState.projects, code) || code;
+      const color = other ? theme.textMuted : getProjectColorCssValue(project);
+      const points = new Map(compacted[code].map(point => [point.month, point]));
+      const marker = other ? "circle" : getProjectChartPointStyle(project);
+      return {
+        name: other ? t("projects.other") : code,
+        type: "line", smooth: false, showSymbol: true,
+        symbol: symbols[marker] || marker || "circle", symbolSize: other ? 5 : 8,
+        data: months.map(month => { const point = points.get(month); return point ? Number(point.seconds != null ? point.seconds / 3600 : point.overtime || 0) : 0; }),
+        itemStyle: { color }, lineStyle: { color, width: other ? 1.5 : 3, type: other ? "dotted" : "solid", opacity: other ? 0.55 : 1 },
+        emphasis: { focus: "series", lineStyle: { width: 4 } },
+      };
     });
-    const isOther = projectCode === PROJECT_OTHER_TREND_KEY;
-    const projectRecord = isOther ? null : findProjectByCode(projectsViewState.projects, projectCode);
-    const projectIdentity = projectRecord || projectCode;
-    const projectColor = isOther
-      ? theme.textMuted
-      : getProjectColorCssValue(projectIdentity);
-
-    return {
-      label: isOther ? t("projects.other") : projectCode,
-      data: dataPoints,
-      borderColor: getProjectTrendColorWithOpacity(projectColor, isOther ? 0.48 : 1),
-      backgroundColor: getProjectTrendColorWithOpacity(projectColor, isOther ? 0.5 : 1),
-      pointStyle: isOther ? PROJECT_OTHER_CHART_POINT_STYLE : getProjectChartPointStyle(projectIdentity),
-      // Marker shape and colour identify projects. Keeping actual project
-      // lines solid makes a dense trend readable; only the aggregate stays
-      // dotted as contextual information.
-      borderDash: isOther ? PROJECT_OTHER_CHART_BORDER_DASH.slice() : [],
-      fill: false,
-      tension: 0,
-      borderWidth: isOther ? 1.5 : PROJECT_TREND_LINE_WIDTH,
-      pointRadius: isOther ? 2.5 : 4,
-      pointHoverRadius: isOther ? 5.5 : 7,
-      pointHitRadius: 16,
-      $saphirBaseColor: projectColor,
-      $saphirIsOther: isOther,
-    };
-  });
-
-  pendingProjectChartFrameId = window.requestAnimationFrame(() => {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      pendingProjectChartFrameId = null;
-      return;
+    let chart = window.projectChartInstance;
+    if (!chart || chart.isDisposed() || chart.getDom() !== host) {
+      if (chart && !chart.isDisposed()) chart.dispose();
+      chart = echarts.init(host, null, { renderer: "canvas" });
+      window.projectChartInstance = chart;
+      if (projectTrendResizeObserver) projectTrendResizeObserver.disconnect();
+      if (typeof ResizeObserver === "function") {
+        projectTrendResizeObserver = new ResizeObserver(() => { if (!chart.isDisposed() && host.clientWidth > 0) chart.resize(); });
+        projectTrendResizeObserver.observe(host);
+      }
     }
-
-    if (window.projectChartInstance) {
-      window.projectChartInstance.destroy();
+    chart.setOption({
+      animation: false, backgroundColor: "transparent", aria: { enabled: true },
+      textStyle: { fontFamily: getComputedStyle(document.body).fontFamily, color: theme.textSecondary },
+      grid: { left: 18, right: 32, top: 64, bottom: 88, containLabel: true },
+      legend: { type: "scroll", top: 8, textStyle: { color: theme.textSecondary }, pageTextStyle: { color: theme.textMuted } },
+      tooltip: { trigger: "axis", confine: true, axisPointer: { type: "line", snap: true }, backgroundColor: theme.tooltip, textStyle: { color: theme.tooltipText },
+        formatter: items => [escapeHtml(items[0]?.axisValueLabel || ""), ...items.map(item => `${item.marker}${escapeHtml(item.seriesName)}: <strong>${escapeHtml(secondsToDurationLabel(Math.round(Number(item.value) * 3600)))}</strong>`)].join("<br>") },
+      xAxis: { type: "category", boundaryGap: false, data: months.map(formatYMToWords), axisLabel: { color: theme.textSecondary, hideOverlap: true, showMinLabel: true, showMaxLabel: true, alignMinLabel: "left", alignMaxLabel: "right", margin: 14 }, axisLine: { lineStyle: { color: theme.grid } } },
+      yAxis: { type: "value", min: 0, splitNumber: 7, axisLabel: { color: theme.textSecondary, margin: 12, formatter: value => formatProjectTrendHours(value) }, splitLine: { lineStyle: { color: theme.grid } } },
+      dataZoom: [{ type: "inside", filterMode: "none", zoomOnMouseWheel: "ctrl", moveOnMouseWheel: false }, { type: "slider", bottom: 8, height: 22, textStyle: { color: theme.textMuted }, borderColor: theme.grid }],
+      series,
+    }, { notMerge: true });
+    chart.resize();
+    host.parentElement?.setAttribute("aria-busy", "false");
+  }).catch(error => {
+    if (version !== projectTrendRenderVersion) return;
+    console.error("Unable to load project ECharts trend:", error);
+    destroyProjectPortfolioTrendChart();
+    const stage = document.querySelector("#projectChartContainer .chart-stage");
+    if (stage) {
+      stage.setAttribute("aria-busy", "false");
+      stage.innerHTML = createEmptyState(t("projects.chartLibraryFailed"));
     }
-
-    window.projectChartInstance = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: formattedLabels,
-        datasets,
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        resizeDelay: 150,
-        interaction: {
-          mode: "nearest",
-          intersect: false,
-        },
-        onHover: (_event, activeElements, chart) => {
-          const activeElement = Array.isArray(activeElements) && activeElements.length > 0
-            ? activeElements[0]
-            : null;
-          updateProjectTrendFocus(chart, activeElement ? activeElement.datasetIndex : null);
-        },
-        plugins: {
-          legend: {
-            position: "top",
-            onClick: (_event, legendItem, legend) => {
-              toggleProjectTrendLegendDataset(legend && legend.chart, legendItem && legendItem.datasetIndex);
-            },
-            labels: {
-              color: theme.textSecondary,
-              usePointStyle: true,
-              boxWidth: 11,
-              padding: 16,
-            },
-          },
-          tooltip: {
-            backgroundColor: theme.tooltip,
-            titleColor: theme.tooltipText,
-            bodyColor: theme.tooltipText,
-            displayColors: true,
-            padding: 10,
-            callbacks: {
-              label: context => `${context.dataset.label}: ${formatProjectTrendHours(context.parsed.y)}`,
-            },
-          },
-        },
-        scales: {
-          x: {
-            ticks: {
-              color: theme.textMuted,
-            },
-            grid: {
-              display: false,
-            },
-          },
-          y: {
-            beginAtZero: true,
-            ticks: {
-              color: theme.textMuted,
-              callback: value => formatProjectTrendHours(value),
-            },
-            grid: {
-              color: theme.grid,
-            },
-          },
-        },
-      },
-    });
-
-    if (window.projectChartInstance && typeof window.projectChartInstance.resize === "function") {
-      window.projectChartInstance.resize();
-    }
-
-    pendingProjectChartFrameId = null;
   });
 }
 
@@ -3488,24 +3393,6 @@ document.getElementById("projectWorkspaceEditButton").addEventListener("click", 
   });
 });
 
-document.getElementById("projectWorkspaceRangeSelect").addEventListener("change", event => {
-  const nextRange = event.currentTarget.value;
-  if (nextRange === "custom" && currentProjectFilter !== "custom") {
-    event.currentTarget.value = currentProjectFilter;
-    showToast(t("projects.customRangeInPortfolio"), "info");
-    return;
-  }
-  if (!nextRange || nextRange === currentProjectFilter) {
-    return;
-  }
-  runButtonAction(event.currentTarget, () => setProjectRange(nextRange), {
-    key: "projects-filter-refresh",
-  }).catch(error => {
-    console.error("Unable to change the project workspace range:", error);
-    showToast(t("projects.unableToLoad"), "error");
-  });
-});
-
 window.addEventListener("popstate", syncProjectWorkspaceFromRoute);
 window.addEventListener("hashchange", syncProjectWorkspaceFromRoute);
 
@@ -3591,6 +3478,7 @@ document.getElementById("projectApplyCustomRangeButton").addEventListener("click
     projectsViewState.customRange.endDate = endDate;
     currentProjectFilter = getMatchingPresetProjectRange(startDate, endDate);
     syncProjectRangeButtons();
+    closeProjectPeriodEditor();
     await refreshProjectsView();
   }, { key: "projects-filter-refresh" }).catch(error => {
     console.error("Unable to apply the custom project range:", error);
@@ -3792,3 +3680,5 @@ window.rerenderProjectsViewForLanguageChange = function () {
     document.getElementById("projectDetailContainer").innerHTML = createEmptyState(t("projects.selectToInspect"));
   }
 };
+
+initializeProjectPeriodNav();

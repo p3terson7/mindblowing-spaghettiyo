@@ -17,6 +17,8 @@ function Assert-True {
 
 $repoRoot = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath "../..")).Path
 . (Join-Path -Path $repoRoot -ChildPath "app/backend/services/ReadModelService.ps1")
+function Get-EmployeeTimeEntryTypesFromUserRecord { param($UserRecord) return @("overtime") }
+function Test-EntryForgottenClockOut { param($Entry) return $false }
 
 $script:UnitReadModelCache = @{}
 $script:EmployeeFileCalls = @{}

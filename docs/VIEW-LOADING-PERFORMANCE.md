@@ -2,6 +2,16 @@
 
 Baseline: `31a09b7`. Changes avoid work rather than increasing read concurrency.
 
+For the subsequent Projects-specific work (November 2026, 4,800-entry fixture),
+see [PROJECTS-LOADING.md](PROJECTS-LOADING.md). The Projects timings below are the
+historical October audit, not the current implementation.
+
+November 2026: the dashboard's Recent Activity rail has been removed. Its
+bootstrap no longer reads/projects history, and history-only sync events no
+longer invalidate the dashboard. The legacy `recentHistory` field stays empty
+for compatibility. Review retains its on-demand paginated history. The
+dashboard uses the space of the removed rail; no empty column is retained.
+
 The measurements below describe the view-loading changes through `6897673`, before the persisted-money cutover. Current monetary behavior is documented in [COMPENSATION-BACKFILL.md](COMPENSATION-BACKFILL.md): no read-time salary calculation remains, and Approved-tab navigation no longer refetches the same stored amounts. Do not interpret these historical timings as a benchmark of that subsequent change.
 No DATA schema, lock, write protocol, sync protocol, reader limit, database,
 persistent index or additional threading changes.

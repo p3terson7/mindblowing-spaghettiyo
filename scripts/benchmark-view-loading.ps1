@@ -1,4 +1,4 @@
-param([string]$FixtureParent = "", [string]$ApplicationRoot = "", [ValidateRange(1, 20)][int]$Iterations = 3, [string]$ReportPath = "output/view-loading.json", [string[]]$Views = @("employees/bootstrap?scope=active", "review/bootstrap", "dashboard/bootstrap", "projects/bootstrap?scope=all&includeDetail=false"))
+param([string]$FixtureParent = "", [string]$ApplicationRoot = "", [ValidateRange(1, 20)][int]$Iterations = 3, [ValidateRange(4, 2000)][int]$EntriesPerEmployee = 4, [string]$ReportPath = "output/view-loading.json", [string[]]$Views = @("employees/bootstrap?scope=active", "review/bootstrap", "dashboard/bootstrap", "projects/bootstrap?scope=all&includeDetail=false"))
 $ErrorActionPreference = "Stop"
 $repo = Split-Path $PSScriptRoot -Parent
 if (-not $FixtureParent) { $FixtureParent = [IO.Path]::GetTempPath() }
@@ -48,9 +48,13 @@ try {
     foreach ($file in @(Get-ChildItem $owned -Filter '*_data.json')) {
         $entries = @([IO.File]::ReadAllText($file.FullName) | ConvertFrom-Json)
         if ($entries.Count -eq 0) { continue }
-        $expanded = @(foreach ($index in 1..4) {
+        $expanded = @(foreach ($index in 1..$EntriesPerEmployee) {
             $entry = $entries[0].PSObject.Copy(); $entry.entryId += "-$index"
-            $entry.status = if ($index -eq 4) { "pending" } else { "approved" }; $entry
+            $entry.status = if ($index % 4 -eq 0) { "pending" } else { "approved" }
+            if ($EntriesPerEmployee -gt 4) {
+                $entry.date = ([datetime]"2026-10-14").AddDays(-($index - 1) * 3).ToString("yyyy-MM-dd")
+            }
+            $entry
         })
         Write-CoherenceFixtureJson $file.FullName $expanded
     }
@@ -91,7 +95,7 @@ try {
             Stop-Process -Id $process.Id -Force; $process.WaitForExit(); $process.Dispose(); $process = $null
         }
     }
-    $report = @{ schemaVersion = 1; measuredAtUtc = [DateTime]::UtcNow.ToString("o"); powerShellVersion = [string]$PSVersionTable.PSVersion; employeeCount = 40; entryCount = 160; historyCount = 167; policy = "Fresh backend for each view/sample, login excluded from view time; first/repeat sequential; summary instrumentation; no OS cache purge. Shared operation counts are application FileStore calls, not SMB packets. FixtureParent determines local versus actual SMB latency."; rows = @($rows.ToArray()) }
+    $report = @{ schemaVersion = 1; measuredAtUtc = [DateTime]::UtcNow.ToString("o"); powerShellVersion = [string]$PSVersionTable.PSVersion; employeeCount = 40; entryCount = 40 * $EntriesPerEmployee; historyCount = 167; policy = "Fresh backend for each view/sample, login excluded from view time; first/repeat sequential; summary instrumentation; no OS cache purge. Shared operation counts are application FileStore calls, not SMB packets. FixtureParent determines local versus actual SMB latency. When EntriesPerEmployee exceeds 4, entries span backwards from 2026-10-14 every 3 days."; rows = @($rows.ToArray()) }
     $path = [IO.Path]::GetFullPath($ReportPath); [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path)) | Out-Null
     $report | ConvertTo-Json -Depth 12 | Set-Content $path -Encoding UTF8
     Write-Host "View benchmark saved: $path"

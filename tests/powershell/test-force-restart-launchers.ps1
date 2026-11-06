@@ -73,7 +73,7 @@ Assert-LauncherContains -RelativePath "deploy/bootstrap/Install SAPHIR Shortcut.
 Assert-LauncherContains -RelativePath "deploy/bootstrap/SAPHIR Launcher Host.vbs" -ExpectedText '/check-update'
 Assert-LauncherContains -RelativePath "deploy/bootstrap/Install SAPHIR Shortcut.vbs" -ExpectedText 'localLauncherRoot = fso.BuildPath(localRoot, "launcher")'
 Assert-LauncherContains -RelativePath "deploy/bootstrap/Install SAPHIR Shortcut.vbs" -ExpectedText 'failedReleasePath = fso.BuildPath(localRoot, "failed.json")'
-Assert-LauncherContains -RelativePath "deploy/bootstrap/Install SAPHIR Shortcut.vbs" -ExpectedText 'If fso.FileExists(localApplicationLayoutPath) And fso.FileExists(failedReleasePath) Then'
+Assert-LauncherContains -RelativePath "deploy/bootstrap/Install SAPHIR Shortcut.vbs" -ExpectedText 'If Not automaticInstall And fso.FileExists(localApplicationLayoutPath) And fso.FileExists(failedReleasePath) Then'
 Assert-LauncherContains -RelativePath "deploy/bootstrap/Install SAPHIR Shortcut.vbs" -ExpectedText 'fso.DeleteFile markerPath, True'
 Assert-LauncherContains -RelativePath "deploy/bootstrap/Install SAPHIR Shortcut.vbs" -ExpectedText '"Version du lanceur : " & bundleId'
 Assert-LauncherContains -RelativePath "scripts/launch-cached-app.ps1" -ExpectedText '[switch]$NoBrowser'

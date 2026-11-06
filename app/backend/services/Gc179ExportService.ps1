@@ -609,6 +609,38 @@ function Get-Gc179ExportEntries {
     )
 }
 
+function ConvertTo-Gc179ExportRows {
+    param([AllowEmptyCollection()][object[]]$Entries)
+
+    foreach ($entry in $Entries) {
+        if (-not (Test-Gc179DiverseEntry -Entry $entry)) { $entry; continue }
+
+        try {
+            $start = [DateTime]::ParseExact(
+                ("{0} {1}" -f $entry.date, (Convert-ToNormalizedTimeText -TimeText ([string]$entry.punchIn))),
+                "yyyy-MM-dd HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture)
+            $end = [DateTime]::ParseExact(
+                ("{0} {1}" -f $entry.date, (Convert-ToNormalizedTimeText -TimeText ([string]$entry.punchOut))),
+                "yyyy-MM-dd HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture)
+        }
+        catch { $entry; continue }
+
+        # This is a same-day form layout rule, not a new overnight or payroll
+        # interpretation. Leave existing cross-midnight handling unchanged.
+        if (($end - $start).TotalHours -le 7.5) { $entry; continue }
+
+        $boundary = $start.AddHours(7.5)
+        $first = $entry.PSObject.Copy()
+        $second = $entry.PSObject.Copy()
+        $first.punchOut = $boundary.ToString("HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture)
+        $first | Add-Member -NotePropertyName overtime -NotePropertyValue "07:30:00" -Force
+        $second.punchIn = $first.punchOut
+        $second | Add-Member -NotePropertyName overtime -NotePropertyValue (($end - $boundary).ToString("hh\:mm\:ss", [System.Globalization.CultureInfo]::InvariantCulture)) -Force
+        $first
+        $second
+    }
+}
+
 function New-Gc179FdfExportPart {
     param(
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
@@ -758,12 +790,15 @@ function New-Gc179FdfExportSet {
 
     $monthParts = ConvertTo-Gc179MonthParts -MonthKey $MonthKey
     $entries = @(Get-Gc179ExportEntries -EmployeeCode $EmployeeCode -MonthKey $monthParts.MonthKey)
+    # Expand before pagination so a second diverse row can never disappear
+    # at the form's 16-row boundary. Keep Entries as the original source count.
+    $exportRows = @(ConvertTo-Gc179ExportRows -Entries $entries)
     $workedDateSet = Get-Gc179WorkedDateSet -EmployeeCode $EmployeeCode
     # WorkWeek is a form-level choice: never let today's profile overwrite an
     # entry's historical schedule, and never mix schedules on a single form.
     $chunks = New-Object System.Collections.ArrayList
     foreach ($schedule in @("regular", "compressed", "unconfirmed")) {
-        $scheduleEntries = @($entries | Where-Object { (Get-Gc179EntryWorkSchedule -Entry $_) -eq $schedule })
+        $scheduleEntries = @($exportRows | Where-Object { (Get-Gc179EntryWorkSchedule -Entry $_) -eq $schedule })
         foreach ($entry in $scheduleEntries) { Assert-Gc179EntrySchedule -Entry $entry }
         for ($startIndex = 0; $startIndex -lt $scheduleEntries.Count; $startIndex += 16) {
             $endIndex = [math]::Min($startIndex + 15, $scheduleEntries.Count - 1)

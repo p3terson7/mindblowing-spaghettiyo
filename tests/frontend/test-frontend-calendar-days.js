@@ -137,7 +137,7 @@ const employeeOptions = Object.freeze({
 const selfOptions = Object.freeze({
   ...employeeOptions,
   orderDayEntries(dayEntries) {
-    return dayEntries.slice().sort((left, right) => right.order - left.order);
+    return dayEntries.slice().sort((left, right) => left.order - right.order);
   },
 });
 
@@ -180,8 +180,8 @@ assert.equal(august2026.days.find(day => day.dateKey === "2026-07-31").totalSeco
 assert.equal(august2026.days.some(day => day.dateKey === "2027-01-01"), false, "Entries outside the visible grid must not create extra cells.");
 
 const august17Self = calendarDays.buildMonth(entries, "2026-08", selfOptions).days.find(day => day.dateKey === "2026-08-17");
-assert.deepEqual(plain(august17Self.entries.map(entry => entry.id)), ["evening", "afternoon", "morning"], "Self must retain its latest-first day ordering.");
-assert.equal(august17Self.entries[0], entries[2], "Self ordering must retain original entry objects.");
+assert.deepEqual(plain(august17Self.entries.map(entry => entry.id)), ["morning", "afternoon", "evening"], "Self calendar days must read chronologically from morning to evening.");
+assert.equal(august17Self.entries[0], entries[1], "Self ordering must retain original entry objects.");
 assert.equal(august17Self.totalSeconds, 6300);
 
 const tiedEntries = Object.freeze([
@@ -269,7 +269,7 @@ function testFacadeDelegation(kind) {
     assert.deepEqual(plain(ordered.map(entry => entry.id)), ["b", "a"]);
     assert.equal(sortCalls.length, 1);
     assert.equal(sortCalls[0].dayEntries, dayEntries);
-    assert.equal(sortCalls[0].latestFirst, true, "Self must retain latest-first ordering.");
+    assert.equal(sortCalls[0].latestFirst, false, "Self calendar days must request chronological ordering.");
   } else {
     assert.equal(ordered, dayEntries, "Employees must retain the exact grouped-array order.");
     assert.equal(sortCalls.length, 0, "Employees must not acquire Self's sorting behavior.");
@@ -278,5 +278,24 @@ function testFacadeDelegation(kind) {
 
 testFacadeDelegation("Self");
 testFacadeDelegation("Employees");
+
+// Exercise the real Self adapter and sorter together, rather than relying
+// solely on the shared model's independently supplied ordering callback.
+const chronologicalContext = {
+  Date,
+  getEntryDurationSeconds: entry => entry.seconds,
+  window: { Saphir: { calendarDays } },
+};
+vm.createContext(chronologicalContext);
+vm.runInContext(sourceBetween(utilitiesSource, "function sortEntriesByDateTime", "function getLatestEntry"), chronologicalContext);
+vm.runInContext(selfFacadeSource, chronologicalContext);
+const sameDayEntries = Object.freeze([
+  Object.freeze({ id: "late", date: "2026-08-17", punchIn: "20:00:00", seconds: 3600 }),
+  Object.freeze({ id: "early", date: "2026-08-17", punchIn: "08:00:00", seconds: 1800 }),
+  Object.freeze({ id: "middle", date: "2026-08-17", punchIn: "12:30:00", seconds: 900 }),
+]);
+const orderedDay = chronologicalContext.buildSelfCalendarDays(sameDayEntries, "2026-08").days.find(day => day.dateKey === "2026-08-17");
+assert.deepEqual(plain(orderedDay.entries.map(entry => entry.id)), ["early", "middle", "late"]);
+assert.deepEqual(sameDayEntries.map(entry => entry.id), ["late", "early", "middle"], "Calendar sorting must not reorder the original entry list.");
 
 console.log("Frontend calendar-day boundary contracts passed.");

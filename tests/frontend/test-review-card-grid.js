@@ -15,7 +15,7 @@ const context = {
   t: key => key,
 };
 vm.createContext(context);
-vm.runInContext(source.slice(source.indexOf('function renderApprovalsList('), source.indexOf('function renderApprovalTabsFromFiltered(')), context);
+vm.runInContext(source.slice(source.indexOf('function renderApprovalsList('), source.indexOf('function applyApprovalFilters(')), context);
 for (const [id, actions] of [['pendingContainer', true], ['attentionContainer', true], ['approvedContainer', false], ['rejectedContainer', false]]) {
   calls.length = 0;
   context.renderApprovalsList(id, [{ entryId: 'first' }, { entryId: 'second' }], actions);

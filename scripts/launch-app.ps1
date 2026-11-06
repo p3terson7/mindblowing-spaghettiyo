@@ -120,6 +120,15 @@ if (-not $NoBrowser) {
     }
 }
 Write-Host "SAPHIR is ready at $($service.FrontendUrl)"
+# The new release supplies this hook even when started by an old launcher.
+# Detach it only AFTER readiness so SMB installer access never blocks the app.
+$launcherUpdateLibrary = Join-Path $PSScriptRoot 'lib/LauncherUpdate.ps1'
+if (Test-Path -LiteralPath $launcherUpdateLibrary -PathType Leaf) {
+    try {
+        . $launcherUpdateLibrary
+        Start-SaphirLauncherUpdateCheck -ApplicationRoot (Split-Path $PSScriptRoot -Parent)
+    } catch { Write-Warning ('SAPHIR is ready; automatic launcher update could not start: ' + $_.Exception.Message) }
+}
 }
 catch { $launcherTraceStatus = 500; throw }
 finally {

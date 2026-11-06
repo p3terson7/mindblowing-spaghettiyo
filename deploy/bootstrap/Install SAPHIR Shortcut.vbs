@@ -53,6 +53,7 @@ Dim copyErrorDescription
 Dim confirmationMessage
 Dim silentInstall
 Dim installerArgument
+Dim automaticInstall
 Dim pointerFile
 Dim stableDistributionRootFile
 Dim windowsScriptHost
@@ -71,12 +72,11 @@ Sub EnsureFolder(folderPath)
                 fso.DeleteFolder stagingRoot, True
                 On Error GoTo 0
             End If
-            shell.Popup "SAPHIR could not create its local launcher folder." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
+            InstallerNotice "SAPHIR could not create its local launcher folder." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
             WScript.Quit 1
         End If
     End If
 End Sub
-
 Function InvalidateFailedReleaseMarker(markerPath)
     Dim attempt
 
@@ -120,13 +120,17 @@ Sub CopyLauncherFile(sourcePath, destinationPath, displayName)
             fso.DeleteFolder stagingRoot, True
             On Error GoTo 0
         End If
-        shell.Popup "SAPHIR could not install " & displayName & " in local AppData." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
+        InstallerNotice "SAPHIR could not install " & displayName & " in local AppData." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
         WScript.Quit 1
     End If
 End Sub
 
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
+automaticInstall = False
+For Each installerArgument In WScript.Arguments
+    If LCase(Trim(CStr(installerArgument))) = "/automatic" Then automaticInstall = True
+Next
 
 distributionRoot = fso.GetAbsolutePathName(fso.GetParentFolderName(WScript.ScriptFullName))
 launcherPayloadRoot = distributionRoot
@@ -151,57 +155,57 @@ If Not fso.FileExists(sourceLogoPath) Then
 End If
 
 If Not fso.FileExists(sourceLauncherEntryPath) Then
-    shell.Popup "SAPHIR Launcher.vbs is missing from the distribution folder.", 0, "SAPHIR", 16
+    InstallerNotice "SAPHIR Launcher.vbs is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
 If Not fso.FileExists(sourceLogoPath) Then
-    shell.Popup "saphir-logo.png is missing from the distribution folder.", 0, "SAPHIR", 16
+    InstallerNotice "saphir-logo.png is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
 If Not fso.FileExists(sourceLauncherHostPath) Then
-    shell.Popup "SAPHIR Launcher Host.vbs is missing from the distribution folder.", 0, "SAPHIR", 16
+    InstallerNotice "SAPHIR Launcher Host.vbs is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
 If Not fso.FileExists(sourceLauncherVersionPath) Then
-    shell.Popup "launcher-version.txt is missing from the distribution folder.", 0, "SAPHIR", 16
+    InstallerNotice "launcher-version.txt is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
 If Not fso.FileExists(sourceLauncherScriptPath) Then
-    shell.Popup "scripts\saphir-launcher.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
+    InstallerNotice "scripts\saphir-launcher.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
 If Not fso.FileExists(sourceLauncherControlPath) Then
-    shell.Popup "scripts\lib\LauncherControl.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
+    InstallerNotice "scripts\lib\LauncherControl.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
 If Not fso.FileExists(sourceApplicationLayoutPath) Then
-    shell.Popup "scripts\lib\ApplicationLayout.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
+    InstallerNotice "scripts\lib\ApplicationLayout.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
 If Not fso.FileExists(sourceCachedLaunchPath) Then
-    shell.Popup "scripts\launch-cached-app.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
+    InstallerNotice "scripts\launch-cached-app.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
 If Not fso.FileExists(sourceLocalCachePath) Then
-    shell.Popup "scripts\lib\LocalAppCache.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
+    InstallerNotice "scripts\lib\LocalAppCache.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
 If Not fso.FileExists(sourceServerControlPath) Then
-    shell.Popup "scripts\lib\ServerControl.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
+    InstallerNotice "scripts\lib\ServerControl.ps1 is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
 If Not fso.FileExists(sourceIconPath) Then
-    shell.Popup "SAPHIR.ico is missing from the distribution folder.", 0, "SAPHIR", 16
+    InstallerNotice "SAPHIR.ico is missing from the distribution folder.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
@@ -210,7 +214,7 @@ If Len(localAppData) = 0 Or InStr(localAppData, "%") > 0 Then
     localAppData = shell.ExpandEnvironmentStrings("%TEMP%")
 End If
 If Len(localAppData) = 0 Or InStr(localAppData, "%") > 0 Then
-    shell.Popup "SAPHIR could not locate local AppData on this computer.", 0, "SAPHIR", 16
+    InstallerNotice "SAPHIR could not locate local AppData on this computer.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
@@ -290,7 +294,7 @@ If copyError <> 0 Then
         fso.DeleteFolder stagingRoot, True
         On Error GoTo 0
     End If
-    shell.Popup "SAPHIR could not save the distribution location in local AppData." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
+    InstallerNotice "SAPHIR could not save the distribution location in local AppData." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
@@ -307,7 +311,7 @@ If Not fso.FileExists(localLauncherEntryPath) Or _
    Not fso.FileExists(fso.BuildPath(stagingRoot, "launcher-version.txt")) Or _
    Not fso.FileExists(distributionRootFilePath) Then
     fso.DeleteFolder stagingRoot, True
-    shell.Popup "The local SAPHIR launcher bundle could not be validated.", 0, "SAPHIR", 16
+    InstallerNotice "The local SAPHIR launcher bundle could not be validated.", 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
@@ -323,7 +327,7 @@ If copyError <> 0 Then
         fso.DeleteFolder stagingRoot, True
         On Error GoTo 0
     End If
-    shell.Popup "SAPHIR could not activate its local launcher bundle." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
+    InstallerNotice "SAPHIR could not activate its local launcher bundle." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
@@ -360,7 +364,7 @@ If copyError = 0 Then
 End If
 On Error GoTo 0
 If copyError <> 0 Then
-    shell.Popup "SAPHIR could not activate its automatic launcher." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
+    InstallerNotice "SAPHIR could not activate its automatic launcher." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 CopyLauncherFile sourceLauncherVersionPath, localLauncherVersionPath, "the launcher version marker"
@@ -381,15 +385,15 @@ copyErrorDescription = Err.Description
 Err.Clear
 On Error GoTo 0
 If copyError <> 0 Then
-    shell.Popup "SAPHIR could not update its Desktop shortcut." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
+    InstallerNotice "SAPHIR could not update its Desktop shortcut." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 16
     WScript.Quit 1
 End If
 
 failedReleasePath = fso.BuildPath(localRoot, "failed.json")
 failedReleaseReset = False
-If fso.FileExists(localApplicationLayoutPath) And fso.FileExists(failedReleasePath) Then
+If Not automaticInstall And fso.FileExists(localApplicationLayoutPath) And fso.FileExists(failedReleasePath) Then
     If Not InvalidateFailedReleaseMarker(failedReleasePath) Then
-        shell.Popup "Le nouveau lanceur SAPHIR est installe, mais la version en echec n'a pas pu etre debloquee." & vbCrLf & _
+        InstallerNotice "Le nouveau lanceur SAPHIR est installe, mais la version en echec n'a pas pu etre debloquee." & vbCrLf & _
             "Fermez SAPHIR et relancez cet installateur." & vbCrLf & vbCrLf & _
             "The new launcher is installed, but the failed release could not be unlocked." & vbCrLf & copyErrorDescription, 0, "SAPHIR", 48
         WScript.Quit 1
@@ -413,7 +417,7 @@ For Each installerArgument In WScript.Arguments
     End If
 Next
 If Not silentInstall Then
-    shell.Popup confirmationMessage, 0, "SAPHIR", 64
+    InstallerNotice confirmationMessage, 0, "SAPHIR", 64
     ' Complete the first-use path in one action. Automatic /silent launcher
     ' upgrades deliberately skip this to avoid opening a duplicate window.
     windowsScriptHost = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\wscript.exe")
@@ -422,3 +426,10 @@ If Not silentInstall Then
     End If
     shell.Run Chr(34) & windowsScriptHost & Chr(34) & " " & Chr(34) & localLauncherHostPath & Chr(34), 1, False
 End If
+Sub InstallerNotice(message, timeoutSeconds, title, icon)
+    If automaticInstall Then
+        WScript.Echo message
+    Else
+        shell.Popup message, timeoutSeconds, title, icon
+    End If
+End Sub

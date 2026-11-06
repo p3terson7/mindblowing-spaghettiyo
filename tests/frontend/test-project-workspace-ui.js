@@ -19,7 +19,7 @@ for (const id of [
   "projectWorkspace",
   "projectWorkspaceBackButton",
   "projectWorkspaceTitle",
-  "projectWorkspaceRangeSelect",
+  "projectPeriodNav",
   "projectWorkspaceReviewButton",
   "projectWorkspaceEntriesButton",
   "projectWorkspaceExportButton",
@@ -30,7 +30,7 @@ for (const id of [
 }
 
 assert(indexSource.includes('id="projectWorkspace" class="project-workspace d-none"'), "The workspace must not compete with the portfolio on first render.");
-assert.match(indexSource, /id="projectQuickRangeButtons"[\s\S]*?class="chip-button active" data-range="1M" data-i18n="projects\.range\.1M">This Month/, "Projects must default to the current calendar month.");
+assert.match(indexSource, /id="projectQuickRangeButtons"[\s\S]*?class="chip-button active" data-range="1M" aria-pressed="true" data-i18n="projects\.range\.1M">This Month/, "Projects must default to the current calendar month.");
 assert.match(projectsSource, /^let currentProjectFilter = "1M";/m, "The project view must initialize on the current calendar month.");
 assert.match(projectsSource, /await setProjectRange\("1M"\);/, "Resetting the Projects date filter must restore the current calendar month.");
 assert(i18nSource.includes('"projects.range.1M": "This Month"'), "The English current-month range label is missing.");

@@ -9,7 +9,7 @@ const user = { username: 'preview', displayName: 'Aperçu', role: 'superAdmin', 
 const projects = [{ projectCode: 'ALPHA', projectName: 'Modernisation', colorKey: 'mint', admins: [], backupAdmins: [] }];
 const base = { employeeCode: '000000001', employeeName: 'Camille Tremblay', date: '2026-10-05', punchIn: '17:00:00', punchOut: '18:30:00', overtime: '01:30:00', projectCode: 'ALPHA', overtimeCode: '260', paymentOption: 'cash', workSchedule: 'regular', canModify: true, canApprove: true };
 const approvals = [
-  ...Array.from({ length: 6 }, (_, i) => ({ ...base, entryId: `pending-${i}`, status: 'pending', ...(i === 0 ? { workComment: 'Justification détaillée '.repeat(12), message: 'Note du superviseur' } : {}) })),
+  ...Array.from({ length: 60 }, (_, i) => ({ ...base, entryId: `pending-${i}`, status: 'pending', ...(i === 0 ? { workComment: 'Justification détaillée '.repeat(12), message: 'Note du superviseur' } : {}) })),
   { ...base, entryId: 'warning', status: 'pending', employeeName: 'Alexandre-Nicolas Très-Long-Nom-De-Famille', hasReviewIssues: true, reviewIssues: [{ code: 'shortOvertime' }], overtime: '00:00:00', workSchedule: 'unconfirmed' },
   { ...base, entryId: 'approved', status: 'approved', canModify: false },
   { ...base, entryId: 'rejected', status: 'rejected' },
@@ -18,9 +18,16 @@ const requests = [];
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   requests.push({ method: req.method, path: url.pathname });
-  const data = url.pathname === '/auth/me' ? user
+  let data = url.pathname === '/auth/me' ? user
     : url.pathname === '/sync/status' ? { version: 1, changeId: 'preview', category: 'history' }
-      : url.pathname === '/review/bootstrap' ? { approvals, projects } : undefined;
+      : undefined;
+  if (url.pathname === '/review/bootstrap') {
+    const tab = url.searchParams.get('tab') || 'pending';
+    const page = Number(url.searchParams.get('page') || 1);
+    const search = url.searchParams.get('search') || '';
+    const matching = approvals.filter(e => (tab === 'attention' ? e.hasReviewIssues : e.status === tab) && (!search || e.employeeName.includes(search)));
+    data = { approvals: matching.slice((page-1)*25, page*25), projects, employees: [{employeeCode: base.employeeCode, employeeName: base.employeeName}], tab, page, pageSize: 25, total: matching.length, totalPages: Math.max(1, Math.ceil(matching.length/25)), counts: {pending:61,attention:1,approved:1,rejected:1}, actionableCount:61 };
+  }
   if (data !== undefined) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(data)); return; }
   const file = path.resolve(root, `.${url.pathname === '/' ? '/index.html' : url.pathname}`);
   if (!file.startsWith(root + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.statusCode = 404; res.end('Not found'); return; }
@@ -49,10 +56,15 @@ const server = http.createServer((req, res) => {
     const grid = page.locator('#pendingContainer .review-card-grid');
     const columns = () => grid.evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length);
     assert.equal(await columns(), 3, 'Wide review should show three cards per row.');
-    assert.equal(await grid.locator('.review-card').count(), 7);
-    assert.equal(await grid.locator('.approvals-approve-button').count(), 7);
-    assert.equal(await grid.locator('.approvals-edit-button').count(), 7);
-    assert.equal(await grid.locator('.approvals-jump-button').count(), 7);
+    assert.equal(await grid.locator('.review-card').count(), 25);
+    assert.equal(await grid.locator('.approvals-approve-button').count(), 25);
+    assert.equal(await grid.locator('.approvals-edit-button').count(), 25);
+    assert.equal(await grid.locator('.approvals-jump-button').count(), 25);
+    assert.equal(await page.locator('#approvedContainer .review-card').count(), 0, 'Hidden approved tab was rendered eagerly.');
+    await page.locator('#reviewPagination [data-review-page="2"]').click();
+    await page.waitForFunction(() => document.querySelector('#reviewPagination [role="status"]')?.textContent.includes('26'));
+    await page.locator('#reviewPagination [data-review-page="1"]').click();
+    await page.waitForFunction(() => document.querySelector('#reviewPagination [role="status"]')?.textContent.startsWith('1'));
     await page.locator('#approvalsSection').screenshot({ path: '/tmp/saphir-review-cards-desktop.png' });
     await page.setViewportSize({ width: 1050, height: 1000 });
     assert.equal(await columns(), 2, 'Medium review should show two cards per row.');
@@ -76,12 +88,16 @@ const server = http.createServer((req, res) => {
     assert.equal(await page.locator('#rejectedContainer .approvals-reject-button').count(), 0);
     await page.locator('#pending-tab').click();
     await page.locator('#approvalsSearchInput').fill('no-matching-employee');
+    await page.waitForFunction(() => !document.querySelector('#pendingContainer .review-card-grid'));
     assert.equal(await grid.count(), 0, 'Empty search should replace the grid with its empty state.');
-    assert.equal(requests.filter(r => r.path === '/review/bootstrap').length, 1, 'Layout changes must not fetch review data again.');
+    assert.equal(requests.filter(r => r.path === '/review/bootstrap').length, 6, 'Only initial/page 2/three unopened tabs/search should need requests; returning to cached pages must not.');
+    assert(await page.evaluate(() => window.openProjectReviewPage('ALPHA')), 'Project navigation did not load its pending page.');
+    assert.equal(requests.filter(r => r.path === '/review/bootstrap').length, 7, 'Project navigation fetched an unfiltered bootstrap before its filtered page.');
+    assert.equal(await grid.locator('.review-card').count(), 25);
     assert(!requests.some(r => r.path.includes('history')), 'Review must not eagerly load history.');
     assert(!requests.some(r => r.method !== 'GET'), 'Preview must not write data.');
     assert.deepEqual(errors, []);
-    console.log('Review cards browser smoke passed: 3/2/1 columns, four tabs, permissions/actions, warnings, filtering, light/dark, no overflow or extra requests.');
+    console.log('Review cards browser smoke passed: 25 cards, lazy tabs, cached pagination, 3/2/1 columns, permissions/actions, warnings, server filtering, light/dark and no overflow.');
   } finally {
     await browser.close();
     await new Promise(resolve => server.close(resolve));

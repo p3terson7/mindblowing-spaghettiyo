@@ -424,6 +424,14 @@ try {
     Assert-Equal -Expected $capturedAmount -Actual @($reviewAmounts.Json | Where-Object employeeCode -eq "000000001")[0].monetary.totalAmountCents -Message "Review lost the monetary snapshot while building its cached entry model."
     $projectAmounts = Invoke-TestRequest -Method "GET" -Uri "$baseUri/stats/projects?startDate=2026-09-01&endDate=2026-09-30" -Token $superToken
     Assert-Equal -Expected $capturedAmount -Actual @($projectAmounts.Json | Where-Object projectCode -eq "TEST")[0].monetary.totalAmountCents -Message "Project totals lost the monetary snapshot while building their cached statistics."
+    $projectPortfolio = Invoke-TestRequest -Method GET -Uri "$baseUri/projects/bootstrap?scope=all&includeDetail=false&startDate=2026-09-01&endDate=2026-09-30" -Token $superToken
+    Assert-Equal -Expected 200 -Actual $projectPortfolio.StatusCode -Message "Lean project portfolio failed."
+    Assert-True -Condition ($null -eq $projectPortfolio.Json.selectedProject) -Message "Initial project portfolio returned entry details."
+    Assert-Equal -Expected $capturedAmount -Actual @($projectPortfolio.Json.summary | Where-Object projectCode -eq TEST)[0].monetary.totalAmountCents -Message "Lean portfolio changed saved monetary totals."
+    $projectDetail = Invoke-TestRequest -Method GET -Uri "$baseUri/stats/projects/TEST?startDate=2026-09-01&endDate=2026-09-30" -Token $superToken
+    Assert-Equal -Expected 200 -Actual $projectDetail.StatusCode -Message "Selected project detail failed."
+    Assert-True -Condition (@($projectDetail.Json.contributors | Where-Object { $_.PSObject.Properties.Name -contains "entries" }).Count -eq 0) -Message "Project detail repeats entries under contributors."
+    Assert-True -Condition ($projectDetail.Body -notmatch 'rawEntry|compensationSnapshot|annualSalaryCents|hourlyRateCents') -Message "Internal project references leaked private salary fields."
     $savedEmployee = @(Get-Content -LiteralPath (Join-Path $dataRoot "000000001_data.json") -Raw | ConvertFrom-Json)[0]
     Assert-Equal -Expected 5900000 -Actual $savedEmployee.compensationSnapshot.annualSalaryCents -Message "The classification did not resolve the applicable salary band."
 
@@ -442,8 +450,11 @@ try {
     $lightDirectory = Invoke-TestRequest -Method GET -Uri "$baseUri/employees/bootstrap?scope=active" -Token $superToken
     Assert-True -Condition ($lightDirectory.Json.PSObject.Properties.Name -notcontains "lookups") -Message "Personnel eagerly loaded entry-form lookups."
     Assert-True -Condition (@($lightDirectory.Json.employees)[0].PSObject.Properties.Name -notcontains "monetary") -Message "Initial Personnel request eagerly calculated monetary statistics."
+    $projectAdminLookup = Invoke-TestRequest -Method GET -Uri "$baseUri/employees?scope=all&includeStats=false" -Token $superToken
+    Assert-Equal -Expected 200 -Actual $projectAdminLookup.StatusCode -Message "Project administrator lookup failed."
+    Assert-True -Condition (@($projectAdminLookup.Json | Where-Object { $_.statsLoaded -ne $false -or $_.PSObject.Properties.Name -contains "monetary" }).Count -eq 0) -Message "Project administrator lookup includes overtime statistics."
     Write-TestJson -Path (Join-Path $dataRoot "history.json") -Value @(foreach ($index in 1..67) { @{ timestamp = "2026-10-01 12:00:00"; action = "Add"; employee = "000000001"; message = "Page action $index" } })
-    foreach ($path in @("history?page=1", "review/bootstrap", "employees/bootstrap")) {
+    foreach ($path in @("history?page=1", "review/bootstrap", "employees/bootstrap", "employees?scope=all&includeStats=false", "projects/bootstrap?includeDetail=false", "stats/projects/TEST")) {
         $unauthenticated = Invoke-TestRequest -Method GET -Uri "$baseUri/$path"
         Assert-Equal -Expected 401 -Actual $unauthenticated.StatusCode -Message "Lazy read endpoint allowed anonymous access."
         $forbidden = Invoke-TestRequest -Method GET -Uri "$baseUri/$path" -Token $employeeToken

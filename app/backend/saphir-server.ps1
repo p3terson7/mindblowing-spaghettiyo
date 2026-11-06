@@ -10,7 +10,7 @@ Start-SaphirPerformanceTrace -Name "startup"
 try {
 foreach ($startupScript in @(
     "lib/AppContext.ps1", "lib/CommonHelpers.ps1", "lib/ControlService.ps1", "lib/FileStore.ps1", "lib/ResponseHelpers.ps1",
-    "services/AuthService.ps1", "services/EntryService.ps1", "services/ReadModelService.ps1", "services/EmployeeDirectoryService.ps1",
+    "services/AuthService.ps1", "services/EntryService.ps1", "services/ReadModelService.ps1", "services/ReviewService.ps1", "services/EmployeeDirectoryService.ps1",
     "services/SyncService.ps1", "services/CompensationGridService.ps1", "services/OvertimeCostSnapshotService.ps1", "services/BudgetPeriodService.ps1",
     "services/BugReportService.ps1", "services/ProjectStatsService.ps1", "services/HistoryService.ps1", "services/SeedService.ps1",
     "services/ProjectMutationService.ps1", "services/Gc179ExportService.ps1", "services/Gc179ImportService.ps1", "services/AnalyticsReportService.ps1", "services/RouteDispatchService.ps1"

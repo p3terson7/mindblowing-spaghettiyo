@@ -37,7 +37,7 @@ if ($Create) {
     Copy-Item (Join-Path $fixtureRepo "app/backend/defaults/compensation-grid.v1.json") $compensationGridFile
     Copy-Item (Join-Path $fixtureRepo "app/backend/defaults/budget-periods.v2.json") $budgetPeriodsFile
 }
-foreach ($file in @("lib/PerformanceTrace.ps1", "lib/FileStore.ps1", "lib/CommonHelpers.ps1", "services/AuthService.ps1", "services/EntryService.ps1", "services/ReadModelService.ps1", "services/EmployeeDirectoryService.ps1", "services/SyncService.ps1", "services/CompensationGridService.ps1", "services/OvertimeCostSnapshotService.ps1")) {
+foreach ($file in @("lib/PerformanceTrace.ps1", "lib/FileStore.ps1", "lib/CommonHelpers.ps1", "services/AuthService.ps1", "services/EntryService.ps1", "services/ReadModelService.ps1", "services/ReviewService.ps1", "services/EmployeeDirectoryService.ps1", "services/SyncService.ps1", "services/CompensationGridService.ps1", "services/OvertimeCostSnapshotService.ps1")) {
     $backendFile = if ($ApplicationRoot) { Join-Path $ApplicationRoot "backend/$file" } else { Join-Path $fixtureRepo "app/backend/$file" }
     . $backendFile
 }

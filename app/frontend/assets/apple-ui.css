@@ -2661,10 +2661,6 @@ body.bug-report-image-viewer-open {
   color: var(--live);
 }
 
-.dashboard-activity-card {
-  background: color-mix(in srgb, var(--surface) 94%, var(--violet-soft));
-}
-
 .dashboard-project-scope-card {
   border-color: color-mix(in srgb, var(--accent) 18%, var(--separator));
 }
@@ -2742,6 +2738,19 @@ body.bug-report-image-viewer-open {
   padding-right: 0;
   container: review-cards / inline-size;
 }
+
+.review-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+  color: var(--label-secondary);
+  font-size: 0.82rem;
+}
+
+.review-pagination:empty { display: none; }
 
 .review-card-grid,
 .review-tab-content .loading-shell-grid {
@@ -2912,8 +2921,7 @@ body.bug-report-image-viewer-open {
 }
 
 .employee-analytics-card,
-.project-insight-card,
-.project-insight-stat {
+.project-insight-card {
   background: var(--surface);
   border-color: var(--separator);
   border-radius: 12px;
@@ -3089,10 +3097,6 @@ body.bug-report-image-viewer-open {
   grid-column: 1 / -1;
 }
 
-#projectInsightsSummary {
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-}
-
 @media (max-width: 900px) {
   .employee-stats-section .self-stats-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3184,29 +3188,223 @@ body.bug-report-image-viewer-open {
   gap: var(--content-gap);
 }
 
-.project-analytics-bar {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 72%, var(--surface)), var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 19%, var(--separator));
+.project-period-nav {
+  position: sticky;
+  top: calc(var(--project-nav-offset, 64px) + 8px);
+  z-index: 140;
+  align-self: start;
+  justify-self: start;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--separator);
+  border-radius: 14px;
+  box-shadow: var(--shadow-soft);
 }
 
-.project-insight-summary,
+.project-period-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--label-secondary);
+  font-size: 0.8rem;
+}
+
+.project-period-presets {
+  min-width: 0;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.project-period-presets .chip-button {
+  white-space: nowrap;
+}
+
+.project-period-custom {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.project-period-date-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--separator);
+  border-radius: 9px;
+  color: var(--label-secondary);
+  font-size: 0.79rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  list-style: none;
+}
+
+.project-period-date-summary::-webkit-details-marker { display: none; }
+.project-period-date-summary > i { font-size: 0.65rem; }
+.project-period-custom[open] .project-period-date-summary > i { transform: rotate(180deg); }
+.project-period-custom.is-custom .project-period-date-summary {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--separator));
+}
+.project-period-date-summary:hover { background: var(--surface-secondary); }
+.project-period-date-summary:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+
+.project-period-date-panel {
+  position: absolute;
+  inset: calc(100% + 10px) 0 auto auto;
+  width: min(360px, calc(100vw - 48px));
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  box-shadow: var(--shadow-panel);
+}
+
+.project-period-date-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.project-period-date-fields .form-control { min-width: 0; }
+.project-period-date-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+#projectsView :is(.project-workspace-header, .project-workspace-panel, .project-workspace-entry-row, .project-portfolio-panel) {
+  scroll-margin-top: var(--project-scroll-offset, 160px);
+}
+
+@media (max-width: 760px) {
+  .project-period-nav { gap: 8px; padding: 10px; }
+  .project-period-date-summary { font-size: 0.73rem; gap: 6px; }
+  .project-period-date-panel { left: 0; right: auto; }
+}
+
+.project-analytics-bar {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
 .project-insight-grid {
   gap: 10px;
 }
 
 .project-insight-stat {
-  min-height: 94px;
-  padding: 14px;
-  justify-content: center;
+  min-height: 0;
+  align-content: start;
 }
 
 .project-insight-stat .metric-value {
   font-size: 1.32rem;
 }
 
+.project-insight-stat .metric-hint {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.7rem;
+}
+
+.project-analytics-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.project-analytics-actions .btn { min-height: 30px; padding: 4px 8px; font-size: 0.75rem; }
+.project-insight-stat-loading { gap: 8px; padding-block: 4px; }
+.project-insight-stat-loading .loading-bar-title { width: 72%; height: 8px; }
+.project-insight-stat-loading .loading-bar-wide { width: 48%; height: 16px; }
+
+@media (max-width: 760px) {
+  .project-insight-summary { flex-basis: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; }
+  .project-insight-stat-money { grid-column: 1 / -1; }
+  .project-analytics-actions { flex-direction: row; flex-wrap: wrap; }
+}
+
 .chart-stage {
   min-height: 360px;
   height: min(46vh, 470px);
+}
+
+.project-main-trend-chart { width: 100%; height: 100%; min-width: 0; }
+
+#projectChartContainer .chart-stage {
+  min-height: 560px;
+  height: clamp(560px, 68vh, 800px);
+}
+
+/* Loading hints use thin strokes, not filled shapes stretched to chart size. */
+.chart-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--label-tertiary);
+}
+
+.chart-placeholder-line { padding: 24px 8px 32px; }
+.chart-placeholder-plot { flex: 1; width: 100%; min-height: 0; }
+.chart-placeholder-grid,
+.chart-placeholder-axis {
+  fill: none;
+  stroke: var(--separator);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.chart-placeholder-grid { stroke-dasharray: 3 7; }
+.chart-placeholder-axis { stroke: var(--separator-strong); }
+.chart-placeholder-ring { width: 104px; height: 104px; flex: 0 0 auto; }
+.chart-placeholder-ring circle { fill: none; stroke-width: 3; }
+.chart-placeholder-ring-track { stroke: var(--separator); }
+.chart-placeholder-ring-progress {
+  stroke: var(--accent);
+  stroke-opacity: 0.55;
+  stroke-dasharray: 56 245;
+  stroke-linecap: round;
+  transform-origin: 50px 50px;
+  animation: chartPlaceholderRotate 2s linear infinite;
+}
+.chart-placeholder-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.chart-placeholder-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--label-tertiary);
+  animation: chartPlaceholderPulse 1.8s ease-in-out infinite;
+}
+@keyframes chartPlaceholderRotate { to { transform: rotate(360deg); } }
+@keyframes chartPlaceholderPulse { 50% { opacity: 0.3; } }
+
+@media (max-width: 760px) {
+  #projectChartContainer .chart-stage { min-height: 420px; height: clamp(420px, 58vh, 540px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart-placeholder-ring-progress,
+  .chart-placeholder-dot { animation: none !important; }
 }
 
 .project-portfolio-layout {
@@ -3429,10 +3627,6 @@ body.bug-report-image-viewer-open {
   align-items: end;
   gap: 12px;
   flex-wrap: wrap;
-}
-
-.project-workspace-period-control {
-  width: 154px;
 }
 
 .panel-shell.project-budget-comparison-shell {
@@ -4215,7 +4409,6 @@ body.bug-report-image-viewer-open {
 :root[data-theme="dark"] .self-stat-card,
 :root[data-theme="dark"] .self-project-stat-card,
 :root[data-theme="dark"] .self-project-stat-grid span,
-:root[data-theme="dark"] .project-insight-stat,
 :root[data-theme="dark"] .project-insight-card,
 :root[data-theme="dark"] .employee-analytics-card,
 :root[data-theme="dark"] .queue-card,
@@ -4309,10 +4502,6 @@ body.bug-report-image-viewer-open {
 
   .dashboard-layout {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .dashboard-activity-card #dashboardRecentActivity {
-    max-height: 380px;
   }
 
   .metrics-grid-four {
@@ -4487,10 +4676,6 @@ body.bug-report-image-viewer-open {
     justify-content: flex-start;
   }
 
-  .project-workspace-period-control {
-    width: 100%;
-  }
-
   .project-workspace-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4544,8 +4729,7 @@ body.bug-report-image-viewer-open {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .employee-insight-strip,
-  .project-insight-summary {
+  .employee-insight-strip {
     grid-template-columns: minmax(0, 1fr);
   }
 

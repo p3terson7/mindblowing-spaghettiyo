@@ -51,6 +51,8 @@ These permissions do not add runtime encryption or expensive security checks. Th
 
 The launcher uses Windows Script Host, Windows PowerShell 5.1 and WPF already included with supported Windows workstations. It does not require PowerShell 7, .NET SDK, an Internet download, a package manager or administrator rights.
 
+Full application releases also carry an automatic launcher-update worker and a publisher-owned `scripts/launcher-origin.json`. After the application passes readiness, its new local `launch-app.ps1` starts this worker in the background. This upgrades older launchers too: employees do not need to return to the source folder or rerun the installer for ordinary updates. The worker compares fingerprints and uses the existing immutable-bundle installer and update lock. It does not restart SAPHIR or reset a failed application release. The new launcher appearance is used on the next launcher opening. Failures leave the app usable and are recorded in `%LOCALAPPDATA%\SAPHIR\runtime\logs\launcher-update.log`; a later app start retries. Publish a full release at the stable distribution path to deliver this hook, not just BootstrapOnly.
+
 SAPHIR deliberately does not delete the previous local cache during this cutover, so a pilot can still be rolled back safely. That inactive cache consumes disk space only; it does not run and does not slow SAPHIR. It can be removed later through your normal managed workstation cleanup after the rollout is confirmed.
 
 ## Required two-step transition from an existing deployment

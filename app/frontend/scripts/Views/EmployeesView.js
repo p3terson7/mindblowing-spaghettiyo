@@ -2701,7 +2701,6 @@ async function refreshPeopleEmployeeDetail(employeeCode) {
   window.invalidateEmployeesViewEntryCache(employeeCode);
   if (typeof dashboardState !== "undefined") {
     dashboardState.entriesByEmployee[employeeCode] = undefined;
-    dashboardState.historyLoaded = false;
     dashboardState.bootstrap = null;
   }
 

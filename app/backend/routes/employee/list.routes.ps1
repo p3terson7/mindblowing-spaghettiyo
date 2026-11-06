@@ -28,7 +28,10 @@
             }
 
             $directoryScope = if ($scope -in @("all", "archived")) { $scope } else { "active" }
-            $employees = @(Get-EmployeeDirectoryList -IncludeDisabled:$includeDisabled -CurrentUser $currentUser -Scope $directoryScope)
+            # Keep legacy /employees statistics unless the caller explicitly
+            # requests metadata (e.g. project administrator selection).
+            $metadataOnly = ([string]$query["includeStats"] -eq "false")
+            $employees = @(Get-EmployeeDirectoryList -IncludeDisabled:$includeDisabled -CurrentUser $currentUser -Scope $directoryScope -MetadataOnly:$metadataOnly)
             if ($scope -eq "archived") {
                 $employees = @($employees | Where-Object { [bool]$_.archived })
             }

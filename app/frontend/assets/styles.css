@@ -769,7 +769,7 @@ code {
 
 .dashboard-layout {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
@@ -781,8 +781,7 @@ code {
 }
 
 .dashboard-stream-card,
-.dashboard-inspector-card,
-.dashboard-activity-card {
+.dashboard-inspector-card {
   display: grid;
   gap: 8px;
 }
@@ -844,18 +843,6 @@ code {
   max-height: 620px;
   overflow: auto;
   padding-right: 2px;
-}
-
-.dashboard-activity-rail {
-  min-width: 0;
-}
-
-.dashboard-activity-card.panel-shell-sticky {
-  top: 78px;
-}
-
-.dashboard-activity-card #dashboardRecentActivity {
-  max-height: calc(100vh - 172px);
 }
 
 .panel-shell {
@@ -930,7 +917,6 @@ code {
 
 #dashboardApprovalQueue,
 #dashboardActiveList,
-#dashboardRecentActivity,
 .review-tab-content {
   max-height: 460px;
   overflow: auto;
@@ -1158,42 +1144,6 @@ code {
 
 #projectChartContainer .panel-header-actions {
   align-items: flex-end;
-}
-
-.filter-toolbar-project {
-  padding: 8px 12px;
-  gap: 8px;
-}
-
-.project-filter-row {
-  align-items: end;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.project-filter-field {
-  flex: 1 1 auto;
-}
-
-.project-filter-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.project-filter-range-cluster {
-  grid-template-columns: repeat(2, minmax(132px, 150px));
-  gap: 8px;
-}
-
-.project-filter-actions {
-  flex: 0 0 auto;
-  align-self: end;
-}
-
-.project-filter-controls .chip-group {
-  flex: 0 1 auto;
 }
 
 .action-strip {
@@ -1761,7 +1711,6 @@ button.is-async-busy::before,
 :root[data-theme="dark"] .self-stat-card,
 :root[data-theme="dark"] .self-project-stat-card,
 :root[data-theme="dark"] .self-project-stat-grid span,
-:root[data-theme="dark"] .project-insight-stat,
 :root[data-theme="dark"] .project-insight-card,
 :root[data-theme="dark"] .employee-analytics-card,
 :root[data-theme="dark"] .queue-card,
@@ -3540,8 +3489,11 @@ button.is-async-busy::before,
 }
 
 .project-analytics-bar {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  padding: 4px 0 10px;
 }
 
 .project-budget-comparison-shell {
@@ -3791,18 +3743,19 @@ button.is-async-busy::before,
 
 .project-insight-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  flex: 1 1 560px;
+  min-width: 0;
+  grid-template-columns: minmax(150px, 1.5fr) repeat(4, minmax(88px, 1fr));
+  gap: 16px;
 }
 
 .project-insight-stat {
   min-width: 0;
   display: grid;
   gap: 3px;
-  padding: 10px;
-  border: 1px solid rgba(31, 35, 41, 0.08);
-  border-radius: 4px;
-  background: var(--panel-muted);
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .project-insight-stat .metric-value {
@@ -4842,8 +4795,7 @@ button.is-async-busy::before,
   }
 
   .self-stats-summary,
-  .self-project-stat-grid,
-  .project-insight-summary {
+  .self-project-stat-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -4895,8 +4847,7 @@ button.is-async-busy::before,
   }
 
   .self-stats-summary,
-  .self-project-stat-grid,
-  .project-insight-summary {
+  .self-project-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -4914,7 +4865,6 @@ button.is-async-busy::before,
 
   .dashboard-stream-card-compact #dashboardApprovalQueue,
   .dashboard-stream-card #dashboardActiveList,
-  .dashboard-activity-card #dashboardRecentActivity,
   .dashboard-inspector-card #punchClockEntries,
   .dashboard-table-wrap {
     max-height: 380px;
@@ -4925,14 +4875,6 @@ button.is-async-busy::before,
   .filter-field-status,
   .filter-field-toggle {
     flex-basis: 100%;
-  }
-
-  .project-filter-controls {
-    align-items: stretch;
-  }
-
-  .project-filter-range-cluster {
-    grid-template-columns: 1fr;
   }
 
   .employee-calendar-grid {
@@ -5045,7 +4987,6 @@ button.is-async-busy::before,
 
   .self-stats-summary,
   .self-project-stat-grid,
-  .project-insight-summary,
   .budget-period-selector,
   .budget-comparison-summary,
   .employee-analytics-grid {

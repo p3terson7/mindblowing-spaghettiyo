@@ -24,6 +24,7 @@ function Reset-ColdCaches {
 try {
     $env:SAPHIR_READ_MODEL_CACHE_CAPACITY = "2048"
     . (Join-Path $repo "tests/lib/CacheCoherenceFixture.ps1") -FixtureFolder $fixture -Create -EmployeeCount 32 -ApplicationRoot $ApplicationRoot
+    function Get-RecentHistoryEntriesSnapshot { throw "Dashboard must not load retired recent activity." }
     $manager = Get-UserByUsername "audit-super"
     $admin = Get-UserByUsername "audit-limited"
     $expected = ""
@@ -38,6 +39,9 @@ try {
         $expected = $serialized
         $warm = Get-DashboardBootstrapModel -CurrentUser $manager
         Assert-Cold ([object]::ReferenceEquals($result.selectedEmployeeEntries, $warm.selectedEmployeeEntries)) "A cold load was not cached."
+        Assert-Cold ($warm.recentHistory.Count -eq 0) "The compatibility history field must stay empty."
+        Publish-DataChange -Category history -Resource "fixture" | Out-Null
+        Assert-Cold ([object]::ReferenceEquals($warm, (Get-DashboardBootstrapModel -CurrentUser $manager))) "An unrelated history event discarded the dashboard aggregate."
         $scoped = Get-ScopedEmployeeDataSnapshot -CurrentUser $admin
         Assert-Cold (@($scoped.flattenedEntries | Where-Object { $_.projectCode -eq "P2" -and $_.canModify }).Count -eq 0) "Parallel loading widened admin modification scope."
         $employee = Get-UserByUsername "000710002"
