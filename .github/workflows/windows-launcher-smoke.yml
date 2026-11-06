@@ -1,0 +1,40 @@
+name: Windows launcher smoke
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-powershell-51:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Verify monetary calculations on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($PSVersionTable.PSEdition -ne "Desktop" -or $PSVersionTable.PSVersion.Major -ne 5) {
+              throw "Monetary regressions must run under Windows PowerShell 5.1."
+          }
+
+          .\tests\powershell\test-powershell51-compat.ps1 -FailOnIssues
+          .\tests\powershell\test-overtime-compensation-module.ps1
+          .\tests\powershell\test-overtime-cost-snapshots.ps1
+          .\tests\powershell\test-monetary-read-model-projections.ps1
+
+      - name: Run the complete Phase 0 safety suite
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($PSVersionTable.PSEdition -ne "Desktop" -or $PSVersionTable.PSVersion.Major -ne 5) {
+              throw "This smoke must run under Windows PowerShell 5.1."
+          }
+
+          .\scripts\test-all.ps1 -ReportPath .\output\test-reports\phase0-windows-ci.json

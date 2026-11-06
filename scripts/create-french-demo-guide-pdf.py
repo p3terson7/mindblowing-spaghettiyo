@@ -221,10 +221,11 @@ def build_story():
             ),
             test_case(
                 9,
-                "Extraction mensuelle",
-                "Choisissez un mois contenant différents statuts, mais terminez d'abord tout pointage ouvert.",
-                "Cliquez sur <b>Extraire le mois</b>. Comparez chaque ligne admissible avec l'activité du même mois, puis additionnez seulement les lignes présentes dans l'extraction.",
-                "Le nouvel onglet montre le bon employé et le bon mois. Les entrées d'heures supp. approuvées ou en attente sont incluses; les entrées rejetées et Divers sont exclues. Le total correspond à la somme des lignes exportées.",
+                "Export GC179 automatisé",
+                "Le profil GC179 de l'employé est rempli, Acrobat est disponible et le mois choisi contient au moins une entrée admissible.",
+                "Dans le calendrier du mois, cliquez sur <b>Export GC179</b> et attendez l'ouverture du document.",
+                "SAPHIR prépare le ou les formulaires du bon employé et du bon mois, puis les ouvre dans Acrobat. Aucun ancien bouton d'extraction HTML du mois n'est affiché.",
+                optional=True,
             ),
             test_case(
                 10,

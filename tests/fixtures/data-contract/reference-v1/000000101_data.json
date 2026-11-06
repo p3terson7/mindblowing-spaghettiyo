@@ -1,0 +1,20 @@
+[
+  {
+    "entryId": "fixture-array-singleton-001",
+    "entryType": "overtime",
+    "name": "Employé avec une entrée",
+    "date": "2026-01-05",
+    "punchIn": "17:00:00",
+    "exactPunchIn": "17:02:00",
+    "punchOut": "18:00:00",
+    "exactPunchOut": "18:01:00",
+    "overtime": "01:00:00",
+    "status": "approved",
+    "message": "",
+    "projectCode": "P-ACT",
+    "overtimeCode": "260",
+    "paymentOption": "cash",
+    "reasonCode": "D",
+    "workComment": "Préparation du rapport de référence."
+  }
+]

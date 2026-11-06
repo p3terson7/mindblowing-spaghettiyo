@@ -1,9 +1,10 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$AdminUsername = "admin",
     [string]$AdminPassword = "ChangeMe123!",
     [string]$EmployeePassword = "Demo123!",
-    [int]$MonthsBack = 8
+    [ValidateRange(1, 36)][int]$MonthsBack = 8,
+    [datetime]$ReferenceDate = (Get-Date).Date
 )
 
 Set-StrictMode -Version Latest
@@ -263,31 +264,31 @@ if (Test-Path -Path $lockPath) {
 }
 
 $overtimeCodes = @(
-    [PSCustomObject]@{ code = ""; labelEn = "Overtime Code"; labelFr = "Code de temps supplementaire" },
-    [PSCustomObject]@{ code = "260"; labelEn = "OVERTIME, Regular Working Day"; labelFr = "HEURES SUPPLEMENTAIRES, Jour ouvrable regulier" },
-    [PSCustomObject]@{ code = "261"; labelEn = "OVERTIME, First Day of Rest"; labelFr = "HEURES SUPPLEMENTAIRES, Premier jour de repos" },
-    [PSCustomObject]@{ code = "262"; labelEn = "OVERTIME, Second or Subsequent Day of Rest"; labelFr = "HEURES SUPPLEMENTAIRES, Deuxieme jour de repos subsequent" },
-    [PSCustomObject]@{ code = "263"; labelEn = "OVERTIME, Designated Holiday"; labelFr = "HEURES SUPPLEMENTAIRES, Conge ferie" },
-    [PSCustomObject]@{ code = "089"; labelEn = "TRAVEL TIME, Regular Working Day"; labelFr = "TEMPS de DEPLACEMENT, Jour ouvrable regulier" },
-    [PSCustomObject]@{ code = "072"; labelEn = "TRAVEL TIME, Day of Rest"; labelFr = "TEMPS de DEPLACEMENT, Jour de repos" },
+    [PSCustomObject]@{ code = ""; labelEn = "Overtime Code"; labelFr = "Code de temps supplémentaire" },
+    [PSCustomObject]@{ code = "260"; labelEn = "OVERTIME, Regular Working Day"; labelFr = "HEURES SUPPLÉMENTAIRES, Jour ouvrable régulier" },
+    [PSCustomObject]@{ code = "261"; labelEn = "OVERTIME, First Day of Rest"; labelFr = "HEURES SUPPLÉMENTAIRES, Premier jour de repos" },
+    [PSCustomObject]@{ code = "262"; labelEn = "OVERTIME, Second or Subsequent Day of Rest"; labelFr = "HEURES SUPPLÉMENTAIRES, Deuxième jour de repos subséquent" },
+    [PSCustomObject]@{ code = "263"; labelEn = "OVERTIME, Designated Holiday"; labelFr = "HEURES SUPPLÉMENTAIRES, Congé férié" },
+    [PSCustomObject]@{ code = "089"; labelEn = "TRAVEL TIME, Regular Working Day"; labelFr = "TEMPS de DÉPLACEMENT, Jour ouvrable régulier" },
+    [PSCustomObject]@{ code = "072"; labelEn = "TRAVEL TIME, Day of Rest"; labelFr = "TEMPS de DÉPLACEMENT, Jour de repos" },
     [PSCustomObject]@{ code = "009"; labelEn = "CALL BACK"; labelFr = "RAPPEL AU TRAVAIL" },
-    [PSCustomObject]@{ code = "050"; labelEn = "REPORTING PAY"; labelFr = "INDEMNITE DE PRESENCE" },
+    [PSCustomObject]@{ code = "050"; labelEn = "REPORTING PAY"; labelFr = "INDEMNITÉ DE PRÉSENCE" },
     [PSCustomObject]@{ code = "049"; labelEn = "PART TIME, Additional Hours"; labelFr = "TEMPS PARTIEL, Heures additionnelles" },
-    [PSCustomObject]@{ code = "043"; labelEn = "PART TIME, Premium Pay for Work on a Holiday"; labelFr = "TEMPS PARTIEL, Prime pour le travail effectue lors d'un jour ferie" }
+    [PSCustomObject]@{ code = "043"; labelEn = "PART TIME, Premium Pay for Work on a Holiday"; labelFr = "TEMPS PARTIEL, Prime pour le travail effectué lors d'un jour férié" }
 )
 
 $paymentOptions = @(
-    [PSCustomObject]@{ code = "cash"; labelEn = "Cash"; labelFr = "En espece" },
-    [PSCustomObject]@{ code = "leave"; labelEn = "Leave"; labelFr = "Conge" }
+    [PSCustomObject]@{ code = "cash"; labelEn = "Cash"; labelFr = "En espèce" },
+    [PSCustomObject]@{ code = "leave"; labelEn = "Leave"; labelFr = "Congé" }
 )
 
 $reasonCodes = @(
     [PSCustomObject]@{ code = ""; labelEn = "Reason"; labelFr = "Raison" },
     [PSCustomObject]@{ code = "A"; labelEn = "Emergency Situation"; labelFr = "Situation d'urgence" },
-    [PSCustomObject]@{ code = "B"; labelEn = "Cost Effectiveness"; labelFr = "Cout-efficacite" },
+    [PSCustomObject]@{ code = "B"; labelEn = "Cost Effectiveness"; labelFr = "Coût-efficacité" },
     [PSCustomObject]@{ code = "C"; labelEn = "Exceptional Circumstances"; labelFr = "Circonstances exceptionnelles" },
     [PSCustomObject]@{ code = "D"; labelEn = "Significant Workload Increases"; labelFr = "Augmentation significative de charge de travail" },
-    [PSCustomObject]@{ code = "E"; labelEn = "Unanticipated Absence"; labelFr = "Absence imprevue" },
+    [PSCustomObject]@{ code = "E"; labelEn = "Unanticipated Absence"; labelFr = "Absence imprévue" },
     [PSCustomObject]@{ code = "F"; labelEn = "Vacant Position"; labelFr = "Poste vacant" },
     [PSCustomObject]@{ code = "G"; labelEn = "Other"; labelFr = "Autre" }
 )
@@ -295,7 +296,7 @@ $reasonCodes = @(
 $employeeDefinitions = @(
     [PSCustomObject]@{ code = "000100000"; name = "Alexandre Roy"; role = "superAdmin"; noEntries = $false },
     [PSCustomObject]@{ code = "000100001"; name = "Camille Tremblay"; role = "admin"; noEntries = $false },
-    [PSCustomObject]@{ code = "000100002"; name = "Marc-Andre Gagnon"; role = "admin"; noEntries = $false },
+    [PSCustomObject]@{ code = "000100002"; name = "Marc-André Gagnon"; role = "admin"; noEntries = $false },
     [PSCustomObject]@{ code = "000100003"; name = "Sophie Leclerc"; role = "admin"; noEntries = $false },
     [PSCustomObject]@{ code = "000100004"; name = "Nadia Bouchard"; role = "admin"; noEntries = $false },
     [PSCustomObject]@{ code = "000100005"; name = "Peter-Nicholas Sarateanu"; role = "admin"; noEntries = $false },
@@ -303,20 +304,20 @@ $employeeDefinitions = @(
     [PSCustomObject]@{ code = "000200002"; name = "Jane Smith"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200003"; name = "Michael Chen"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200004"; name = "Priya Patel"; role = "employee"; noEntries = $false },
-    [PSCustomObject]@{ code = "000200005"; name = "Remy Beaulieu"; role = "employee"; noEntries = $false },
+    [PSCustomObject]@{ code = "000200005"; name = "Rémy Beaulieu"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200006"; name = "Isabelle Martin"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200007"; name = "Olivier Fortin"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200008"; name = "Maya Singh"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200009"; name = "Daniel Nguyen"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200010"; name = "Sarah Ouellet"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200011"; name = "Thomas Bergeron"; role = "employee"; noEntries = $false },
-    [PSCustomObject]@{ code = "000200012"; name = "Lea Mercier"; role = "employee"; noEntries = $false },
-    [PSCustomObject]@{ code = "000200013"; name = "Hugo Cote"; role = "employee"; noEntries = $false },
+    [PSCustomObject]@{ code = "000200012"; name = "Léa Mercier"; role = "employee"; noEntries = $false },
+    [PSCustomObject]@{ code = "000200013"; name = "Hugo Côté"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200014"; name = "Emma Wilson"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200015"; name = "Noah Brown"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200016"; name = "Chloe Tremblay"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200017"; name = "Gabriel Lavoie"; role = "employee"; noEntries = $false },
-    [PSCustomObject]@{ code = "000200018"; name = "Amelie Girard"; role = "employee"; noEntries = $false },
+    [PSCustomObject]@{ code = "000200018"; name = "Amélie Girard"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200019"; name = "Ethan Miller"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200020"; name = "Zoe Anderson"; role = "employee"; noEntries = $false },
     [PSCustomObject]@{ code = "000200021"; name = "Samuel Richard"; role = "employee"; noEntries = $false },
@@ -328,16 +329,16 @@ $employeeDefinitions = @(
 )
 
 $projects = @(
-    [PSCustomObject]@{ projectCode = "OPS-410"; projectName = "Month-End Close"; sector = "Operations"; admins = @("000100001", "000100005"); backupAdmins = @("000100004"); archived = $false },
-    [PSCustomObject]@{ projectCode = "INF-330"; projectName = "Infrastructure Maintenance"; sector = "Infrastructure"; admins = @("000100002", "000100005"); backupAdmins = @("000100003"); archived = $false },
-    [PSCustomObject]@{ projectCode = "APP-220"; projectName = "Portal Upgrade"; sector = "Applications"; admins = @("000100003", "000100005"); backupAdmins = @("000100002"); archived = $false },
-    [PSCustomObject]@{ projectCode = "CLT-120"; projectName = "Client Rollout"; sector = "Client Services"; admins = @("000100004"); backupAdmins = @("000100001", "000100005"); archived = $false },
-    [PSCustomObject]@{ projectCode = "SEC-510"; projectName = "Security Audit"; sector = "Security"; admins = @("000100002"); backupAdmins = @("000100000"); archived = $false },
-    [PSCustomObject]@{ projectCode = "FIN-275"; projectName = "Financial Reporting"; sector = "Finance"; admins = @("000100001"); backupAdmins = @("000100003"); archived = $false },
-    [PSCustomObject]@{ projectCode = "HR-180"; projectName = "HR Systems Update"; sector = "Corporate Services"; admins = @("000100004"); backupAdmins = @("000100001"); archived = $false },
-    [PSCustomObject]@{ projectCode = "NET-640"; projectName = "Network Refresh"; sector = "Infrastructure"; admins = @("000100002"); backupAdmins = @("000100005"); archived = $false },
-    [PSCustomObject]@{ projectCode = "DAT-390"; projectName = "Data Cleanup"; sector = "Data"; admins = @("000100003"); backupAdmins = @("000100004"); archived = $false },
-    [PSCustomObject]@{ projectCode = "QMS-730"; projectName = "Quality Review"; sector = "Quality"; admins = @("000100000", "000100001"); backupAdmins = @("000100002"); archived = $false }
+    [PSCustomObject]@{ projectCode = "OPS-410"; projectName = "Month-End Close"; sector = "Operations"; colorKey = "blue"; admins = @("000100001", "000100005"); backupAdmins = @("000100004"); archived = $false },
+    [PSCustomObject]@{ projectCode = "INF-330"; projectName = "Infrastructure Maintenance"; sector = "Infrastructure"; colorKey = "green"; admins = @("000100002", "000100005"); backupAdmins = @("000100003"); archived = $false },
+    [PSCustomObject]@{ projectCode = "APP-220"; projectName = "Portal Upgrade"; sector = "Applications"; colorKey = "violet"; admins = @("000100003", "000100005"); backupAdmins = @("000100002"); archived = $false },
+    [PSCustomObject]@{ projectCode = "CLT-120"; projectName = "Client Rollout"; sector = "Client Services"; colorKey = "teal"; admins = @("000100004"); backupAdmins = @("000100001", "000100005"); archived = $false },
+    [PSCustomObject]@{ projectCode = "SEC-510"; projectName = "Security Audit"; sector = "Security"; colorKey = "amber"; admins = @("000100002"); backupAdmins = @("000100000"); archived = $false },
+    [PSCustomObject]@{ projectCode = "FIN-275"; projectName = "Financial Reporting"; sector = "Finance"; colorKey = "coral"; admins = @("000100001"); backupAdmins = @("000100003"); archived = $false },
+    [PSCustomObject]@{ projectCode = "HR-180"; projectName = "HR Systems Update"; sector = "Corporate Services"; colorKey = "pink"; admins = @("000100004"); backupAdmins = @("000100001"); archived = $false },
+    [PSCustomObject]@{ projectCode = "NET-640"; projectName = "Network Refresh"; sector = "Infrastructure"; colorKey = "indigo"; admins = @("000100002"); backupAdmins = @("000100005"); archived = $false },
+    [PSCustomObject]@{ projectCode = "DAT-390"; projectName = "Data Cleanup"; sector = "Data"; colorKey = "graphite"; admins = @("000100003"); backupAdmins = @("000100004"); archived = $false },
+    [PSCustomObject]@{ projectCode = "QMS-730"; projectName = "Quality Review"; sector = "Quality"; colorKey = "mint"; admins = @("000100000", "000100001"); backupAdmins = @("000100002"); archived = $false }
 )
 
 $employeesByCode = @{}
@@ -365,7 +366,7 @@ for ($i = 0; $i -lt $entryEmployees.Count; $i++) {
     $projectAssignments[[string]$employee.code] = @($assigned | Sort-Object projectCode -Unique)
 }
 
-$todayBase = (Get-Date).Date
+$todayBase = $ReferenceDate.Date
 $entryStartHours = @(6, 7, 15, 16, 17, 18, 19)
 $entryStartMinutes = @(0, 15, 30, 45)
 $durationOptions = @(45, 60, 75, 90, 105, 120, 150, 180, 210)
@@ -412,10 +413,10 @@ for ($employeeIndex = 0; $employeeIndex -lt $employeeDefinitions.Count; $employe
 
             $message = ""
             if ($status -eq "rejected") {
-                $message = "A valider avec le superviseur avant approbation finale."
+                $message = "À valider avec le superviseur avant approbation finale."
             }
             elseif (($entryIndex + $employeeIndex) % 12 -eq 0) {
-                $message = "Note ajoutee pour le suivi mensuel."
+                $message = "Note ajoutée pour le suivi mensuel."
             }
 
             $entry = New-DemoEntry `
@@ -448,7 +449,8 @@ for ($employeeIndex = 0; $employeeIndex -lt $employeeDefinitions.Count; $employe
 
         if ($openEntryCodes -contains $employeeCode) {
             $project = $assignedProjects[0]
-            $openStart = (Get-Date).AddMinutes(-1 * (65 + ($employeeIndex % 5) * 12))
+            $openReference = if ($todayBase -eq (Get-Date).Date) { Get-Date } else { $todayBase.AddHours(16) }
+            $openStart = $openReference.AddMinutes(-1 * (65 + ($employeeIndex % 5) * 12))
             $openEntry = New-DemoEntry `
                 -Employee $employee `
                 -Project $project `
@@ -491,11 +493,21 @@ $history = @($history | Sort-Object @{ Expression = { try { [datetime]::ParseExa
 Write-JsonFile -Path (Join-Path -Path $dataPath -ChildPath "history.json") -Value $history -Depth 8
 Write-JsonFile -Path (Join-Path -Path $dataPath -ChildPath "users.json") -Value $users -Depth 8
 Write-JsonFile -Path (Join-Path -Path $dataPath -ChildPath "sessions.json") -Value @() -Depth 5
+$seedChangeId = [Guid]::NewGuid().ToString("N")
 Write-JsonFile -Path (Join-Path -Path $dataPath -ChildPath "sync-state.json") -Value ([PSCustomObject]@{
-    version      = 1
-    updatedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
-    category     = "seed"
-    resource     = "presentation-30x10"
+    version               = 1
+    changeId              = $seedChangeId
+    updatedAtUtc          = (Get-Date).ToUniversalTime().ToString("o")
+    category              = "seed"
+    resource              = "presentation-30x10"
+    employeeDataEpoch     = [Guid]::NewGuid().ToString("N")
+    employeeDataRevisions = [PSCustomObject]@{}
+}) -Depth 8
+Write-JsonFile -Path (Join-Path -Path $dataPath -ChildPath "data-schema.json") -Value ([PSCustomObject]@{
+    format               = "SAPHIR"
+    schemaVersion        = 1
+    minimumReaderVersion = 1
+    createdAtUtc         = (Get-Date).ToUniversalTime().ToString("o")
 }) -Depth 5
 
 Write-Host "Presentation data seed complete."
