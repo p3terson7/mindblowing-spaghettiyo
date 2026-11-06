@@ -410,8 +410,19 @@ function Get-Gc179EntryWorkSchedule {
     return "unconfirmed"
 }
 
+function Test-Gc179DiverseEntry {
+    param($Entry)
+
+    return ($null -ne $Entry -and $Entry.PSObject.Properties.Name -contains "entryType" -and
+        ([string]$Entry.entryType).Trim().ToLowerInvariant() -eq "diverse")
+}
+
 function Get-Gc179ExportDurationFields {
     param([Parameter(Mandatory = $true)]$Entry)
+
+    # Diverse time is exported for manual entitlement allocation, even if a
+    # legacy record happens to contain imported rate components.
+    if (Test-Gc179DiverseEntry -Entry $Entry) { return @{} }
 
     # A re-export must preserve the explicit entitlement columns from the form
     # when their total still matches the entry (including split-rate rows).
@@ -441,6 +452,10 @@ function Get-Gc179ExportDurationFields {
 
 function Assert-Gc179EntrySchedule {
     param([Parameter(Mandatory = $true)]$Entry)
+
+    # No rate is calculated for diverse time, so an unknown schedule must not
+    # prevent the employee from completing the GC179 manually.
+    if (Test-Gc179DiverseEntry -Entry $Entry) { return }
 
     if ((Get-Gc179EntryWorkSchedule -Entry $Entry) -eq "unconfirmed" -and (Get-Gc179ExportDurationFields -Entry $Entry).Count -eq 0) {
         throw ("L'horaire de l'entrée du {0} à {1} est à confirmer. Un superviseur doit ouvrir Modifier et choisir Horaire régulier ou Temps comprimé avant l'export GC179." -f $Entry.date, $Entry.punchIn)
@@ -554,14 +569,6 @@ function Test-Gc179ExportableEntry {
         return $false
     }
 
-    $entryType = "overtime"
-    if ($Entry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.entryType)) {
-        $entryType = ([string]$Entry.entryType).Trim().ToLowerInvariant()
-    }
-    if ($entryType -eq "diverse") {
-        return $false
-    }
-
     if ([string]::IsNullOrWhiteSpace([string]$Entry.punchIn) -or [string]::IsNullOrWhiteSpace([string]$Entry.punchOut)) {
         return $false
     }
@@ -659,12 +666,24 @@ function New-Gc179FdfExportPart {
             }
 
             if ($null -ne $entryDate) {
+                $isDiverse = Test-Gc179DiverseEntry -Entry $entry
+                $reasonCode = if ($isDiverse) { "D" } else { [string]$entry.reasonCode }
+                $overtimeCode = if ($isDiverse) { "260" } else { [string]$entry.overtimeCode }
+                $paymentOption = if ($isDiverse) { "cash" } else { [string]$entry.paymentOption }
                 Add-Gc179FdfTextField -Builder $builder -Name ("DayofWeek.{0}" -f $index) -Value (ConvertTo-Gc179DayText -Date $entryDate)
-                Add-Gc179FdfTextField -Builder $builder -Name ("OTCODE.{0}" -f $index) -Value ([string]$entry.reasonCode)
+                Add-Gc179FdfTextField -Builder $builder -Name ("OTCODE.{0}" -f $index) -Value $reasonCode
                 Add-Gc179FdfTextField -Builder $builder -Name ("DayWorked.{0}" -f $index) -Value (ConvertTo-Gc179WeekdayText -Date $entryDate)
                 Add-Gc179FdfTextField -Builder $builder -Name ("StartTime.{0}" -f $index) -Value (ConvertTo-Gc179TimeText -TimeText ([string]$entry.punchIn))
                 Add-Gc179FdfTextField -Builder $builder -Name ("EndTime.{0}" -f $index) -Value (ConvertTo-Gc179TimeText -TimeText ([string]$entry.punchOut))
-                Add-Gc179FdfTextField -Builder $builder -Name ("OvertimeCode.{0}" -f $index) -Value ([string]$entry.overtimeCode)
+                Add-Gc179FdfTextField -Builder $builder -Name ("OvertimeCode.{0}" -f $index) -Value $overtimeCode
+
+                if ($isDiverse) {
+                    # Export-only defaults: never rewrite the source entry or
+                    # let diverse time consume an overtime rate threshold.
+                    Add-Gc179DurationFields -Builder $builder -RowIndex $index -DurationFields @{}
+                    Add-Gc179FdfNameField -Builder $builder -Name (Get-Gc179PaymentFieldName -RowIndex $index) -ValueName (Get-Gc179PaymentValueName -PaymentOption $paymentOption)
+                    continue
+                }
 
                 $category = Get-Gc179EntryDurationCategory -OvertimeCode ([string]$entry.overtimeCode)
                 $usageKey = "{0}|{1}" -f ([string]$entry.date), $category
@@ -688,7 +707,7 @@ function New-Gc179FdfExportPart {
                 ) -and $durationHours -gt 0) {
                     $creditedHoursByDayAndCategory[$usageKey] = $previouslyCreditedHours + $durationHours
                 }
-                Add-Gc179FdfNameField -Builder $builder -Name (Get-Gc179PaymentFieldName -RowIndex $index) -ValueName (Get-Gc179PaymentValueName -PaymentOption ([string]$entry.paymentOption))
+                Add-Gc179FdfNameField -Builder $builder -Name (Get-Gc179PaymentFieldName -RowIndex $index) -ValueName (Get-Gc179PaymentValueName -PaymentOption $paymentOption)
                 continue
             }
         }
@@ -713,6 +732,7 @@ function New-Gc179FdfExportPart {
 
     $includesTimePayment = @(
         $entries | Where-Object {
+            -not (Test-Gc179DiverseEntry -Entry $_) -and
             (Get-Gc179PaymentValueName -PaymentOption ([string]$_.paymentOption)) -eq "2"
         }
     ).Count -gt 0
