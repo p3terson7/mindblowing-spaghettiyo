@@ -15,7 +15,15 @@ if ($request.Url.AbsolutePath -match "^/compensation-grid/?$") {
     if ($request.HttpMethod -eq "GET") {
         try {
             $grid = Get-CompensationGrid
-            respondWithSuccess $response ($grid | ConvertTo-Json -Depth 12)
+            # The bundled defaults are already in memory from startup. Offer
+            # IT-02 as an explicit, editable addition for existing installs;
+            # reading Settings must never overwrite the shared salary grid.
+            respondWithSuccess $response (([PSCustomObject]@{
+                schemaVersion = $grid.schemaVersion
+                currency = $grid.currency
+                bands = @($grid.bands)
+                suggestedBands = @($defaultCompensationGrid.bands | Where-Object { $_.group -eq "IT" -and $_.subGroup -eq "02" })
+            }) | ConvertTo-Json -Depth 12)
         }
         catch {
             Rethrow-HttpStatusException -Exception $_.Exception

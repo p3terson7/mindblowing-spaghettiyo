@@ -29,6 +29,11 @@
             $payloadDiverseSummary = if ($diverseSummaryProvided) { ([string]$payload.diverseSummary).Trim() } else { "" }
             $workScheduleProvided = ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "workSchedule"))
             $requestedWorkSchedule = if ($workScheduleProvided) { ([string]$payload.workSchedule).Trim().ToLowerInvariant() } else { "" }
+            $holidayScheduleProvided = ($null -ne $payload -and $payload.PSObject.Properties.Name -contains "holidayNotScheduledWorkday")
+            if ($holidayScheduleProvided -and $null -ne $payload.holidayNotScheduledWorkday -and $payload.holidayNotScheduledWorkday -isnot [bool]) {
+                respondWithError $response 400 "holidayNotScheduledWorkday must be true, false or null."
+                continue
+            }
 
             if ([string]::IsNullOrWhiteSpace($date) -or ([string]::IsNullOrWhiteSpace($entryId) -and [string]::IsNullOrWhiteSpace($originalPunchIn))) {
                 respondWithError $response 400 "Missing required identifier: date and entryId/originalPunchIn are required."
@@ -320,9 +325,9 @@
 
                 Set-EntryPropertyValue -Entry $existingEntry -Name "date" -Value $updatedEntryDate
                 $existingEntry.punchIn = $newRoundedPunchIn
-                $existingEntry.exactPunchIn = $newExactPunchIn
+                Set-EntryPropertyValue -Entry $existingEntry -Name "exactPunchIn" -Value $newExactPunchIn
                 $existingEntry.punchOut = $newRoundedPunchOut
-                $existingEntry.exactPunchOut = $newExactPunchOut
+                Set-EntryPropertyValue -Entry $existingEntry -Name "exactPunchOut" -Value $newExactPunchOut
                 if ($newRoundedPunchOut) {
                     Clear-EntryForgottenClockOutReview -Entry $existingEntry
                 }
@@ -363,6 +368,10 @@
                     Set-EntryPropertyValue -Entry $existingEntry -Name "workScheduleSource" -Value "supervisor-edit"
                 }
                 Set-EntrySupervisorNote -Entry $existingEntry -Note $managerMessage -CurrentUser $currentUser | Out-Null
+                if ($holidayScheduleProvided -and $existingEntryType -ne "diverse") {
+                    Set-EntryPropertyValue -Entry $existingEntry -Name "holidayNotScheduledWorkday" -Value $payload.holidayNotScheduledWorkday
+                    $messages += "IT holiday schedule confirmed or reset."
+                }
                 Update-EntryComputedOvertime -Entry $existingEntry
                 if (Get-Command -Name Set-ApprovedEntryCompensationSnapshots -ErrorAction SilentlyContinue) {
                     Set-ApprovedEntryCompensationSnapshots -EmployeeCode $employeeCode -Entries $existingData | Out-Null

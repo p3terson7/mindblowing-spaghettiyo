@@ -302,6 +302,7 @@ function buildApprovalCard(entry, showActions) {
     `data-projectcode="${escapeHtml(entry.projectCode || "")}"`,
     `data-entrytype="${escapeHtml(getEntryType(entry))}"`,
     `data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}"`,
+    `data-holidaynotscheduled="${typeof entry.holidayNotScheduledWorkday === "boolean" ? entry.holidayNotScheduledWorkday : ""}"`,
     `data-diversereason="${escapeHtml(entry.diverseReason || "")}"`,
     `data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`,
     `data-workcomment="${escapeHtml(entry.workComment || "")}"`,

@@ -147,9 +147,9 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-dashboard-history-v1",
-  dashboard: "scripts/Views/DashboardView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-history-v1",
-  approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1-views-20261015-v1-money-v1-review-cards-v1-review-pages-v1-no-dashboard-history-v1",
+  employees: "scripts/Views/EmployeesView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-dashboard-history-v1-it-v1",
+  dashboard: "scripts/Views/DashboardView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-history-v1-it-v1",
+  approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1-views-20261015-v1-money-v1-review-cards-v1-review-pages-v1-no-dashboard-history-v1-it-v1",
   history: "scripts/Views/HistoryView.js?v=20261008-loading-performance-v1-views-20261015-v1",
   projects: "scripts/Views/ProjectsView.js?v=20261008-loading-performance-v1-projects-lite-v1-period-nav-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1",
 };
@@ -293,6 +293,7 @@ const appShellState = {
   storedSessionLoaded: false,
   budgetPeriodConfiguration: null,
   compensationBands: [],
+  compensationSuggestedBands: [],
 };
 
 function loadScriptOnce(source) {
@@ -1360,6 +1361,32 @@ function getCompensationGridValidationError(bands) {
   return "";
 }
 
+function getCompensationIT02Additions(currentBands, suggestedBands) {
+  const existingClasses = new Set(currentBands.map(band => [band.group, band.subGroup, band.level].join("|")));
+  const existingIds = new Set(currentBands.map(band => band.id));
+  return (suggestedBands || []).map(normalizeCompensationBandForDisplay).filter(band => {
+    const key = [band.group, band.subGroup, band.level].join("|");
+    if (band.group !== "IT" || band.subGroup !== "02" || existingClasses.has(key)
+      || !Number.isSafeInteger(band.annualSalaryCents) || !band.effectiveFrom) return false;
+    existingClasses.add(key);
+    if (existingIds.has(band.id)) band.id = createCompensationBandId();
+    existingIds.add(band.id);
+    return true;
+  });
+}
+
+function addCompensationIT02Bands() {
+  if (!isSuperAdminUser()) return;
+  const currentBands = getCompensationGridBandsFromForm();
+  const additions = getCompensationIT02Additions(currentBands, appShellState.compensationSuggestedBands);
+  if (additions.length === 0) {
+    setCompensationGridSettingsMessage(t("settings.compensationIT02Exists"), "info");
+    return;
+  }
+  renderCompensationGridSettingsRows([...currentBands, ...additions]);
+  setCompensationGridSettingsMessage(t("settings.compensationIT02Added", { count: additions.length }), "info");
+}
+
 function addCompensationGridBand() {
   const currentBands = getCompensationGridBandsFromForm();
   const existingBands = currentBands.length > 0 ? currentBands : appShellState.compensationBands;
@@ -1377,10 +1404,12 @@ async function loadCompensationGrid() {
   }
 
   setCompensationGridSettingsMessage("");
+  appShellState.compensationSuggestedBands = [];
   renderCompensationGridLoading();
   try {
     const response = await fetch(apiUrl + COMPENSATION_GRID_ENDPOINT, { cache: "no-store" });
     const payload = await parseResponse(response);
+    appShellState.compensationSuggestedBands = Array.isArray(payload.suggestedBands) ? payload.suggestedBands : [];
     renderCompensationGridSettingsRows(getCompensationGridPayloadBands(payload));
   } catch (error) {
     renderCompensationGridSettingsRows([]);
@@ -2549,6 +2578,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("selfPasswordSaveButton").addEventListener("click", event => submitModalPasswordChange(event.currentTarget));
   document.getElementById("selfGc179ProfileSaveButton").addEventListener("click", event => submitSelfGc179Profile(event.currentTarget));
   document.getElementById("compensationGridAddButton").addEventListener("click", addCompensationGridBand);
+  document.getElementById("compensationGridAddIT02Button").addEventListener("click", addCompensationIT02Bands);
   document.getElementById("compensationGridSaveButton").addEventListener("click", event => saveCompensationGrid(event.currentTarget));
   bindGc179PriFormatter(document.getElementById("selfGc179PriInput"));
   bindGc179PriFormatter(document.getElementById("employeeEditorGc179PriInput"));

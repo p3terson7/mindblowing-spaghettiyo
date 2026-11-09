@@ -1,4 +1,5 @@
 function Get-SaphirOvertimeRateCatalog {
+    param([AllowNull()][string]$Group = "")
     <#
         Central, versioned source for overtime multipliers used by exports and
         future monetary analytics. Annual salaries are intentionally excluded:
@@ -6,7 +7,7 @@ function Get-SaphirOvertimeRateCatalog {
     #>
     return [PSCustomObject]@{
         schemaVersion = 1
-        agreement     = "PA"
+        agreement     = if (([string]$Group).Trim().ToUpperInvariant() -eq "IT") { "IT" } else { "PA" }
         thresholdHours = [decimal]7.5
         multipliers   = [PSCustomObject]@{
             timeAndHalf         = [decimal]1.5
@@ -23,16 +24,18 @@ function Get-SaphirOvertimeRateCatalog {
 }
 
 function Get-SaphirOvertimeMonetaryContract {
+    param([AllowNull()][string]$Group = "")
     <#
         Monetary results produced by this module are decision-support estimates,
         not payroll statements. Salary values remain administrator-managed, while
         the annual-to-hourly conversion and overtime multipliers are versioned
         business rules from the PA agreement.
     #>
+    $isIT = (([string]$Group).Trim().ToUpperInvariant() -eq "IT")
     return [PSCustomObject][ordered]@{
         schemaVersion          = 1
-        calculationVersion     = "PA-MONETARY-v1"
-        agreement              = "PA"
+        calculationVersion     = if ($isIT) { "IT-MONETARY-v1" } else { "PA-MONETARY-v1" }
+        agreement              = if ($isIT) { "IT" } else { "PA" }
         currency               = "CAD"
         resultStatus           = "estimated"
         costBasis              = "salary-only"
@@ -48,8 +51,8 @@ function Get-SaphirOvertimeMonetaryContract {
             segmentAllocation = "final-segment-adjustment"
         }
         paymentOptions         = @("cash", "leave")
-        source                 = "Treasury Board of Canada Secretariat, PA collective agreement"
-        sourceUrl              = "https://www.tbs-sct.canada.ca/agreements-conventions/download-fra.aspx?id=56"
+        source                 = if ($isIT) { "Treasury Board of Canada Secretariat, IT collective agreement, articles 7 and 9" } else { "Treasury Board of Canada Secretariat, PA collective agreement" }
+        sourceUrl              = if ($isIT) { "https://www.canada.ca/fr/secretariat-conseil-tresor/sujets/remuneration/conventions-collectives/it.html" } else { "https://www.tbs-sct.canada.ca/agreements-conventions/download-fra.aspx?id=56" }
     }
 }
 
@@ -70,7 +73,11 @@ function Get-SaphirOvertimeRatePlan {
     param(
         [AllowNull()][AllowEmptyString()][string]$OvertimeCode,
         [Parameter(Mandatory = $true)][ValidateSet("regular", "compressed")][string]$WorkSchedule,
-        [bool]$HolidayAdjacentToSecondRest = $false
+        [bool]$HolidayAdjacentToSecondRest = $false,
+        [AllowNull()][string]$Group = "",
+        [bool]$HolidayAdjacentToWorkedRest = $false,
+        [AllowNull()][Nullable[bool]]$HolidayNotScheduledWorkday = $null,
+        [bool]$ContinueAtDoubleTime = $false
     )
 
     $catalog = Get-SaphirOvertimeRateCatalog
@@ -78,6 +85,24 @@ function Get-SaphirOvertimeRatePlan {
     $timeAndHalf = [decimal]$catalog.multipliers.timeAndHalf
     $timeAndThreeQuarter = [decimal]$catalog.multipliers.timeAndThreeQuarter
     $doubleTime = [decimal]$catalog.multipliers.doubleTime
+
+    if (([string]$Group).Trim().ToUpperInvariant() -eq "IT") {
+        # IT 9.01(a-c): compressed schedules do not introduce PA's 1.75 rate.
+        # IT 9.01(d) additionally requires an unscheduled holiday, which cannot
+        # be inferred from a weekend or merely from code 263.
+        $adjacentRest = $HolidayAdjacentToWorkedRest -or $HolidayAdjacentToSecondRest
+        if ($category -eq "holiday" -and $adjacentRest -and $null -eq $HolidayNotScheduledWorkday -and -not $ContinueAtDoubleTime) {
+            return [PSCustomObject]@{ unavailableReason = "it-holiday-schedule-unconfirmed" }
+        }
+        $doubleOnly = $ContinueAtDoubleTime -or $category -eq "subsequent-day-rest" -or
+            ($category -eq "holiday" -and $adjacentRest -and [bool]$HolidayNotScheduledWorkday)
+        return [PSCustomObject]@{
+            category = $category; workSchedule = $WorkSchedule
+            baseMultiplier = if ($doubleOnly) { $doubleTime } else { $timeAndHalf }
+            thresholdHours = if ($doubleOnly) { $null } else { [decimal]7.5 }
+            excessMultiplier = if ($doubleOnly) { $null } else { $doubleTime }
+        }
+    }
 
     if ($WorkSchedule -eq "compressed" -and $category -ne "holiday") {
         # PA 25.27: variable-schedule overtime on workdays and rest days.
@@ -143,7 +168,11 @@ function Get-SaphirOvertimeRateSegments {
         [Parameter(Mandatory = $true)][ValidateSet("regular", "compressed")][string]$WorkSchedule,
         [Parameter(Mandatory = $true)][decimal]$Hours,
         [decimal]$PreviouslyCreditedHours = 0,
-        [bool]$HolidayAdjacentToSecondRest = $false
+        [bool]$HolidayAdjacentToSecondRest = $false,
+        [AllowNull()][string]$Group = "",
+        [bool]$HolidayAdjacentToWorkedRest = $false,
+        [AllowNull()][Nullable[bool]]$HolidayNotScheduledWorkday = $null,
+        [bool]$ContinueAtDoubleTime = $false
     )
 
     if ($Hours -le 0) {
@@ -156,7 +185,11 @@ function Get-SaphirOvertimeRateSegments {
     $plan = Get-SaphirOvertimeRatePlan `
         -OvertimeCode $OvertimeCode `
         -WorkSchedule $WorkSchedule `
-        -HolidayAdjacentToSecondRest $HolidayAdjacentToSecondRest
+        -HolidayAdjacentToSecondRest $HolidayAdjacentToSecondRest `
+        -Group $Group -HolidayAdjacentToWorkedRest $HolidayAdjacentToWorkedRest `
+        -HolidayNotScheduledWorkday $HolidayNotScheduledWorkday -ContinueAtDoubleTime $ContinueAtDoubleTime
+
+    if ($plan.PSObject.Properties.Name -contains "unavailableReason") { return @() }
 
     if ($null -eq $plan.thresholdHours) {
         return @([PSCustomObject]@{
@@ -222,7 +255,11 @@ function Get-SaphirOvertimeCostEstimate {
         [Parameter(Mandatory = $true)][int]$CreditedMinutes,
         [int]$PreviouslyCreditedMinutes = 0,
         [ValidateSet("cash", "leave")][string]$PaymentOption = "cash",
-        [bool]$HolidayAdjacentToSecondRest = $false
+        [bool]$HolidayAdjacentToSecondRest = $false,
+        [AllowNull()][string]$Group = "",
+        [bool]$HolidayAdjacentToWorkedRest = $false,
+        [AllowNull()][Nullable[bool]]$HolidayNotScheduledWorkday = $null,
+        [bool]$ContinueAtDoubleTime = $false
     )
 
     if ($AnnualSalaryCents -le 0) {
@@ -235,7 +272,7 @@ function Get-SaphirOvertimeCostEstimate {
         throw [System.ArgumentOutOfRangeException]::new("PreviouslyCreditedMinutes", "Previously credited minutes must be a non-negative multiple of 15.")
     }
 
-    $contract = Get-SaphirOvertimeMonetaryContract
+    $contract = Get-SaphirOvertimeMonetaryContract -Group $Group
     $baseResult = [ordered]@{
         schemaVersion                       = [int]$contract.schemaVersion
         calculationVersion                  = [string]$contract.calculationVersion
@@ -266,6 +303,16 @@ function Get-SaphirOvertimeCostEstimate {
         return [PSCustomObject]$baseResult
     }
 
+    $plan = Get-SaphirOvertimeRatePlan -OvertimeCode $OvertimeCode -WorkSchedule $WorkSchedule `
+        -Group $Group -HolidayAdjacentToSecondRest $HolidayAdjacentToSecondRest `
+        -HolidayAdjacentToWorkedRest $HolidayAdjacentToWorkedRest `
+        -HolidayNotScheduledWorkday $HolidayNotScheduledWorkday -ContinueAtDoubleTime $ContinueAtDoubleTime
+    if ($plan.PSObject.Properties.Name -contains "unavailableReason") {
+        $baseResult.calculationStatus = "unavailable"
+        $baseResult.unavailableReason = [string]$plan.unavailableReason
+        return [PSCustomObject]$baseResult
+    }
+
     $hourlyRateCents = ConvertTo-SaphirHourlyRateCents -AnnualSalaryCents $AnnualSalaryCents
     $baseResult.hourlyRateCents = [decimal]::Round($hourlyRateCents, 6, [System.MidpointRounding]::AwayFromZero)
 
@@ -276,7 +323,9 @@ function Get-SaphirOvertimeCostEstimate {
         -WorkSchedule $WorkSchedule `
         -Hours $creditedHours `
         -PreviouslyCreditedHours $previouslyCreditedHours `
-        -HolidayAdjacentToSecondRest $HolidayAdjacentToSecondRest)
+        -HolidayAdjacentToSecondRest $HolidayAdjacentToSecondRest `
+        -Group $Group -HolidayAdjacentToWorkedRest $HolidayAdjacentToWorkedRest `
+        -HolidayNotScheduledWorkday $HolidayNotScheduledWorkday -ContinueAtDoubleTime $ContinueAtDoubleTime)
 
     $segments = New-Object System.Collections.ArrayList
     $unroundedTotalCents = [decimal]0
@@ -308,6 +357,24 @@ function Get-SaphirOvertimeCostEstimate {
     return [PSCustomObject]$baseResult
 }
 
+function Test-SaphirOvertimeEntriesContinuous {
+    param($PreviousEntry, $Entry)
+
+    if ($null -eq $PreviousEntry -or $null -eq $Entry -or
+        [string]$PreviousEntry.entryType -eq "diverse" -or [string]$Entry.entryType -eq "diverse") { return $false }
+    $formats = [string[]]@("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm")
+    $culture = [System.Globalization.CultureInfo]::InvariantCulture
+    $styles = [System.Globalization.DateTimeStyles]::None
+    $start = [DateTime]::MinValue; $end = [DateTime]::MinValue; $next = [DateTime]::MinValue
+    $endTime = if ($PreviousEntry.exactPunchOut) { [string]$PreviousEntry.exactPunchOut } else { [string]$PreviousEntry.punchOut }
+    $nextTime = if ($Entry.exactPunchIn) { [string]$Entry.exactPunchIn } else { [string]$Entry.punchIn }
+    if (-not [DateTime]::TryParseExact(("{0} {1}" -f $PreviousEntry.date, $PreviousEntry.punchIn), $formats, $culture, $styles, [ref]$start) -or
+        -not [DateTime]::TryParseExact(("{0} {1}" -f $PreviousEntry.date, $endTime), $formats, $culture, $styles, [ref]$end) -or
+        -not [DateTime]::TryParseExact(("{0} {1}" -f $Entry.date, $nextTime), $formats, $culture, $styles, [ref]$next)) { return $false }
+    if ($end -lt $start) { $end = $end.AddDays(1) }
+    return ($end -eq $next)
+}
+
 Export-ModuleMember -Function @(
     "Get-SaphirOvertimeRateCatalog",
     "Get-SaphirOvertimeMonetaryContract",
@@ -315,5 +382,6 @@ Export-ModuleMember -Function @(
     "Get-SaphirOvertimeRatePlan",
     "Get-SaphirOvertimeRateSegments",
     "ConvertTo-SaphirHourlyRateCents",
-    "Get-SaphirOvertimeCostEstimate"
+    "Get-SaphirOvertimeCostEstimate",
+    "Test-SaphirOvertimeEntriesContinuous"
 )

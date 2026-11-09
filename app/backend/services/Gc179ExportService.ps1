@@ -354,7 +354,11 @@ function Get-Gc179CalculatedDurationFields {
         [Parameter(Mandatory = $true)]$Entry,
         [Parameter(Mandatory = $true)][bool]$CompressedWorkWeek,
         [double]$PreviouslyCreditedHours = 0,
-        [bool]$HolidayAdjacentToSecondRest = $false
+        [bool]$HolidayAdjacentToSecondRest = $false,
+        [AllowNull()][string]$Group = "",
+        [bool]$HolidayAdjacentToWorkedRest = $false,
+        [AllowNull()][Nullable[bool]]$HolidayNotScheduledWorkday = $null,
+        [bool]$ContinueAtDoubleTime = $false
     )
 
     $durationHours = 0.0
@@ -374,7 +378,9 @@ function Get-Gc179CalculatedDurationFields {
         -WorkSchedule $workSchedule `
         -Hours ([decimal]$durationHours) `
         -PreviouslyCreditedHours ([decimal]$PreviouslyCreditedHours) `
-        -HolidayAdjacentToSecondRest $HolidayAdjacentToSecondRest)
+        -HolidayAdjacentToSecondRest $HolidayAdjacentToSecondRest `
+        -Group $Group -HolidayAdjacentToWorkedRest $HolidayAdjacentToWorkedRest `
+        -HolidayNotScheduledWorkday $HolidayNotScheduledWorkday -ContinueAtDoubleTime $ContinueAtDoubleTime)
 
     foreach ($segment in $segments) {
         $rate = ([decimal]$segment.multiplier).ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)
@@ -641,6 +647,58 @@ function ConvertTo-Gc179ExportRows {
     }
 }
 
+function Get-Gc179PreparedExportRows {
+    param([AllowEmptyCollection()][object[]]$Entries, $HeaderValues, $WorkedDateSet)
+
+    $creditedHours = @{}
+    $previous = $null; $previousDouble = $false
+    foreach ($entry in $Entries) {
+        if ($entry.PSObject.Properties.Name -contains "_gc179DurationFields") { $entry; continue }
+        # Approved history carries its own classification. A later promotion
+        # must not switch old PA entries to IT rules (or the reverse).
+        $classification = if ([string]$entry.compensationSnapshot.snapshotStatus -eq "final" -and
+            -not [string]::IsNullOrWhiteSpace([string]$entry.compensationSnapshot.classification.group)) { $entry.compensationSnapshot.classification } else { $null }
+        $Group = if ($classification) { [string]$classification.group } else { [string]$HeaderValues.Group }
+        $subGroup = if ($classification) { [string]$classification.subGroup } else { [string]$HeaderValues.SubGroup }
+        $level = if ($classification) { [string]$classification.level } else { [string]$HeaderValues.Level }
+        $fields = @{}
+        if (-not (Test-Gc179DiverseEntry -Entry $entry)) {
+            $fields = Get-Gc179ExportDurationFields -Entry $entry
+            $category = Get-Gc179EntryDurationCategory -OvertimeCode ([string]$entry.overtimeCode)
+            $usageKey = "{0}|{1}" -f $entry.date, $category
+            $used = if ($creditedHours.ContainsKey($usageKey)) { [double]$creditedHours[$usageKey] } else { 0.0 }
+            $date = [DateTime]::MinValue
+            $validDate = [DateTime]::TryParseExact([string]$entry.date, "yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$date)
+            if ($fields.Count -eq 0 -and $validDate) {
+                $adjacentRest = $false
+                if ($Group -eq "IT" -and $category -eq "holiday") {
+                    foreach ($day in @($date.AddDays(-1), $date.AddDays(1))) {
+                        $key = $day.ToString("yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture)
+                        if ((Test-Gc179WorkedDateCode $WorkedDateSet $key "261") -or (Test-Gc179WorkedDateCode $WorkedDateSet $key "262")) { $adjacentRest = $true }
+                    }
+                }
+                $holidayNotScheduled = if ($entry.PSObject.Properties.Name -contains "holidayNotScheduledWorkday" -and $entry.holidayNotScheduledWorkday -is [bool]) { [bool]$entry.holidayNotScheduledWorkday } else { $null }
+                $continueDouble = $Group -eq "IT" -and $previousDouble -and (Saphir.OvertimeCompensation\Test-SaphirOvertimeEntriesContinuous -PreviousEntry $previous -Entry $entry)
+                $fields = Get-Gc179CalculatedDurationFields -Entry $entry `
+                    -CompressedWorkWeek ((Get-Gc179EntryWorkSchedule -Entry $entry) -eq "compressed") `
+                    -PreviouslyCreditedHours $used -Group $Group `
+                    -HolidayAdjacentToSecondRest ($category -eq "holiday" -and (Test-Gc179HolidayAdjacentToSecondRest $date $WorkedDateSet)) `
+                    -HolidayAdjacentToWorkedRest $adjacentRest -HolidayNotScheduledWorkday $holidayNotScheduled -ContinueAtDoubleTime $continueDouble
+            }
+            $hours = 0.0
+            if ([double]::TryParse((ConvertTo-Gc179DurationText -Entry $entry), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$hours)) { $creditedHours[$usageKey] = $used + $hours }
+        }
+        $copy = $entry.PSObject.Copy()
+        $copy | Add-Member -NotePropertyName _gc179DurationFields -NotePropertyValue $fields
+        $copy | Add-Member -NotePropertyName _gc179ExportGroup -NotePropertyValue $Group
+        $copy | Add-Member -NotePropertyName _gc179ExportSubGroup -NotePropertyValue $subGroup
+        $copy | Add-Member -NotePropertyName _gc179ExportLevel -NotePropertyValue $level
+        $copy
+        $previous = $entry
+        $previousDouble = @($fields.Keys | Where-Object { $_ -in @("RegTimeDouble", "FirstDayTimeDbl", "SubseqTimeDbl", "HolidayTimeDbl") -and [double]$fields[$_] -gt 0 }).Count -gt 0
+    }
+}
+
 function New-Gc179FdfExportPart {
     param(
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
@@ -664,6 +722,14 @@ function New-Gc179FdfExportPart {
     [void]$builder.AppendLine("/Fields [")
 
     $headerValues = Get-Gc179HeaderValues -EmployeeCode $EmployeeCode -MonthParts $MonthParts
+    $entries = @(Get-Gc179PreparedExportRows -Entries $entries -HeaderValues $headerValues -WorkedDateSet $WorkedDateSet)
+    $classes = @($entries | Group-Object _gc179ExportGroup, _gc179ExportSubGroup, _gc179ExportLevel)
+    if ($classes.Count -gt 1) { throw "A GC179 form cannot combine classifications. Export separate parts." }
+    if ($entries.Count -gt 0) {
+        $headerValues.Group = $entries[0]._gc179ExportGroup
+        $headerValues.SubGroup = $entries[0]._gc179ExportSubGroup
+        $headerValues.Level = $entries[0]._gc179ExportLevel
+    }
     if ($schedules.Count -eq 1) {
         $headerValues.WorkWeek = switch ($schedules[0]) {
             "regular" { "1" }
@@ -684,8 +750,6 @@ function New-Gc179FdfExportPart {
     Add-Gc179FdfTextField -Builder $builder -Name "PRI" -Value ([string]$headerValues.PRI)
     Add-Gc179FdfTextField -Builder $builder -Name "Level" -Value ([string]$headerValues.Level)
     Add-Gc179FdfNameField -Builder $builder -Name "WorkWeek" -ValueName ([string]$headerValues.WorkWeek)
-    $compressedWorkWeek = ([string]$headerValues.WorkWeek -eq "2")
-    $creditedHoursByDayAndCategory = @{}
 
     for ($index = 0; $index -lt 16; $index++) {
         if ($index -lt $entries.Count) {
@@ -717,28 +781,7 @@ function New-Gc179FdfExportPart {
                     continue
                 }
 
-                $category = Get-Gc179EntryDurationCategory -OvertimeCode ([string]$entry.overtimeCode)
-                $usageKey = "{0}|{1}" -f ([string]$entry.date), $category
-                $previouslyCreditedHours = if ($creditedHoursByDayAndCategory.ContainsKey($usageKey)) { [double]$creditedHoursByDayAndCategory[$usageKey] } else { 0.0 }
-                $durationFields = Get-Gc179ExportDurationFields -Entry $entry
-                if ($durationFields.Count -eq 0) {
-                    $durationFields = Get-Gc179CalculatedDurationFields `
-                        -Entry $entry `
-                        -CompressedWorkWeek $compressedWorkWeek `
-                        -PreviouslyCreditedHours $previouslyCreditedHours `
-                        -HolidayAdjacentToSecondRest ($category -eq "holiday" -and (Test-Gc179HolidayAdjacentToSecondRest -EntryDate $entryDate -WorkedDateSet $WorkedDateSet))
-                }
-                Add-Gc179DurationFields -Builder $builder -RowIndex $index -DurationFields $durationFields
-
-                $durationHours = 0.0
-                if ([double]::TryParse(
-                    (ConvertTo-Gc179DurationText -Entry $entry),
-                    [System.Globalization.NumberStyles]::Float,
-                    [System.Globalization.CultureInfo]::InvariantCulture,
-                    [ref]$durationHours
-                ) -and $durationHours -gt 0) {
-                    $creditedHoursByDayAndCategory[$usageKey] = $previouslyCreditedHours + $durationHours
-                }
+                Add-Gc179DurationFields -Builder $builder -RowIndex $index -DurationFields $entry._gc179DurationFields
                 Add-Gc179FdfNameField -Builder $builder -Name (Get-Gc179PaymentFieldName -RowIndex $index) -ValueName (Get-Gc179PaymentValueName -PaymentOption $paymentOption)
                 continue
             }
@@ -794,15 +837,20 @@ function New-Gc179FdfExportSet {
     # at the form's 16-row boundary. Keep Entries as the original source count.
     $exportRows = @(ConvertTo-Gc179ExportRows -Entries $entries)
     $workedDateSet = Get-Gc179WorkedDateSet -EmployeeCode $EmployeeCode
+    $header = Get-Gc179HeaderValues -EmployeeCode $EmployeeCode -MonthParts $monthParts
+    $exportRows = @(Get-Gc179PreparedExportRows -Entries $exportRows -HeaderValues $header -WorkedDateSet $workedDateSet)
     # WorkWeek is a form-level choice: never let today's profile overwrite an
     # entry's historical schedule, and never mix schedules on a single form.
     $chunks = New-Object System.Collections.ArrayList
     foreach ($schedule in @("regular", "compressed", "unconfirmed")) {
         $scheduleEntries = @($exportRows | Where-Object { (Get-Gc179EntryWorkSchedule -Entry $_) -eq $schedule })
         foreach ($entry in $scheduleEntries) { Assert-Gc179EntrySchedule -Entry $entry }
-        for ($startIndex = 0; $startIndex -lt $scheduleEntries.Count; $startIndex += 16) {
-            $endIndex = [math]::Min($startIndex + 15, $scheduleEntries.Count - 1)
-            [void]$chunks.Add(@($scheduleEntries[$startIndex..$endIndex]))
+        foreach ($classGroup in @($scheduleEntries | Group-Object _gc179ExportGroup, _gc179ExportSubGroup, _gc179ExportLevel)) {
+            $classEntries = @($classGroup.Group)
+            for ($startIndex = 0; $startIndex -lt $classEntries.Count; $startIndex += 16) {
+                $endIndex = [math]::Min($startIndex + 15, $classEntries.Count - 1)
+                [void]$chunks.Add(@($classEntries[$startIndex..$endIndex]))
+            }
         }
     }
     if ($chunks.Count -eq 0) { [void]$chunks.Add(@()) }

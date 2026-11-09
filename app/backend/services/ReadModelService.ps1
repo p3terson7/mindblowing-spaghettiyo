@@ -491,7 +491,7 @@ function New-EmployeeEntryProjection {
     $workSchedule = Saphir.BusinessRules\ConvertTo-SaphirWorkSchedule -Value $(if ($Entry.PSObject.Properties.Name -contains "workSchedule") { [string]$Entry.workSchedule } else { "" })
     $reviewIssues = @(Get-EntryReviewIssues -Entry $Entry)
 
-    return [PSCustomObject]@{
+    $projection = [PSCustomObject]@{
         entryId       = Get-EntryIdentifierValue -Entry $Entry
         entryType     = $entryType
         workSchedule  = $workSchedule
@@ -526,6 +526,10 @@ function New-EmployeeEntryProjection {
         employeeName  = $EmployeeName
         employeeRole  = Get-NormalizedRoleName -Role $EmployeeRole
     }
+    if ($Entry.PSObject.Properties.Name -contains "holidayNotScheduledWorkday" -and $Entry.holidayNotScheduledWorkday -is [bool]) {
+        $projection | Add-Member -NotePropertyName holidayNotScheduledWorkday -NotePropertyValue ([bool]$Entry.holidayNotScheduledWorkday)
+    }
+    return $projection
 }
 
 function New-EntryMonetaryReadModel {

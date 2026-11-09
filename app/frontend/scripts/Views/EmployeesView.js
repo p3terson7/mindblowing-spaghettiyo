@@ -2326,7 +2326,7 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
       const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
       const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
       const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
-      const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}"`;
+      const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}" data-holidaynotscheduled="${typeof entry.holidayNotScheduledWorkday === "boolean" ? entry.holidayNotScheduledWorkday : ""}"`;
       const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
       const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
       const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
@@ -2828,7 +2828,7 @@ function renderEmployeeDetail(employee) {
       const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
       const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
       const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
-      const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}"`;
+      const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}" data-holidaynotscheduled="${typeof entry.holidayNotScheduledWorkday === "boolean" ? entry.holidayNotScheduledWorkday : ""}"`;
       const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
       const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
       const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
@@ -2894,7 +2894,7 @@ function renderEmployeeDetail(employee) {
           const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
           const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
           const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
-          const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}"`;
+          const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}" data-holidaynotscheduled="${typeof entry.holidayNotScheduledWorkday === "boolean" ? entry.holidayNotScheduledWorkday : ""}"`;
           const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
           const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
           const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;

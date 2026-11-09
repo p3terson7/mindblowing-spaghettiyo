@@ -305,7 +305,8 @@ try {
     Assert-Equal -Expected 200 -Actual $initialRead.StatusCode -Message "Super admin could not read the seeded compensation grid."
     Assert-Equal -Expected 1 -Actual ([int]$initialRead.Json.schemaVersion) -Message "Compensation grid schema changed."
     Assert-Equal -Expected "CAD" -Actual ([string]$initialRead.Json.currency) -Message "Compensation grid currency changed."
-    Assert-Equal -Expected 10 -Actual @($initialRead.Json.bands).Count -Message "The supplied salary bands were not all seeded."
+    Assert-Equal -Expected 18 -Actual @($initialRead.Json.bands).Count -Message "The supplied salary bands were not all seeded."
+    Assert-Equal -Expected 8 -Actual @($initialRead.Json.suggestedBands).Count -Message "Existing installations need the editable IT-02 suggestion."
 
     $initialBudgetRead = Invoke-TestRequest -Method "GET" -Uri "$baseUri/budget-periods" -Token $superToken
     Assert-Equal -Expected 200 -Actual $initialBudgetRead.StatusCode -Message "Super admin could not read the seeded budget periods."
@@ -401,7 +402,31 @@ try {
     $scheduleResult = @([IO.File]::ReadAllText($legacyDataFile) | ConvertFrom-Json | Where-Object entryId -eq 'schedule-na')[0]
     Assert-Equal -Expected 'final' -Actual $scheduleResult.compensationSnapshot.snapshotStatus -Message "Bulk schedule correction did not persist the newly available amount."
     Assert-True -Condition ($scheduleResult.compensationSnapshot.totalAmountCents -gt 0) -Message "Corrected schedule still has an N/A/zero amount."
-    Assert-Equal -Expected 11 -Actual @($validSave.Json.bands).Count -Message "The valid compensation update returned the wrong band count."
+    Assert-Equal -Expected 19 -Actual @($validSave.Json.bands).Count -Message "The valid compensation update returned the wrong band count."
+    foreach ($answer in @($true, $false)) {
+        $holidayEdit = Invoke-TestRequest -Method PUT -Uri "$baseUri/employee/000000002" -Token $superToken -Body @{
+            entryId = "schedule-na"; date = "2026-09-02"; message = "Confirm holiday schedule."; holidayNotScheduledWorkday = $answer
+        }
+        if ($holidayEdit.StatusCode -ne 200) {
+            Write-Host $holidayEdit.Body
+            Write-Host ([IO.File]::ReadAllText($stdout))
+            Write-Host ([IO.File]::ReadAllText($stderr))
+        }
+        Assert-Equal -Expected 200 -Actual $holidayEdit.StatusCode -Message "Supervisor could not record holiday schedule."
+        $holidayRead = Invoke-TestRequest -Method GET -Uri "$baseUri/employee/000000002" -Token $superToken
+        $holidayEntry = @($holidayRead.Json | Where-Object entryId -eq "schedule-na")[0]
+        Assert-Equal -Expected $answer -Actual $holidayEntry.holidayNotScheduledWorkday -Message "Holiday schedule was lost in the employee DTO."
+    }
+    $beforeInvalidHoliday = (Get-FileHash $legacyDataFile -Algorithm SHA256).Hash
+    $invalidHoliday = Invoke-TestRequest -Method PUT -Uri "$baseUri/employee/000000002" -Token $superToken -Body @{
+        entryId = "schedule-na"; date = "2026-09-02"; message = "Invalid holiday answer."; holidayNotScheduledWorkday = "false"
+    }
+    Assert-Equal -Expected 400 -Actual $invalidHoliday.StatusCode -Message "Holiday schedule strings must not be coerced into true."
+    Assert-Equal -Expected $beforeInvalidHoliday -Actual (Get-FileHash $legacyDataFile -Algorithm SHA256).Hash -Message "An invalid holiday edit changed DATA."
+    $deniedHoliday = Invoke-TestRequest -Method PUT -Uri "$baseUri/employee/000000002" -Token ([string]$legacyLogin.Json.token) -Body @{
+        entryId = "schedule-na"; date = "2026-09-02"; message = "Own holiday edit."; holidayNotScheduledWorkday = $true
+    }
+    Assert-Equal -Expected 403 -Actual $deniedHoliday.StatusCode -Message "Employees must not bypass supervisor-only entry corrections."
     Assert-Equal -Expected 5900000 -Actual (@($validSave.Json.bands | Where-Object { [string]$_.id -eq "cr-04-01-2026-h2" })[0]).annualSalaryCents -Message "The valid updated salary was not stored in cents."
     Assert-True -Condition ($initialGridHash -ne (Get-FileHash -LiteralPath $gridPath -Algorithm SHA256).Hash) -Message "A valid compensation update did not persist."
 

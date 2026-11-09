@@ -79,6 +79,7 @@ function Get-EntryCompensationSourceFingerprint {
         [AllowNull()]$CreditedMinutes,
         [int]$PreviouslyCreditedMinutes = 0,
         [bool]$HolidayAdjacentToSecondRest = $false,
+        [string]$CalculationContext = "",
         [AllowNull()][string]$UnavailableReason
     )
 
@@ -98,6 +99,7 @@ function Get-EntryCompensationSourceFingerprint {
         ([string][bool]$HolidayAdjacentToSecondRest),
         ([string]$UnavailableReason)
     )
+    if (-not [string]::IsNullOrWhiteSpace($CalculationContext)) { $values += $CalculationContext }
     $bytes = [System.Text.Encoding]::UTF8.GetBytes(($values -join [string][char]31))
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
     try {
@@ -209,7 +211,10 @@ function Set-ApprovedEntryCompensationSnapshots {
 
     $creditedMinutesByDateAndCategory = @{}
     $sortedEntries = @($approvedEntries.ToArray() | Sort-Object date, punchIn, entryId)
+    $previousEntry = $null
     foreach ($entry in $sortedEntries) {
+        $priorEntry = $previousEntry
+        $previousEntry = $entry
         $existingSnapshot = if ($entry.PSObject.Properties.Name -contains "compensationSnapshot") { $entry.compensationSnapshot } else { $null }
         $retainCapturedSnapshot = $MissingSnapshotsOnly -and $null -ne $existingSnapshot -and [string]$existingSnapshot.snapshotStatus -eq "final"
         $entryDate = [DateTime]::MinValue
@@ -304,6 +309,18 @@ function Set-ApprovedEntryCompensationSnapshots {
         $usageKey = "{0}|{1}" -f $entryDate.ToString("yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture), $category
         $previouslyCreditedMinutes = if ($creditedMinutesByDateAndCategory.ContainsKey($usageKey)) { [int]$creditedMinutesByDateAndCategory[$usageKey] } else { 0 }
         $holidayAdjacent = ($category -eq "holiday" -and (Test-ApprovedEntryHolidayAdjacentToSecondRest -EntryDate $entryDate -WorkedDateCodes $workedDateCodes))
+        $isIT = ([string]$assignment.group -eq "IT")
+        $adjacentWorkedRest = $false
+        if ($isIT -and $category -eq "holiday") {
+            foreach ($day in @($entryDate.AddDays(-1), $entryDate.AddDays(1))) {
+                $key = $day.ToString("yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture)
+                if ($workedDateCodes.ContainsKey($key) -and ($workedDateCodes[$key].ContainsKey("261") -or $workedDateCodes[$key].ContainsKey("262"))) { $adjacentWorkedRest = $true }
+            }
+        }
+        $holidayNotScheduled = if ($entry.PSObject.Properties.Name -contains "holidayNotScheduledWorkday" -and $entry.holidayNotScheduledWorkday -is [bool]) { [bool]$entry.holidayNotScheduledWorkday } else { $null }
+        $continueDouble = $isIT -and $null -ne $priorEntry -and
+            (Saphir.OvertimeCompensation\Test-SaphirOvertimeEntriesContinuous -PreviousEntry $priorEntry -Entry $entry) -and
+            @($priorEntry.compensationSnapshot.segments | Where-Object { [decimal]$_.multiplier -eq 2 }).Count -gt 0
         $estimate = Saphir.OvertimeCompensation\Get-SaphirOvertimeCostEstimate `
             -AnnualSalaryCents ([long]$salaryBand.annualSalaryCents) `
             -OvertimeCode ([string]$entry.overtimeCode) `
@@ -311,7 +328,9 @@ function Set-ApprovedEntryCompensationSnapshots {
             -CreditedMinutes ([int]$creditedMinutes) `
             -PreviouslyCreditedMinutes $previouslyCreditedMinutes `
             -PaymentOption $paymentOption `
-            -HolidayAdjacentToSecondRest:$holidayAdjacent
+            -HolidayAdjacentToSecondRest:$holidayAdjacent `
+            -Group ([string]$assignment.group) -HolidayAdjacentToWorkedRest $adjacentWorkedRest `
+            -HolidayNotScheduledWorkday $holidayNotScheduled -ContinueAtDoubleTime $continueDouble
 
         $sourceFingerprint = Get-EntryCompensationSourceFingerprint `
             -Entry $entry `
@@ -320,6 +339,7 @@ function Set-ApprovedEntryCompensationSnapshots {
             -CreditedMinutes $creditedMinutes `
             -PreviouslyCreditedMinutes $previouslyCreditedMinutes `
             -HolidayAdjacentToSecondRest:$holidayAdjacent `
+            -CalculationContext $(if ($isIT) { "IT-v1|$adjacentWorkedRest|$holidayNotScheduled|$continueDouble" } else { "" }) `
             -UnavailableReason ([string]$estimate.unavailableReason)
 
         $snapshot = [PSCustomObject][ordered]@{

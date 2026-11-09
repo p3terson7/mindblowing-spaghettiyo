@@ -746,7 +746,7 @@ function renderEmployeeEntries(employeeCode, entries) {
             const permissionBadge = getEntryPermissionBadgeMarkup(entry);
             const exactTimeLabel = getEntryExactTimeLabel(entry);
             const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
-            const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}"`;
+            const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}" data-holidaynotscheduled="${typeof entry.holidayNotScheduledWorkday === "boolean" ? entry.holidayNotScheduledWorkday : ""}"`;
             const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
             const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
             const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
@@ -1062,6 +1062,14 @@ async function openAddEntryModal(employeeCodeOverride = "", triggerButton = null
   });
 }
 
+function syncUpdateITHolidayField() {
+  const visible = document.getElementById("updateEntryType").value !== "diverse"
+    && document.getElementById("updateOvertimeCode").value === "263";
+  document.getElementById("updateITHolidayField").classList.toggle("d-none", !visible);
+}
+
+document.getElementById("updateOvertimeCode").addEventListener("change", syncUpdateITHolidayField);
+
 async function openUpdateModal(button, refreshPeopleEmployee = "") {
   const date = button.getAttribute("data-date");
   const originalPunchIn = button.getAttribute("data-punchin");
@@ -1101,6 +1109,9 @@ async function openUpdateModal(button, refreshPeopleEmployee = "") {
       document.getElementById("updateEntryForm").dataset.originalExactPunchOut = exactPunchOut || "";
       document.getElementById("updateEntryForm").dataset.originalWorkSchedule = workSchedule;
       document.getElementById("updateWorkSchedule").value = ["regular", "compressed"].includes(workSchedule) ? workSchedule : "";
+      const holidayValue = button.getAttribute("data-holidaynotscheduled") || "";
+      document.getElementById("updateITHolidaySchedule").value = holidayValue;
+      document.getElementById("updateEntryForm").dataset.originalHolidaySchedule = holidayValue;
       setUpdateEntryModalType(entryType);
 
       if (exactPunchIn) {
@@ -1140,6 +1151,7 @@ async function openUpdateModal(button, refreshPeopleEmployee = "") {
       }
 
       document.getElementById("updateEntryStatus").value = ["approved", "rejected", "pending"].includes(entryStatus) ? entryStatus : "pending";
+      syncUpdateITHolidayField();
       document.getElementById("originalEntryStatus").value = document.getElementById("updateEntryStatus").value;
       const updateModal = new bootstrap.Modal(document.getElementById("updateEntryModal"));
       updateModal.show();
@@ -1501,6 +1513,9 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
   const workScheduleInput = document.getElementById("updateWorkSchedule");
   const workSchedule = workScheduleInput.value;
   const originalWorkSchedule = document.getElementById("updateEntryForm").dataset.originalWorkSchedule || "unconfirmed";
+  const holidayValue = document.getElementById("updateITHolidaySchedule").value;
+  const originalHolidayValue = document.getElementById("updateEntryForm").dataset.originalHolidaySchedule || "";
+  const holidayNotScheduledWorkday = holidayValue === "" ? null : holidayValue === "true";
   const diverseReason = document.getElementById("updateDiverseReason").value.trim();
   const originalDiverseReason = document.getElementById("originalDiverseReason").value;
   const diverseSummary = document.getElementById("updateDiverseSummary").value.trim();
@@ -1560,7 +1575,7 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
     return;
   }
 
-  const overtimeFieldsUnchanged = projectCode === originalProjectCode && overtimeCode === originalOvertimeCode && paymentOption === originalPaymentOption && reasonCode === originalReasonCode && workComment === originalWorkComment;
+  const overtimeFieldsUnchanged = projectCode === originalProjectCode && overtimeCode === originalOvertimeCode && paymentOption === originalPaymentOption && reasonCode === originalReasonCode && workComment === originalWorkComment && holidayValue === originalHolidayValue;
   const diverseFieldsUnchanged = diverseReason === originalDiverseReason && diverseSummary === originalDiverseSummary;
   const typeSpecificFieldsUnchanged = entryType === "diverse" ? diverseFieldsUnchanged : overtimeFieldsUnchanged;
   if (newDate === originalDate && newPunchInBackend === originalExactPunchIn && punchOutBackend === originalExactPunchOut && workSchedule === originalWorkSchedule && typeSpecificFieldsUnchanged && entryStatus === originalEntryStatus) {
@@ -1580,7 +1595,7 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(entryType === "diverse"
           ? { entryId, entryType, workSchedule, date: originalDate, newDate, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, diverseReason, diverseSummary, status: entryStatus, message: managerMessage }
-          : { entryId, entryType, workSchedule, date: originalDate, newDate, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, paymentOption, reasonCode, workComment, status: entryStatus, message: managerMessage }),
+          : { entryId, entryType, workSchedule, ...(holidayValue !== originalHolidayValue ? { holidayNotScheduledWorkday } : {}), date: originalDate, newDate, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, paymentOption, reasonCode, workComment, status: entryStatus, message: managerMessage }),
       });
       await parseResponse(response);
       const refreshPeopleEmployee = document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee || "";

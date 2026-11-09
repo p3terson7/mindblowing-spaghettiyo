@@ -127,7 +127,7 @@ $templateValidation = Test-CompensationSalaryGridDocument -Value $template
 Assert-Equal -Expected $true -Actual ([bool]$templateValidation.isValid) -Message "The seeded compensation grid is invalid."
 Assert-Equal -Expected 1 -Actual ([int]$templateValidation.document.schemaVersion) -Message "Seeded salary grid schema version changed."
 Assert-Equal -Expected "CAD" -Actual ([string]$templateValidation.document.currency) -Message "Seeded salary grid currency changed."
-Assert-Equal -Expected 10 -Actual @($templateValidation.document.bands).Count -Message "Seeded salary grid must contain all supplied salary bands."
+Assert-Equal -Expected 18 -Actual @($templateValidation.document.bands).Count -Message "Seeded salary grid must contain all supplied salary bands."
 
 $seededBandExpectations = @{
     "CR|04|01" = 5727100
@@ -140,12 +140,21 @@ $seededBandExpectations = @{
     "AS|04|01" = 8061200
     "AS|04|02" = 8367500
     "AS|04|03" = 8710800
+    "IT|02|01" = 8585400
+    "IT|02|02" = 8860300
+    "IT|02|03" = 9134800
+    "IT|02|04" = 9409500
+    "IT|02|05" = 9684400
+    "IT|02|06" = 9958900
+    "IT|02|07" = 10233500
+    "IT|02|08" = 10508000
 }
 foreach ($band in @($templateValidation.document.bands)) {
     $key = ("{0}|{1}|{2}" -f [string]$band.group, [string]$band.subGroup, [string]$band.level)
     Assert-True -Condition $seededBandExpectations.ContainsKey($key) -Message ("Unexpected seed band: {0}" -f $key)
     Assert-Equal -Expected $seededBandExpectations[$key] -Actual $band.annualSalaryCents -Message ("Seeded salary changed for {0}." -f $key)
-    Assert-Equal -Expected "2026-01-01" -Actual $band.effectiveFrom -Message ("Seeded effective date changed for {0}." -f $key)
+    $expectedFrom = if ($band.group -eq "IT") { "2024-12-22" } else { "2026-01-01" }
+    Assert-Equal -Expected $expectedFrom -Actual $band.effectiveFrom -Message ("Seeded effective date changed for {0}." -f $key)
 }
 
 Assert-Equal -Expected "CR" -Actual (ConvertTo-CompensationGridCode -Value " cr " -MaximumLength 6) -Message "Group normalization changed."

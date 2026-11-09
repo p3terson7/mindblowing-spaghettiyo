@@ -152,7 +152,7 @@ try {
     Assert-True -Condition (Test-Path -LiteralPath $compensationGridPath -PathType Leaf) -Message "legacy startup did not seed the shared compensation grid"
     $compensationGrid = [System.IO.File]::ReadAllText($compensationGridPath) | ConvertFrom-Json -ErrorAction Stop
     Assert-Equal -Expected "CAD" -Actual ([string]$compensationGrid.currency) -Message "legacy startup seeded the wrong compensation currency"
-    Assert-Equal -Expected 10 -Actual @($compensationGrid.bands).Count -Message "legacy startup did not seed every compensation band"
+    Assert-Equal -Expected 18 -Actual @($compensationGrid.bands).Count -Message "legacy startup did not seed every compensation band"
     $budgetPeriodsPath = Join-Path -Path $legacyFolder -ChildPath "budget-periods.json"
     Assert-True -Condition (Test-Path -LiteralPath $budgetPeriodsPath -PathType Leaf) -Message "legacy startup did not seed the shared budget periods"
     $budgetPeriods = [System.IO.File]::ReadAllText($budgetPeriodsPath) | ConvertFrom-Json -ErrorAction Stop

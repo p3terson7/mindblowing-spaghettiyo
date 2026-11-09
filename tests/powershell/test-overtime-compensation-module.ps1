@@ -27,7 +27,7 @@ $repoRoot = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath "../..")).Pa
 $manifestPath = Join-Path -Path $repoRoot -ChildPath "app/backend/modules/Saphir.OvertimeCompensation.psd1"
 
 $manifest = Test-ModuleManifest -Path $manifestPath -ErrorAction Stop
-Assert-Equal -Expected "1.1.0" -Actual ([string]$manifest.Version) -Message "The monetary engine module version changed."
+Assert-Equal -Expected "1.2.0" -Actual ([string]$manifest.Version) -Message "The monetary engine module version changed."
 $expectedFunctions = @(
     "ConvertTo-SaphirHourlyRateCents",
     "Get-SaphirOvertimeCategory",
@@ -35,7 +35,8 @@ $expectedFunctions = @(
     "Get-SaphirOvertimeMonetaryContract",
     "Get-SaphirOvertimeRateCatalog",
     "Get-SaphirOvertimeRatePlan",
-    "Get-SaphirOvertimeRateSegments"
+    "Get-SaphirOvertimeRateSegments",
+    "Test-SaphirOvertimeEntriesContinuous"
 ) | Sort-Object
 Assert-Equal -Expected ($expectedFunctions -join ",") -Actual (@($manifest.ExportedFunctions.Keys | Sort-Object) -join ",") -Message "The monetary engine exports changed."
 
