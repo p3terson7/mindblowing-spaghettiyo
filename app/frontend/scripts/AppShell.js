@@ -150,8 +150,8 @@ const MANAGER_SCRIPT_SOURCE = {
   employees: "scripts/Views/EmployeesView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-dashboard-history-v1-it-v1",
   dashboard: "scripts/Views/DashboardView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-history-v1-it-v1",
   approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1-views-20261015-v1-money-v1-review-cards-v1-review-pages-v1-no-dashboard-history-v1-it-v1",
-  history: "scripts/Views/HistoryView.js?v=20261008-loading-performance-v1-views-20261015-v1",
-  projects: "scripts/Views/ProjectsView.js?v=20261008-loading-performance-v1-projects-lite-v1-period-nav-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1",
+  history: "scripts/Views/HistoryView.js?v=20261008-loading-performance-v1-views-20261015-v1-project-audit-v1",
+  projects: "scripts/Views/ProjectsView.js?v=20261008-loading-performance-v1-projects-lite-v1-period-nav-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1-project-audit-v1",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],

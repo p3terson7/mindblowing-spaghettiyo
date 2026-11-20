@@ -20,6 +20,9 @@ assert(!i18nSource.includes("employees.seedDemoEntries"), "Removed demo-entry UI
 
 assert(indexSource.includes('id="projectEditorOriginalCodeInput"'), "The project editor does not retain the original dossier number.");
 assert(indexSource.includes('id="projectEditorDeleteButton"'), "The permanent project delete control is missing.");
+assert.match(indexSource, /id="employeeEditorRemoveButton" data-i18n="action.archive"/);
+assert.match(indexSource, /class="project-code-notice" data-i18n="projects.projectCodeWithoutER"/);
+assert.match(read("app/frontend/assets/apple-ui.css"), /\.project-code-notice\s*{\s*color: var\(--danger\)/);
 assert(projectsSource.includes('document.getElementById("projectEditorCodeInput").readOnly = false;'), "The dossier number remains read-only while editing.");
 assert(projectsSource.includes('encodeURIComponent(originalProjectCode)'), "Project updates are not routed through the original dossier number.");
 assert(projectsSource.includes('?permanent=true'), "The UI does not request permanent project deletion explicitly.");
@@ -38,6 +41,7 @@ for (const translationKey of [
   "projects.archiveConfirmCodeOnly",
   "projects.deleteConfirmCodeOnly",
   "history.message.projectCreatedWithoutName",
+  "projects.projectCodeWithoutER",
 ]) {
   const occurrences = i18nSource.split(`"${translationKey}"`).length - 1;
   assert.strictEqual(occurrences, 2, `${translationKey} must have both English and French translations.`);

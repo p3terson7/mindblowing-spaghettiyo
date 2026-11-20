@@ -32,6 +32,24 @@ function Clear-LocalProjectMutationCaches {
     }
 }
 
+function Get-ProjectHistoryChanges {
+    param($Before, $After)
+
+    foreach ($field in @("projectCode", "projectName", "sector", "admins", "backupAdmins", "colorKey", "markerKey", "archived")) {
+        $oldValue = if ($field -in @("admins", "backupAdmins")) { @(ConvertTo-CodeArray -Value $Before.$field | Sort-Object) -join ", " }
+            elseif ($field -eq "archived") { [bool](Test-ProjectArchived -Project $Before) }
+            elseif ($field -eq "colorKey") { Resolve-ProjectColorKey -ColorKey $Before.colorKey -ProjectCode $Before.projectCode }
+            elseif ($field -eq "markerKey") { Resolve-ProjectMarkerKey -MarkerKey $Before.markerKey -ProjectCode $Before.projectCode }
+            else { [string]$Before.$field }
+        $newValue = if ($field -in @("admins", "backupAdmins")) { @(ConvertTo-CodeArray -Value $After.$field | Sort-Object) -join ", " }
+            elseif ($field -eq "archived") { [bool](Test-ProjectArchived -Project $After) }
+            else { [string]$After.$field }
+        if ($oldValue -cne $newValue) {
+            [PSCustomObject]@{ field = $field; before = $oldValue; after = $newValue }
+        }
+    }
+}
+
 function Read-ProjectEmployeeEntriesStrict {
     param([Parameter(Mandatory = $true)][string]$Path)
 

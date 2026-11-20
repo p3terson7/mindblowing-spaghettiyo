@@ -288,6 +288,62 @@ try {
     $token = [string]$login.Json.token
     Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($token)) -Message "Login did not return a bearer token."
 
+    # Warm the history cache, then exercise the actual project write, history
+    # persistence and paged API with the same authenticated server process.
+    Invoke-TestHttpRequest -Method "GET" -Uri "$baseUri/history?page=1" -Token $token | Out-Null
+    $initialProjectName = "Legacy audit project"
+    $updatedProjectName = "New <audit> & project"
+    $createProject = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/projects" -Token $token -Body @{
+        projectCode = "AUDIT-P1"; projectName = $initialProjectName; sector = "Audit sector"
+    }
+    Assert-Equal 200 $createProject.StatusCode "Project creation failed."
+    Assert-Equal 0 @($createProject.Json.warnings).Count "Project creation emitted post-commit warnings."
+    $updateProject = Invoke-TestHttpRequest -Method "PUT" -Uri "$baseUri/projects/AUDIT-P1" -Token $token -Body @{
+        projectCode = "AUDIT-P2"; projectName = $updatedProjectName
+    }
+    Assert-Equal 200 $updateProject.StatusCode "The super admin could not change the project name and number."
+    Assert-Equal 0 @($updateProject.Json.warnings).Count "Project update emitted post-commit warnings."
+    $savedProject = @([IO.File]::ReadAllText((Join-Path $dataRoot "projects.json")) | ConvertFrom-Json | Where-Object projectCode -eq "AUDIT-P2")[0]
+    Assert-Equal $updatedProjectName $savedProject.projectName "The new project name was not saved."
+    Assert-Equal "Audit sector" $savedProject.sector "A partial project update reset the sector."
+    $unchangedProject = Invoke-TestHttpRequest -Method "PUT" -Uri "$baseUri/projects/AUDIT-P2" -Token $token -Body @{ projectName = $updatedProjectName }
+    Assert-Equal 200 $unchangedProject.StatusCode "A no-op project update should succeed."
+
+    foreach ($step in @(
+        @{ method = "DELETE"; path = "AUDIT-P2" },
+        @{ method = "DELETE"; path = "AUDIT-P2" }, # retry must not double-log archive
+        @{ method = "POST"; path = "AUDIT-P2/restore" },
+        @{ method = "DELETE"; path = "AUDIT-P2?permanent=true" }
+    )) {
+        $result = Invoke-TestHttpRequest -Method $step.method -Uri "$baseUri/projects/$($step.path)" -Token $token
+        Assert-Equal 200 $result.StatusCode "Project lifecycle request failed: $($step.method) $($step.path)."
+        Assert-Equal 0 @($result.Json.warnings).Count "Project lifecycle emitted post-commit warnings."
+    }
+    $referencedCode = [uri]::EscapeDataString([string]$legacyEntry.projectCode)
+    $referencedRename = Invoke-TestHttpRequest -Method "PUT" -Uri "$baseUri/projects/$referencedCode" -Token $token -Body @{ projectCode = "AUDIT-FORBIDDEN" }
+    Assert-Equal 409 $referencedRename.StatusCode "Changing a referenced project number must not break existing entries."
+    Assert-Equal $entryId (([IO.File]::ReadAllText($dataFile) | ConvertFrom-Json).entryId) "Project changes altered the linked entry."
+
+    $projectHistory = Invoke-TestHttpRequest -Method "GET" -Uri "$baseUri/history?page=1&search=AUDIT-P" -Token $token
+    Assert-Equal 200 $projectHistory.StatusCode "Paginated project history failed."
+    Assert-Equal 5 $projectHistory.Json.total "Expected one event for each successful project change."
+    foreach ($action in @("Add", "Update", "Archive", "Restore", "Delete")) {
+        $events = @($projectHistory.Json.items | Where-Object action -eq $action)
+        Assert-Equal 1 $events.Count "Missing or duplicated project history action: $action."
+        Assert-Equal "Integration Admin" $events[0].author "Project action lost the author name."
+        Assert-Equal "integration-admin" $events[0].authorUsername "Project action lost the author identity."
+        Assert-True -Condition (-not $events[0].targetEmployeeName) -Message "Project history must not be labeled as employee history."
+    }
+    Assert-Equal 2 $projectHistory.Json.counts.delete "Archive and deletion must both appear in the removal tab."
+    Assert-Equal 2 $projectHistory.Json.counts.update "Update and restore must both appear in the update tab."
+    $byOldName = Invoke-TestHttpRequest -Method "GET" -Uri "$baseUri/history?page=1&category=update&search=Legacy%20audit" -Token $token
+    Assert-Equal 1 $byOldName.Json.total "Updating a project lost search by its former name."
+    $changes = $byOldName.Json.items[0].projectChanges
+    Assert-Equal "AUDIT-P1" ($changes | Where-Object field -eq "projectCode").before "History lost the original project number."
+    Assert-Equal "AUDIT-P2" ($changes | Where-Object field -eq "projectCode").after "History lost the new project number."
+    Assert-Equal $initialProjectName ($changes | Where-Object field -eq "projectName").before "History lost the original project name."
+    Assert-Equal $updatedProjectName ($changes | Where-Object field -eq "projectName").after "History lost the new project name."
+
     $employeeResponse = Invoke-TestHttpRequest -Method "GET" -Uri "$baseUri/employee/$employeeCode" -Token $token
     Assert-Equal -Expected 200 -Actual $employeeResponse.StatusCode -Message "The one-entry employee endpoint failed."
     Assert-True -Condition $employeeResponse.Body.TrimStart().StartsWith("[") -Message "A one-entry API response must remain a JSON array."

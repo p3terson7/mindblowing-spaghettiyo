@@ -4840,3 +4840,8 @@ body.bug-report-image-viewer-open {
     animation-iteration-count: 1 !important;
   }
 }
+
+.project-code-notice {
+  color: var(--danger);
+  font-weight: 750;
+}

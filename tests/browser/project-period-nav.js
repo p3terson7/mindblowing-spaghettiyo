@@ -1,4 +1,4 @@
-// Isolated visual/navigation regression. Synthetic read-only API; no shared DATA.
+// Isolated visual/navigation regression. Synthetic in-memory API; no shared DATA.
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -15,6 +15,7 @@ const summary = Array.from({ length: 30 }, (_, i) => ({
 const requests = [];
 let releaseInitialBootstrap = null;
 let holdInitialBootstrap = true;
+let savedProjectEdit;
 const trends = Object.fromEntries([
   [1.25, 6, 8, 4, 7, 9, 5, 8, 10], [2, 3, 4, 6, 5, 7, 6, 4, 3],
   [0, 2, 6, 8, 7, 6, 3, 4, 2], [4, 5, 2, 7, 2, 6, 3, 4, 2],
@@ -25,6 +26,18 @@ const server = http.createServer((req, res) => {
   requests.push({ method: req.method, url });
   let data;
   if (url.pathname === "/auth/me") data = user;
+  else if (url.pathname === "/employees") data = [];
+  else if (req.method === "PUT" && url.pathname === "/projects/P1") {
+    let body = "";
+    req.on("data", chunk => { body += chunk; });
+    req.on("end", () => {
+      savedProjectEdit = JSON.parse(body);
+      Object.assign(summary[0], savedProjectEdit);
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ warnings: [] }));
+    });
+    return;
+  }
   else if (url.pathname === "/sync/status") data = { version: 1, changeId: "preview", category: "history", resource: "preview" };
   else if (url.pathname === "/projects/bootstrap") {
     const code = url.searchParams.get("projectCode");
@@ -199,13 +212,35 @@ function detail(code) {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(350);
     await page.screenshot({ path: "/tmp/saphir-project-period-light.png" });
+    assert(!requests.some(request => request.method !== "GET"), "The period test mutated data.");
+    await page.locator("#addProjectButton").click();
+    await page.waitForSelector("#projectEditorModal.show");
+    const notice = page.locator('label[for="projectEditorCodeInput"] .project-code-notice');
+    assert.equal(await notice.textContent(), "(sans ER)");
+    const noticeColor = () => notice.evaluate(el => getComputedStyle(el).color);
+    const lightNoticeColor = await noticeColor();
+    await page.evaluate(() => applyAppTheme("dark"));
+    assert.notEqual(await noticeColor(), lightNoticeColor, "The code hint should use the theme's danger color.");
+    await page.locator('#projectEditorModal [data-bs-dismiss="modal"]').first().click();
+    await page.waitForSelector("#projectEditorModal", { state: "hidden" });
+    await page.locator('.project-open-button[data-project-code="P1"]').click();
+    await page.waitForSelector("#projectWorkspace .project-workspace-metrics");
+    await page.locator("#projectWorkspaceEditButton").click();
+    await page.waitForSelector("#projectEditorModal.show");
+    assert.equal(await page.locator("#projectEditorCodeInput").inputValue(), "P1");
+    await page.locator("#projectEditorCodeInput").fill("P101");
+    await page.locator("#projectEditorNameInput").fill("Projet renommé");
+    await page.locator("#projectEditorSaveButton").click();
+    await page.waitForFunction(() => location.hash === "#projects/P101" && document.querySelector("#projectWorkspaceTitle").textContent === "Projet renommé");
+    assert.equal(savedProjectEdit.projectCode, "P101");
+    assert.equal(savedProjectEdit.projectName, "Projet renommé");
+    assert.equal(requests.filter(request => request.method === "PUT").length, 1);
     await page.locator("#navBugReports").click();
     await page.waitForSelector("#bugReportsView.active");
     assert(!await nav.isVisible(), "Project period navigation remains visible in other views.");
     assert.deepEqual(errors, []);
-    assert(!requests.some(request => request.method !== "GET"), "The period test mutated data.");
     assert(!requests.some(request => request.url.pathname === "/stats/budget-periods"), "Changing the global period loaded optional budget comparison.");
-    console.log("Projects period browser passed: sticky desktop/mobile, one-request filters, custom dates within a project, validation, keyboard, back navigation, themes and view visibility.");
+    console.log("Projects browser passed: period navigation, project creation hint in both themes, and editing the name and number while keeping the project detail open.");
   } finally {
     await browser.close();
     await new Promise(resolve => server.close(resolve));

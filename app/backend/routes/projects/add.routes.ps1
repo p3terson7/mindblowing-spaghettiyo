@@ -71,7 +71,7 @@
                         }
 
                         # Append the new project.
-                        $projects += [PSCustomObject]@{
+                        $savedProject = [PSCustomObject]@{
                             projectCode  = $projectCode
                             projectName  = $projectName
                             sector       = $sector
@@ -81,6 +81,7 @@
                             colorKey     = $colorKey
                             markerKey    = $markerKey
                         }
+                        $projects += $savedProject
                         Write-JsonArrayAtomic -Path $projectsFile -Items $projects -Depth 6
                         $script:ProjectsCache = $null
                         $projectMutationCommitted = $true
@@ -94,13 +95,14 @@
                 }
 
                 $historyWarning = Invoke-PostCommitActionSafely -Description "Project saved, but history logging failed" -Action {
+                    $safeName = [System.Net.WebUtility]::HtmlEncode($projectName)
                     $historyMessage = if ([string]::IsNullOrWhiteSpace($projectName)) {
                         "Created a project with code <strong>$projectCode</strong>."
                     }
                     else {
-                        "Created a project named <strong>$projectName</strong> with code <strong>$projectCode</strong>."
+                        "Created a project named <strong>$safeName</strong> with code <strong>$projectCode</strong>."
                     }
-                    logHistory "Add" $historyMessage ([string]$currentUser.displayName) -PublishChange:$false
+                    logHistory "Add" $historyMessage -Project $savedProject -Actor $currentUser -PublishChange:$false
                 }
                 if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
                     [void]$postCommitWarnings.Add($historyWarning)

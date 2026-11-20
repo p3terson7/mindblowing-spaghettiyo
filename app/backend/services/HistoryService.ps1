@@ -36,10 +36,11 @@ function Add-HistoryEntries {
     param(
         [Parameter(Mandatory = $true)]$Entries,
         [bool]$PublishChange = $true,
-        [string]$PublishResource = ""
+        [string]$PublishResource = "",
+        $Actor
     )
 
-    $historyActor = Get-HistoryCallerUser
+    $historyActor = if ($null -ne $Actor) { $Actor } else { Get-HistoryCallerUser }
     $actorName = Get-HistoryActorName -CurrentUser $historyActor
     $actorUsername = ""
     $actorRole = ""
@@ -72,21 +73,31 @@ function Add-HistoryEntries {
             ""
         }
 
-        if ([string]::IsNullOrWhiteSpace($action) -or [string]::IsNullOrWhiteSpace($message) -or [string]::IsNullOrWhiteSpace($employeeName)) {
+        $projectCode = [string]$entry.projectCode
+        if ([string]::IsNullOrWhiteSpace($action) -or [string]::IsNullOrWhiteSpace($message) -or
+            ([string]::IsNullOrWhiteSpace($employeeName) -and [string]::IsNullOrWhiteSpace($projectCode))) {
             continue
         }
 
-        $employeeNames[$employeeName] = $true
-        [void]$newEntries.Add([PSCustomObject]@{
+        $record = [ordered]@{
             action         = $action
             message        = $message
-            employee       = $employeeName
-            targetEmployee = $employeeName
             author         = $actorName
             authorUsername = $actorUsername
             authorRole     = $actorRole
             timestamp      = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-        })
+        }
+        if ($projectCode) {
+            $record.projectCode = $projectCode
+            $record.projectName = [string]$entry.projectName
+            $record.projectChanges = @($entry.projectChanges | Where-Object { $null -ne $_ })
+        }
+        else {
+            $employeeNames[$employeeName] = $true
+            $record.employee = $employeeName
+            $record.targetEmployee = $employeeName
+        }
+        [void]$newEntries.Add([PSCustomObject]$record)
     }
 
     if ($newEntries.Count -eq 0) {
@@ -134,12 +145,18 @@ function logHistory {
         $action,
         $message,
         $employeeName,
-        [bool]$PublishChange = $true
+        [bool]$PublishChange = $true,
+        $Project,
+        $ProjectChanges = @(),
+        $Actor
     )
 
     Add-HistoryEntries -Entries @([PSCustomObject]@{
         action       = $action
         message      = $message
         employeeName = $employeeName
-    }) -PublishChange:$PublishChange -PublishResource $employeeName | Out-Null
+        projectCode  = [string]$Project.projectCode
+        projectName  = [string]$Project.projectName
+        projectChanges = $ProjectChanges
+    }) -PublishChange:$PublishChange -PublishResource $employeeName -Actor $Actor | Out-Null
 }

@@ -31,7 +31,7 @@
   <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260603-empty-timeline" />
   <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260603-empty-timeline" />
   <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20261008-loading-performance-v1-period-nav-v1-no-dashboard-history-v1-flat-summary-v1">
-  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20261008-loading-performance-v1-review-cards-v1-review-pages-v1-period-nav-v2-no-dashboard-history-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1">
+  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20261008-loading-performance-v1-review-cards-v1-review-pages-v1-period-nav-v2-no-dashboard-history-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1-project-audit-v1">
 </head>
 <body>
   <div class="app-root">
@@ -681,7 +681,7 @@
                 <div class="filter-toolbar-row">
                   <div class="field-block filter-field filter-field-grow">
                     <label for="historySearchInput" class="filter-caption" data-i18n="filters.search">Search</label>
-                    <input type="text" id="historySearchInput" class="form-control" data-i18n-placeholder="history.search" placeholder="Filter audit history by employee, action, or message"/>
+                    <input type="text" id="historySearchInput" class="form-control" data-i18n-placeholder="history.search" placeholder="Filter by author, employee, project, action, or message"/>
                   </div>
                   <div class="field-block filter-field filter-range-field">
                     <span class="filter-caption" data-i18n="filters.period">Period</span>
@@ -1601,7 +1601,7 @@
           </form>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-danger d-none me-auto" id="employeeEditorRemoveButton" data-i18n="action.remove">Remove</button>
+          <button type="button" class="btn btn-outline-danger d-none me-auto" id="employeeEditorRemoveButton" data-i18n="action.archive">Archive</button>
           <button type="button" class="btn btn-outline-primary d-none me-auto" id="employeeEditorRestoreButton" data-i18n="employees.reinstate">Reinstate</button>
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
           <button type="button" class="btn btn-primary" id="employeeEditorSaveButton" data-i18n="action.saveChanges">Save Changes</button>
@@ -1623,7 +1623,7 @@
             <input type="hidden" id="projectEditorMode" value="create">
             <input type="hidden" id="projectEditorOriginalCodeInput" value="">
             <div class="field-block">
-              <label for="projectEditorCodeInput" class="form-label" data-i18n="projects.projectCode">Project Code</label>
+              <label for="projectEditorCodeInput" class="form-label"><span data-i18n="projects.projectCode">File number</span> <span class="project-code-notice" data-i18n="projects.projectCodeWithoutER">(without ER)</span></label>
               <input type="text" class="form-control" id="projectEditorCodeInput" autocomplete="off">
             </div>
             <div class="field-block">
@@ -1685,11 +1685,11 @@
       ? window.location.origin + "/"
       : "http://localhost:8081/";
   </script>
-  <script src="scripts/I18n.js?v=20261008-loading-performance-v1-money-20261015-v1-review-pages-v1-period-nav-v1-no-dashboard-history-v1-main-echarts-v1-it-v1"></script>
+  <script src="scripts/I18n.js?v=20261008-loading-performance-v1-money-20261015-v1-review-pages-v1-period-nav-v1-no-dashboard-history-v1-main-echarts-v1-it-v1-project-audit-v1"></script>
   <!-- Preserve the historical feature-version prefix; the new suffix still
        produces a different URL and invalidates cached JavaScript. -->
-  <script src="scripts/Utilities.js?v=20261008-loading-performance-v1-trace-20261014-v1-money-20261015-v1-chart-polish-v1"></script>
-  <script src="scripts/AppShell.js?v=20261008-loading-performance-v1-trace-20261014-v1-views-20261015-v1-money-v1-review-cards-v1-review-pages-v1-projects-lite-v1-period-nav-v1-no-dashboard-history-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1-it-v1"></script>
+  <script src="scripts/Utilities.js?v=20261008-loading-performance-v1-trace-20261014-v1-money-20261015-v1-chart-polish-v1-project-audit-v1"></script>
+  <script src="scripts/AppShell.js?v=20261008-loading-performance-v1-trace-20261014-v1-views-20261015-v1-money-v1-review-cards-v1-review-pages-v1-projects-lite-v1-period-nav-v1-no-dashboard-history-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1-it-v1-project-audit-v1"></script>
   <script src="scripts/Views/ViewSwitching.js?v=20261008-loading-performance-v1-views-20261015-v1"></script>
   <script src="scripts/Views/SelfView.js?v=20261008-loading-performance-v1-calendar-chronological-v1"></script>
 </body>

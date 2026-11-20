@@ -38,6 +38,7 @@ function Assert-True {
 
 $scriptRoot = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 $repoRoot = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath "../..")).Path
+. (Join-Path $repoRoot "app/backend/services/ProjectMutationService.ps1")
 $tempFolder = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("overtime-route-sync-test-{0}" -f ([Guid]::NewGuid().ToString("N")))
 $script:sharedFolder = $tempFolder
 $script:currentUser = [PSCustomObject]@{ username = "manager"; displayName = "Manager"; role = "super-admin" }
@@ -130,7 +131,10 @@ function logHistory {
         [string]$Action,
         [string]$Message,
         [string]$EmployeeName,
-        [bool]$PublishChange = $true
+        [bool]$PublishChange = $true,
+        $Project,
+        $ProjectChanges = @(),
+        $Actor
     )
     $script:HistoryCallCount++
     $script:LastHistoryPublishChange = $PublishChange

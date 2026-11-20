@@ -1049,6 +1049,16 @@ function getProjectByCode(projectCode) {
   return projectsViewState.projects.find(project => project.projectCode === projectCode) || null;
 }
 
+function notifyProjectMutation(result, successKey) {
+  if (Array.isArray(result?.warnings) && result.warnings.length) {
+    console.warn("Project change saved with warnings:", result.warnings);
+    showToast(t("projects.savedWithWarnings"), "warning");
+  } else {
+    showToast(t(successKey), "success");
+  }
+  window.invalidateReviewHistory?.();
+}
+
 function ensureProjectChartCanvas() {
   const chartStage = document.querySelector("#projectChartContainer .chart-stage");
   if (!chartStage) {
@@ -2946,7 +2956,6 @@ async function submitProjectEditor() {
   const markerKey = getSelectedProjectEditorMarkerKey();
   const admins = getProjectEditorAssignmentCodes("admins");
   const backupAdmins = getProjectEditorAssignmentCodes("backupAdmins");
-  const existingProject = mode === "edit" ? getProjectByCode(originalProjectCode) : null;
 
   if (!projectCode || (mode === "edit" && !originalProjectCode)) {
     setProjectEditorMessage(t("projects.codeAndNameRequired"), "danger");
@@ -2986,14 +2995,13 @@ async function submitProjectEditor() {
         markerKey,
         admins,
         backupAdmins,
-        archived: existingProject ? Boolean(existingProject.archived) : false,
       }),
     });
 
     if (response.status === 409) {
       throw new Error(t("projects.renameInUse"));
     }
-    await parseResponse(response);
+    const result = await parseResponse(response);
     invalidateProjectLookupCaches();
     const modal = bootstrap.Modal.getInstance(document.getElementById("projectEditorModal"));
     if (modal) {
@@ -3002,8 +3010,11 @@ async function submitProjectEditor() {
     resetProjectEditorForm();
     if (mode === "edit" && currentProjectCode === originalProjectCode) {
       currentProjectCode = projectCode;
+      if (projectsViewState.workspaceOpen && originalProjectCode !== projectCode) {
+        setProjectWorkspaceRoute(projectCode, { replace: true });
+      }
     }
-    showToast(t(mode === "create" ? "projects.projectCreated" : "projects.projectUpdated"), "success");
+    notifyProjectMutation(result, mode === "create" ? "projects.projectCreated" : "projects.projectUpdated");
     await refreshProjectsView();
   } catch (error) {
     console.error("Error saving project:", error);
@@ -3029,12 +3040,12 @@ async function archiveProject(project) {
     const response = await fetch(apiUrl + "projects/" + encodeURIComponent(project.projectCode), {
       method: "DELETE",
     });
-    await parseResponse(response);
+    const result = await parseResponse(response);
     invalidateProjectLookupCaches();
     if (currentProjectCode === project.projectCode) {
       currentProjectCode = null;
     }
-    showToast(t("projects.projectArchived"), "success");
+    notifyProjectMutation(result, "projects.projectArchived");
     await refreshProjectsView();
     return true;
   } catch (error) {
@@ -3062,12 +3073,12 @@ async function restoreProject(project) {
     const response = await fetch(apiUrl + "projects/" + encodeURIComponent(project.projectCode) + "/restore", {
       method: "POST",
     });
-    await parseResponse(response);
+    const result = await parseResponse(response);
     invalidateProjectLookupCaches();
     if (currentProjectCode === project.projectCode) {
       currentProjectCode = null;
     }
-    showToast(t("projects.projectRestored"), "success");
+    notifyProjectMutation(result, "projects.projectRestored");
     await refreshProjectsView();
     return true;
   } catch (error) {
@@ -3098,12 +3109,12 @@ async function deleteProject(project) {
     if (response.status === 409) {
       throw new Error(t("projects.deleteInUse"));
     }
-    await parseResponse(response);
+    const result = await parseResponse(response);
     invalidateProjectLookupCaches();
     if (currentProjectCode === project.projectCode) {
       currentProjectCode = null;
     }
-    showToast(t("projects.projectDeleted"), "success");
+    notifyProjectMutation(result, "projects.projectDeleted");
     await refreshProjectsView();
     return true;
   } catch (error) {

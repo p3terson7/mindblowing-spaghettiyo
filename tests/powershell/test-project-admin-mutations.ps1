@@ -88,7 +88,10 @@ function logHistory {
         [string]$Action,
         [string]$Message,
         [string]$EmployeeName,
-        [bool]$PublishChange = $true
+        [bool]$PublishChange = $true,
+        $Project,
+        $ProjectChanges = @(),
+        $Actor
     )
     $script:HistoryAction = $Action
     $script:HistoryMessage = $Message
@@ -406,7 +409,7 @@ try {
     Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "An archived project should be restorable."
     Assert-Equal -Expected $false -Actual ([bool]$script:Projects[0].archived) -Message "Project restore left the project archived."
     Assert-Equal -Expected 1 -Actual $script:WriteCount -Message "Project restore did not persist exactly one catalog change."
-    Assert-Equal -Expected "Update" -Actual $script:HistoryAction -Message "Project restore used the wrong history action."
+    Assert-Equal -Expected "Restore" -Actual $script:HistoryAction -Message "Project restore used the wrong history action."
     Assert-Equal -Expected "Restored the project <strong>P001</strong>." -Actual $script:HistoryMessage -Message "Project restore history was unclear."
     Assert-Equal -Expected 1 -Actual $script:PublishCount -Message "Project restore did not publish its catalog change."
     $restorePayload = $script:CapturedMessage | ConvertFrom-Json

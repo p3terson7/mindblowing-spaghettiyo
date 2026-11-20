@@ -46,7 +46,9 @@
 
                 if (-not $wasAlreadyActive) {
                     $historyWarning = Invoke-PostCommitActionSafely -Description "Project restored, but history logging failed" -Action {
-                        logHistory "Update" "Restored the project <strong>$projectCode</strong>." ([string]$currentUser.displayName) -PublishChange:$false
+                        $affectedProject = $projects[$projectIndex]
+                        $safeCode = [System.Net.WebUtility]::HtmlEncode([string]$affectedProject.projectCode)
+                        logHistory "Restore" "Restored the project <strong>$safeCode</strong>." -Project $affectedProject -Actor $currentUser -PublishChange:$false
                     }
                     if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
                         [void]$postCommitWarnings.Add($historyWarning)

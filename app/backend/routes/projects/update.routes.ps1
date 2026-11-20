@@ -18,12 +18,11 @@
             $requestedColorKey = if ($colorKeyWasProvided) { ([string]$payload.colorKey).Trim().ToLowerInvariant() } else { "" }
             $markerKeyWasProvided = ($payload.PSObject.Properties.Name -contains "markerKey")
             $requestedMarkerKey = if ($markerKeyWasProvided) { ([string]$payload.markerKey).Trim().ToLowerInvariant() } else { "" }
-            $projectCodeChanged = ($requestedProjectCode -cne $projectCode)
             if ($projectName.Length -gt 200) {
                 respondWithError $response 400 "Project name cannot exceed 200 characters."
                 continue
             }
-            if ($projectCodeChanged -and -not (Test-ProjectCodeFormat -ProjectCode $requestedProjectCode)) {
+            if ($requestedProjectCode -cne $projectCode -and -not (Test-ProjectCodeFormat -ProjectCode $requestedProjectCode)) {
                 respondWithError $response 400 "File number must be 1 to 64 characters and use letters, numbers, spaces, periods, underscores, or hyphens."
                 continue
             }
@@ -77,6 +76,12 @@
                             continue
                         }
 
+                        $before = $projects[$projectIndex]
+                        $projectCode = [string]$before.projectCode
+                        if ($payload.PSObject.Properties.Name -notcontains "projectCode") {
+                            $requestedProjectCode = $projectCode
+                        }
+                        $projectCodeChanged = ($requestedProjectCode -cne $projectCode)
                         if ($projectCodeChanged) {
                             $duplicateProject = $false
                             for ($i = 0; $i -lt $projects.Count; $i++) {
@@ -97,17 +102,24 @@
                             }
                         }
 
-                        $projects[$projectIndex].projectCode = $requestedProjectCode
-                        $projects[$projectIndex].projectName = $projectName
-                        $projects[$projectIndex].sector = $sector
-                        $projects[$projectIndex].admins = $admins
-                        $projects[$projectIndex].backupAdmins = $backupAdmins
-                        $projects[$projectIndex].archived = if ($archivedWasProvided) { $archived } else { Test-ProjectArchived -Project $projects[$projectIndex] }
-                        $existingColorKey = if ($projects[$projectIndex].PSObject.Properties.Name -contains "colorKey") { [string]$projects[$projectIndex].colorKey } else { "" }
-                        [void](Set-ProjectRecordColorKey -Project $projects[$projectIndex] -ColorKey $(if ($colorKeyWasProvided) { $requestedColorKey } else { $existingColorKey }))
-                        $existingMarkerKey = if ($projects[$projectIndex].PSObject.Properties.Name -contains "markerKey") { [string]$projects[$projectIndex].markerKey } else { "" }
-                        [void](Set-ProjectRecordMarkerKey -Project $projects[$projectIndex] -MarkerKey $(if ($markerKeyWasProvided) { $requestedMarkerKey } else { $existingMarkerKey }))
+                        $savedProject = $before.PSObject.Copy()
+                        $savedProject.projectCode = $requestedProjectCode
+                        if ($payload.PSObject.Properties.Name -contains "projectName") { $savedProject.projectName = $projectName }
+                        if ($payload.PSObject.Properties.Name -contains "sector") { $savedProject.sector = $sector }
+                        if ($payload.PSObject.Properties.Name -contains "admins") { $savedProject.admins = $admins }
+                        if ($payload.PSObject.Properties.Name -contains "backupAdmins") { $savedProject.backupAdmins = $backupAdmins }
+                        if ($archivedWasProvided) { $savedProject.archived = $archived }
+                        $existingColorKey = Resolve-ProjectColorKey -ColorKey $before.colorKey -ProjectCode $projectCode
+                        $existingMarkerKey = Resolve-ProjectMarkerKey -MarkerKey $before.markerKey -ProjectCode $projectCode
+                        [void](Set-ProjectRecordColorKey -Project $savedProject -ColorKey $(if ($colorKeyWasProvided) { $requestedColorKey } else { $existingColorKey }))
+                        [void](Set-ProjectRecordMarkerKey -Project $savedProject -MarkerKey $(if ($markerKeyWasProvided) { $requestedMarkerKey } else { $existingMarkerKey }))
+                        $projectChanges = @(Get-ProjectHistoryChanges -Before $before -After $savedProject)
+                        if ($projectChanges.Count -eq 0) {
+                            respondWithSuccess $response '{"message":"No project changes.","warnings":[]}'
+                            continue
+                        }
 
+                        $projects[$projectIndex] = $savedProject
                         Write-JsonArrayAtomic -Path $projectsFile -Items $projects -Depth 6
                         $script:ProjectsCache = $null
                         $projectMutationCommitted = $true
@@ -121,13 +133,15 @@
                 }
 
                 $historyWarning = Invoke-PostCommitActionSafely -Description "Project update saved, but history logging failed" -Action {
+                    $safeOldCode = [System.Net.WebUtility]::HtmlEncode($projectCode)
+                    $safeNewCode = [System.Net.WebUtility]::HtmlEncode($requestedProjectCode)
                     $historyMessage = if ($projectCodeChanged) {
-                        "Updated the project file number from <strong>$projectCode</strong> to <strong>$requestedProjectCode</strong>."
+                        "Updated the project file number from <strong>$safeOldCode</strong> to <strong>$safeNewCode</strong>."
                     }
                     else {
-                        "Updated the project <strong>$projectCode</strong>."
+                        "Updated the project <strong>$safeOldCode</strong>."
                     }
-                    logHistory "Update" $historyMessage ([string]$currentUser.displayName) -PublishChange:$false
+                    logHistory "Update" $historyMessage -Project $savedProject -ProjectChanges $projectChanges -Actor $currentUser -PublishChange:$false
                 }
                 if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {
                     [void]$postCommitWarnings.Add($historyWarning)

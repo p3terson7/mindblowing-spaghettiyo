@@ -35,6 +35,7 @@
                             continue
                         }
 
+                        $affectedProject = $projects[$projectIndex]
                         if ($permanentDelete) {
                             $referenceSummary = Get-ProjectEntryReferenceSummary -ProjectCode $projectCode
                             if ([int]$referenceSummary.referenceCount -gt 0) {
@@ -67,11 +68,12 @@
 
                 if ($permanentDelete -or -not $wasAlreadyArchived) {
                     $historyWarning = Invoke-PostCommitActionSafely -Description "Project removal saved, but history logging failed" -Action {
+                        $safeCode = [System.Net.WebUtility]::HtmlEncode([string]$affectedProject.projectCode)
                         if ($permanentDelete) {
-                            logHistory "Delete" "Permanently deleted the project <strong>$projectCode</strong>." ([string]$currentUser.displayName) -PublishChange:$false
+                            logHistory "Delete" "Permanently deleted the project <strong>$safeCode</strong>." -Project $affectedProject -Actor $currentUser -PublishChange:$false
                         }
                         else {
-                            logHistory "Archive" "Archived the project <strong>$projectCode</strong>." ([string]$currentUser.displayName) -PublishChange:$false
+                            logHistory "Archive" "Archived the project <strong>$safeCode</strong>." -Project $affectedProject -Actor $currentUser -PublishChange:$false
                         }
                     }
                     if (-not [string]::IsNullOrWhiteSpace($historyWarning)) {

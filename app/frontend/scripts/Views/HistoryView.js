@@ -96,7 +96,7 @@ function getActionBadgeHtml(action) {
         ? "approved"
         : normalizedAction === "rejected"
           ? "rejected"
-          : normalizedAction === "delete"
+          : normalizedAction === "delete" || normalizedAction === "archive"
             ? "delete"
             : "update";
   return `<span class="action-badge ${tone}">${escapeHtml(translateHistoryAction(action || "event"))}</span>`;
@@ -128,11 +128,11 @@ function groupHistoryEntries(entries) {
     const action = String(entry.action || "").toLowerCase();
     if (action === "add") {
       categories.add.push(entry);
-    } else if (action === "update") {
+    } else if (action === "update" || action === "restore") {
       categories.update.push(entry);
     } else if (action === "approved" || action === "rejected") {
       categories.approval.push(entry);
-    } else if (action === "delete") {
+    } else if (action === "delete" || action === "archive") {
       categories.delete.push(entry);
     }
   });
@@ -169,6 +169,31 @@ function setActiveHistoryLoadingState() {
   setLoadingState(activeConfig.containerId, "activity", activeConfig.skeletonCount);
 }
 
+function renderProjectHistory(entry) {
+  const projectLabel = entry.projectName ? `${entry.projectName} (${entry.projectCode})` : entry.projectCode;
+  const fieldLabels = {
+    projectCode: "projects.projectCode", projectName: "history.projectName", sector: "projects.sector",
+    admins: "projects.admins", backupAdmins: "projects.backupAdmins", colorKey: "projects.color",
+    markerKey: "projects.marker", archived: "history.projectStatus",
+  };
+  function formatValue(field, value) {
+    if (value === "" || value == null) return t("history.projectEmptyValue");
+    if (field === "archived") return t(value ? "projects.archived" : "history.projectActive");
+    if (field === "colorKey" || field === "markerKey") {
+      return t(`projects.${field === "colorKey" ? "color" : "marker"}.${value}`);
+    }
+    return String(value);
+  }
+  const changes = (Array.isArray(entry.projectChanges) ? entry.projectChanges : [])
+    .filter(change => change && Object.hasOwn(fieldLabels, change.field));
+  return `
+    <div class="timeline-card-subject">${escapeHtml(t("history.concernedProject", { name: projectLabel }))}</div>
+    ${changes.length ? `<ul class="timeline-card-message mb-0">${changes.map(({ field, before, after }) =>
+      `<li>${escapeHtml(t(fieldLabels[field]))}: ${escapeHtml(formatValue(field, before))} → <strong>${escapeHtml(formatValue(field, after))}</strong></li>`
+    ).join("")}</ul>` : ""}
+  `;
+}
+
 function renderHistoryList(container, entries) {
   const sortedEntries = (entries || []).slice().sort((left, right) => new Date(right.timestamp) - new Date(left.timestamp));
   if (sortedEntries.length === 0) {
@@ -185,8 +210,10 @@ function renderHistoryList(container, entries) {
         </div>
         ${getActionBadgeHtml(entry.action)}
       </div>
-      ${renderHistorySubjectLine(entry)}
-      <div class="timeline-card-message">${renderAuditMessage(entry.message || t("shared.noMessage"))}</div>
+      ${entry.projectCode ? renderProjectHistory(entry) : `
+        ${renderHistorySubjectLine(entry)}
+        <div class="timeline-card-message">${renderAuditMessage(entry.message || t("shared.noMessage"))}</div>
+      `}
     </article>
   `).join("")}</div>`;
 }

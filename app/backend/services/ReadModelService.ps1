@@ -932,6 +932,7 @@ function New-HistoryEntryReadModel {
     foreach ($property in @($Entry.PSObject.Properties)) {
         $projection | Add-Member -NotePropertyName ([string]$property.Name) -NotePropertyValue $property.Value
     }
+    if ($Entry.projectCode) { return $projection }
 
     $subject = ""
     foreach ($propertyName in @("targetEmployeeName", "targetEmployee", "subjectEmployee", "employee")) {
@@ -1029,13 +1030,17 @@ function Get-HistoryPage {
     $counts = @{ all = 0; add = 0; update = 0; approval = 0; delete = 0 }
     $filtered = New-Object Collections.ArrayList
     $tokens = @($Search.Trim() -split '\s+' | Where-Object { $_ })
-    $actionLabels = @{ add = "Added Ajoutée"; update = "Updated Modifiée"; approved = "Approved Approuvée"; rejected = "Rejected Rejetée"; delete = "Deleted Supprimée"; event = "Event Événement" }
+    $actionLabels = @{ add = "Added Ajoutée"; update = "Updated Modifiée"; approved = "Approved Approuvée"; rejected = "Rejected Rejetée"; delete = "Deleted Supprimée"; archive = "Archived Archivé"; restore = "Restored Réactivé"; event = "Event Événement" }
     foreach ($entry in $raw) {
         $date = ([string]$entry.timestamp -split '[ T]')[0]
         if (($StartDate -and $date -lt $StartDate) -or ($EndDate -and $date -gt $EndDate)) { continue }
         if ($tokens.Count) {
             $projection = New-HistoryEntryReadModel -Entry $entry -EmployeeNameMap $names
             $text = ($projection.PSObject.Properties.Value -join " ") + " " + $actionLabels[([string]$entry.action).ToLowerInvariant()]
+            if ($entry.projectCode) {
+                $text += " Project Projet"
+                foreach ($change in @($entry.projectChanges)) { $text += " $($change.before) $($change.after)" }
+            }
             $displayDate = [DateTime]::MinValue
             if ([DateTime]::TryParse([string]$entry.timestamp, [ref]$displayDate)) {
                 foreach ($culture in @("fr-CA", "en-CA")) { $text += " " + $displayDate.ToString("D", [Globalization.CultureInfo]::GetCultureInfo($culture)) }
@@ -1045,7 +1050,12 @@ function Get-HistoryPage {
             if (-not $matches) { continue }
         }
         $action = ([string]$entry.action).ToLowerInvariant()
-        $group = if ($action -in @("approved", "rejected")) { "approval" } else { $action }
+        $group = switch ($action) {
+            { $_ -in @("approved", "rejected") } { "approval" }
+            "archive" { "delete" }
+            "restore" { "update" }
+            default { $action }
+        }
         $counts.all++
         if ($counts.ContainsKey($group) -and $group -ne "all") { $counts[$group]++ }
         if ($Category -eq "all" -or $group -eq $Category) { [void]$filtered.Add($entry) }

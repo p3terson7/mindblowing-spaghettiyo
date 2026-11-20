@@ -28,13 +28,33 @@ const fixture = [
   { action: "Rejected" },
   { action: "Delete" },
   { action: "Seed" },
+  { action: "Archive" },
+  { action: "Restore" },
 ];
 const groupedFixture = context.groupHistoryEntries(fixture);
-assert.equal(groupedFixture.all.length, 6);
+assert.equal(groupedFixture.all.length, 8);
 assert.equal(groupedFixture.add.length, 1);
-assert.equal(groupedFixture.update.length, 1);
+assert.equal(groupedFixture.update.length, 2);
 assert.equal(groupedFixture.approval.length, 2);
-assert.equal(groupedFixture.delete.length, 1);
+assert.equal(groupedFixture.delete.length, 2);
+
+context.t = (key, args) => args ? `${key}: ${args.name}` : key;
+context.escapeHtml = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+const projectStart = source.indexOf("function renderProjectHistory(");
+const projectEnd = source.indexOf("function renderHistoryList(", projectStart);
+vm.runInContext(source.slice(projectStart, projectEnd), context);
+const projectMarkup = context.renderProjectHistory({
+  projectCode: "P2",
+  projectName: "<img src=x> & Co",
+  projectChanges: [
+    { field: "projectCode", before: "P1", after: "P2" },
+    { field: "projectName", before: "", after: "<img src=x> & Co" },
+  ],
+});
+assert.match(projectMarkup, /history\.concernedProject: &lt;img src=x&gt; &amp; Co \(P2\)/);
+assert.match(projectMarkup, /projects\.projectCode: P1 → <strong>P2<\/strong>/);
+assert.match(projectMarkup, /history\.projectEmptyValue/);
+assert.doesNotMatch(projectMarkup, /<img/);
 
 assert.match(source, /const HISTORY_FILTER_DEBOUNCE_MS = 150;/, "History filtering should stay debounced");
 assert.match(source, /addEventListener\("input", scheduleHistoryFilterUpdate\)/, "Search input should use the debounce scheduler");
