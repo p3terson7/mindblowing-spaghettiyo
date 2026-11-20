@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "currency": "CAD",
+  "bands": [
+    {
+      "id": "cr-04-01-2026",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "01",
+      "annualSalaryCents": 5727100,
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "cr-04-02-2026",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "02",
+      "annualSalaryCents": 5873800,
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "cr-04-03-2026",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "03",
+      "annualSalaryCents": 6025500,
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "cr-04-04-2026",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "04",
+      "annualSalaryCents": 6176100,
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "as-03-01-2026",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "01",
+      "annualSalaryCents": 7379800,
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "as-03-02-2026",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "02",
+      "annualSalaryCents": 7659900,
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "as-03-03-2026",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "03",
+      "annualSalaryCents": 7951100,
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "as-04-01-2026",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "01",
+      "annualSalaryCents": 8061200,
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "as-04-02-2026",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "02",
+      "annualSalaryCents": 8367500,
+      "effectiveFrom": "2026-01-01"
+    },
+    {
+      "id": "as-04-03-2026",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "03",
+      "annualSalaryCents": 8710800,
+      "effectiveFrom": "2026-01-01"
+    },
+    { "id": "it-02-01-2024", "group": "IT", "subGroup": "02", "level": "01", "annualSalaryCents": 8585400, "effectiveFrom": "2024-12-22" },
+    { "id": "it-02-02-2024", "group": "IT", "subGroup": "02", "level": "02", "annualSalaryCents": 8860300, "effectiveFrom": "2024-12-22" },
+    { "id": "it-02-03-2024", "group": "IT", "subGroup": "02", "level": "03", "annualSalaryCents": 9134800, "effectiveFrom": "2024-12-22" },
+    { "id": "it-02-04-2024", "group": "IT", "subGroup": "02", "level": "04", "annualSalaryCents": 9409500, "effectiveFrom": "2024-12-22" },
+    { "id": "it-02-05-2024", "group": "IT", "subGroup": "02", "level": "05", "annualSalaryCents": 9684400, "effectiveFrom": "2024-12-22" },
+    { "id": "it-02-06-2024", "group": "IT", "subGroup": "02", "level": "06", "annualSalaryCents": 9958900, "effectiveFrom": "2024-12-22" },
+    { "id": "it-02-07-2024", "group": "IT", "subGroup": "02", "level": "07", "annualSalaryCents": 10233500, "effectiveFrom": "2024-12-22" },
+    { "id": "it-02-08-2024", "group": "IT", "subGroup": "02", "level": "08", "annualSalaryCents": 10508000, "effectiveFrom": "2024-12-22" }
+  ]
+}

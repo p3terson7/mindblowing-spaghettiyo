@@ -1,0 +1,12 @@
+[
+  {
+    "code": "260",
+    "labelEn": "OVERTIME, Regular Working Day",
+    "labelFr": "HEURES SUPPLÉMENTAIRES, Jour ouvrable régulier"
+  },
+  {
+    "code": "261",
+    "labelEn": "OVERTIME, First Day of Rest",
+    "labelFr": "HEURES SUPPLÉMENTAIRES, Premier jour de repos"
+  }
+]
