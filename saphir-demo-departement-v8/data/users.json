@@ -1,0 +1,963 @@
+[
+  {
+    "username": "880000001",
+    "employeeCode": "880000001",
+    "displayName": "Maëlle Verville",
+    "role": "superAdmin",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "Bgcx1/E2uCGKx9DeG5WbFw==",
+    "passwordHash": "jN513SB2T9ySy54Pj33wU/lLv2GQOjTAmCk0IFkMGXk=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Maëlle",
+      "surname": "Verville",
+      "department": "Démonstration",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "01",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000002",
+    "employeeCode": "880000002",
+    "displayName": "Émile Durocher",
+    "role": "admin",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "2nIWsn2RU+VuD0YRfHLNFA==",
+    "passwordHash": "DTAC1VAULaEv0mPJ8uw+UfL59iJUTqKz/ez3j/yUsEY=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Émile",
+      "surname": "Durocher",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "01",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000003",
+    "employeeCode": "880000003",
+    "displayName": "Nora Levasseur",
+    "role": "admin",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "O6vQ4NxfW8SdIpNmx1SWAg==",
+    "passwordHash": "Vx7QXDO0QU7PEahRxr9genIG9Mwhs36NExdTVdBpHlo=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Nora",
+      "surname": "Levasseur",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "01",
+      "compressedWorkWeek": true
+    }
+  },
+  {
+    "username": "880000004",
+    "employeeCode": "880000004",
+    "displayName": "Sami Larivière",
+    "role": "admin",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "ETqD18Lg0XX/nR/rgE4+lA==",
+    "passwordHash": "T1i3WAi3xk8VadOh3DhKTdGGFHxps1+3cYnNxP7UOqY=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Sami",
+      "surname": "Larivière",
+      "department": "Démonstration",
+      "group": "IT",
+      "subGroup": "02",
+      "level": "01",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000005",
+    "employeeCode": "880000005",
+    "displayName": "Jade Pelletier",
+    "role": "admin",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "twZtb8PUzdVsI8G1BkqHsw==",
+    "passwordHash": "It8Qm3oJOEwjHs+SHQwpsKolgMMphAdD/yYC+laYPfI=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Jade",
+      "surname": "Pelletier",
+      "department": "Démonstration",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "02",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000006",
+    "employeeCode": "880000006",
+    "displayName": "Mathis Desrochers",
+    "role": "admin",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "QJNuESdqEAhBpo5rn+Ssug==",
+    "passwordHash": "oh4lpfQqj0rST4GkneaOdeevwbGDq6dvDFdvjO5lclg=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Mathis",
+      "surname": "Desrochers",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "02",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000007",
+    "employeeCode": "880000007",
+    "displayName": "Élodie Desmarais",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "w677MOYr33F8hYZAX/p5OQ==",
+    "passwordHash": "mq3+afE1SaA7hezXhiw+SMkW+uh+5uH/vK0fFGiO97g=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime",
+      "diverse"
+    ],
+    "gc179Profile": {
+      "givenName": "Élodie",
+      "surname": "Desmarais",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "02",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000008",
+    "employeeCode": "880000008",
+    "displayName": "Noé Bellemare",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "AnyHPxOE5G9b3ypzpXGygg==",
+    "passwordHash": "Xo4k7dJzfXqpUZ54kZ3N8YQXdhbUmz2m9OxPupweGyY=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Noé",
+      "surname": "Bellemare",
+      "department": "Démonstration",
+      "group": "IT",
+      "subGroup": "02",
+      "level": "02",
+      "compressedWorkWeek": true
+    }
+  },
+  {
+    "username": "880000009",
+    "employeeCode": "880000009",
+    "displayName": "Inès Laurent",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "qvCRV9YTpl79ofjCF9yxtQ==",
+    "passwordHash": "qqy276pYBbZAHkKy1Br2vgx9/NEzGNMN0YyRlHXJ+fQ=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Inès",
+      "surname": "Laurent",
+      "department": "Démonstration",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "03",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000010",
+    "employeeCode": "880000010",
+    "displayName": "Milan Rivard",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "b4rahyUqywGfcIEJ0WVDGA==",
+    "passwordHash": "t2XXSYiCyzIku+ic/JG9tx9Vc9e36WJ44Ra8oFSqVT8=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Milan",
+      "surname": "Rivard",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "03",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000011",
+    "employeeCode": "880000011",
+    "displayName": "Amina Delisle",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "lsKZeaMgrCez+tfjqvZwSQ==",
+    "passwordHash": "qDCH8nVnIKMKsCIm92GUqsARH0V8vApd7vWV8VpiU2I=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Amina",
+      "surname": "Delisle",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "03",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000012",
+    "employeeCode": "880000012",
+    "displayName": "Théo Laramée",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "0BD7zYHpAyJMbS9nq0cWmg==",
+    "passwordHash": "5e3RJAADpEIM6kGBTnogr/tClguK+MovmO/L/z5w8x0=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Théo",
+      "surname": "Laramée",
+      "department": "Démonstration",
+      "group": "IT",
+      "subGroup": "02",
+      "level": "03",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000013",
+    "employeeCode": "880000013",
+    "displayName": "Camille Dufresne",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "6Wz8bsg493KvD09AtSmaFA==",
+    "passwordHash": "VtZfBb/xY95Ill77LaDMRdcj9oKvkNN40IDoglJqpDo=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Camille",
+      "surname": "Dufresne",
+      "department": "Démonstration",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "04",
+      "compressedWorkWeek": true
+    }
+  },
+  {
+    "username": "880000014",
+    "employeeCode": "880000014",
+    "displayName": "Luc Delaunay",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "Sbu+Rx+MBXPUldZpTiVs4A==",
+    "passwordHash": "x7jU4f/K3z3lyEqKacLCTK4P1heFDVLb83RlWNYWPE4=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Luc",
+      "surname": "Delaunay",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "01",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000015",
+    "employeeCode": "880000015",
+    "displayName": "Rania Boivin",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "WjMv0DD/QKnW8mESXdNsWw==",
+    "passwordHash": "dosP8eSKbAqvrV0i7/ThbTVH7yIo2UYAoZa9zk3kYXk=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Rania",
+      "surname": "Boivin",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "01",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000016",
+    "employeeCode": "880000016",
+    "displayName": "Nathan Charbonneau",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "bGHG+5A/S5MOmGtYoYVrJw==",
+    "passwordHash": "ZU+rgcm1bQbhttYZeoItSgPSFGm4cE4WXgFVmax5rAk=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Nathan",
+      "surname": "Charbonneau",
+      "department": "Démonstration",
+      "group": "IT",
+      "subGroup": "02",
+      "level": "04",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000017",
+    "employeeCode": "880000017",
+    "displayName": "Sofia Masson",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "Al3k5AotxFGd571DttVOcw==",
+    "passwordHash": "Bc0v64p6gBK4/s2i2zPZjoFIRCpArQ55Kef5QnvBum0=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Sofia",
+      "surname": "Masson",
+      "department": "Démonstration",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "01",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000018",
+    "employeeCode": "880000018",
+    "displayName": "Alex Marin",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "ZUboVoTveOD2dzR+onlRiQ==",
+    "passwordHash": "QK7fLpB6xny9Bc5Geh/RmRIMI777cJ2P4HUo/3y+V+8=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Alex",
+      "surname": "Marin",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "02",
+      "compressedWorkWeek": true
+    }
+  },
+  {
+    "username": "880000019",
+    "employeeCode": "880000019",
+    "displayName": "Maya Fontaine",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "BwuMEsn1OgPs2IdpUWoW2Q==",
+    "passwordHash": "c5kK/o0uHBnpoXhy1LARXoNN8TBF4P103CytIOxpvMY=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Maya",
+      "surname": "Fontaine",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "02",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000020",
+    "employeeCode": "880000020",
+    "displayName": "Arthur Aubry",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "A2cht3PiGegB1KlOlFIOcg==",
+    "passwordHash": "lpf3+X0zxXlxmW+ORtiRNpEh5tLFO6xuHjwf3+09dWo=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Arthur",
+      "surname": "Aubry",
+      "department": "Démonstration",
+      "group": "IT",
+      "subGroup": "02",
+      "level": "05",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000021",
+    "employeeCode": "880000021",
+    "displayName": "Yasmine Renaud",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "Iz+dCarb24gOulvN+afYlg==",
+    "passwordHash": "QiM8GRY39FxfGukjqilKOq6MyxXRwPmz+jFu9p/mSZU=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Yasmine",
+      "surname": "Renaud",
+      "department": "Démonstration",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "02",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000022",
+    "employeeCode": "880000022",
+    "displayName": "Hugo Valois",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "ZhObE3HJ4HjKEmsnS3HcEQ==",
+    "passwordHash": "5n6cstIhZ7ABwNV5wb1jLKkcZwouzb7aHcrHh6PUBRg=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Hugo",
+      "surname": "Valois",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "03",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000023",
+    "employeeCode": "880000023",
+    "displayName": "Louise Chevalier",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "8cy1ynNgTy75yEV7j36KAQ==",
+    "passwordHash": "fN12cWGI1+AGRi6JknI4aXfOgwfjkMQ4f+HlXg7tTfU=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Louise",
+      "surname": "Chevalier",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "03",
+      "compressedWorkWeek": true
+    }
+  },
+  {
+    "username": "880000024",
+    "employeeCode": "880000024",
+    "displayName": "Gabriel Maheu",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "8kIfzPDxZ2xq05HUoD2FTQ==",
+    "passwordHash": "yh5HfIHDbWdRxP4QynwKyxkxFpZwCC8YJaxTa/gLm3Q=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Gabriel",
+      "surname": "Maheu",
+      "department": "Démonstration",
+      "group": "IT",
+      "subGroup": "02",
+      "level": "06",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000025",
+    "employeeCode": "880000025",
+    "displayName": "Lina Dupuis",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "jPsTXHC1DnlpweCvEIBpQA==",
+    "passwordHash": "7h1NNtP9ftn0FxL4Sq4s0lA3Re0PDl5gvy3TsrzMLRg=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Lina",
+      "surname": "Dupuis",
+      "department": "Démonstration",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "03",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000026",
+    "employeeCode": "880000026",
+    "displayName": "Antoine Savard",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "D0VLENsrb/qT0RlK2qRCQw==",
+    "passwordHash": "7vJP8vv9sXEITdQ0EGLUoAeanAUKvcCgioyidGneXkE=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Antoine",
+      "surname": "Savard",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "01",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000027",
+    "employeeCode": "880000027",
+    "displayName": "Amélia Lemieux",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "6rdnxvcZnguLO3B+CpimNQ==",
+    "passwordHash": "RX1hWDY4dJZ1VhmgyJwcBun4mPqqptukpRcfJF5Wat8=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Amélia",
+      "surname": "Lemieux",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "01",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000028",
+    "employeeCode": "880000028",
+    "displayName": "Isaac Normand",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "Snw2C1rXBfpAnnn9HKxomQ==",
+    "passwordHash": "3n1ewsCxJrHEOpSS01mW/S0F20mvYvzkMch54+9O3a0=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Isaac",
+      "surname": "Normand",
+      "department": "Démonstration",
+      "group": "IT",
+      "subGroup": "02",
+      "level": "07",
+      "compressedWorkWeek": true
+    }
+  },
+  {
+    "username": "880000029",
+    "employeeCode": "880000029",
+    "displayName": "Clara Benoît",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "xyFmB5zZ4KtpHgxSH3HMtQ==",
+    "passwordHash": "ehdocTmvITTeHdNgL8urYZt5KIC3KKVDAQelg506pxo=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Clara",
+      "surname": "Benoît",
+      "department": "Démonstration",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "04",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000030",
+    "employeeCode": "880000030",
+    "displayName": "Adam Véronneau",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "nPxTWIFXU1qzFf72GW+Tug==",
+    "passwordHash": "AiuT/tQewFQz46euaEIiJLay7Gt9DL7N9oyXuECG3J0=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Adam",
+      "surname": "Véronneau",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "02",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000031",
+    "employeeCode": "880000031",
+    "displayName": "Zahra Dorion",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "bG5BWQdpFc8ZdfnJeRSZMA==",
+    "passwordHash": "zdm16x82p1gZh3u/0qlvo7z76PcOVUYyZRiCgtSTl7s=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Zahra",
+      "surname": "Dorion",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "02",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000032",
+    "employeeCode": "880000032",
+    "displayName": "Léo Paquette",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "+uWJO6NVLdDsJ7rzja1fXg==",
+    "passwordHash": "01M0P9AqtiFOQmg4yddsRb/R0DN/kKRd7/6F3PUj8ZY=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Léo",
+      "surname": "Paquette",
+      "department": "Démonstration",
+      "group": "IT",
+      "subGroup": "02",
+      "level": "08",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000033",
+    "employeeCode": "880000033",
+    "displayName": "Zoé Martel",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "JNcs9YHrjkdmMVoV/Z8ptg==",
+    "passwordHash": "7D0vwexXZtxHkHtKDcfl+quY6ESp1FbDl/QOInFeHAM=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Zoé",
+      "surname": "Martel",
+      "department": "Démonstration",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "01",
+      "compressedWorkWeek": true
+    }
+  },
+  {
+    "username": "880000034",
+    "employeeCode": "880000034",
+    "displayName": "Nolan Ferron",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "blBUBBkH5UqZ+JdaruhqOA==",
+    "passwordHash": "ijxgjQIIctd8wN0bVlQbVZHrhoj66bR79rt35xIbn28=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Nolan",
+      "surname": "Ferron",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "03",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000035",
+    "employeeCode": "880000035",
+    "displayName": "Léonie Désilets",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "kDt1j0ke4CdyaVAuYDpGug==",
+    "passwordHash": "682UM6v7x5DZxKjIyaNjksoPPNhKn4dpV83KS8nnfgo=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Léonie",
+      "surname": "Désilets",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "03",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000036",
+    "employeeCode": "880000036",
+    "displayName": "Milo Hébert",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "3fXlzUl7P9gyx5t4O9qWnA==",
+    "passwordHash": "g+Rto36A11eewltuIKN1zqf7pLLKWNu6aZAITqMxLEM=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Milo",
+      "surname": "Hébert",
+      "department": "Démonstration",
+      "group": "IT",
+      "subGroup": "02",
+      "level": "01",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000037",
+    "employeeCode": "880000037",
+    "displayName": "Samira Bélanger",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "d/9neswY25v7B5iUjRp+ig==",
+    "passwordHash": "fGkzV2MNA3LcxTQuahglJqq5VCNuZ4qis8krU4HKOao=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Samira",
+      "surname": "Bélanger",
+      "department": "Démonstration",
+      "group": "CR",
+      "subGroup": "04",
+      "level": "02",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000038",
+    "employeeCode": "880000038",
+    "displayName": "Thomas Gravel",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "YOVp5oTWhH026pQDiwbEig==",
+    "passwordHash": "KI9fGSwEXZ7DRwmm9EVKQ8C3QWgIzJVwHFnF2CNZm3g=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Thomas",
+      "surname": "Gravel",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "03",
+      "level": "01",
+      "compressedWorkWeek": true
+    }
+  },
+  {
+    "username": "880000039",
+    "employeeCode": "880000039",
+    "displayName": "Alice Fortier",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "b0QcudlRwXHYKhIP6FYO7Q==",
+    "passwordHash": "PjskizCup12Bj/nLZVLFv5GnaupLDxGuPAWdncECaCY=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Alice",
+      "surname": "Fortier",
+      "department": "Démonstration",
+      "group": "AS",
+      "subGroup": "04",
+      "level": "01",
+      "compressedWorkWeek": false
+    }
+  },
+  {
+    "username": "880000040",
+    "employeeCode": "880000040",
+    "displayName": "Édouard Perron",
+    "role": "employee",
+    "disabled": false,
+    "mustChangePassword": false,
+    "passwordSalt": "dhwr6PxSHrw9GrexIMbrWQ==",
+    "passwordHash": "k9szINIyd/5VvH5cQXFCA+vpm/ohLifQCfzG4i55Qyg=",
+    "passwordIterations": 120000,
+    "passwordAlgorithm": "PBKDF2-HMACSHA1",
+    "timeEntryTypes": [
+      "overtime"
+    ],
+    "gc179Profile": {
+      "givenName": "Édouard",
+      "surname": "Perron",
+      "department": "Démonstration",
+      "group": "IT",
+      "subGroup": "02",
+      "level": "02",
+      "compressedWorkWeek": false
+    }
+  }
+]

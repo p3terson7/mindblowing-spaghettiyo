@@ -1,0 +1,28 @@
+SAPHIR — Démonstration départementale hors ligne · v8
+
+Mac : ouvrir Demarrer-demo.command (PowerShell 7 requis).
+Windows : extraire le dossier au complet, puis ouvrir Demarrer-demo.cmd.
+Adresse : http://localhost:8098/
+Le dossier data est local à cette copie. Ne pas utiliser ces chiffres pour la paie.
+
+Comptes fictifs — mot de passe commun : DemoSAPHIR2026!
+  880000001  Super admin — vue d’ensemble et toutes les données
+  880000002  Admin (pas super admin) — lecture des projets, actions limitées à ses affectations
+  880000007  Employée — calendrier, temps divers et export GC179
+
+40 employés | 20 projets (même catalogue que la v4) | 2383 entrées
+Période : 2025-12 à 2026-11. 2182 montants calculés à partir de la grille de démo.
+
+Parcours suggéré :
+  1. Super admin : Vue d’ensemble, puis Révision et l’onglet À vérifier.
+  2. Projets : élargir la période au-delà de Ce mois-ci et ouvrir un projet.
+  3. Personnel : ouvrir Élodie Desmarais et sélectionner une entrée du calendrier.
+     La fiche affiche les notes et les actions sans déplacer le calendrier.
+  4. Compte employé : Calendrier et GC179. Acrobat est requis pour ouvrir le formulaire ;
+     le résultat de l’export donne le chemin pour récupérer les fichiers même sans Acrobat.
+
+À essayer : dans les notes de l’entrée rejetée d’Élodie du 30 octobre,
+voir son complément daté et la note datée d’Émile. Le script de présentation et
+le FDF fictif destiné à l’import se trouvent dans le dossier docs.
+
+Pour arrêter : lancer Start-demo.ps1 avec -Stop depuis un terminal.

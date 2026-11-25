@@ -1,0 +1,35 @@
+%FDF-1.2
+1 0 obj
+<< /FDF <<
+  /F (GC179.pdf)
+  /Fields [
+    << /T (Month) /V (10) >>
+    << /T (Year) /V (2026) >>
+    << /T (Surname) /V (DESMARAIS) >>
+    << /T (Given) /V <FEFF00C9006C006F006400690065> >>
+    << /T (Group) /V (AS) >>
+    << /T (SubGroup) /V (04) >>
+    << /T (Level) /V (02) >>
+    << /T (WorkWeek) /V /1 >>
+    << /T (DayofWeek.0) /V (27) >>
+    << /T (DayWorked.0) /V (Tue) >>
+    << /T (StartTime.0) /V (18:00) >>
+    << /T (EndTime.0) /V (19:00) >>
+    << /T (OTCODE.0) /V (D) >>
+    << /T (OvertimeCode.0) /V (260) >>
+    << /T (Payment) /V /1 >>
+    << /T (RegTimeHalf.0) /V (1) >>
+    << /T (DayofWeek.1) /V (29) >>
+    << /T (DayWorked.1) /V (Thu) >>
+    << /T (StartTime.1) /V (18:00) >>
+    << /T (EndTime.1) /V (19:15) >>
+    << /T (OTCODE.1) /V (D) >>
+    << /T (OvertimeCode.1) /V (260) >>
+    << /T (Payment1) /V /1 >>
+    << /T (RegTimeHalf.1) /V (1.25) >>
+  ]
+>> >>
+endobj
+trailer
+<< /Root 1 0 R >>
+%%EOF

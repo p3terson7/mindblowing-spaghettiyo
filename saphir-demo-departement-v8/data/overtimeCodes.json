@@ -1,0 +1,57 @@
+[
+  {
+    "labelFr": "Code supp.",
+    "code": "",
+    "labelEn": "Overtime Code"
+  },
+  {
+    "labelFr": "HEURES SUPPLÉMENTAIRES, Jour ouvrable régulier",
+    "code": "260",
+    "labelEn": "OVERTIME, Regular Working Day"
+  },
+  {
+    "labelFr": "HEURES SUPPLÉMENTAIRES, Premier jour de repos",
+    "code": "261",
+    "labelEn": "OVERTIME, First Day of Rest"
+  },
+  {
+    "labelFr": "HEURES SUPPLÉMENTAIRES, Deuxième jour de repos subséquent",
+    "code": "262",
+    "labelEn": "OVERTIME, Second or Subsequent Day of Rest"
+  },
+  {
+    "labelFr": "HEURES SUPPLÉMENTAIRES, Congé férié",
+    "code": "263",
+    "labelEn": "OVERTIME, Designated Holiday"
+  },
+  {
+    "labelFr": "TEMPS de DÉPLACEMENT, Jour ouvrable régulier",
+    "code": "089",
+    "labelEn": "TRAVEL TIME, Regular Working Day"
+  },
+  {
+    "labelFr": "TEMPS de DÉPLACEMENT, Jour de repos",
+    "code": "072",
+    "labelEn": "TRAVEL TIME, Day of Rest"
+  },
+  {
+    "labelFr": "RAPPEL AU TRAVAIL",
+    "code": "009",
+    "labelEn": "CALL BACK"
+  },
+  {
+    "labelFr": "INDEMNITÉ DE PRÉSENCE",
+    "code": "050",
+    "labelEn": "REPORTING PAY"
+  },
+  {
+    "labelFr": "TEMPS PARTIEL, Heures additionnelles",
+    "code": "049",
+    "labelEn": "PART TIME, Additional Hours"
+  },
+  {
+    "labelFr": "TEMPS PARTIEL, Prime pour le travail effectué lors d'un jour férié",
+    "code": "043",
+    "labelEn": "PART TIME, Premium Pay for Work on a Holiday"
+  }
+]
