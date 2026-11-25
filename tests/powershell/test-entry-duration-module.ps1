@@ -40,7 +40,7 @@ foreach ($path in @($manifestPath, $modulePath, $entryServicePath, $readModelSer
 $manifest = Import-PowerShellDataFile -LiteralPath $manifestPath
 Assert-Equal -Expected "Saphir.EntryDuration.psm1" -Actual ([string]$manifest.RootModule) -Message "EntryDuration RootModule changed."
 Assert-Equal -Expected "5.1" -Actual ([string]$manifest.PowerShellVersion) -Message "EntryDuration must support Windows PowerShell 5.1."
-Assert-Equal -Expected "Get-QuarterHourCreditSummary" -Actual (@($manifest.FunctionsToExport) -join "|") -Message "EntryDuration export contract changed."
+Assert-Equal -Expected "ConvertTo-SaphirNearestQuarterHourTime|Get-QuarterHourCreditSummary" -Actual (@($manifest.FunctionsToExport) -join "|") -Message "EntryDuration export contract changed."
 Test-ModuleManifest -Path $manifestPath -ErrorAction Stop | Out-Null
 
 $moduleTokens = $null
@@ -78,6 +78,19 @@ foreach ($case in $creditCases) {
 }
 
 . $entryServicePath
+$roundingCases = [ordered]@{
+    "14:07:59" = "14:00:00"
+    "14:08:00" = "14:15:00"
+    "14:22:59" = "14:15:00"
+    "14:23:00" = "14:30:00"
+    "14:38:00" = "14:45:00"
+    "14:53:00" = "15:00:00"
+    "23:58:00" = "23:45:00"
+}
+foreach ($exact in $roundingCases.Keys) {
+    $rounded = Convert-ToNearestQuarterHourText -Date "2026-08-24" -TimeText $exact
+    Assert-Equal -Expected $roundingCases[$exact] -Actual $rounded -Message "Display quarter-hour boundary changed for $exact."
+}
 $facadeSummary = Get-QuarterHourCreditSummary -Date "2026-08-24" -PunchIn "14:04:00" -PunchOut "14:08:00"
 Assert-Equal -Expected "00:00:00" -Actual ([string]$facadeSummary.creditedOvertime) -Message "EntryService facade did not use exact quarter credit."
 

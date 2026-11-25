@@ -44,8 +44,9 @@ function Get-ScopedEmployeeReadContribution {
         if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.employee-scope.recomputed" }
         $visible = @($Contribution.entries | Where-Object { $IsSuperAdmin -or $AccessModel.ProjectCodeSet.ContainsKey([string]$_.projectCode) })
         $canApprove = Test-CurrentUserCanApproveEmployeeRole -CurrentUser $CurrentUser -EmployeeRole ([string]$employee.role)
+        $ownEntry = Test-CurrentUserMatchesEmployeeCode -CurrentUser $CurrentUser -EmployeeCode $employeeCode
         $projected = @(foreach ($entry in $visible) {
-            $projection = New-EmployeeEntryProjectionForAccessModel -EmployeeCode $employeeCode -EmployeeName ([string]$employee.name) -Entry $entry -ModifyProjectCodeSet $ModifyAccessModel.ProjectCodeSet -EmployeeRole ([string]$employee.role) -IsSuperAdmin:$IsSuperAdmin -CanApproveEmployeeRole:$canApprove
+            $projection = New-EmployeeEntryProjectionForAccessModel -EmployeeCode $employeeCode -EmployeeName ([string]$employee.name) -Entry $entry -ModifyProjectCodeSet $ModifyAccessModel.ProjectCodeSet -EmployeeRole ([string]$employee.role) -IsSuperAdmin:$IsSuperAdmin -CanApproveEmployeeRole:$canApprove -IsOwnEntry:$ownEntry
             if ($IncludeMonetary) { $projection | Add-Member -NotePropertyName employeeArchived -NotePropertyValue $Archived -Force }
             $projection
         })

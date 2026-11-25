@@ -27,6 +27,8 @@ const bulkScheduleRoute = read("app/backend/routes/employee/work-schedule.routes
 
 assert(index.includes('id="selfCompressedScheduleToggle"'), "The employee dashboard does not expose the global compressed-schedule switch.");
 assert(index.includes('role="switch"'), "The compressed-schedule control is not exposed as an accessible switch.");
+assert(index.includes('aria-labelledby="selfWorkScheduleTitle"'), "The schedule switch needs a stable label in either state.");
+assert(selfView.includes('t(isCompressed ? "self.workScheduleCompressed" : "self.workScheduleRegular")'), "The switch must show its actual state.");
 assert(selfView.includes('fetch(apiUrl + "self/work-schedule"'), "The dashboard switch is not persisted through the targeted schedule endpoint.");
 assert(selfView.includes("compressedWorkWeek: Boolean(compressedWorkWeek)"), "The dashboard does not send an explicit boolean schedule value.");
 assert(appShell.includes("syncSelfWorkScheduleFromGc179Profile"), "Saving GC179 settings does not synchronize the dashboard switch.");
@@ -44,11 +46,15 @@ assert(updateRoute.includes('@("regular", "compressed") -notcontains $requestedW
 assert(updateRoute.includes('workScheduleSource" -Value "supervisor-edit"'), "Schedule corrections do not retain supervisor-edit provenance.");
 
 assert(utilities.includes("function renderEntryWorkScheduleBadge"), "Entries do not have a shared work-schedule label renderer.");
+assert(utilities.includes('if (schedule === "regular") return ""'), "Regular time must not show an indicator.");
+assert(utilities.includes('class="work-schedule-icon" role="img" aria-label="${label}" title="${label}"'), "Compressed time needs an icon with a localized tooltip and accessible name.");
+assert(selfView.includes("renderCalendarEntryHeader") && employeesView.includes("renderCalendarEntryHeader"), "Both calendars must place the icon in their shared time header.");
 assert(utilities.includes('return "unconfirmed"'), "Legacy entries without a schedule are not visibly marked for confirmation.");
 assert(i18n.includes('"shared.workScheduleCompressed": "Temps comprimé"'), "The compressed entry label is not localized in French.");
 assert(i18n.includes('"shared.workScheduleUnconfirmed": "Horaire à confirmer"'), "The legacy schedule warning is not localized in French.");
 assert(styles.includes(".self-work-schedule-control"), "The dashboard schedule control has no dedicated visual treatment.");
 assert(styles.includes(".work-schedule-badge.unconfirmed"), "Unconfirmed legacy schedules have no warning treatment.");
+assert(styles.includes("--schedule-compressed") && styles.includes(".calendar-entry-main > .work-schedule-icon"), "The compressed icon needs a themed color and calendar positioning.");
 assert(employeesView.includes("people-month-schedule-apply"), "People view has no monthly schedule bulk action.");
 assert(employeesView.includes("/work-schedule/month"), "The monthly schedule action is not connected to the backend endpoint.");
 assert(employeesView.includes('getEntryWorkSchedule(entry) === "unconfirmed" && canModifyEntry(entry)'), "The monthly schedule action must count only unresolved entries the supervisor can modify.");

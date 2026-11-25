@@ -80,33 +80,7 @@ function Convert-ToNearestQuarterHourText {
     }
 
     $dateTime = [DateTime]::ParseExact(("{0} {1}" -f $Date, $normalizedTime), "yyyy-MM-dd HH:mm:ss", $null)
-    $roundedHour = $dateTime.Hour
-    $roundedMinute = 0
-
-    if ($dateTime.Minute -lt 8) {
-        $roundedMinute = 0
-    }
-    elseif ($dateTime.Minute -lt 23) {
-        $roundedMinute = 15
-    }
-    elseif ($dateTime.Minute -lt 38) {
-        $roundedMinute = 30
-    }
-    elseif ($dateTime.Minute -lt 53) {
-        $roundedMinute = 45
-    }
-    else {
-        if ($dateTime.Hour -lt 23) {
-            $roundedHour = $dateTime.Hour + 1
-            $roundedMinute = 0
-        }
-        else {
-            $roundedHour = 23
-            $roundedMinute = 45
-        }
-    }
-
-    return (Get-Date -Year $dateTime.Year -Month $dateTime.Month -Day $dateTime.Day -Hour $roundedHour -Minute $roundedMinute -Second 0).ToString("HH:mm:ss")
+    return (Saphir.EntryDuration\ConvertTo-SaphirNearestQuarterHourTime -Time $dateTime)
 }
 
 function Get-EntryIdentifierValue {
@@ -337,6 +311,28 @@ function Set-EntrySupervisorNote {
     return $Entry
 }
 
+function ConvertTo-EntryNoteTimestamp {
+    param($Value)
+    if ($Value -is [datetime] -or $Value -is [datetimeoffset]) {
+        return $Value.ToUniversalTime().ToString("o")
+    }
+    return [string]$Value
+}
+
+function Get-EntryEmployeeCommentAdditions {
+    param($Entry)
+    if ($Entry.PSObject.Properties.Name -notcontains "employeeCommentAdditions") { return }
+    foreach ($addition in @($Entry.employeeCommentAdditions)) {
+        if ($null -ne $addition -and -not [string]::IsNullOrWhiteSpace([string]$addition.text)) {
+            [PSCustomObject]@{
+                id = [string]$addition.id
+                text = [string]$addition.text
+                createdAtUtc = ConvertTo-EntryNoteTimestamp $addition.createdAtUtc
+            }
+        }
+    }
+}
+
 function Convert-ToNormalizedEntryObject {
     param($Entry)
 
@@ -363,7 +359,7 @@ function Convert-ToNormalizedEntryObject {
         message       = if ($null -ne $Entry.message) { [string]$Entry.message } else { "" }
         messageAuthorName = if ($Entry.PSObject.Properties.Name -contains "messageAuthorName") { [string]$Entry.messageAuthorName } else { "" }
         messageAuthorUsername = if ($Entry.PSObject.Properties.Name -contains "messageAuthorUsername") { [string]$Entry.messageAuthorUsername } else { "" }
-        messageUpdatedAt = if ($Entry.PSObject.Properties.Name -contains "messageUpdatedAt") { [string]$Entry.messageUpdatedAt } else { "" }
+        messageUpdatedAt = if ($Entry.PSObject.Properties.Name -contains "messageUpdatedAt") { ConvertTo-EntryNoteTimestamp $Entry.messageUpdatedAt } else { "" }
         projectCode   = if ($null -ne $Entry.projectCode) { [string]$Entry.projectCode } else { "" }
         overtimeCode  = if ($null -ne $Entry.overtimeCode) { [string]$Entry.overtimeCode } else { "" }
         paymentOption = if ($null -ne $Entry.paymentOption -and -not [string]::IsNullOrWhiteSpace([string]$Entry.paymentOption)) { [string]$Entry.paymentOption } elseif ($entryType -eq "diverse") { "" } else { "cash" }
@@ -380,6 +376,9 @@ function Convert-ToNormalizedEntryObject {
         forgottenClockOutAttemptedDate = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedDate") { [string]$Entry.forgottenClockOutAttemptedDate } else { "" }
         forgottenClockOutAttemptedTime = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedTime") { [string]$Entry.forgottenClockOutAttemptedTime } else { "" }
         forgottenClockOutDetectedAtUtc = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutDetectedAtUtc") { [string]$Entry.forgottenClockOutDetectedAtUtc } else { "" }
+    }
+    if ($Entry.PSObject.Properties.Name -contains "employeeCommentAdditions") {
+        $normalizedEntry | Add-Member -NotePropertyName employeeCommentAdditions -NotePropertyValue @(Get-EntryEmployeeCommentAdditions $Entry)
     }
     if ($Entry.PSObject.Properties.Name -contains "holidayNotScheduledWorkday" -and $Entry.holidayNotScheduledWorkday -is [bool]) {
         $normalizedEntry | Add-Member -NotePropertyName holidayNotScheduledWorkday -NotePropertyValue ([bool]$Entry.holidayNotScheduledWorkday)

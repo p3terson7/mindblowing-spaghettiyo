@@ -67,7 +67,7 @@ if ($request.HttpMethod -eq "GET" -and $request.Url.AbsolutePath -eq "/review/bo
         if ($null -ne $query['page'] -and -not [int]::TryParse($query['page'], [ref]$page)) { throw [ArgumentException]::new('Invalid review page.') }
         $tab = if ($query['tab']) { $query['tab'] } else { 'pending' }
         $range = if ($query['range']) { $query['range'] } else { 'default' }
-        $payload = Get-ReviewPage -CurrentUser $currentUser -Tab $tab -Page $page -Range $range -Search ([string]$query['search']) -EmployeeCode ([string]$query['employeeCode']) -ProjectCode ([string]$query['projectCode']) -StartDate ([string]$query['startDate']) -EndDate ([string]$query['endDate']) -SelectionOnly:($query['selectionOnly'] -eq 'true')
+        $payload = Get-ReviewPage -CurrentUser $currentUser -Tab $tab -Page $page -Range $range -Search ([string]$query['search']) -EmployeeCode ([string]$query['employeeCode']) -ProjectCode ([string]$query['projectCode']) -StartDate ([string]$query['startDate']) -EndDate ([string]$query['endDate']) -SelectionOnly:($query['selectionOnly'] -eq 'true') -ActionableOnly:($query['actionableOnly'] -eq 'true')
         $json = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Http.SerializeReview" -Component "Http" -Type "json" -Action { $payload | ConvertTo-Json -Depth 8 } } else { $payload | ConvertTo-Json -Depth 8 }
         respondWithSuccess $response $json
     }

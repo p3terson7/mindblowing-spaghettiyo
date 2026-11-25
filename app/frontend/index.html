@@ -30,8 +30,8 @@
   <link rel="icon" type="image/png" sizes="128x128" href="assets/saphir-logo.png?v=20260715-saphir" />
   <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css?v=20260603-empty-timeline" />
   <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css?v=20260603-empty-timeline" />
-  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20261008-loading-performance-v1-period-nav-v1-no-dashboard-history-v1-flat-summary-v1">
-  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20261008-loading-performance-v1-review-cards-v1-review-pages-v1-period-nav-v2-no-dashboard-history-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1-project-audit-v1">
+  <link rel="stylesheet" type="text/css" href="assets/styles.css?v=20261008-loading-performance-v1-period-nav-v1-no-dashboard-history-v1-flat-summary-v1-calendar-actions-v1">
+  <link rel="stylesheet" type="text/css" href="assets/apple-ui.css?v=20261008-loading-performance-v1-review-cards-v1-review-pages-v1-period-nav-v2-no-dashboard-history-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1-project-audit-v1-punch-ux-v1-workflow-recovery-v1-gc179-receipt-v1-compact-v1-schedule-icons-v1-alignment-v1-entry-notes-layout-v1-calendar-actions-v1-entry-inspector-v2">
 </head>
 <body>
   <div class="app-root">
@@ -257,7 +257,8 @@
         </div>
 
         <div id="selfView" class="view workspace-view">
-          <section class="panel-shell action-strip" id="selfTrackingCard">
+          <div id="selfLoadError" class="d-none"></div>
+          <section class="panel-shell action-strip" id="selfTrackingCard" tabindex="-1" aria-labelledby="selfHeroText">
             <div class="self-action-intro">
               <div class="self-action-status-row">
                 <span class="self-action-status-dot" aria-hidden="true"></span>
@@ -265,15 +266,35 @@
               </div>
               <h2 id="selfHeroText" data-i18n="self.hero.idle">Ready when you are.</h2>
               <p id="selfSelectionSummary" class="self-selection-summary"></p>
+              <section id="selfFollowUp" class="self-follow-up d-none" aria-labelledby="selfFollowUpHeading">
+                <div id="selfFollowUpHeading" class="panel-kicker" data-i18n="self.followUp">To follow up</div>
+                <div id="selfMissingEndNotice" class="self-follow-up-item d-none">
+                  <span id="selfMissingEndText" role="status"></span>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" data-self-follow-up="missingEndEntry" data-i18n="self.viewFollowUpEntry">View entry</button>
+                </div>
+                <details id="selfRejectionDetails" class="entry-work-comment d-none">
+                  <summary id="selfRejectionSummary"></summary>
+                  <div id="selfRejectionAuthor" class="entry-work-comment-label mt-2"></div>
+                  <div id="selfRejectionNote" class="entry-work-comment-text"></div>
+                  <button type="button" class="btn btn-outline-secondary btn-sm mt-2" data-self-follow-up="rejectedEntry" data-i18n="self.viewFollowUpEntry">View entry</button>
+                </details>
+              </section>
               <div class="self-work-schedule-control" id="selfWorkScheduleControl">
                 <div class="self-work-schedule-copy">
-                  <span class="self-work-schedule-title" data-i18n="self.compressedScheduleTitle">Compressed schedule</span>
+                  <span class="self-work-schedule-title" id="selfWorkScheduleTitle" data-i18n="self.workScheduleTitle">Work schedule</span>
                   <span class="self-work-schedule-hint" id="selfWorkScheduleHint" data-i18n="self.compressedScheduleHint">Automatically applied to your next entries.</span>
                 </div>
                 <label class="self-work-schedule-switch" for="selfCompressedScheduleToggle">
-                  <input type="checkbox" id="selfCompressedScheduleToggle" role="switch" aria-describedby="selfWorkScheduleHint selfWorkScheduleState">
-                  <span class="self-work-schedule-track" aria-hidden="true"><span></span></span>
-                  <strong id="selfWorkScheduleState" data-i18n="shared.workScheduleRegular">Regular schedule</strong>
+                  <input type="checkbox" id="selfCompressedScheduleToggle" role="switch" aria-labelledby="selfWorkScheduleTitle" aria-describedby="selfWorkScheduleHint selfWorkScheduleState">
+                  <span class="self-work-schedule-track" aria-hidden="true">
+                    <span class="self-work-schedule-thumb">
+                      <svg class="self-work-schedule-calendar" viewBox="0 0 12 12" focusable="false" fill="currentColor">
+                        <path d="M3 2.25v-.5a.75.75 0 0 1 1.5 0v.5h3v-.5a.75.75 0 0 1 1.5 0v.5h.5A1.75 1.75 0 0 1 11.25 4v.5H.75V4A1.75 1.75 0 0 1 2.5 2.25H3Z"/>
+                        <path fill-rule="evenodd" d="M.75 5.25h10.5v4A1.75 1.75 0 0 1 9.5 11h-7A1.75 1.75 0 0 1 .75 9.25v-4ZM3 6.75v1.5h1.5v-1.5H3Zm2.25 0v1.5h1.5v-1.5h-1.5Zm2.25 0v1.5H9v-1.5H7.5Z"/>
+                      </svg>
+                    </span>
+                  </span>
+                  <strong id="selfWorkScheduleState">Regular</strong>
                 </label>
               </div>
               <div class="action-strip-last-entry d-none" id="selfLastEntryShell">
@@ -281,7 +302,8 @@
               </div>
             </div>
             <div class="action-strip-main">
-              <button id="selfPrimaryPunchButton" class="btn btn-primary btn-lg" data-i18n="self.startOvertime">Start Overtime</button>
+              <button id="selfPrimaryPunchButton" class="btn btn-primary btn-lg" aria-describedby="selfPunchRequirement" disabled data-i18n="self.startOvertime">Start Overtime</button>
+              <div id="selfPunchRequirement" class="form-text d-none" role="status"></div>
               <div class="self-punch-selectors" id="selfPunchSelectors">
                 <div class="self-punch-field d-none" id="selfEntryTypeShell">
                   <label for="selfEntryTypeSelect" data-i18n="shared.timeCategory">Time category</label>
@@ -291,32 +313,33 @@
                 </div>
                 <div id="selfOvertimeSelectors" class="self-punch-selector-group">
                   <div class="self-punch-field">
-                    <label for="selfProjectCodeSelect" data-i18n="shared.project">Project</label>
-                    <select id="selfProjectCodeSelect" class="form-select form-select-sm" aria-label="Project selection" data-i18n-aria-label="shared.project">
+                    <label for="selfProjectCodeSelect"><span data-i18n="shared.project">Project</span> <span class="field-required-tag" data-i18n="self.fieldRequired">Required</span></label>
+                    <select id="selfProjectCodeSelect" class="form-select form-select-sm" required>
                       <option value="" data-i18n="shared.project">Project</option>
                     </select>
                   </div>
                   <div class="self-punch-field">
-                    <label for="selfOvertimeCodeSelect" data-i18n="shared.overtimeCode">Overtime Code</label>
-                    <select id="selfOvertimeCodeSelect" class="form-select form-select-sm" aria-label="Overtime code selection" data-i18n-aria-label="shared.overtimeCode">
+                    <label for="selfOvertimeCodeSelect"><span data-i18n="shared.overtimeCode">Overtime Code</span> <small data-i18n="self.fieldOptional">(optional)</small></label>
+                    <select id="selfOvertimeCodeSelect" class="form-select form-select-sm">
                       <option value="" data-i18n="shared.overtimeCode">Overtime Code</option>
                     </select>
                   </div>
                   <div class="self-punch-field">
-                    <label for="selfPaymentOptionSelect" data-i18n="shared.paymentOption">Payment</label>
-                    <select id="selfPaymentOptionSelect" class="form-select form-select-sm" aria-label="Payment option selection" data-i18n-aria-label="shared.paymentOption">
+                    <label for="selfPaymentOptionSelect"><span data-i18n="shared.paymentOption">Payment</span> <span class="field-required-tag" data-i18n="self.fieldRequired">Required</span></label>
+                    <select id="selfPaymentOptionSelect" class="form-select form-select-sm" required>
                       <option value="" data-i18n="shared.paymentOption">Payment</option>
                     </select>
                   </div>
                   <div class="self-punch-field">
-                    <label for="selfReasonCodeSelect" data-i18n="shared.reasonCode">Reason Code</label>
-                    <select id="selfReasonCodeSelect" class="form-select form-select-sm" aria-label="Reason code selection" data-i18n-aria-label="shared.reasonCode">
+                    <label for="selfReasonCodeSelect"><span data-i18n="shared.reasonCode">Reason Code</span> <small data-i18n="self.fieldOptional">(optional)</small></label>
+                    <select id="selfReasonCodeSelect" class="form-select form-select-sm">
                       <option value="" data-i18n="shared.reasonCode">Reason Code</option>
                     </select>
                   </div>
                 </div>
                 <div id="selfDiverseStartFields" class="self-diverse-fields d-none">
-                  <input type="text" id="selfDiverseReasonInput" class="form-control form-control-sm" data-i18n-placeholder="self.diverseReasonPlaceholder" placeholder="Reason">
+                  <label for="selfDiverseReasonInput"><span data-i18n="shared.reasonCode">Reason</span> <span class="field-required-tag" data-i18n="self.fieldRequired">Required</span></label>
+                  <input type="text" id="selfDiverseReasonInput" class="form-control form-control-sm" required data-i18n-placeholder="self.diverseReasonPlaceholder" placeholder="Reason">
                 </div>
               </div>
               <div id="selfWorkCommentFields" class="self-diverse-fields self-diverse-summary-fields self-work-comment-fields d-none">
@@ -342,6 +365,13 @@
               <strong class="metric-value" id="selfCurrentStatusValue" data-i18n="status.offClock">Off the clock</strong>
               <span class="metric-hint" id="selfCurrentStatusHint" data-i18n="status.readyToTrack">Start overtime when you are ready to track extra hours.</span>
             </article>
+          </section>
+
+          <section class="panel-shell" id="selfTimelinePanel" aria-labelledby="selfTimelineTitle">
+            <div class="panel-header-row">
+              <h2 class="panel-kicker m-0" id="selfTimelineTitle" data-i18n="self.calendarAndGc179">Calendar and GC179</h2>
+            </div>
+            <div id="selfEntriesContainer" class="entry-stack"></div>
           </section>
 
           <section class="panel-shell self-stats-panel">
@@ -393,15 +423,6 @@
             <div id="selfProjectStatsContainer" class="self-project-stats"></div>
           </section>
 
-          <section class="panel-shell" id="selfTimelinePanel">
-            <div class="panel-header-row">
-              <div>
-                <div class="panel-kicker" data-i18n="self.timeline">Timeline</div>
-              </div>
-            </div>
-
-            <div id="selfEntriesContainer" class="entry-stack"></div>
-          </section>
         </div>
 
         <div id="dashboardView" class="view workspace-view active">
@@ -414,7 +435,7 @@
             <article class="metric-card metric-card-attention">
               <span class="metric-label" data-i18n="dashboard.pendingApprovals">Pending Approvals</span>
               <strong class="metric-value" id="pendingApprovals">0</strong>
-              <span class="metric-hint" data-i18n="dashboard.waitingForAction">Entries waiting for action</span>
+              <span id="dashboardActionableCount" class="metric-hint"></span>
             </article>
             <article class="metric-card">
               <span class="metric-label" data-i18n="dashboard.clockedInNow">Clocked In Right Now</span>
@@ -445,9 +466,10 @@
                     <div class="panel-kicker" data-i18n="dashboard.needsAttention">Needs Attention</div>
                     <h4 data-i18n="dashboard.pendingApprovals">Pending Approvals</h4>
                   </div>
-                  <span class="panel-note" id="dashboardPendingQueueMeta" data-i18n="dashboard.pendingQueueMetaWaiting">Waiting for review</span>
+                  <span class="panel-note" id="dashboardPendingQueueMeta"></span>
                 </div>
                 <div id="dashboardApprovalQueue" class="queue-list dashboard-scroll-list"></div>
+                <button type="button" id="dashboardOpenPendingReview" class="btn btn-outline-secondary btn-sm mt-2 d-none"></button>
               </section>
 
               <section class="panel-shell dashboard-stream-card">
@@ -594,6 +616,7 @@
                 <div>
                   <div class="panel-kicker" data-i18n="review.reviewFlow">Review Flow</div>
                 </div>
+                <button id="loadHistoryBtn" type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="false" aria-controls="historySection" data-i18n="history.auditTrail">History</button>
               </div>
               <ul class="nav nav-tabs ide-tabs" id="approvalTabs" role="tablist">
                 <li class="nav-item" role="presentation">
@@ -635,12 +658,24 @@
                     </div>
                   </div>
                   <div class="filter-actions filter-actions-inline">
+                    <button id="reviewActionableToggle" class="btn btn-outline-primary btn-sm" type="button" aria-pressed="false" aria-controls="pendingContainer" data-i18n="review.actionableOnly">Assigned to me</button>
                     <button id="approveFilteredBtn" class="btn btn-primary btn-sm" type="button" data-i18n="review.approveFiltered">Approve Filtered</button>
                     <button id="reviewAllDatesBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="review.allDates">All dates</button>
                     <button id="reviewResetFiltersBtn" class="btn btn-outline-secondary btn-sm" type="button" data-i18n="action.reset">Reset</button>
                   </div>
                 </div>
               </div>
+              <section id="reviewBatchResult" class="review-batch-result d-none" aria-labelledby="reviewBatchResultHeading">
+                <div class="review-batch-result-header">
+                  <h3 id="reviewBatchResultHeading" role="status" tabindex="-1"></h3>
+                  <button type="button" id="dismissReviewBatchResult" class="btn btn-outline-secondary btn-sm" data-i18n="shared.close">Close</button>
+                </div>
+                <details id="reviewBatchFailures" class="d-none">
+                  <summary id="reviewBatchFailuresSummary"></summary>
+                  <ul id="reviewBatchFailureList"></ul>
+                </details>
+                <button type="button" id="refreshReviewAfterBatch" class="btn btn-outline-secondary btn-sm d-none" data-i18n="review.refreshList">Refresh review list</button>
+              </section>
               <div class="tab-content review-tab-content" id="approvalTabsContent">
                 <div class="tab-pane fade show active" id="pendingContainer" role="tabpanel" aria-labelledby="pending-tab"></div>
                 <div class="tab-pane fade" id="attentionContainer" role="tabpanel" aria-labelledby="attention-tab"></div>
@@ -650,13 +685,14 @@
               <nav id="reviewPagination" class="review-pagination" data-i18n-aria-label="review.pages" aria-label="Review pages"></nav>
             </section>
 
-            <section id="historySection" class="panel-shell">
+            <section id="historySection" class="panel-shell d-none" aria-labelledby="reviewHistoryHeading">
               <div class="panel-header-row">
                 <div>
-                  <button id="loadHistoryBtn" type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="false" aria-controls="historyWorkspace" data-i18n="history.auditTrail">Audit Trail</button>
+                  <div id="reviewHistoryHeading" class="panel-kicker" tabindex="-1" data-i18n="history.auditTrail">History</div>
                 </div>
                 <div class="panel-header-actions">
                   <button id="refreshHistoryBtn" class="btn btn-outline-secondary btn-sm" data-i18n="action.refresh">Refresh</button>
+                  <button id="closeHistoryBtn" type="button" class="btn btn-outline-secondary btn-sm" data-i18n="shared.close">Close</button>
                 </div>
               </div>
               <div id="historyWorkspace" class="d-none">
@@ -735,6 +771,10 @@
           <section class="project-analytics-bar" id="projectAnalyticsBar" aria-label="Project Analytics" data-i18n-aria-label="projects.analytics">
             <div id="projectInsightsSummary" class="project-insight-summary"></div>
             <div class="project-analytics-actions">
+                <button type="button" id="projectFindShortcut" class="btn btn-outline-secondary btn-sm" aria-controls="projectPortfolioSearchInput">
+                  <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                  <span data-i18n="projects.findProject">Find a project</span>
+                </button>
                 <span class="visually-hidden" id="projectAnalyticsExportHint" data-i18n="projects.analyticsExportHint">Uses the selected period.</span>
                 <span class="visually-hidden" id="projectDepartmentAnalyticsExportHint" data-i18n="projects.departmentAnalyticsExportHint">Global project view, without employee details.</span>
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="projectAnalyticsExportButton" aria-describedby="projectAnalyticsExportHint">
@@ -964,111 +1004,121 @@
   </div>
 
   <div class="modal fade" id="updateEntryModal" tabindex="-1" aria-labelledby="updateEntryModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-dialog-workspace">
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title" id="updateEntryModalLabel" data-i18n="modal.updateEntry">Update Entry</h3>
           <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <form id="updateEntryForm">
+          <form id="updateEntryForm" class="modal-form-stack">
             <input type="hidden" id="originalDate" />
             <input type="hidden" id="originalPunchIn" />
             <input type="hidden" id="originalPunchOut" />
             <input type="hidden" id="updateEntryType" value="overtime" />
-            <div class="field-block">
-              <label for="updateDate" class="form-label" data-i18n="modal.date">Date</label>
-              <input type="date" class="form-control" id="updateDate" required />
-            </div>
-            <div class="field-block">
-              <label for="updateWorkSchedule" class="form-label" data-i18n="shared.workSchedule">Work schedule</label>
-              <select id="updateWorkSchedule" class="form-select" required>
-                <option value="" data-i18n="shared.workScheduleUnconfirmed">Schedule to confirm</option>
-                <option value="regular" data-i18n="shared.workScheduleRegular">Regular schedule</option>
-                <option value="compressed" data-i18n="shared.workScheduleCompressed">Compressed schedule</option>
-              </select>
-            </div>
-            <div class="field-block">
-              <label class="form-label" data-i18n="modal.punchIn">Punch In</label>
-              <div class="input-group">
-                <input type="text" class="form-control" id="updatePunchInHours" placeholder="HH" required />
-                <span class="input-group-text">:</span>
-                <input type="text" class="form-control" id="updatePunchInMinutes" placeholder="MM" required />
+            <fieldset class="modal-form-section">
+              <legend data-i18n="modal.entryTiming">Date and time</legend>
+              <div class="modal-field-grid cols-4">
+                <div class="field-block">
+                  <label for="updateDate" class="form-label" data-i18n="modal.date">Date</label>
+                  <input type="date" class="form-control" id="updateDate" required />
+                </div>
+                <div class="field-block">
+                  <label for="updateWorkSchedule" class="form-label" data-i18n="shared.workSchedule">Work schedule</label>
+                  <select id="updateWorkSchedule" class="form-select" required>
+                    <option value="" data-i18n="shared.workScheduleUnconfirmed">Schedule to confirm</option>
+                    <option value="regular" data-i18n="shared.workScheduleRegular">Regular schedule</option>
+                    <option value="compressed" data-i18n="shared.workScheduleCompressed">Compressed schedule</option>
+                  </select>
+                </div>
+                <div class="field-block">
+                  <label class="form-label" data-i18n="modal.punchIn">Punch In</label>
+                  <div class="input-group">
+                    <input type="text" class="form-control" id="updatePunchInHours" placeholder="HH" required />
+                    <span class="input-group-text">:</span>
+                    <input type="text" class="form-control" id="updatePunchInMinutes" placeholder="MM" required />
+                  </div>
+                </div>
+                <div class="field-block">
+                  <label class="form-label" data-i18n="modal.punchOut">Punch Out</label>
+                  <div class="input-group">
+                    <input type="text" class="form-control" id="updatePunchOutHours" placeholder="HH" required />
+                    <span class="input-group-text">:</span>
+                    <input type="text" class="form-control" id="updatePunchOutMinutes" placeholder="MM" required />
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="field-block">
-              <label class="form-label" data-i18n="modal.punchOut">Punch Out</label>
-              <div class="input-group">
-                <input type="text" class="form-control" id="updatePunchOutHours" placeholder="HH" required />
-                <span class="input-group-text">:</span>
-                <input type="text" class="form-control" id="updatePunchOutMinutes" placeholder="MM" required />
+            </fieldset>
+            <fieldset class="modal-form-section">
+              <legend data-i18n="modal.entryClassification">Project and status</legend>
+              <div class="modal-field-grid cols-3">
+                <div class="field-block update-overtime-field">
+                  <label for="updateProjectCode" class="form-label" data-i18n="shared.project">Project</label>
+                  <input type="hidden" id="originalProjectCode" />
+                  <select id="updateProjectCode" class="form-select" required>
+                    <option value="" data-i18n="shared.loadingProjects">Loading projects...</option>
+                  </select>
+                </div>
+                <div class="field-block update-overtime-field">
+                  <label for="updateOvertimeCode" class="form-label" data-i18n="shared.overtimeCode">Overtime Code</label>
+                  <input type="hidden" id="originalOvertimeCode" />
+                  <select id="updateOvertimeCode" class="form-select" required>
+                    <option value="" data-i18n="shared.loadingOvertimeCodes">Loading overtime codes...</option>
+                  </select>
+                </div>
+                <div class="field-block update-overtime-field">
+                  <label for="updatePaymentOption" class="form-label" data-i18n="shared.paymentOption">Payment</label>
+                  <input type="hidden" id="originalPaymentOption" />
+                  <select id="updatePaymentOption" class="form-select" required>
+                    <option value="" data-i18n="shared.loadingPaymentOptions">Loading payment options...</option>
+                  </select>
+                </div>
+                <div id="updateITHolidayField" class="field-block d-none">
+                  <label for="updateITHolidaySchedule" class="form-label" data-i18n="shared.itHolidaySchedule">IT holiday: was this normally a scheduled workday?</label>
+                  <select id="updateITHolidaySchedule" class="form-select">
+                    <option value="" data-i18n="shared.toConfirm">To confirm</option>
+                    <option value="false" data-i18n="shared.yes">Yes</option>
+                    <option value="true" data-i18n="shared.no">No</option>
+                  </select>
+                </div>
+                <div class="field-block update-overtime-field">
+                  <label for="updateReasonCode" class="form-label" data-i18n="shared.reasonCode">Reason Code</label>
+                  <input type="hidden" id="originalReasonCode" />
+                  <select id="updateReasonCode" class="form-select">
+                    <option value="" data-i18n="shared.loadingReasonCodes">Loading reason codes...</option>
+                  </select>
+                </div>
+                <div class="field-block">
+                  <label for="updateEntryStatus" class="form-label" data-i18n="dashboard.tableStatus">Status</label>
+                  <input type="hidden" id="originalEntryStatus" />
+                  <select id="updateEntryStatus" class="form-select" required>
+                    <option value="pending" data-i18n="status.pending">Pending</option>
+                    <option value="approved" data-i18n="status.approved">Approved</option>
+                    <option value="rejected" data-i18n="status.rejected">Rejected</option>
+                  </select>
+                </div>
+                <div class="field-block update-diverse-field d-none">
+                  <label for="updateDiverseReason" class="form-label" data-i18n="shared.diverseReason">Diverse Reason</label>
+                  <input type="hidden" id="originalDiverseReason" />
+                  <input type="text" id="updateDiverseReason" class="form-control">
+                </div>
               </div>
-            </div>
-            <div class="field-block update-overtime-field">
-              <label for="updateProjectCode" class="form-label" data-i18n="shared.project">Project</label>
-              <input type="hidden" id="originalProjectCode" />
-              <select id="updateProjectCode" class="form-select" required>
-                <option value="" data-i18n="shared.loadingProjects">Loading projects...</option>
-              </select>
-            </div>
-            <div class="field-block update-overtime-field">
-              <label for="updateOvertimeCode" class="form-label" data-i18n="shared.overtimeCode">Overtime Code</label>
-              <input type="hidden" id="originalOvertimeCode" />
-              <select id="updateOvertimeCode" class="form-select" required>
-                <option value="" data-i18n="shared.loadingOvertimeCodes">Loading overtime codes...</option>
-              </select>
-            </div>
-            <div class="field-block update-overtime-field">
-              <label for="updatePaymentOption" class="form-label" data-i18n="shared.paymentOption">Payment</label>
-              <input type="hidden" id="originalPaymentOption" />
-              <select id="updatePaymentOption" class="form-select" required>
-                <option value="" data-i18n="shared.loadingPaymentOptions">Loading payment options...</option>
-              </select>
-            </div>
-            <div id="updateITHolidayField" class="field-block d-none">
-              <label for="updateITHolidaySchedule" class="form-label" data-i18n="shared.itHolidaySchedule">IT holiday: was this normally a scheduled workday?</label>
-              <select id="updateITHolidaySchedule" class="form-select">
-                <option value="" data-i18n="shared.toConfirm">To confirm</option>
-                <option value="false" data-i18n="shared.yes">Yes</option>
-                <option value="true" data-i18n="shared.no">No</option>
-              </select>
-            </div>
-            <div class="field-block update-overtime-field">
-              <label for="updateReasonCode" class="form-label" data-i18n="shared.reasonCode">Reason Code</label>
-              <input type="hidden" id="originalReasonCode" />
-              <select id="updateReasonCode" class="form-select">
-                <option value="" data-i18n="shared.loadingReasonCodes">Loading reason codes...</option>
-              </select>
-            </div>
-            <div class="field-block update-overtime-field">
-              <label for="updateWorkComment" class="form-label" data-i18n="shared.employeeWorkComment">Employee comment</label>
-              <input type="hidden" id="originalWorkComment" />
-              <textarea id="updateWorkComment" class="form-control" rows="4" maxlength="1000"></textarea>
-            </div>
-            <div class="field-block">
-              <label for="updateEntryStatus" class="form-label" data-i18n="dashboard.tableStatus">Status</label>
-              <input type="hidden" id="originalEntryStatus" />
-              <select id="updateEntryStatus" class="form-select" required>
-                <option value="pending" data-i18n="status.pending">Pending</option>
-                <option value="approved" data-i18n="status.approved">Approved</option>
-                <option value="rejected" data-i18n="status.rejected">Rejected</option>
-              </select>
-            </div>
-            <div class="field-block update-diverse-field d-none">
-              <label for="updateDiverseReason" class="form-label" data-i18n="shared.diverseReason">Diverse Reason</label>
-              <input type="hidden" id="originalDiverseReason" />
-              <input type="text" id="updateDiverseReason" class="form-control">
-            </div>
-            <div class="field-block update-diverse-field d-none">
-              <label for="updateDiverseSummary" class="form-label" data-i18n="shared.diverseSummary">Work Summary</label>
-              <input type="hidden" id="originalDiverseSummary" />
-              <textarea id="updateDiverseSummary" class="form-control" rows="4" maxlength="1000"></textarea>
-            </div>
+            </fieldset>
             <input type="hidden" id="updateEntryId" />
-            <div class="field-block">
-              <label for="updateManagerMessage" class="form-label" data-i18n="shared.managerMessage">Manager message</label>
-              <textarea id="updateManagerMessage" class="form-control" rows="3"></textarea>
-            </div>
+            <fieldset class="modal-form-section">
+              <legend data-i18n="shared.entryNotes">Entry notes</legend>
+              <div class="modal-field-grid">
+                <section class="field-block" aria-labelledby="updateEmployeeCommentLabel">
+                  <div id="updateEmployeeCommentLabel" class="form-label" data-i18n="shared.employeeWorkComment">Employee comment</div>
+                  <div id="updateEmployeeCommentHistory" class="entry-comment-readonly"></div>
+                </section>
+                <div class="field-block">
+                  <label for="updateManagerMessage" class="form-label" data-i18n="shared.managerMessage">Supervisor note</label>
+                  <textarea id="updateManagerMessage" class="form-control" rows="4" maxlength="1000" aria-describedby="updateSupervisorNoteContext"></textarea>
+                  <div id="updateSupervisorNoteContext" class="form-text"></div>
+                </div>
+              </div>
+            </fieldset>
           </form>
         </div>
         <div class="modal-footer">
@@ -1080,15 +1130,15 @@
   </div>
 
   <div class="modal fade" id="addEntryModal" tabindex="-1" aria-labelledby="addEntryModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true">
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-dialog-workspace">
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title" id="addEntryModalLabel" data-i18n="modal.addEntry">Add Entry</h3>
           <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <form id="addEntryForm">
-            <fieldset id="addEntryTypeField" class="field-block add-entry-type-field d-none">
+          <form id="addEntryForm" class="modal-form-stack">
+            <fieldset id="addEntryTypeField" class="field-block modal-span-all add-entry-type-field d-none">
               <legend class="form-label" data-i18n="shared.timeCategory">Time category</legend>
               <div class="entry-type-segmented-control">
                 <label class="entry-type-segment">
@@ -1102,66 +1152,81 @@
               </div>
               <div class="form-text" data-i18n="modal.entryTypeHint">Choose the kind of time to record for this employee.</div>
             </fieldset>
-            <div class="field-block">
-              <label for="addEntryDate" class="form-label" data-i18n="modal.date">Date</label>
-              <input type="date" class="form-control" id="addEntryDate" required />
-            </div>
-            <div class="field-block">
-              <label class="form-label" data-i18n="modal.punchIn">Punch In</label>
-              <div class="input-group">
-                <input type="text" class="form-control" id="addPunchInHours" placeholder="HH" required />
-                <span class="input-group-text">:</span>
-                <input type="text" class="form-control" id="addPunchInMinutes" placeholder="MM" required />
+            <fieldset class="modal-form-section">
+              <legend data-i18n="modal.entryTiming">Date and time</legend>
+              <div class="modal-field-grid cols-3">
+                <div class="field-block">
+                  <label for="addEntryDate" class="form-label" data-i18n="modal.date">Date</label>
+                  <input type="date" class="form-control" id="addEntryDate" required />
+                </div>
+                <div class="field-block">
+                  <label class="form-label" data-i18n="modal.punchIn">Punch In</label>
+                  <div class="input-group">
+                    <input type="text" class="form-control" id="addPunchInHours" placeholder="HH" required />
+                    <span class="input-group-text">:</span>
+                    <input type="text" class="form-control" id="addPunchInMinutes" placeholder="MM" required />
+                  </div>
+                </div>
+                <div class="field-block">
+                  <label class="form-label" data-i18n="modal.punchOut">Punch Out</label>
+                  <div class="input-group">
+                    <input type="text" class="form-control" id="addPunchOutHours" placeholder="HH" required />
+                    <span class="input-group-text">:</span>
+                    <input type="text" class="form-control" id="addPunchOutMinutes" placeholder="MM" required />
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="field-block">
-              <label class="form-label" data-i18n="modal.punchOut">Punch Out</label>
-              <div class="input-group">
-                <input type="text" class="form-control" id="addPunchOutHours" placeholder="HH" required />
-                <span class="input-group-text">:</span>
-                <input type="text" class="form-control" id="addPunchOutMinutes" placeholder="MM" required />
+            </fieldset>
+            <fieldset class="modal-form-section">
+              <legend data-i18n="modal.entryCoding">Project and payment</legend>
+              <div class="modal-field-grid cols-4">
+                <div class="field-block add-overtime-field">
+                  <label for="addProjectCode" class="form-label" data-i18n="shared.project">Project</label>
+                  <select id="addProjectCode" class="form-select" required>
+                    <option value="" data-i18n="shared.selectProject">Select project</option>
+                  </select>
+                </div>
+                <div class="field-block add-overtime-field">
+                  <label for="addOvertimeCode" class="form-label" data-i18n="shared.overtimeCode">Overtime Code</label>
+                  <select id="addOvertimeCode" class="form-select">
+                    <option value="" data-i18n="shared.selectOvertimeCode">Select overtime code</option>
+                  </select>
+                </div>
+                <div class="field-block add-overtime-field">
+                  <label for="addPaymentOption" class="form-label" data-i18n="shared.paymentOption">Payment</label>
+                  <select id="addPaymentOption" class="form-select" required>
+                    <option value="" data-i18n="shared.selectPaymentOption">Select payment</option>
+                  </select>
+                </div>
+                <div class="field-block add-overtime-field">
+                  <label for="addReasonCode" class="form-label" data-i18n="shared.reasonCode">Reason Code</label>
+                  <select id="addReasonCode" class="form-select">
+                    <option value="" data-i18n="shared.selectReasonCode">Select reason</option>
+                  </select>
+                </div>
+                <div class="field-block add-diverse-field d-none">
+                  <label for="addDiverseReason" class="form-label" data-i18n="shared.diverseReason">Diverse Reason</label>
+                  <input type="text" id="addDiverseReason" class="form-control" maxlength="240" data-i18n-placeholder="self.diverseReasonPlaceholder" placeholder="Reason" />
+                </div>
               </div>
-            </div>
-            <div class="field-block add-overtime-field">
-              <label for="addProjectCode" class="form-label" data-i18n="shared.project">Project</label>
-              <select id="addProjectCode" class="form-select" required>
-                <option value="" data-i18n="shared.selectProject">Select project</option>
-              </select>
-            </div>
-            <div class="field-block add-overtime-field">
-              <label for="addOvertimeCode" class="form-label" data-i18n="shared.overtimeCode">Overtime Code</label>
-              <select id="addOvertimeCode" class="form-select">
-                <option value="" data-i18n="shared.selectOvertimeCode">Select overtime code</option>
-              </select>
-            </div>
-            <div class="field-block add-overtime-field">
-              <label for="addPaymentOption" class="form-label" data-i18n="shared.paymentOption">Payment</label>
-              <select id="addPaymentOption" class="form-select" required>
-                <option value="" data-i18n="shared.selectPaymentOption">Select payment</option>
-              </select>
-            </div>
-            <div class="field-block add-overtime-field">
-              <label for="addReasonCode" class="form-label" data-i18n="shared.reasonCode">Reason Code</label>
-              <select id="addReasonCode" class="form-select">
-                <option value="" data-i18n="shared.selectReasonCode">Select reason</option>
-              </select>
-            </div>
-            <div class="field-block add-overtime-field">
-              <label for="addWorkComment" class="form-label" data-i18n="modal.employeeCommentOptional">Employee comment (optional)</label>
-              <textarea id="addWorkComment" class="form-control" rows="3" maxlength="1000"></textarea>
-            </div>
-            <div class="field-block add-diverse-field d-none">
-              <label for="addDiverseReason" class="form-label" data-i18n="shared.diverseReason">Diverse Reason</label>
-              <input type="text" id="addDiverseReason" class="form-control" maxlength="240" data-i18n-placeholder="self.diverseReasonPlaceholder" placeholder="Reason" />
-            </div>
-            <div class="field-block add-diverse-field d-none">
-              <label for="addDiverseSummary" class="form-label" data-i18n="shared.diverseSummary">Work Summary</label>
-              <textarea id="addDiverseSummary" class="form-control" rows="3" maxlength="1000" data-i18n-placeholder="self.diverseSummaryPlaceholder" placeholder="Summary of work completed"></textarea>
-            </div>
-            <div class="field-block">
-              <label for="addManagerMessage" class="form-label" data-i18n="modal.supervisorNoteOptional">Supervisor note (optional)</label>
-              <textarea id="addManagerMessage" class="form-control" rows="3" maxlength="1000"></textarea>
-            </div>
+            </fieldset>
+            <fieldset class="modal-form-section">
+              <legend data-i18n="shared.entryNotes">Entry notes</legend>
+              <div class="modal-field-grid">
+                <div class="field-block add-overtime-field">
+                  <label for="addWorkComment" class="form-label" data-i18n="modal.employeeCommentOptional">Employee comment (optional)</label>
+                  <textarea id="addWorkComment" class="form-control" rows="3" maxlength="1000"></textarea>
+                </div>
+                <div class="field-block add-diverse-field d-none">
+                  <label for="addDiverseSummary" class="form-label" data-i18n="shared.diverseSummary">Work Summary</label>
+                  <textarea id="addDiverseSummary" class="form-control" rows="3" maxlength="1000" data-i18n-placeholder="self.diverseSummaryPlaceholder" placeholder="Summary of work completed"></textarea>
+                </div>
+                <div class="field-block">
+                  <label for="addManagerMessage" class="form-label" data-i18n="modal.supervisorNoteOptional">Supervisor note (optional)</label>
+                  <textarea id="addManagerMessage" class="form-control" rows="3" maxlength="1000"></textarea>
+                </div>
+              </div>
+            </fieldset>
           </form>
         </div>
         <div class="modal-footer">
@@ -1245,11 +1310,13 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
         </div>
         <div class="modal-body">
+          <input type="hidden" id="dashboardNoteEntryId" />
           <input type="hidden" id="dashboardNoteDate" />
           <input type="hidden" id="dashboardNotePunchIn" />
           <div class="field-block mb-0">
             <label for="dashboardNoteInput" class="form-label" data-i18n="shared.managerMessage">Manager message</label>
-            <textarea id="dashboardNoteInput" class="form-control" rows="4"></textarea>
+            <textarea id="dashboardNoteInput" class="form-control" rows="4" maxlength="1000" aria-describedby="dashboardNoteContext"></textarea>
+            <div id="dashboardNoteContext" class="form-text"></div>
           </div>
         </div>
         <div class="modal-footer">
@@ -1260,6 +1327,26 @@
     </div>
   </div>
 
+  <div class="modal fade" id="entryRejectionModal" tabindex="-1" aria-labelledby="entryRejectionTitle" aria-describedby="entryRejectionContext" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <form id="entryRejectionForm" class="modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title" id="entryRejectionTitle" data-i18n="review.rejectEntry">Reject entry</h3>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p id="entryRejectionContext"></p>
+          <label for="entryRejectionNote" class="form-label" data-i18n="review.rejectionNoteLabel">Rejection reason (required)</label>
+          <textarea id="entryRejectionNote" class="form-control" rows="3" required></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
+          <button id="entryRejectionSubmit" type="submit" class="btn btn-danger" data-i18n="review.rejectEntry" disabled>Reject entry</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="modal fade" id="selfConfirmModal" tabindex="-1" aria-labelledby="selfConfirmModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
@@ -1267,12 +1354,39 @@
           <h3 class="modal-title" id="selfConfirmModalLabel"></h3>
           <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
         </div>
-        <div class="modal-body" id="selfConfirmModalBody"></div>
+        <div class="modal-body">
+          <div id="selfConfirmModalBody"></div>
+          <div id="selfConfirmModalError" class="alert alert-danger mt-3 mb-0 d-none" role="alert"></div>
+        </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
-          <button type="button" id="selfConfirmModalConfirmBtn" class="btn btn-primary" data-i18n="action.confirm">Confirm</button>
+          <button type="button" id="selfConfirmModalConfirmBtn" class="btn btn-primary">Confirm</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="selfEntryCommentModal" tabindex="-1" aria-labelledby="selfEntryCommentTitle" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <form class="modal-content" id="selfEntryCommentForm">
+        <div class="modal-header">
+          <h3 class="modal-title" id="selfEntryCommentTitle" data-i18n="action.addEntryComment">Add to my comment</h3>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
+        </div>
+        <div class="modal-body modal-form-stack">
+          <div id="selfEntryCommentContext" class="panel-note"></div>
+          <div id="selfEntryCommentHistory" class="entry-comment-readonly d-none"></div>
+          <div class="field-block">
+            <label for="selfEntryCommentText" class="form-label" data-i18n="shared.employeeCommentAddition">Additional comment</label>
+            <textarea id="selfEntryCommentText" class="form-control" rows="4" maxlength="1000" required></textarea>
+          </div>
+          <div id="selfEntryCommentError" class="alert alert-danger d-none m-0" role="alert"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
+          <button type="submit" id="saveSelfEntryComment" class="btn btn-primary" data-i18n="action.saveChanges">Save Changes</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -1283,9 +1397,9 @@
           <h3 class="modal-title" id="selfSettingsModalLabel" data-i18n="settings.title">Settings</h3>
           <button type="button" class="btn-close" data-bs-dismiss="modal" data-i18n-aria-label="shared.close" aria-label="Close"></button>
         </div>
-        <div class="modal-body">
-          <div class="employee-editor-subsection">
-            <div class="employee-editor-subsection-title" data-i18n="settings.appearance">Appearance</div>
+        <div class="modal-body settings-modal-layout">
+          <section class="settings-section settings-appearance" aria-labelledby="settingsAppearanceTitle">
+            <h4 id="settingsAppearanceTitle" class="settings-section-title" data-i18n="settings.appearance">Appearance</h4>
             <div class="settings-choice-row" role="group" aria-label="Theme" data-i18n-aria-label="theme.label">
               <button type="button" class="btn btn-outline-secondary settings-theme-option" data-settings-theme="system">
                 <i class="fa-solid fa-circle-half-stroke"></i>
@@ -1300,96 +1414,18 @@
                 <span data-i18n="theme.dark">Dark</span>
               </button>
             </div>
-          </div>
-          <div class="employee-editor-subsection">
-            <div class="employee-editor-subsection-title" data-i18n="settings.systemHealth">System Health</div>
+          </section>
+          <section class="settings-section" aria-labelledby="settingsHealthTitle">
+            <div class="settings-section-header">
+              <h4 id="settingsHealthTitle" class="settings-section-title" data-i18n="settings.systemHealth">System Health</h4>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="settingsHealthRefreshButton" data-i18n="settings.healthRefresh">Refresh health</button>
+            </div>
             <div id="settingsHealthPanel" class="settings-health-panel">
               <span class="panel-note" data-i18n="settings.healthIdle">Open this panel to verify the local app and shared data folder.</span>
             </div>
-            <div class="settings-inline-actions">
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="settingsHealthRefreshButton" data-i18n="settings.healthRefresh">Refresh health</button>
-            </div>
-          </div>
-          <section id="budgetPeriodSettingsSection" class="employee-editor-subsection d-none" data-role-scope="superAdmin" aria-labelledby="budgetPeriodSettingsTitle">
-            <div class="employee-editor-subsection-title" id="budgetPeriodSettingsTitle" data-i18n="settings.budgetPeriods">Budget periods</div>
-            <p class="panel-note mb-0" data-i18n="settings.budgetPeriodsHint">Add the periods you need or generate a monthly sequence. Complete periods become available for comparison in Projects.</p>
-            <div id="budgetPeriodSettingsMessage" class="alert d-none" role="alert" aria-live="polite"></div>
-            <div class="field-block budget-period-cycle-field">
-              <label for="budgetPeriodCycleLabelInput" data-i18n="settings.budgetCycleLabel">Budget cycle label</label>
-              <input type="text" id="budgetPeriodCycleLabelInput" class="form-control form-control-sm" maxlength="80" autocomplete="off" data-i18n-placeholder="settings.budgetCyclePlaceholder" placeholder="For example: 2026–2027" />
-            </div>
-            <div class="budget-period-generator" aria-labelledby="budgetPeriodGeneratorTitle">
-              <div class="budget-period-generator-copy">
-                <strong id="budgetPeriodGeneratorTitle" data-i18n="settings.budgetGeneratorTitle">Monthly generator</strong>
-                <span data-i18n="settings.budgetGeneratorHint">Creates consecutive periods beginning on the same day each month.</span>
-              </div>
-              <div class="budget-period-generator-fields">
-                <label class="field-block" for="budgetPeriodGeneratorStartMonth">
-                  <span data-i18n="settings.budgetGeneratorStartMonth">First month</span>
-                  <input type="month" id="budgetPeriodGeneratorStartMonth" class="form-control form-control-sm" />
-                </label>
-                <label class="field-block" for="budgetPeriodGeneratorDay">
-                  <span data-i18n="settings.budgetGeneratorDay">Start day</span>
-                  <input type="number" id="budgetPeriodGeneratorDay" class="form-control form-control-sm" min="1" max="31" value="1" inputmode="numeric" />
-                </label>
-                <label class="field-block" for="budgetPeriodGeneratorCount">
-                  <span data-i18n="settings.budgetGeneratorCount">Number of periods</span>
-                  <input type="number" id="budgetPeriodGeneratorCount" class="form-control form-control-sm" min="1" max="60" value="12" inputmode="numeric" />
-                </label>
-                <button type="button" class="btn btn-outline-primary btn-sm" id="budgetPeriodGenerateButton"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i><span data-i18n="settings.budgetGenerate">Generate</span></button>
-              </div>
-            </div>
-            <div class="budget-period-table-wrap">
-              <table class="table table-sm mb-0 budget-period-table" aria-describedby="budgetPeriodSettingsHint">
-                <caption class="visually-hidden" id="budgetPeriodSettingsHint" data-i18n="settings.budgetPeriodsTableDescription">Start and end dates for the budget periods.</caption>
-                <thead>
-                  <tr>
-                    <th scope="col" data-i18n="settings.budgetPeriod">Period</th>
-                    <th scope="col" data-i18n="settings.budgetStartDate">Start date</th>
-                    <th scope="col" data-i18n="settings.budgetEndDate">End date</th>
-                    <th scope="col"><span class="visually-hidden" data-i18n="settings.budgetActions">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody id="budgetPeriodSettingsRows"></tbody>
-              </table>
-            </div>
-            <div class="settings-inline-actions budget-period-actions">
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="budgetPeriodAddButton"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="settings.budgetAddPeriod">Add a period</span></button>
-              <button type="button" class="btn btn-primary btn-sm" id="budgetPeriodSaveButton" data-i18n="settings.budgetSave">Save budget periods</button>
-            </div>
           </section>
-          <section id="compensationGridSettingsSection" class="employee-editor-subsection d-none" data-role-scope="superAdmin" aria-labelledby="compensationGridSettingsTitle">
-            <div class="employee-editor-subsection-title" id="compensationGridSettingsTitle" data-i18n="settings.compensationGrid">Compensation Grid</div>
-            <p class="panel-note mb-0" data-i18n="settings.compensationGridHint">Annual salaries are managed here by classification and effective date.</p>
-            <div id="compensationGridSettingsMessage" class="alert d-none" role="alert" aria-live="polite"></div>
-            <div class="compensation-grid-table-wrap" tabindex="0">
-              <table class="table compensation-grid-table" aria-describedby="compensationGridSettingsHint">
-                <caption class="visually-hidden" id="compensationGridSettingsHint" data-i18n="settings.compensationGridTableDescription">Annual salary bands by group, sub-group, level, and effective date.</caption>
-                <thead>
-                  <tr>
-                    <th scope="col" data-i18n="settings.compensationGroup">Group</th>
-                    <th scope="col" data-i18n="settings.compensationSubGroup">Sub-group</th>
-                    <th scope="col" data-i18n="settings.compensationLevel">Level / step</th>
-                    <th scope="col" data-i18n="settings.compensationAnnualSalary">Annual salary (CAD)</th>
-                    <th scope="col" data-i18n="settings.compensationEffectiveFrom">Effective from</th>
-                    <th scope="col" data-i18n="settings.compensationEffectiveTo">Effective to</th>
-                    <th scope="col"><span class="visually-hidden" data-i18n="settings.compensationActions">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody id="compensationGridSettingsRows"></tbody>
-              </table>
-            </div>
-            <div class="settings-inline-actions compensation-grid-actions">
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="compensationGridAddButton">
-                <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                <span data-i18n="settings.compensationAddBand">Add salary band</span>
-              </button>
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="compensationGridAddIT02Button" data-i18n="settings.compensationAddIT02">Add IT-02</button>
-              <button type="button" class="btn btn-primary btn-sm" id="compensationGridSaveButton" data-i18n="settings.compensationSave">Save compensation grid</button>
-            </div>
-          </section>
-          <div class="employee-editor-subsection">
-            <div class="employee-editor-subsection-title" data-i18n="settings.security">Password Change</div>
+          <section class="settings-section" aria-labelledby="settingsSecurityTitle">
+            <h4 id="settingsSecurityTitle" class="settings-section-title" data-i18n="settings.security">Password Change</h4>
             <div id="selfPasswordMessage" class="alert d-none" role="alert"></div>
             <form id="selfPasswordForm">
               <div class="settings-password-grid">
@@ -1411,11 +1447,11 @@
             <div class="settings-inline-actions">
               <button type="button" class="btn btn-outline-secondary btn-sm" id="selfPasswordSaveButton" data-i18n="action.updatePassword">Update Password</button>
             </div>
-          </div>
-          <div id="selfGc179ProfileMessage" class="alert d-none" role="alert"></div>
-          <form id="selfGc179ProfileForm">
-            <div class="employee-editor-subsection">
-              <div class="employee-editor-subsection-title" data-i18n="employees.gc179Header">Profile and classification</div>
+          </section>
+          <form id="selfGc179ProfileForm" class="settings-section" aria-labelledby="settingsProfileTitle">
+            <h4 id="settingsProfileTitle" class="settings-section-title" data-i18n="employees.gc179Header">Profile and classification</h4>
+            <div id="selfGc179ProfileMessage" class="alert d-none" role="alert"></div>
+            <div class="settings-profile-fields">
               <div class="employee-gc179-grid">
                 <div class="field-block">
                   <label for="selfGc179SurnameInput" class="form-label" data-i18n="employees.gc179Surname">Surname</label>
@@ -1486,11 +1522,95 @@
               <span><strong data-i18n="employees.gc179Level">Level</strong> <output id="selfGc179LevelPreview">—</output></span>
             </div>
             <p class="panel-note mb-0" data-i18n="self.gc179ProfileHint">Group, sub-group and level are used for GC179 forms and overtime estimates.</p>
+            <div class="settings-inline-actions">
+              <button type="button" class="btn btn-primary btn-sm" id="selfGc179ProfileSaveButton" data-i18n="settings.saveProfile">Save profile</button>
+            </div>
           </form>
+          <details id="budgetPeriodSettingsSection" class="settings-section settings-disclosure d-none" data-role-scope="superAdmin" aria-labelledby="budgetPeriodSettingsTitle">
+            <summary class="settings-section-title" id="budgetPeriodSettingsTitle" data-i18n="settings.budgetPeriods">Budget periods</summary>
+            <div class="settings-disclosure-body">
+              <p class="panel-note mb-0" data-i18n="settings.budgetPeriodsHint">Add the periods you need or generate a monthly sequence. Complete periods become available for comparison in Projects.</p>
+              <div id="budgetPeriodSettingsMessage" class="alert d-none" role="alert" aria-live="polite"></div>
+              <div class="field-block budget-period-cycle-field">
+                <label for="budgetPeriodCycleLabelInput" data-i18n="settings.budgetCycleLabel">Budget cycle label</label>
+                <input type="text" id="budgetPeriodCycleLabelInput" class="form-control form-control-sm" maxlength="80" autocomplete="off" data-i18n-placeholder="settings.budgetCyclePlaceholder" placeholder="For example: 2026–2027" />
+              </div>
+              <div class="budget-period-generator" aria-labelledby="budgetPeriodGeneratorTitle">
+                <div class="budget-period-generator-copy">
+                  <strong id="budgetPeriodGeneratorTitle" data-i18n="settings.budgetGeneratorTitle">Monthly generator</strong>
+                  <span data-i18n="settings.budgetGeneratorHint">Creates consecutive periods beginning on the same day each month.</span>
+                </div>
+                <div class="budget-period-generator-fields">
+                  <label class="field-block" for="budgetPeriodGeneratorStartMonth">
+                    <span data-i18n="settings.budgetGeneratorStartMonth">First month</span>
+                    <input type="month" id="budgetPeriodGeneratorStartMonth" class="form-control form-control-sm" />
+                  </label>
+                  <label class="field-block" for="budgetPeriodGeneratorDay">
+                    <span data-i18n="settings.budgetGeneratorDay">Start day</span>
+                    <input type="number" id="budgetPeriodGeneratorDay" class="form-control form-control-sm" min="1" max="31" value="1" inputmode="numeric" />
+                  </label>
+                  <label class="field-block" for="budgetPeriodGeneratorCount">
+                    <span data-i18n="settings.budgetGeneratorCount">Number of periods</span>
+                    <input type="number" id="budgetPeriodGeneratorCount" class="form-control form-control-sm" min="1" max="60" value="12" inputmode="numeric" />
+                  </label>
+                  <button type="button" class="btn btn-outline-primary btn-sm" id="budgetPeriodGenerateButton"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i><span data-i18n="settings.budgetGenerate">Generate</span></button>
+                </div>
+              </div>
+              <div class="budget-period-table-wrap">
+                <table class="table table-sm mb-0 budget-period-table" aria-describedby="budgetPeriodSettingsHint">
+                  <caption class="visually-hidden" id="budgetPeriodSettingsHint" data-i18n="settings.budgetPeriodsTableDescription">Start and end dates for the budget periods.</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" data-i18n="settings.budgetPeriod">Period</th>
+                      <th scope="col" data-i18n="settings.budgetStartDate">Start date</th>
+                      <th scope="col" data-i18n="settings.budgetEndDate">End date</th>
+                      <th scope="col"><span class="visually-hidden" data-i18n="settings.budgetActions">Actions</span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="budgetPeriodSettingsRows"></tbody>
+                </table>
+              </div>
+              <div class="settings-inline-actions budget-period-actions">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="budgetPeriodAddButton"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="settings.budgetAddPeriod">Add a period</span></button>
+                <button type="button" class="btn btn-primary btn-sm" id="budgetPeriodSaveButton" data-i18n="settings.budgetSave">Save budget periods</button>
+              </div>
+            </div>
+          </details>
+          <details id="compensationGridSettingsSection" class="settings-section settings-disclosure d-none" data-role-scope="superAdmin" aria-labelledby="compensationGridSettingsTitle">
+            <summary class="settings-section-title" id="compensationGridSettingsTitle" data-i18n="settings.compensationGrid">Compensation Grid</summary>
+            <div class="settings-disclosure-body">
+              <p class="panel-note mb-0" data-i18n="settings.compensationGridHint">Annual salaries are managed here by classification and effective date.</p>
+              <div id="compensationGridSettingsMessage" class="alert d-none" role="alert" aria-live="polite"></div>
+              <div class="compensation-grid-table-wrap" tabindex="0">
+                <table class="table compensation-grid-table" aria-describedby="compensationGridSettingsHint">
+                  <caption class="visually-hidden" id="compensationGridSettingsHint" data-i18n="settings.compensationGridTableDescription">Annual salary bands by group, sub-group, level, and effective date.</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" data-i18n="settings.compensationGroup">Group</th>
+                      <th scope="col" data-i18n="settings.compensationSubGroup">Sub-group</th>
+                      <th scope="col" data-i18n="settings.compensationLevel">Level / step</th>
+                      <th scope="col" data-i18n="settings.compensationAnnualSalary">Annual salary (CAD)</th>
+                      <th scope="col" data-i18n="settings.compensationEffectiveFrom">Effective from</th>
+                      <th scope="col" data-i18n="settings.compensationEffectiveTo">Effective to</th>
+                      <th scope="col"><span class="visually-hidden" data-i18n="settings.compensationActions">Actions</span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="compensationGridSettingsRows"></tbody>
+                </table>
+              </div>
+              <div class="settings-inline-actions compensation-grid-actions">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="compensationGridAddButton">
+                  <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                  <span data-i18n="settings.compensationAddBand">Add salary band</span>
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="compensationGridAddIT02Button" data-i18n="settings.compensationAddIT02">Add IT-02</button>
+                <button type="button" class="btn btn-primary btn-sm" id="compensationGridSaveButton" data-i18n="settings.compensationSave">Save compensation grid</button>
+              </div>
+            </div>
+          </details>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="action.cancel">Cancel</button>
-          <button type="button" class="btn btn-primary" id="selfGc179ProfileSaveButton" data-i18n="action.saveChanges">Save Changes</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="shared.close">Close</button>
         </div>
       </div>
     </div>
@@ -1505,24 +1625,26 @@
         </div>
         <div class="modal-body">
           <div id="employeeEditorMessage" class="alert d-none" role="alert"></div>
-          <form id="employeeEditorForm">
+          <form id="employeeEditorForm" class="modal-form-stack">
             <input type="hidden" id="employeeEditorMode" value="create">
             <input type="hidden" id="employeeEditorOriginalNameInput" value="">
-            <div class="field-block">
-              <label for="employeeEditorCodeInput" class="form-label" data-i18n="employees.employeeCode">HRMIS</label>
-              <input type="text" class="form-control" id="employeeEditorCodeInput" autocomplete="off">
-            </div>
-            <div class="field-block">
-              <label for="employeeEditorNameInput" class="form-label" data-i18n="employees.employeeName">Employee Name</label>
-              <input type="text" class="form-control" id="employeeEditorNameInput" autocomplete="off">
-            </div>
-            <div class="field-block">
-              <label for="employeeEditorRoleSelect" class="form-label" data-i18n="employees.role">Role</label>
-              <select id="employeeEditorRoleSelect" class="form-select">
-                <option value="employee" data-i18n="employees.role.employee">Employee</option>
-                <option value="admin" data-i18n="employees.role.admin">Admin</option>
-                <option value="superAdmin" data-i18n="employees.role.superAdmin">Super Admin</option>
-              </select>
+            <div class="modal-field-grid cols-3">
+              <div class="field-block">
+                <label for="employeeEditorCodeInput" class="form-label" data-i18n="employees.employeeCode">HRMIS</label>
+                <input type="text" class="form-control" id="employeeEditorCodeInput" autocomplete="off">
+              </div>
+              <div class="field-block">
+                <label for="employeeEditorNameInput" class="form-label" data-i18n="employees.employeeName">Employee Name</label>
+                <input type="text" class="form-control" id="employeeEditorNameInput" autocomplete="off">
+              </div>
+              <div class="field-block">
+                <label for="employeeEditorRoleSelect" class="form-label" data-i18n="employees.role">Role</label>
+                <select id="employeeEditorRoleSelect" class="form-select">
+                  <option value="employee" data-i18n="employees.role.employee">Employee</option>
+                  <option value="admin" data-i18n="employees.role.admin">Admin</option>
+                  <option value="superAdmin" data-i18n="employees.role.superAdmin">Super Admin</option>
+                </select>
+              </div>
             </div>
             <div class="field-block">
               <label class="form-label" data-i18n="employees.timeEntryRights">Time Entry Rights</label>
@@ -1611,7 +1733,7 @@
   </div>
 
   <div class="modal fade" id="projectEditorModal" tabindex="-1" aria-labelledby="projectEditorModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true">
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-dialog-wide">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-dialog-workspace">
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title" id="projectEditorModalLabel" data-i18n="projects.addProject">Add Project</h3>
@@ -1619,22 +1741,27 @@
         </div>
         <div class="modal-body">
           <div id="projectEditorMessage" class="alert d-none" role="alert"></div>
-          <form id="projectEditorForm">
+          <form id="projectEditorForm" class="modal-form-stack">
             <input type="hidden" id="projectEditorMode" value="create">
             <input type="hidden" id="projectEditorOriginalCodeInput" value="">
-            <div class="field-block">
-              <label for="projectEditorCodeInput" class="form-label"><span data-i18n="projects.projectCode">File number</span> <span class="project-code-notice" data-i18n="projects.projectCodeWithoutER">(without ER)</span></label>
-              <input type="text" class="form-control" id="projectEditorCodeInput" autocomplete="off">
-            </div>
-            <div class="field-block">
-              <label for="projectEditorNameInput" class="form-label" data-i18n="projects.projectName">Project Name (optional)</label>
-              <input type="text" class="form-control" id="projectEditorNameInput" autocomplete="off">
-            </div>
-            <div class="field-block">
-              <label for="projectEditorSectorInput" class="form-label" data-i18n="projects.sector">Sector</label>
-              <input type="text" class="form-control" id="projectEditorSectorInput" autocomplete="off">
-            </div>
-            <fieldset class="field-block project-identity-editor">
+            <fieldset class="modal-form-section">
+              <legend data-i18n="modal.projectBasics">Project information</legend>
+              <div class="modal-field-grid cols-3">
+                <div class="field-block">
+                  <label for="projectEditorCodeInput" class="form-label"><span data-i18n="projects.projectCode">File number</span> <span class="project-code-notice" data-i18n="projects.projectCodeWithoutER">(without ER)</span></label>
+                  <input type="text" class="form-control" id="projectEditorCodeInput" autocomplete="off">
+                </div>
+                <div class="field-block">
+                  <label for="projectEditorNameInput" class="form-label" data-i18n="projects.projectName">Project Name (optional)</label>
+                  <input type="text" class="form-control" id="projectEditorNameInput" autocomplete="off">
+                </div>
+                <div class="field-block">
+                  <label for="projectEditorSectorInput" class="form-label" data-i18n="projects.sector">Sector</label>
+                  <input type="text" class="form-control" id="projectEditorSectorInput" autocomplete="off">
+                </div>
+              </div>
+            </fieldset>
+            <fieldset class="modal-form-section project-identity-editor">
               <legend class="form-label" data-i18n="projects.identity">Project identity</legend>
               <div class="project-identity-editor-section">
                 <div id="projectEditorColorLabel" class="project-identity-editor-label" data-i18n="projects.color">Project color</div>
@@ -1654,16 +1781,21 @@
               </div>
               <div class="form-text" data-i18n="projects.identityHint">Color and shape are always shown with the project code, so projects stay easy to tell apart.</div>
             </fieldset>
-            <div class="field-block assignment-picker">
-              <label for="projectEditorAdminsSearchInput" class="form-label" data-i18n="projects.admins">Admins</label>
-              <input type="text" id="projectEditorAdminsSearchInput" class="form-control" autocomplete="off" data-i18n-placeholder="projects.employeeSearchPlaceholder" placeholder="Search employees by name or code">
-              <div id="projectEditorAdminsList" class="assignment-checklist" role="group" aria-label="Admins"></div>
-            </div>
-            <div class="field-block assignment-picker">
-              <label for="projectEditorBackupAdminsSearchInput" class="form-label" data-i18n="projects.backupAdmins">Backup Admins</label>
-              <input type="text" id="projectEditorBackupAdminsSearchInput" class="form-control" autocomplete="off" data-i18n-placeholder="projects.employeeSearchPlaceholder" placeholder="Search employees by name or code">
-              <div id="projectEditorBackupAdminsList" class="assignment-checklist" role="group" aria-label="Backup admins"></div>
-            </div>
+            <fieldset class="modal-form-section">
+              <legend data-i18n="modal.projectSupervision">Supervision</legend>
+              <div class="modal-field-grid">
+                <div class="field-block assignment-picker">
+                  <label for="projectEditorAdminsSearchInput" class="form-label" data-i18n="projects.admins">Admins</label>
+                  <input type="text" id="projectEditorAdminsSearchInput" class="form-control" autocomplete="off" data-i18n-placeholder="projects.employeeSearchPlaceholder" placeholder="Search employees by name or code">
+                  <div id="projectEditorAdminsList" class="assignment-checklist" role="group" aria-label="Admins"></div>
+                </div>
+                <div class="field-block assignment-picker">
+                  <label for="projectEditorBackupAdminsSearchInput" class="form-label" data-i18n="projects.backupAdmins">Backup Admins</label>
+                  <input type="text" id="projectEditorBackupAdminsSearchInput" class="form-control" autocomplete="off" data-i18n-placeholder="projects.employeeSearchPlaceholder" placeholder="Search employees by name or code">
+                  <div id="projectEditorBackupAdminsList" class="assignment-checklist" role="group" aria-label="Backup admins"></div>
+                </div>
+              </div>
+            </fieldset>
           </form>
         </div>
         <div class="modal-footer">
@@ -1685,12 +1817,12 @@
       ? window.location.origin + "/"
       : "http://localhost:8081/";
   </script>
-  <script src="scripts/I18n.js?v=20261008-loading-performance-v1-money-20261015-v1-review-pages-v1-period-nav-v1-no-dashboard-history-v1-main-echarts-v1-it-v1-project-audit-v1"></script>
+  <script src="scripts/I18n.js?v=20261008-loading-performance-v1-money-20261015-v1-review-pages-v1-period-nav-v1-no-dashboard-history-v1-main-echarts-v1-it-v1-project-audit-v1-punch-ux-v1-review-ux-v1-workflow-recovery-v1-gc179-receipt-v1-compact-v1-schedule-icons-v1-entry-notes-layout-v1-entry-inspector-v1"></script>
   <!-- Preserve the historical feature-version prefix; the new suffix still
        produces a different URL and invalidates cached JavaScript. -->
-  <script src="scripts/Utilities.js?v=20261008-loading-performance-v1-trace-20261014-v1-money-20261015-v1-chart-polish-v1-project-audit-v1"></script>
-  <script src="scripts/AppShell.js?v=20261008-loading-performance-v1-trace-20261014-v1-views-20261015-v1-money-v1-review-cards-v1-review-pages-v1-projects-lite-v1-period-nav-v1-no-dashboard-history-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1-it-v1-project-audit-v1"></script>
-  <script src="scripts/Views/ViewSwitching.js?v=20261008-loading-performance-v1-views-20261015-v1"></script>
-  <script src="scripts/Views/SelfView.js?v=20261008-loading-performance-v1-calendar-chronological-v1"></script>
+  <script src="scripts/Utilities.js?v=20261008-loading-performance-v1-trace-20261014-v1-money-20261015-v1-chart-polish-v1-project-audit-v1-punch-ux-v1-workflow-recovery-v1-gc179-receipt-v1-compact-v1-schedule-icons-v1-alignment-v1-entry-notes-layout-v1"></script>
+  <script src="scripts/AppShell.js?v=20261008-loading-performance-v1-trace-20261014-v1-views-20261015-v1-money-v1-review-cards-v1-review-pages-v1-projects-lite-v1-period-nav-v1-no-dashboard-history-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1-it-v1-project-audit-v1-punch-ux-v1-review-ux-v1-workflow-recovery-v1-gc179-receipt-v1-schedule-icons-v1-alignment-v1-entry-notes-layout-v1-calendar-actions-v1-entry-inspector-v2"></script>
+  <script src="scripts/Views/ViewSwitching.js?v=20261008-loading-performance-v1-views-20261015-v1-entry-inspector-v1"></script>
+  <script src="scripts/Views/SelfView.js?v=20261008-loading-performance-v1-calendar-chronological-v1-punch-ux-v1-review-ux-v1-workflow-recovery-v1-gc179-receipt-v1-schedule-icons-v1-entry-notes-layout-v1"></script>
 </body>
 </html>

@@ -264,45 +264,35 @@ try {
     $legacyBlankSaved = @(Read-JsonArrayFile -Path $legacyPath)[0]
     Assert-Equal -Expected $false -Actual ($legacyBlankSaved.PSObject.Properties.Name -contains "workComment") -Message "Unchanged blank legacy comment unexpectedly changed the data shape."
 
-    Invoke-EmployeeUpdate -EmployeeCode $legacyEmployeeCode -EntryId $legacyEntryId -IncludeWorkComment -WorkComment ("x" * 1001)
-    Assert-Equal -Expected 400 -Actual $script:CapturedStatusCode -Message "Manager edits should reject work comments over 1000 characters."
-    Assert-Contains -Value $script:CapturedMessage -ExpectedText "1000 characters" -Message "Oversized manager-comment validation returned the wrong explanation."
-    Assert-Equal -Expected 0 -Actual $script:PublishCount -Message "An oversized manager comment unexpectedly published a data change."
+    Invoke-EmployeeUpdate -EmployeeCode $legacyEmployeeCode -EntryId $legacyEntryId -IncludeWorkComment -WorkComment "A replacement."
+    Assert-Equal -Expected 403 -Actual $script:CapturedStatusCode -Message "A supervisor added an employee comment via the update route."
+    Assert-Contains -Value $script:CapturedMessage -ExpectedText "read-only" -Message "The permission error did not explain which field was protected."
+    Assert-Equal -Expected 0 -Actual $script:PublishCount -Message "A rejected comment change published an update."
+    Assert-Equal -Expected $false -Actual (@(Read-JsonArrayFile -Path $legacyPath)[0].PSObject.Properties.Name -contains "workComment") -Message "A rejected write created a comment on a legacy entry."
+    Assert-Equal -Expected "Test Manager" -Actual $legacySaved.messageAuthorName -Message "Manager edit did not attribute its supervisor note."
+    Assert-Equal -Expected "manager" -Actual $legacySaved.messageAuthorUsername -Message "Manager edit lost the note author's username."
+    Assert-Equal -Expected $true -Actual ([bool]$legacySaved.messageUpdatedAt) -Message "Supervisor note is missing its timestamp."
 
-    Invoke-EmployeeUpdate -EmployeeCode $legacyEmployeeCode -EntryId $legacyEntryId -IncludeWorkComment -WorkComment ("b" * 1000)
-    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A manager work-comment edit at the 1000-character limit should be accepted."
-    $boundarySaved = @(Read-JsonArrayFile -Path $legacyPath)[0]
-    Assert-Equal -Expected 1000 -Actual ([string]$boundarySaved.workComment).Length -Message "The manager work-comment boundary value was not stored intact."
-
-    Invoke-EmployeeUpdate -EmployeeCode $legacyEmployeeCode -EntryId $legacyEntryId -IncludeWorkComment -WorkComment "  Validated expense claim totals.  "
-    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "Adding a work comment through manager edit failed."
-    Assert-Contains -Value $script:CapturedMessage -ExpectedText "Work comment updated" -Message "Update response did not identify the work-comment change."
-    Assert-Contains -Value $script:HistoryMessage -ExpectedText "Work comment updated" -Message "History did not identify the work-comment change."
-    $commentedSaved = @(Read-JsonArrayFile -Path $legacyPath)[0]
-    Assert-Equal -Expected "Validated expense claim totals." -Actual $commentedSaved.workComment -Message "Manager edit did not trim and persist workComment."
-    Assert-Equal -Expected "Test Manager" -Actual $commentedSaved.messageAuthorName -Message "Manager edit did not attribute its supervisor note."
-    Assert-Equal -Expected "manager" -Actual $commentedSaved.messageAuthorUsername -Message "Manager edit lost the note author's stable username."
-
-    Invoke-EmployeeUpdate -EmployeeCode $legacyEmployeeCode -EntryId $legacyEntryId -IncludeWorkComment -WorkComment "   "
-    Assert-Equal -Expected 400 -Actual $script:CapturedStatusCode -Message "Clearing an existing comment from a completed entry should be rejected."
-    Assert-Contains -Value $script:CapturedMessage -ExpectedText "cannot be cleared" -Message "Comment-clearing validation returned the wrong explanation."
-    Assert-Equal -Expected 0 -Actual $script:PublishCount -Message "Rejected comment clearing unexpectedly published a data change."
-    $afterRejectedClear = @(Read-JsonArrayFile -Path $legacyPath)[0]
-    Assert-Equal -Expected "Validated expense claim totals." -Actual $afterRejectedClear.workComment -Message "Rejected comment clearing modified the stored comment."
+    Write-JsonArrayAtomic -Path $legacyPath -Items @((New-CompletedOvertimeEntry -EntryId $legacyEntryId -IncludeWorkComment -WorkComment "Original comment.")) -Depth 8
+    foreach ($attempt in @("Replacement comment", " ", "original comment.")) {
+        Invoke-EmployeeUpdate -EmployeeCode $legacyEmployeeCode -EntryId $legacyEntryId -IncludeWorkComment -WorkComment $attempt
+        Assert-Equal -Expected 403 -Actual $script:CapturedStatusCode -Message "A supervisor was allowed to change the original employee comment."
+        Assert-Equal -Expected 0 -Actual $script:PublishCount -Message "A rejected comment change published an update."
+    }
+    Invoke-EmployeeUpdate -EmployeeCode $legacyEmployeeCode -EntryId $legacyEntryId -IncludeWorkComment -WorkComment "Original comment."
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "An older client sent the existing comment and could not edit entry details."
+    Assert-Equal -Expected "Original comment." -Actual (@(Read-JsonArrayFile -Path $legacyPath)[0].workComment) -Message "The original comment did not survive admin edits."
 
     $diverseEmployeeCode = "000000302"
     $diverseEntryId = "diverse-summary-entry"
     $diversePath = Join-Path -Path $sharedFolder -ChildPath ("{0}_data.json" -f $diverseEmployeeCode)
     Write-JsonArrayAtomic -Path $diversePath -Items @((New-CompletedDiverseEntry -EntryId $diverseEntryId)) -Depth 8
 
-    Invoke-EmployeeUpdate -EmployeeCode $diverseEmployeeCode -EntryId $diverseEntryId -EntryType "diverse" -IncludeDiverseSummary -DiverseSummary ("d" * 1001)
-    Assert-Equal -Expected 400 -Actual $script:CapturedStatusCode -Message "Manager edits should reject Diverse summaries over 1000 characters."
-    Assert-Contains -Value $script:CapturedMessage -ExpectedText "1000 characters" -Message "Oversized Diverse-summary edits returned the wrong explanation."
-
-    Invoke-EmployeeUpdate -EmployeeCode $diverseEmployeeCode -EntryId $diverseEntryId -EntryType "diverse" -IncludeDiverseSummary -DiverseSummary ("d" * 1000)
-    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A Diverse summary at the 1000-character limit should be accepted."
-    $diverseBoundarySaved = @(Read-JsonArrayFile -Path $diversePath)[0]
-    Assert-Equal -Expected 1000 -Actual ([string]$diverseBoundarySaved.diverseSummary).Length -Message "The Diverse-summary boundary value was not stored intact."
+    Invoke-EmployeeUpdate -EmployeeCode $diverseEmployeeCode -EntryId $diverseEntryId -EntryType "diverse" -IncludeDiverseSummary -DiverseSummary "Replacement."
+    Assert-Equal -Expected 403 -Actual $script:CapturedStatusCode -Message "A supervisor changed the employee's original Diverse summary."
+    Invoke-EmployeeUpdate -EmployeeCode $diverseEmployeeCode -EntryId $diverseEntryId -EntryType "diverse" -IncludeDiverseSummary -DiverseSummary "Existing summary."
+    Assert-Equal -Expected 200 -Actual $script:CapturedStatusCode -Message "A request with an unchanged Diverse summary should remain compatible."
+    Assert-Equal -Expected "Existing summary." -Actual (@(Read-JsonArrayFile -Path $diversePath)[0].diverseSummary) -Message "The original Diverse summary did not survive admin edits."
 
     $dateEmployeeCode = "000000303"
     $dateEntryId = "date-edit-entry"

@@ -24,6 +24,10 @@
                 respondWithError $response 400 "Missing required fields: entryId or date+punchIn, and message are required."
                 continue
             }
+            if (([string]$payload.message).Trim().Length -gt 1000) {
+                respondWithError $response 400 "Supervisor notes cannot exceed 1000 characters."
+                continue
+            }
 
             $postCommitWarnings = New-Object System.Collections.ArrayList
             $lockHandle = Acquire-ResourceLock -ResourcePath $dataFile

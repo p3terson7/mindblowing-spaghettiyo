@@ -6,7 +6,7 @@ const read = name => fs.readFileSync(path.resolve(__dirname, '../../app/frontend
 function section(source, from, to) { const start = source.indexOf(from); const end = source.indexOf(to, start); assert(start >= 0 && end > start); return source.slice(start, end); }
 function element() {
   const classes = new Set(); const handlers = {};
-  return { value: '', innerHTML: '', textContent: '', handlers, classList: { contains: key => classes.has(key), add: key => classes.add(key), toggle: (key, value) => value ? classes.add(key) : classes.delete(key) }, addEventListener: (name, fn) => { handlers[name] = fn; }, setAttribute() {}, replaceChildren() {} };
+  return { value: '', innerHTML: '', textContent: '', handlers, classList: { contains: key => classes.has(key), add: key => classes.add(key), toggle: (key, value) => value ? classes.add(key) : classes.delete(key) }, addEventListener: (name, fn) => { handlers[name] = fn; }, setAttribute() {}, replaceChildren() {}, scrollIntoView() {}, focus() {} };
 }
 (async () => {
   const source = read('Views/HistoryView.js'); const nodes = new Map(); const requests = []; let activeTab = 'all-history-tab';
@@ -23,6 +23,11 @@ function element() {
   get('historyWorkspace').classList.add('d-none');
   await get('loadHistoryBtn').handlers.click({ currentTarget: get('loadHistoryBtn') });
   assert.equal(requests.length, 1); assert(requests[0].includes('page=1'));
+  assert(!get('historySection').classList.contains('d-none'));
+  get('closeHistoryBtn').handlers.click();
+  assert(get('historySection').classList.contains('d-none'));
+  await get('loadHistoryBtn').handlers.click();
+  assert.equal(requests.length, 1, 'Reopening unchanged history must reuse its page.');
   await context.fetchHistory(1); assert.equal(requests.length, 1, 'Repeated open must reuse current page');
   await context.fetchHistory(2); assert(requests.at(-1).includes('page=2'));
   activeTab = 'add-history-tab'; await get('historyTabs').handlers['shown.bs.tab']({ target: { id: activeTab } });
@@ -35,6 +40,7 @@ function element() {
   const state = { selectedEmployeeCode: '', selectedProjectCode: '', statisticsRequested: false, loadSequence: 0 };
   const scopeNode = { value: 'active' };
   const people = { employeesViewState: state, apiUrl: '/', console, setLoadingState() {}, setEmployeeAnalyticsLoadingState() {},
+    peopleEntryInspector: null, closePeopleEntryInspector() {},
     document: { getElementById: id => id === 'employeesScopeSelect' ? scopeNode : element() },
     fetch: async url => { employeeRequests.push(url); return { employees: [{ code: '1', statsLoaded: false }], projects: [] }; },
     parseResponse: x => x, populateEmployeesProjectFilter() {}, filterEmployeesByScope: x => x, applyEmployeeSearchFilter() {}, showToast() {}, t: x => x,

@@ -37,9 +37,9 @@ assert.match(
   /newDate === originalDate[\s\S]*?dashboard\.noChanges/,
   "A date-only edit must not be rejected as an unchanged entry.",
 );
-assert.equal(
-  (dashboardSource.match(/date: originalDate, newDate, originalPunchIn/g) || []).length,
-  2,
+assert.match(
+  dashboardSource,
+  /date: originalDate, newDate, originalPunchIn,[\s\S]*?\.\.\.\(entryType === "diverse" \? \{ diverseReason \} : \{/,
   "Both overtime and Diverse updates must send the old lookup date plus additive newDate.",
 );
 assert.match(

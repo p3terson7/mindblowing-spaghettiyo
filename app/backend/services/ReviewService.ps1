@@ -22,10 +22,10 @@ function Get-ReviewEntryIndex {
                 $items = New-Object Collections.ArrayList
                 foreach ($entry in @(Get-CachedEmployeeEntriesForFile -DataFile (Get-EmployeeDataFilePath -EmployeeCode $code))) {
                     if (-not $super -and -not $access.ProjectCodeSet.ContainsKey([string]$entry.projectCode)) { continue }
-                    $status = if ([string]::IsNullOrWhiteSpace([string]$entry.status)) { 'pending' } else { ([string]$entry.status).ToLowerInvariant() }
+                    $status = if ([string]::IsNullOrWhiteSpace([string]$entry.status)) { 'pending' } else { ([string]$entry.status).Trim().ToLowerInvariant() }
                     [void]$items.Add([PSCustomObject]@{
                         entry = $entry; employeeCode = $code; employeeName = $name; employeeRole = $role
-                        status = $status; open = [bool](Test-EntryOpen $entry)
+                        status = $status; pending = [bool](Test-EntryPendingApproval -Entry $entry)
                         attention = (@(Get-EntryReviewIssues -Entry $entry).Count -gt 0)
                         order = (Get-EntryDateTimeOrMin -Entry $entry)
                     })
@@ -46,7 +46,7 @@ function Get-ReviewEntryIndex {
 function New-ReviewPage {
     param($CurrentUser, [string]$Tab = 'pending', [int]$Page = 1, [string]$Search = '',
         [string]$EmployeeCode = '', [string]$ProjectCode = '', [string]$StartDate = '', [string]$EndDate = '',
-        [string]$Range = 'default', [switch]$SelectionOnly)
+        [string]$Range = 'default', [switch]$SelectionOnly, [switch]$ActionableOnly)
     if (-not (Test-CurrentUserManager -CurrentUser $CurrentUser)) { throw [UnauthorizedAccessException]::new('Manager access is required.') }
     if ($Tab -notin @('pending', 'attention', 'approved', 'rejected') -or $Range -notin @('default', 'all', 'custom') -or $Page -lt 1 -or $Page -gt 100000 -or $Search.Length -gt 200 -or $ProjectCode.Length -gt 200 -or ($EmployeeCode -and $EmployeeCode -notmatch '^\d+$')) { throw [ArgumentException]::new('Invalid review page or filter.') }
     foreach ($date in @($StartDate, $EndDate)) {
@@ -55,7 +55,7 @@ function New-ReviewPage {
         if (-not [DateTime]::TryParseExact($date, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) { throw [ArgumentException]::new('Invalid review date.') }
     }
     if ($StartDate -and $EndDate -and $StartDate -gt $EndDate) { throw [ArgumentException]::new('Review start date must not follow end date.') }
-    if ($SelectionOnly -and $Tab -ne 'pending') { throw [ArgumentException]::new('Only pending entries can be batch-selected.') }
+    if (($SelectionOnly -or $ActionableOnly) -and $Tab -ne 'pending') { throw [ArgumentException]::new('The approval filter is only available for pending entries.') }
     $monthStart = (Get-Date -Day 1).Date.ToString('yyyy-MM-dd')
     $monthEnd = (Get-Date -Day 1).Date.AddMonths(1).AddDays(-1).ToString('yyyy-MM-dd')
     # Pending/issues always cover old unresolved work. History defaults to the
@@ -68,6 +68,7 @@ function New-ReviewPage {
     $index = Get-ReviewEntryIndex -CurrentUser $CurrentUser
     $modify = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $CurrentUser
     $super = Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser
+    $ownEmployeeCode = ([string]$CurrentUser.employeeCode).Trim()
     $rolePermissions = @{}
     $counts = @{ pending = 0; attention = 0; approved = 0; rejected = 0 }
     $matched = New-Object Collections.ArrayList
@@ -93,20 +94,22 @@ function New-ReviewPage {
         $date = [string]$entry.date
         if ($Range -eq 'custom' -and (($StartDate -and $date -lt $StartDate) -or ($EndDate -and $date -gt $EndDate))) { continue }
         $inMonth = ($date -ge $monthStart -and $date -le $monthEnd)
-        $pending = ($row.status -eq 'pending' -and -not $row.open)
+        $pending = $row.pending
         if ($pending) { $counts.pending++ }
         if ($row.attention) { $counts.attention++ }
         if (($Range -ne 'default' -or $inMonth) -and $row.status -in @('approved', 'rejected')) { $counts[$row.status]++ }
         $inTab = switch ($Tab) { 'pending' { $pending } 'attention' { $row.attention } default { $row.status -eq $Tab } }
         if (-not $inTab -or ($effectiveStart -and $date -lt $effectiveStart) -or ($effectiveEnd -and $date -gt $effectiveEnd)) { continue }
-        [void]$matched.Add($row)
-        if ($pending -and -not (Test-EntryForgottenClockOut -Entry $entry)) {
+        $canAct = $false
+        if ($pending -and (-not $ownEmployeeCode -or $row.employeeCode.Trim() -ne $ownEmployeeCode)) {
             if (-not $rolePermissions.ContainsKey($row.employeeRole)) { $rolePermissions[$row.employeeRole] = Test-CurrentUserCanApproveEmployeeRole -CurrentUser $CurrentUser -EmployeeRole $row.employeeRole }
             if ($rolePermissions[$row.employeeRole] -and ($super -or (([string]$entry.entryType -ne 'diverse') -and $modify.ProjectCodeSet.ContainsKey([string]$entry.projectCode)))) {
+                $canAct = $true
                 $actionable++
                 if ($SelectionOnly) { [void]$selection.Add([PSCustomObject]@{ employeeCode = $row.employeeCode; entryId = Get-EntryIdentifierValue $entry; date = $entry.date; punchIn = $entry.punchIn }) }
             }
         }
+        if (-not $SelectionOnly -and (-not $ActionableOnly -or $canAct)) { [void]$matched.Add($row) }
     }
     if ($SelectionOnly) { return [PSCustomObject]@{ selection = @($selection.ToArray()); total = $actionable } }
     $pages = [Math]::Max(1, [int][Math]::Ceiling($matched.Count / 25.0))
@@ -116,7 +119,8 @@ function New-ReviewPage {
         if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind 'review.entry.projected' }
         # Preserve saved amount pills on explicitly viewed approved cards.
         # Pending pages never need monetary projections or salary calculations.
-        New-EmployeeEntryProjectionForAccessModel -EmployeeCode $row.employeeCode -EmployeeName $row.employeeName -Entry $row.entry -ModifyProjectCodeSet $modify.ProjectCodeSet -EmployeeRole $row.employeeRole -IsSuperAdmin:$super -CanApproveEmployeeRole:$rolePermissions[$row.employeeRole] -IncludeMonetary:($row.status -eq 'approved')
+        $isOwnEntry = ($ownEmployeeCode -and $row.employeeCode.Trim() -eq $ownEmployeeCode)
+        New-EmployeeEntryProjectionForAccessModel -EmployeeCode $row.employeeCode -EmployeeName $row.employeeName -Entry $row.entry -ModifyProjectCodeSet $modify.ProjectCodeSet -EmployeeRole $row.employeeRole -IsSuperAdmin:$super -CanApproveEmployeeRole:$rolePermissions[$row.employeeRole] -IncludeMonetary:($row.status -eq 'approved') -IsOwnEntry:$isOwnEntry
     })
     $projects = New-Object Collections.ArrayList
     $knownProjects = @{}
@@ -137,12 +141,12 @@ function New-ReviewPage {
 function Get-ReviewPage {
     param($CurrentUser, [string]$Tab = 'pending', [int]$Page = 1, [string]$Search = '',
         [string]$EmployeeCode = '', [string]$ProjectCode = '', [string]$StartDate = '', [string]$EndDate = '',
-        [string]$Range = 'default', [switch]$SelectionOnly)
+        [string]$Range = 'default', [switch]$SelectionOnly, [switch]$ActionableOnly)
     if (-not (Test-CurrentUserManager -CurrentUser $CurrentUser)) { throw [UnauthorizedAccessException]::new('Manager access is required.') }
-    $arguments = @{ CurrentUser = $CurrentUser; Tab = $Tab; Page = $Page; Search = $Search; EmployeeCode = $EmployeeCode; ProjectCode = $ProjectCode; StartDate = $StartDate; EndDate = $EndDate; Range = $Range; SelectionOnly = [bool]$SelectionOnly }
+    $arguments = @{ CurrentUser = $CurrentUser; Tab = $Tab; Page = $Page; Search = $Search; EmployeeCode = $EmployeeCode; ProjectCode = $ProjectCode; StartDate = $StartDate; EndDate = $EndDate; Range = $Range; SelectionOnly = [bool]$SelectionOnly; ActionableOnly = [bool]$ActionableOnly }
     if ($SelectionOnly) { return (New-ReviewPage @arguments) }
     $scope = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
-    $filterKey = @($Tab, $Page, $Search, $EmployeeCode, $ProjectCode, $StartDate, $EndDate, $Range) | ConvertTo-Json -Compress
+    $filterKey = @($Tab, $Page, $Search, $EmployeeCode, $ProjectCode, $StartDate, $EndDate, $Range, [bool]$ActionableOnly) | ConvertTo-Json -Compress
     $key = 'review-page|' + $scope + '|' + (Get-Date -Format yyyy-MM) + '|' + $filterKey
     return (Invoke-ReadModelCache -Key $key -Dependencies @('directory', 'auth', 'projects') -Factory { New-ReviewPage @arguments })
 }

@@ -27,6 +27,8 @@ const context = {
   clearTimeout, setTimeout, allApprovalEntries: [], approvalScopedProjects: [],
   buildApprovalEmployeeOptions: () => '', populateApprovalProjectFilter() {},
   updateApproveFilteredButtonState() {}, setLoadingState(id) { loading.push(id); },
+  renderReviewBatchResult() {},
+  renderViewLoadError(element, message, retry) { element.error = { message, retry }; },
   renderApprovalsList(id, items) { rendered.push([id, items[0]?.entryId]); },
   t: (key, values) => key + JSON.stringify(values || {}), escapeHtml: x => String(x),
   createEmptyState: x => x, showToast() {}, console: { error() {} }, parseResponse: x => x,
@@ -59,6 +61,8 @@ function tab(name) { ['pending','approved','attention','rejected'].forEach(x => 
   assert.equal(context.allApprovalEntries.length, 0, 'A late response repopulated Review after logout.');
   context.fetch = async () => { throw Error('offline'); };
   assert.equal(await context.loadReviewView(), false, 'Failed refresh did not report failure.');
+  assert.match(get('pendingContainer').error.message, /review.loadError/);
+  assert.equal(typeof get('pendingContainer').error.retry, 'function');
   assert.match(source, /selectionOnly.*true/);
   assert.match(source, /filteredPendingEntries = Array.isArray\(selection.selection\)/, 'Bulk approval must use the full server-side selection, not the visible page.');
   console.log('Review paging UI passed: lazy tabs, pager, page reuse, effective dates, targeted invalidation, stale-response/logout guards, failure reporting and all-page bulk selection.');

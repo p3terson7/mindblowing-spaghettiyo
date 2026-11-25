@@ -198,4 +198,90 @@ Assert-Equal 1 $unchangedProject.Exports[0].RowCount "Diverse splitting changed 
 Assert-TextField $unchangedProject.Exports[0].Content "RegTimeHalf.0" "7.5"
 Assert-TextField $unchangedProject.Exports[0].Content "RegTimeDouble.0" "2.5"
 
-Write-Host "GC179 diverse export tests passed: defaults, blank rates, 7.5-hour split before pagination, month, schedules, filters, source immutability and unchanged project rates."
+# Legacy storage can hold exact times in the display fields. The GC179
+# must still write quarters without reinterpreting the saved credit.
+$legacyProject = $longProject.PSObject.Copy()
+$legacyProject.punchIn = "14:04:00"; $legacyProject.punchOut = "14:24:00"; $legacyProject.overtime = "00:15:00"
+$script:FixtureEntries = @($legacyProject)
+$before = ConvertTo-Json -InputObject $script:FixtureEntries -Depth 10 -Compress
+$legacyExport = Export-Fixture
+Assert-TextField $legacyExport.Exports[0].Content "StartTime.0" "14:00"
+Assert-TextField $legacyExport.Exports[0].Content "EndTime.0" "14:30"
+Assert-TextField $legacyExport.Exports[0].Content "RegTimeHalf.0" "0.25"
+Assert-Equal $before (ConvertTo-Json -InputObject $script:FixtureEntries -Depth 10 -Compress) "Export changed the legacy entry."
+
+$legacyDiverse = New-TestEntry
+$legacyDiverse.punchIn = "10:02:00"; $legacyDiverse.punchOut = "17:35:00"; $legacyDiverse.overtime = "07:30:00"
+$script:FixtureEntries = @($legacyDiverse)
+$legacySplit = Export-Fixture
+Assert-Equal 1 $legacySplit.Exports[0].RowCount "A zero-length rounded tail must not produce a second row."
+Assert-DiverseRow $legacySplit.Exports[0] 0 "05" "10:00" "17:30"
+$legacyDiverse.punchOut = "20:04:00"; $legacyDiverse.overtime = "10:00:00"
+$legacySplit = Export-Fixture
+Assert-Equal 2 $legacySplit.Exports[0].RowCount "The legacy diverse session must still split at 7.5 hours."
+Assert-DiverseRow $legacySplit.Exports[0] 0 "05" "10:00" "17:30"
+Assert-DiverseRow $legacySplit.Exports[0] 1 "05" "17:30" "20:00"
+
+# Stub the local file and process boundary; keep the actual export selection,
+# split, grouping, and receipt assembly in use.
+function New-Gc179LocalExportFolder {
+    param([string]$EmployeeCode, [string]$MonthKey)
+    return "gc179-fixture-${EmployeeCode}-${MonthKey}"
+}
+function Write-Gc179LocalExportWorkspace {
+    param([string]$FolderPath, $ExportSet)
+    if ($script:failWrite) { throw "Simulated write failure." }
+    $script:writtenExport = $ExportSet
+}
+function Start-Gc179LocalExportWorkspace {
+    param([string]$FolderPath)
+    $script:launchCalls++
+    if ($null -eq $script:writtenExport) { throw "Opening was attempted before the files were saved." }
+    if ($script:failLaunch) { throw "Simulated opening failure." }
+    return [PSCustomObject]@{ ProcessId = 42; LogPath = "fixture.out"; ErrorLogPath = "fixture.err" }
+}
+function Invoke-FixtureExport {
+    return Start-Gc179LocalExport -EmployeeCode "123456789" -MonthKey "2026-11"
+}
+$script:failWrite = $false
+$script:failLaunch = $false
+$script:writtenExport = $null
+$script:launchCalls = 0
+$lastLongEntry.status = "pending"
+$legacyPending = New-TestEntry; $legacyPending.PSObject.Properties.Remove("status")
+$script:FixtureEntries = @($lastLongEntry, $legacyPending, $project, $rejected, $open, $zero, $previousMonth)
+$receipt = Invoke-FixtureExport
+Assert-Equal $true $receipt.prepared "The completed export was not marked prepared."
+Assert-Equal $true $receipt.launched "The opening request was not acknowledged."
+Assert-Equal "2026-11" $receipt.monthKey "The receipt lost the requested month."
+Assert-Equal "gc179-fixture-123456789-2026-11" $receipt.folderPath "The receipt lost the local folder."
+Assert-Equal 3 $receipt.entryCount "The receipt must count the source entries, not the expanded rows."
+Assert-Equal 2 $receipt.pendingCount "The receipt must count pending entries that actually appear in the export."
+Assert-Equal 4 $receipt.rowCount "The receipt lost the extra row created by splitting a long entry."
+Assert-Equal 1 $receipt.partCount "The receipt lost the form count."
+
+$script:failLaunch = $true
+$saved = Invoke-FixtureExport
+Assert-Equal $true $saved.prepared "A launch failure must not hide the already-saved files."
+Assert-Equal $false $saved.launched "A launch failure must not claim Acrobat was started."
+Assert-Equal $receipt.folderPath $saved.folderPath "The saved files must remain findable."
+Assert-Equal 2 $script:launchCalls "Failed export must not launch a second process from the receipt service."
+
+$script:failLaunch = $false
+$script:FixtureEntries = @($rejected, $open, $zero, $previousMonth)
+$blankReceipt = Invoke-FixtureExport
+Assert-Equal 0 $blankReceipt.entryCount "The blank-form count must be zero."
+Assert-Equal 0 $blankReceipt.rowCount "The blank-form row count must be zero."
+Assert-Equal 1 $blankReceipt.partCount "The existing blank form must still be created."
+
+$script:failWrite = $true
+try {
+    $null = Invoke-FixtureExport
+    throw "Expected the write error to reach the caller."
+}
+catch {
+    Assert-Equal "Simulated write failure." $_.Exception.Message "A write failure must not return a prepared receipt."
+}
+Assert-Equal 3 $script:launchCalls "A failed write must not attempt to open the export."
+
+Write-Host "GC179 export passed: existing filters, diverse splits, project rates and receipts for success, blank forms, launch failures and write failures."

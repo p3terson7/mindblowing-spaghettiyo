@@ -489,9 +489,16 @@ function openDashboardNoteEditor(noteButton) {
   }
 
   closeEntryNotesPopover();
+  document.getElementById("dashboardNoteEntryId").value = noteButton.getAttribute("data-entry-id") || "";
   document.getElementById("dashboardNoteDate").value = noteButton.getAttribute("data-date") || "";
   document.getElementById("dashboardNotePunchIn").value = noteButton.getAttribute("data-punchin") || "";
-  document.getElementById("dashboardNoteInput").value = noteButton.getAttribute("data-message") || "";
+  const noteInput = document.getElementById("dashboardNoteInput");
+  noteInput.value = noteButton.getAttribute("data-message") || "";
+  const note = getEntryNotesFromTrigger(noteButton);
+  document.getElementById("dashboardNoteContext").textContent = noteInput.value ? getEntrySupervisorNoteLabel({
+    messageAuthorName: note.supervisorNoteAuthor,
+    messageUpdatedAt: note.supervisorNoteTimestamp,
+  }) : "";
 
   const modal = new bootstrap.Modal(modalElement);
   modal.show();
@@ -504,6 +511,7 @@ async function saveDashboardNoteFromModal(saveButton = document.getElementById("
     return;
   }
 
+  const entryId = document.getElementById("dashboardNoteEntryId").value;
   const date = document.getElementById("dashboardNoteDate").value;
   const punchIn = document.getElementById("dashboardNotePunchIn").value;
   const message = document.getElementById("dashboardNoteInput").value;
@@ -512,7 +520,7 @@ async function saveDashboardNoteFromModal(saveButton = document.getElementById("
       const response = await fetch(apiUrl + "employee/message/" + employeeCode, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, punchIn, message }),
+        body: JSON.stringify({ entryId, date, punchIn, message }),
       });
       await parseResponse(response);
       dashboardState.entriesByEmployee[employeeCode] = undefined;
@@ -529,14 +537,12 @@ async function saveDashboardNoteFromModal(saveButton = document.getElementById("
   }
 }
 
-function renderDashboardApprovalQueue(entries) {
+function renderDashboardApprovalQueue(entries, pendingCount) {
   const container = document.getElementById("dashboardApprovalQueue");
-  const queueEntries = entries
-    .filter(entry => String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry))
-    .sort((left, right) => toEntryDateTime(right) - toEntryDateTime(left));
+  const queueEntries = entries; // Server already returns the six newest closed entries.
 
   document.getElementById("dashboardPendingQueueMeta").textContent = queueEntries.length > 0
-    ? `${tn("shared.item", queueEntries.length)} ${t("shared.waiting").toLowerCase()}`
+    ? t("dashboard.pendingPreview", { shown: queueEntries.length, total: pendingCount })
     : t("dashboard.pendingQueueMetaEmpty");
 
   if (queueEntries.length === 0) {
@@ -560,7 +566,7 @@ function renderDashboardApprovalQueue(entries) {
       <div class="queue-card-meta">
         ${renderDashboardEntryProjectIdentity(entry)}
         ${!isDiverseEntry(entry) && entry.overtimeCode ? `<span class="meta-pill">${escapeHtml(entry.overtimeCode)}</span>` : ""}
-        <span class="meta-pill duration-value">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.waitingForPunchOut"))}</span>
+        <span class="meta-pill duration-value">${escapeHtml(formatEntryRecordedDuration(entry))}</span>
         ${renderEntryWorkScheduleBadge(entry)}
       </div>
       ${renderEntryWorkComment(entry)}
@@ -573,7 +579,7 @@ function renderDashboardApprovalQueue(entries) {
       <div class="queue-card-actions">
         ${canReview ? `
           <button type="button" class="btn btn-success btn-sm dashboard-approve-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}</button>
-          <button type="button" class="btn btn-danger btn-sm dashboard-reject-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"><i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}</button>
+          <button type="button" class="btn btn-danger btn-sm dashboard-reject-button" data-entryid="${escapeHtml(entry.entryId || "")}" data-employee-code="${escapeHtml(entry.employeeCode)}" data-employee-name="${escapeHtml(entry.employeeName)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}"><i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}</button>
         ` : ""}
         ${!canReview ? permissionBadge : ""}
         <button type="button" class="btn btn-outline-secondary btn-sm dashboard-jump-button" data-employee-code="${escapeHtml(entry.employeeCode)}" data-project-code="${escapeHtml(entry.projectCode || "")}">${escapeHtml(t("action.openEmployee"))}</button>
@@ -633,6 +639,12 @@ function renderDashboardOverview(payload) {
 
   document.getElementById("totalOvertime").innerText = secondsToDurationLabel(totalSeconds);
   document.getElementById("pendingApprovals").innerText = pendingCount;
+  const actionable = document.getElementById("dashboardActionableCount");
+  actionable.textContent = Number.isFinite(model.actionableCount)
+    ? t("dashboard.actionableCount", { count: model.actionableCount }) : "";
+  const showPending = document.getElementById("dashboardOpenPendingReview");
+  showPending.classList.toggle("d-none", pendingCount === 0);
+  showPending.textContent = t("dashboard.viewPending", { count: pendingCount });
   document.getElementById("activeEmployees").innerText = activeCount;
   document.getElementById("trackedEmployeesCount").innerText = trackedCount;
   const summary = document.getElementById("dashboardSummaryText");
@@ -642,9 +654,18 @@ function renderDashboardOverview(payload) {
       : tn("shared.session", activeCount);
   }
 
-  renderDashboardApprovalQueue(model.pendingQueue || []);
+  renderDashboardApprovalQueue(model.pendingQueue || [], pendingCount);
   renderDashboardActiveSessions(model.activeSessions || []);
 }
+
+document.getElementById("dashboardOpenPendingReview")?.addEventListener("click", event => {
+  runButtonAction(event.currentTarget, async () => {
+    if (!await window.openPendingReviewFromDashboard()) showToast(t("review.loadError"), "error");
+  }, { key: "view-navigation" }).catch(error => {
+    console.error("Unable to open pending review:", error);
+    showToast(t("review.loadError"), "error");
+  });
+});
 
 function applyDashboardBootstrap(payload) {
   const model = payload || {};
@@ -755,14 +776,14 @@ function renderEmployeeEntries(employeeCode, entries) {
             const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
             const statusAttribute = ` data-status="${escapeHtml(entry.status || "pending")}"`;
             const entryIdAttribute = ` data-entryid="${escapeHtml(entry.entryId || "")}"`;
-            const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
+            const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"${renderEntryNoteMetadataAttributes(entry)}`;
             const exactPunchInAttribute = ` data-exactpunchin="${escapeHtml(getEntryExactPunchIn(entry))}"`;
             const exactPunchOutAttribute = ` data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`;
             const reviewButtons = isPending && !isOpen && !needsClockOutReview && canApprove ? `
               <button class="btn btn-success btn-sm approve-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.approve"))}">
                 <i class="fa-solid fa-check"></i> ${escapeHtml(t("action.approve"))}
               </button>
-              <button class="btn btn-danger btn-sm reject-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.reject"))}">
+              <button class="btn btn-danger btn-sm reject-btn" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}"${entryIdAttribute} title="${escapeHtml(t("action.reject"))}">
                 <i class="fa-solid fa-ban"></i> ${escapeHtml(t("action.reject"))}
               </button>
             ` : "";
@@ -789,7 +810,7 @@ function renderEmployeeEntries(employeeCode, entries) {
                   <span class="meta-pill">${escapeHtml(isDiverseEntry(entry) ? (entry.diverseReason || "-") : (entry.reasonCode || "-"))}</span>
                 </td>
                 <td class="dashboard-entry-col-duration">
-                  <span class="inline-code-pill duration-value">${escapeHtml(entry.overtime ? secondsToDurationLabel(timeStringToSeconds(entry.overtime)) : t("shared.inProgress"))}</span>
+                  <span class="inline-code-pill duration-value">${escapeHtml(formatEntryRecordedDuration(entry))}</span>
                 </td>
                 <td class="dashboard-entry-col-status">
                   <div class="entry-state-stack"><span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>${renderEntryWorkScheduleBadge(entry)}</div>
@@ -798,7 +819,7 @@ function renderEmployeeEntries(employeeCode, entries) {
                   <div class="dashboard-entry-note-tools">
                     ${renderEntryNotesPreview(entry, { showEmpty: true })}
                     ${canModify ? `
-                      <button type="button" class="dashboard-note-edit-button" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-message="${escapeHtml(entry.message || "")}" aria-label="${escapeHtml(t("action.editSupervisorNote"))}" title="${escapeHtml(t("action.editSupervisorNote"))}">
+                      <button type="button" class="dashboard-note-edit-button" data-entry-id="${escapeHtml(entry.entryId || "")}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-message="${escapeHtml(entry.message || "")}" ${renderEntryNoteMetadataAttributes(entry)} aria-label="${escapeHtml(t("action.editSupervisorNote"))}" title="${escapeHtml(t("action.editSupervisorNote"))}">
                         <i class="fa-solid fa-pen" aria-hidden="true"></i>
                       </button>
                     ` : ""}
@@ -1099,12 +1120,15 @@ async function openUpdateModal(button, refreshPeopleEmployee = "") {
       document.getElementById("originalPunchOut").value = currentPunchOut;
       document.getElementById("updateEntryId").value = entryId;
       document.getElementById("updateManagerMessage").value = message;
+      document.getElementById("updateEntryForm").dataset.originalManagerMessage = message.trim();
+      const notes = getEntryNotesFromTrigger(button);
+      document.getElementById("updateSupervisorNoteContext").textContent = message ? getEntrySupervisorNoteLabel({
+        messageAuthorName: notes.supervisorNoteAuthor, messageUpdatedAt: notes.supervisorNoteTimestamp,
+      }) : "";
+      document.getElementById("updateEmployeeCommentHistory").innerHTML =
+        renderEmployeeCommentRows(workComment.trim() || diverseSummary.trim(), notes.additions) || createEmptyState(t("shared.noEmployeeComment"));
       document.getElementById("updateDiverseReason").value = diverseReason;
       document.getElementById("originalDiverseReason").value = diverseReason;
-      document.getElementById("updateDiverseSummary").value = diverseSummary;
-      document.getElementById("originalDiverseSummary").value = diverseSummary;
-      document.getElementById("updateWorkComment").value = workComment;
-      document.getElementById("originalWorkComment").value = workComment;
       document.getElementById("updateEntryForm").dataset.originalExactPunchIn = exactPunchIn || "";
       document.getElementById("updateEntryForm").dataset.originalExactPunchOut = exactPunchOut || "";
       document.getElementById("updateEntryForm").dataset.originalWorkSchedule = workSchedule;
@@ -1205,23 +1229,68 @@ async function deleteEntry(button, employeeCodeOverride = "") {
   }
 }
 
+function requestEntryRejectionNote(button, employeeCode, employeeName) {
+  const element = document.getElementById("entryRejectionModal");
+  if (!employeeCode || element.dataset.active) return Promise.resolve(null);
+  const form = document.getElementById("entryRejectionForm");
+  const note = document.getElementById("entryRejectionNote");
+  const submit = document.getElementById("entryRejectionSubmit");
+  const timeRange = formatQueueTitle({
+    punchIn: button.dataset.punchin, punchOut: button.dataset.punchout,
+  });
+  const name = employeeName || button.dataset.employeeName || getDashboardEmployeeByCodeValue(employeeCode)?.name || employeeCode;
+  const context = document.getElementById("entryRejectionContext");
+  context.textContent = [name, formatDateLabel(button.dataset.date), timeRange].filter(Boolean).join(" · ");
+  const token = getSessionToken();
+  note.value = "";
+  submit.disabled = true;
+  element.dataset.active = "true";
+  const modal = bootstrap.Modal.getOrCreateInstance(element);
+  return new Promise(resolve => {
+    let message = null;
+    let cancelled = false;
+    const cancel = () => {
+      cancelled = true;
+      message = null;
+      note.value = "";
+      context.textContent = "";
+      modal.hide();
+    };
+    window.cancelEntryRejection = cancel;
+    const onInput = () => { submit.disabled = !note.value.trim(); };
+    const onSubmit = event => {
+      event.preventDefault();
+      message = note.value.trim() || null;
+      if (message) modal.hide();
+    };
+    note.addEventListener("input", onInput);
+    form.addEventListener("submit", onSubmit);
+    element.addEventListener("shown.bs.modal", () => {
+      if (cancelled) modal.hide();
+      else note.focus();
+    }, { once: true });
+    element.addEventListener("hidden.bs.modal", () => {
+      delete element.dataset.active;
+      if (window.cancelEntryRejection === cancel) delete window.cancelEntryRejection;
+      note.removeEventListener("input", onInput);
+      form.removeEventListener("submit", onSubmit);
+      note.value = "";
+      context.textContent = "";
+      if (getSessionToken() !== token) { resolve(null); return; }
+      if (button.isConnected) button.focus({ preventScroll: true });
+      resolve(message);
+    }, { once: true });
+    modal.show();
+  });
+}
+
 async function updateApprovalAction(button, newStatus) {
   const employeeCode = document.getElementById("employeeSelect").value;
   const date = button.getAttribute("data-date");
   const punchIn = button.getAttribute("data-punchin");
   const entryId = button.getAttribute("data-entryid") || "";
-  const managerMessage = newStatus === "rejected" ? window.prompt(t("dashboard.rejectManagerMessagePrompt"), "") : "";
-
-  if (newStatus === "rejected") {
-    if (managerMessage === null) {
-      return;
-    }
-
-    if (!String(managerMessage).trim()) {
-      showToast(t("dashboard.managerMessageRequired"), "error");
-      return;
-    }
-  }
+  const managerMessage = newStatus === "rejected" ? await requestEntryRejectionNote(button, employeeCode) : "";
+  if (managerMessage === null) return;
 
   try {
     await runButtonAction(button, async () => {
@@ -1245,18 +1314,8 @@ async function updateApprovalActionInApprovals(button, employeeCode, newStatus) 
   const date = button.getAttribute("data-date");
   const punchIn = button.getAttribute("data-punchin");
   const entryId = button.getAttribute("data-entryid") || "";
-  const managerMessage = newStatus === "rejected" ? window.prompt(t("dashboard.rejectManagerMessagePrompt"), "") : "";
-
-  if (newStatus === "rejected") {
-    if (managerMessage === null) {
-      return;
-    }
-
-    if (!String(managerMessage).trim()) {
-      showToast(t("dashboard.managerMessageRequired"), "error");
-      return;
-    }
-  }
+  const managerMessage = newStatus === "rejected" ? await requestEntryRejectionNote(button, employeeCode) : "";
+  if (managerMessage === null) return;
   try {
     await runButtonAction(button, async () => {
       const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
@@ -1279,18 +1338,8 @@ async function updateApprovalActionInDashboardQueue(button, employeeCode, newSta
   const date = button.getAttribute("data-date");
   const punchIn = button.getAttribute("data-punchin");
   const entryId = button.getAttribute("data-entryid") || "";
-  const managerMessage = newStatus === "rejected" ? window.prompt(t("dashboard.rejectManagerMessagePrompt"), "") : "";
-
-  if (newStatus === "rejected") {
-    if (managerMessage === null) {
-      return;
-    }
-
-    if (!String(managerMessage).trim()) {
-      showToast(t("dashboard.managerMessageRequired"), "error");
-      return;
-    }
-  }
+  const managerMessage = newStatus === "rejected" ? await requestEntryRejectionNote(button, employeeCode) : "";
+  if (managerMessage === null) return;
   try {
     await runButtonAction(button, async () => {
       const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
@@ -1518,84 +1567,89 @@ document.getElementById("saveUpdateBtn").addEventListener("click", async event =
   const holidayNotScheduledWorkday = holidayValue === "" ? null : holidayValue === "true";
   const diverseReason = document.getElementById("updateDiverseReason").value.trim();
   const originalDiverseReason = document.getElementById("originalDiverseReason").value;
-  const diverseSummary = document.getElementById("updateDiverseSummary").value.trim();
-  const originalDiverseSummary = document.getElementById("originalDiverseSummary").value;
-  const workComment = document.getElementById("updateWorkComment").value.trim();
-  const originalWorkComment = document.getElementById("originalWorkComment").value;
   const entryStatus = document.getElementById("updateEntryStatus").value;
   const originalEntryStatus = document.getElementById("originalEntryStatus").value || "pending";
   const managerMessage = document.getElementById("updateManagerMessage").value.trim();
-
-  if (!updateDateInput.checkValidity()) {
-    updateDateInput.reportValidity();
-    return;
-  }
-
-  if (!workScheduleInput.checkValidity()) {
-    workScheduleInput.reportValidity();
-    return;
-  }
-
-  if (!punchInHours || !punchInMinutes || !punchOutHours || !punchOutMinutes) {
-    showToast(t("dashboard.fillAllTimeFields"), "error");
-    return;
-  }
-
-  const twoDigitRegex = /^[0-9]{1,2}$/;
-  if (!twoDigitRegex.test(punchInHours) || !twoDigitRegex.test(punchInMinutes) || !twoDigitRegex.test(punchOutHours) || !twoDigitRegex.test(punchOutMinutes)) {
-    showToast(t("dashboard.numericTimeValidation"), "error");
-    return;
-  }
-
-  const newPunchInBackend = `${punchInHours.padStart(2, "0")}:${punchInMinutes.padStart(2, "0")}:00`;
-  const punchOutBackend = `${punchOutHours.padStart(2, "0")}:${punchOutMinutes.padStart(2, "0")}:00`;
-
-  if (entryType === "diverse" && !diverseReason) {
-    showToast(t("self.diverseReasonRequired"), "error");
-    return;
-  }
-
-  if (entryType === "diverse" && !diverseSummary) {
-    showToast(t("self.diverseSummaryRequired"), "error");
-    return;
-  }
-
-  if (entryType !== "diverse" && (!projectCode || !paymentOption)) {
-    showToast(t("dashboard.projectAndCodeRequired"), "error");
-    return;
-  }
-
-  if (!managerMessage) {
-    showToast(t("dashboard.managerMessageRequired"), "error");
-    return;
-  }
-
-  if (!["approved", "rejected", "pending"].includes(entryStatus)) {
-    showToast(t("dashboard.invalidStatus"), "error");
-    return;
-  }
-
-  const overtimeFieldsUnchanged = projectCode === originalProjectCode && overtimeCode === originalOvertimeCode && paymentOption === originalPaymentOption && reasonCode === originalReasonCode && workComment === originalWorkComment && holidayValue === originalHolidayValue;
-  const diverseFieldsUnchanged = diverseReason === originalDiverseReason && diverseSummary === originalDiverseSummary;
-  const typeSpecificFieldsUnchanged = entryType === "diverse" ? diverseFieldsUnchanged : overtimeFieldsUnchanged;
-  if (newDate === originalDate && newPunchInBackend === originalExactPunchIn && punchOutBackend === originalExactPunchOut && workSchedule === originalWorkSchedule && typeSpecificFieldsUnchanged && entryStatus === originalEntryStatus) {
+  const noteChanged = managerMessage !== (document.getElementById("updateEntryForm").dataset.originalManagerMessage || "");
+  const timeFromInputs = (hours, minutes, original) => {
+    if (!hours && !minutes) return "";
+    const hhmm = `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
+    return original && original.slice(0, 5) === hhmm ? original : `${hhmm}:00`;
+  };
+  const newPunchInBackend = timeFromInputs(punchInHours, punchInMinutes, originalExactPunchIn);
+  const punchOutBackend = timeFromInputs(punchOutHours, punchOutMinutes, originalExactPunchOut);
+  const overtimeFieldsUnchanged = projectCode === originalProjectCode && overtimeCode === originalOvertimeCode && paymentOption === originalPaymentOption && reasonCode === originalReasonCode && holidayValue === originalHolidayValue;
+  const typeSpecificFieldsUnchanged = entryType === "diverse" ? diverseReason === originalDiverseReason.trim() : overtimeFieldsUnchanged;
+  const fieldsUnchanged = newDate === originalDate && newPunchInBackend === originalExactPunchIn && punchOutBackend === originalExactPunchOut &&
+    (workSchedule === originalWorkSchedule || (!workSchedule && originalWorkSchedule === "unconfirmed")) && typeSpecificFieldsUnchanged && entryStatus === originalEntryStatus;
+  if (fieldsUnchanged && !noteChanged) {
     showToast(t("dashboard.noChanges"), "info");
     return;
   }
 
-  if (new Date(`${newDate}T${punchOutBackend}`) <= new Date(`${newDate}T${newPunchInBackend}`)) {
-    showToast(t("dashboard.punchOutAfterPunchIn"), "error");
-    return;
+  if (!fieldsUnchanged) {
+    if (!updateDateInput.checkValidity()) {
+      updateDateInput.reportValidity();
+      return;
+    }
+
+    if (!workScheduleInput.checkValidity()) {
+      workScheduleInput.reportValidity();
+      return;
+    }
+
+    if (!punchInHours || !punchInMinutes || !punchOutHours || !punchOutMinutes) {
+      showToast(t("dashboard.fillAllTimeFields"), "error");
+      return;
+    }
+
+    const twoDigitRegex = /^[0-9]{1,2}$/;
+    if (!twoDigitRegex.test(punchInHours) || !twoDigitRegex.test(punchInMinutes) || !twoDigitRegex.test(punchOutHours) || !twoDigitRegex.test(punchOutMinutes)) {
+      showToast(t("dashboard.numericTimeValidation"), "error");
+      return;
+    }
+
+    if (entryType === "diverse" && !diverseReason) {
+      showToast(t("self.diverseReasonRequired"), "error");
+      return;
+    }
+
+    if (entryType !== "diverse" && (!projectCode || !paymentOption)) {
+      showToast(t("dashboard.projectAndCodeRequired"), "error");
+      return;
+    }
+
+    if (!managerMessage) {
+      showToast(t("dashboard.managerMessageRequired"), "error");
+      return;
+    }
+
+    if (!["approved", "rejected", "pending"].includes(entryStatus)) {
+      showToast(t("dashboard.invalidStatus"), "error");
+      return;
+    }
+
+    if (new Date(`${newDate}T${punchOutBackend}`) <= new Date(`${newDate}T${newPunchInBackend}`)) {
+      showToast(t("dashboard.punchOutAfterPunchIn"), "error");
+      return;
+    }
   }
 
   try {
     await runButtonAction(saveButton, async () => {
-      const response = await fetch(apiUrl + "employee/" + employeeCode, {
+      const requestPath = fieldsUnchanged ? "employee/message/" + employeeCode : "employee/" + employeeCode;
+      const body = fieldsUnchanged ? { entryId, date: originalDate, punchIn: originalPunchIn, message: managerMessage } : {
+        entryId, entryType, workSchedule, date: originalDate, newDate, originalPunchIn,
+        newPunchIn: newPunchInBackend, punchOut: punchOutBackend, status: entryStatus, message: managerMessage, messageChanged: noteChanged,
+        ...(entryType === "diverse" ? { diverseReason } : {
+          projectCode, overtimeCode, paymentOption, reasonCode,
+          ...(holidayValue !== originalHolidayValue ? { holidayNotScheduledWorkday } : {}),
+        }),
+      };
+      const response = await fetch(apiUrl + requestPath, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(entryType === "diverse"
-          ? { entryId, entryType, workSchedule, date: originalDate, newDate, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, diverseReason, diverseSummary, status: entryStatus, message: managerMessage }
-          : { entryId, entryType, workSchedule, ...(holidayValue !== originalHolidayValue ? { holidayNotScheduledWorkday } : {}), date: originalDate, newDate, originalPunchIn, newPunchIn: newPunchInBackend, punchOut: punchOutBackend, projectCode, overtimeCode, paymentOption, reasonCode, workComment, status: entryStatus, message: managerMessage }),
+        body: JSON.stringify(body),
       });
       await parseResponse(response);
       const refreshPeopleEmployee = document.getElementById("updateEntryForm").dataset.refreshPeopleEmployee || "";

@@ -77,9 +77,9 @@ Dans son espace, un employé peut :
 - voir ses entrées dans une liste et dans une vue calendrier;
 - consulter ses statistiques personnelles;
 - voir des statistiques par projet;
-- exporter ses entrées mensuelles dans une page HTML séparée.
+- préparer le formulaire GC179 du mois sélectionné, depuis **Calendrier et GC179**.
 
-Les entrées rejetées ne sont pas incluses dans l’export mensuel.
+Le reçu indique le nombre d’entrées incluses et précise si certaines sont encore en attente d’approbation. Les entrées rejetées sont exclues. Si Acrobat ne s’ouvre pas, utilisez **Copier le chemin**, ouvrez le dossier dans l’Explorateur et ouvrez les fichiers `.fdf` avec Acrobat. SAPHIR prépare les fichiers localement et ne les transmet pas à la paie.
 
 ### Entrées de type Divers
 
@@ -167,6 +167,8 @@ Les actions importantes sont conservées dans `data/history.json`. L’historiqu
 L’application distingue maintenant mieux l’auteur de l’action et l’employé concerné. Par exemple, dans une activité récente, le titre peut être l’auteur et le message peut préciser l’employé touché.
 
 ### Données de démonstration
+
+La [démo départementale v5 finale](docs/artifacts/SAPHIR-Demo-Departement-v5-final.zip) fonctionne hors ligne et utilise son propre dossier de données fictives. Extraire le ZIP au complet, puis ouvrir `Demarrer-demo.command` sur Mac (PowerShell 7 requis) ou `Demarrer-demo.cmd` sur Windows. Le fichier `LIRE-MOI.txt` indique les comptes de démo; le script de présentation et le FDF fictif sont dans `docs`.
 
 Pour les présentations, il existe un bouton dans l’interface permettant de générer des entrées de démonstration. La logique backend est dans `app/backend/services/SeedService.ps1` et la route utilisée est `POST /seed/demo-entries`.
 

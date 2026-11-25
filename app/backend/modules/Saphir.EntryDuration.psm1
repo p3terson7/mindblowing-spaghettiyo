@@ -1,3 +1,13 @@
+function ConvertTo-SaphirNearestQuarterHourTime {
+    param([Parameter(Mandatory = $true)][datetime]$Time)
+
+    # Display rounds at minutes 08, 23, 38 and 53, without moving a punch
+    # to the next day. Paid duration is a separate rule based on exact times.
+    $minuteOfDay = 60 * $Time.Hour + $Time.Minute
+    $roundedMinute = [math]::Min(23 * 60 + 45, 15 * [math]::Floor(($minuteOfDay + 7) / 15))
+    return $Time.Date.AddMinutes($roundedMinute).ToString("HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
 function New-QuarterHourCreditSummary {
     param(
         [bool]$IsValid = $false,
@@ -100,5 +110,6 @@ function Get-QuarterHourCreditSummary {
 }
 
 Export-ModuleMember -Function @(
+    "ConvertTo-SaphirNearestQuarterHourTime",
     "Get-QuarterHourCreditSummary"
 )

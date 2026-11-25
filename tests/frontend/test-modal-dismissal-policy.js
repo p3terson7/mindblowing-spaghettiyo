@@ -24,6 +24,7 @@ const expectedDataEntryModals = [
   "addEntryModal",
   "gc179ImportModal",
   "dashboardNoteModal",
+  "selfEntryCommentModal",
   "selfSettingsModal",
   "employeeEditorModal",
   "projectEditorModal",
