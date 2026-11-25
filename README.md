@@ -168,7 +168,7 @@ L’application distingue maintenant mieux l’auteur de l’action et l’emplo
 
 ### Données de démonstration
 
-La [démo départementale v5 finale](docs/artifacts/SAPHIR-Demo-Departement-v5-final.zip) fonctionne hors ligne et utilise son propre dossier de données fictives. Extraire le ZIP au complet, puis ouvrir `Demarrer-demo.command` sur Mac (PowerShell 7 requis) ou `Demarrer-demo.cmd` sur Windows. Le fichier `LIRE-MOI.txt` indique les comptes de démo; le script de présentation et le FDF fictif sont dans `docs`.
+La [démo départementale v7](docs/artifacts/SAPHIR-Demo-Departement-v7.zip) fonctionne hors ligne et utilise son propre dossier de données fictives. Extraire le ZIP au complet, puis ouvrir `saphir-demo-departement-v7/Demarrer-demo.cmd` sur Windows ou `Demarrer-demo.command` sur Mac (PowerShell 7 requis). Si vous avez téléchargé toute la branche, ouvrez ces mêmes raccourcis dans le dossier `saphir-demo-departement-v7` à la racine, pas dans `scripts/demo`. Le fichier `LIRE-MOI.txt` indique les comptes; le serveur répond sur `http://localhost:8097/`.
 
 Pour les présentations, il existe un bouton dans l’interface permettant de générer des entrées de démonstration. La logique backend est dans `app/backend/services/SeedService.ps1` et la route utilisée est `POST /seed/demo-entries`.
 

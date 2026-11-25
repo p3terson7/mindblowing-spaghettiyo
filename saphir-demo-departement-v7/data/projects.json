@@ -1,0 +1,261 @@
+[
+  {
+    "projectCode": "2025-1352851",
+    "projectName": "",
+    "sector": "UMECO",
+    "colorKey": "indigo",
+    "markerKey": "square",
+    "archived": false,
+    "admins": [
+      "880000002"
+    ],
+    "backupAdmins": []
+  },
+  {
+    "projectCode": "2022-1596783",
+    "projectName": "COINCIDENCE",
+    "sector": "EEBA",
+    "colorKey": "violet",
+    "markerKey": "square",
+    "archived": false,
+    "admins": [
+      "880000003"
+    ],
+    "backupAdmins": []
+  },
+  {
+    "projectCode": "2024-801645",
+    "projectName": "",
+    "sector": "EEBA",
+    "colorKey": "indigo",
+    "markerKey": "diamond",
+    "archived": false,
+    "admins": [
+      "880000004"
+    ],
+    "backupAdmins": []
+  },
+  {
+    "projectCode": "2022-522784",
+    "projectName": "CHROME",
+    "sector": "UMECO",
+    "colorKey": "mint",
+    "markerKey": "diamond",
+    "archived": false,
+    "admins": [
+      "880000004"
+    ],
+    "backupAdmins": []
+  },
+  {
+    "projectCode": "2026",
+    "projectName": "ADMIN-2026/2027",
+    "sector": "GEEM",
+    "colorKey": "pink",
+    "markerKey": "circle",
+    "archived": false,
+    "admins": [
+      "880000006"
+    ],
+    "backupAdmins": []
+  },
+  {
+    "projectCode": "2026-1133426",
+    "projectName": "",
+    "sector": "EISN",
+    "colorKey": "amber",
+    "markerKey": "triangle",
+    "archived": false,
+    "admins": [
+      "880000002"
+    ],
+    "backupAdmins": []
+  },
+  {
+    "projectCode": "2026-760",
+    "projectName": "",
+    "sector": "EISN",
+    "colorKey": "coral",
+    "markerKey": "triangle",
+    "archived": false,
+    "admins": [
+      "880000005",
+      "880000002"
+    ],
+    "backupAdmins": []
+  },
+  {
+    "projectCode": "2024-817313",
+    "projectName": "",
+    "sector": "CYBER",
+    "colorKey": "graphite",
+    "markerKey": "circle",
+    "archived": false,
+    "admins": [
+      "880000004"
+    ],
+    "backupAdmins": []
+  },
+  {
+    "projectCode": "2021-66432",
+    "projectName": "CALIBAN",
+    "sector": "Detachement de Quebec",
+    "colorKey": "blue",
+    "markerKey": "circle",
+    "archived": false,
+    "admins": [
+      "880000005"
+    ],
+    "backupAdmins": []
+  },
+  {
+    "projectCode": "2026-2027_Sphere info",
+    "projectName": "2026/2027-Sphère info",
+    "sector": "GEEM",
+    "colorKey": "coral",
+    "markerKey": "circle",
+    "archived": false,
+    "admins": [
+      "880000006"
+    ],
+    "backupAdmins": []
+  },
+  {
+    "projectCode": "ER2023-1861292",
+    "projectName": "",
+    "sector": "",
+    "colorKey": "green",
+    "markerKey": "circle",
+    "archived": false,
+    "admins": [
+      "880000005"
+    ],
+    "backupAdmins": [
+      "880000002"
+    ]
+  },
+  {
+    "projectCode": "2025-1781398",
+    "projectName": "",
+    "sector": "UMECO",
+    "colorKey": "mint",
+    "markerKey": "triangle",
+    "archived": false,
+    "admins": [
+      "880000002"
+    ],
+    "backupAdmins": []
+  },
+  {
+    "projectCode": "DEMO-01",
+    "projectName": "Modernisation du portail",
+    "sector": "Services numériques",
+    "colorKey": "blue",
+    "markerKey": "triangle",
+    "archived": false,
+    "admins": [
+      "880000002"
+    ],
+    "backupAdmins": [
+      "880000003"
+    ]
+  },
+  {
+    "projectCode": "DEMO-02",
+    "projectName": "Intégration des données",
+    "sector": "Données",
+    "colorKey": "teal",
+    "markerKey": "square",
+    "archived": false,
+    "admins": [
+      "880000003"
+    ],
+    "backupAdmins": [
+      "880000004"
+    ]
+  },
+  {
+    "projectCode": "DEMO-03",
+    "projectName": "Revue des accès",
+    "sector": "Sécurité",
+    "colorKey": "amber",
+    "markerKey": "diamond",
+    "archived": false,
+    "admins": [
+      "880000004"
+    ],
+    "backupAdmins": [
+      "880000005"
+    ]
+  },
+  {
+    "projectCode": "DEMO-04",
+    "projectName": "Tests de reprise",
+    "sector": "Infrastructures",
+    "colorKey": "green",
+    "markerKey": "diamond",
+    "archived": false,
+    "admins": [
+      "880000005"
+    ],
+    "backupAdmins": [
+      "880000006"
+    ]
+  },
+  {
+    "projectCode": "DEMO-05",
+    "projectName": "Automatisation des rapports",
+    "sector": "Opérations",
+    "colorKey": "violet",
+    "markerKey": "triangle",
+    "archived": false,
+    "admins": [
+      "880000006"
+    ],
+    "backupAdmins": [
+      "880000002"
+    ]
+  },
+  {
+    "projectCode": "DEMO-06",
+    "projectName": "Formation interne",
+    "sector": "Services internes",
+    "colorKey": "coral",
+    "markerKey": "square",
+    "archived": false,
+    "admins": [
+      "880000002"
+    ],
+    "backupAdmins": [
+      "880000003"
+    ]
+  },
+  {
+    "projectCode": "DEMO-07",
+    "projectName": "Migration documentaire",
+    "sector": "Information",
+    "colorKey": "pink",
+    "markerKey": "diamond",
+    "archived": false,
+    "admins": [
+      "880000003"
+    ],
+    "backupAdmins": [
+      "880000004"
+    ]
+  },
+  {
+    "projectCode": "DEMO-08",
+    "projectName": "Suivi de qualité",
+    "sector": "Assurance qualité",
+    "colorKey": "mint",
+    "markerKey": "square",
+    "archived": false,
+    "admins": [
+      "880000004"
+    ],
+    "backupAdmins": [
+      "880000005"
+    ]
+  }
+]

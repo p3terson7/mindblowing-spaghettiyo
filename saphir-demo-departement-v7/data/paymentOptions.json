@@ -1,0 +1,12 @@
+[
+  {
+    "labelFr": "En espèce",
+    "code": "cash",
+    "labelEn": "Cash"
+  },
+  {
+    "labelFr": "Congé",
+    "code": "leave",
+    "labelEn": "Leave"
+  }
+]

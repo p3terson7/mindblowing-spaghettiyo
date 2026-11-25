@@ -34,6 +34,7 @@ try {
         $result = Get-DashboardBootstrapModel -CurrentUser $manager
         Assert-Cold ($result.trackedEmployees -eq 32 -and $result.pendingApprovals -eq 32 -and $result.totalOvertime -eq "32:00:00") "Cold totals changed at concurrency $level : employees=$($result.trackedEmployees), pending=$($result.pendingApprovals), hours=$($result.totalOvertime)."
         Assert-Cold ($result.pendingQueue.Count -eq 6 -and $result.activeSessions.Count -eq 0 -and $result.selectedEmployeeEntries.Count -eq 1) "Cold queues/selected employee changed."
+        Assert-Cold (@($script:ReadModelCache.Keys | Where-Object { $_ -like "scoped-employee-data-snapshot|*" -or $_ -like "scoped-employee-contribution|*" }).Count -eq 0) "Dashboard rebuilt the full scoped entry projections."
         $serialized = ConvertTo-Json -InputObject $result -Depth 12 -Compress
         if ($expected) { Assert-Cold ($expected -ceq $serialized) "Parallel DTO differs from sequential projection at level $level." }
         $expected = $serialized

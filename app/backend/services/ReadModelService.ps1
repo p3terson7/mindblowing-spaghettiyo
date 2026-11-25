@@ -678,6 +678,14 @@ function Add-EntryPermissionProjection {
     return $Entry
 }
 
+function Test-EntryModifiableFromAccessModel {
+    param($Entry, $ModifyProjectCodeSet, [bool]$IsSuperAdmin)
+    if ($IsSuperAdmin) { return $true }
+    $entryType = ([string]$Entry.entryType).Trim().ToLowerInvariant()
+    $projectCode = [string]$Entry.projectCode
+    return ($entryType -ne "diverse" -and -not [string]::IsNullOrWhiteSpace($projectCode) -and $ModifyProjectCodeSet.ContainsKey($projectCode))
+}
+
 function Add-EntryPermissionProjectionFromAccessModel {
     param(
         [Parameter(Mandatory = $true)]$Entry,
@@ -687,16 +695,7 @@ function Add-EntryPermissionProjectionFromAccessModel {
         [bool]$IsOwnEntry = $false
     )
 
-    $entryType = if ($Entry.PSObject.Properties.Name -contains "entryType") { ([string]$Entry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
-    $projectCode = if ($Entry.PSObject.Properties.Name -contains "projectCode") { [string]$Entry.projectCode } else { "" }
-    $canModify = $false
-
-    if ($IsSuperAdmin) {
-        $canModify = $true
-    }
-    elseif ($entryType -ne "diverse" -and -not [string]::IsNullOrWhiteSpace($projectCode)) {
-        $canModify = $ModifyProjectCodeSet.ContainsKey($projectCode)
-    }
+    $canModify = Test-EntryModifiableFromAccessModel -Entry $Entry -ModifyProjectCodeSet $ModifyProjectCodeSet -IsSuperAdmin:$IsSuperAdmin
 
     $canApprove = ($canModify -and $CanApproveEmployeeRole -and -not $IsOwnEntry)
     $permissionReason = "editable"
@@ -787,8 +786,8 @@ function Get-CachedEmployeeEntriesForFile {
         # This cache is internal. Preserve the private snapshot here so the
         # manager projections can expose only its permitted monetary fields.
         # Public employee responses must still pass through a safe projection.
-        if ($null -ne $entry -and $entry.PSObject.Properties.Name -contains "compensationSnapshot") {
-            $normalizedEntry | Add-Member -NotePropertyName compensationSnapshot -NotePropertyValue $entry.compensationSnapshot -Force
+        if ($null -ne $entry -and $null -ne $entry.PSObject.Properties["compensationSnapshot"]) {
+            $normalizedEntry.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("compensationSnapshot", $entry.compensationSnapshot))
         }
         [void]$entriesList.Add($normalizedEntry)
     }
@@ -1106,64 +1105,93 @@ function Get-DashboardBootstrapModel {
 
     $accessModel = Get-ProjectAccessModelForCurrentUser -CurrentUser $CurrentUser
     $modifyAccessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $CurrentUser
-    $scopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@($accessModel.ProjectCodes) -join ",") }
-    $modifyScopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
+    $isSuperAdmin = Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser
+    $scopeKey = if ($isSuperAdmin) { "global" } else { (@($accessModel.ProjectCodes) -join ",") }
+    $modifyScopeKey = if ($isSuperAdmin) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
     $cacheKey = "dashboard-bootstrap|{0}|{1}|{2}|{3}" -f [string]$SelectedEmployeeCode, $scopeKey, $modifyScopeKey, $userScopeKey
     $cacheKey += "|" + (Get-Date -Format "yyyy-MM")
     $dashboard = Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects") -Factory {
-        $snapshot = Get-ScopedEmployeeDataSnapshot -CurrentUser $CurrentUser
-        $flattenedEntries = @($snapshot.flattenedEntries)
+        # Count from the normalized entries. Only build full public projections
+        # for the two visible queues and for the employee shown in the inspector.
+        $employees = New-Object Collections.ArrayList
+        $visibleByCode = @{}
         $now = Get-Date
+        $monthPrefix = $now.ToString("yyyy-MM") + "-"
         $totalSeconds = 0
         $actionableCount = 0
         $pending = New-Object Collections.ArrayList
         $active = New-Object Collections.ArrayList
 
-        foreach ($entry in $flattenedEntries) {
-            if (Test-EntryPendingApproval -Entry $entry) {
-                [void]$pending.Add($entry)
-                if ($entry.canApprove) { $actionableCount++ }
-            }
-            elseif (-not $entry.punchOut -and (Test-EntryOpen $entry)) {
-                [void]$active.Add($entry)
-            }
-
-            $entryType = if ($entry.PSObject.Properties.Name -contains "entryType") { ([string]$entry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
-            if ($entryType -eq "diverse") {
-                continue
-            }
-
-            $entryDate = Get-EntryDateOrNull -Entry $entry
-            if ($null -eq $entryDate) {
-                continue
-            }
-
-            if ($entryDate.Month -eq $now.Month -and $entryDate.Year -eq $now.Year) {
-                $totalSeconds += Get-OvertimeSecondsFromText -Value ([string]$entry.overtime)
+        if ((Test-CurrentUserManager -CurrentUser $CurrentUser) -and ($isSuperAdmin -or $accessModel.ProjectCodes.Count -gt 0)) {
+            $snapshot = Get-EmployeeDataSnapshot -SkipProjection
+            foreach ($employee in $snapshot.employees) {
+                $code = [string]$employee.code
+                $entries = $snapshot.entriesByEmployee[$code]
+                if (-not $isSuperAdmin) {
+                    $entries = @($entries | Where-Object { $accessModel.ProjectCodeSet.ContainsKey([string]$_.projectCode) })
+                }
+                if (-not $entries.Count) { continue }
+                $codes = if ($isSuperAdmin) { ,$employee.projectCodes } else {
+                    ,@($entries | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.projectCode) } | ForEach-Object { [string]$_.projectCode } | Sort-Object -Unique)
+                }
+                [void]$employees.Add([PSCustomObject]@{
+                    code = $code; name = $employee.name; entryCount = $entries.Count
+                    projectCodes = $codes; role = $employee.role; timeEntryTypes = $employee.timeEntryTypes
+                })
+                $source = [PSCustomObject]@{
+                    employee = $employee; entries = $entries
+                    canApproveRole = Test-CurrentUserCanApproveEmployeeRole -CurrentUser $CurrentUser -EmployeeRole ([string]$employee.role)
+                    isOwn = Test-CurrentUserMatchesEmployeeCode -CurrentUser $CurrentUser -EmployeeCode $code
+                }
+                $visibleByCode[$code] = $source
+                foreach ($entry in $entries) {
+                    if (Test-EntryPendingApproval -Entry $entry) {
+                        [void]$pending.Add([PSCustomObject]@{ entry = $entry; source = $source })
+                        if ($source.canApproveRole -and -not $source.isOwn -and
+                            (Test-EntryModifiableFromAccessModel -Entry $entry -ModifyProjectCodeSet $modifyAccessModel.ProjectCodeSet -IsSuperAdmin:$isSuperAdmin)) {
+                            $actionableCount++
+                        }
+                    }
+                    elseif (-not $entry.punchOut -and (Test-EntryOpen $entry)) {
+                        [void]$active.Add([PSCustomObject]@{ entry = $entry; source = $source })
+                    }
+                    if ($entry.entryType -ne "diverse" -and ([string]$entry.date).StartsWith($monthPrefix, [StringComparison]::Ordinal) -and
+                        ($null -ne (Get-EntryDateOrNull -Entry $entry))) {
+                        $totalSeconds += Get-OvertimeSecondsFromText -Value ([string]$entry.overtime)
+                    }
+                }
             }
         }
 
-        $pendingEntries = @($pending | Sort-Object { Get-EntryDateTimeOrMin -Entry $_ } -Descending | Select-Object -First 6)
-        $activeEntries = @($active | Sort-Object { Get-EntryDateTimeOrMin -Entry $_ } -Descending | Select-Object -First 6)
-        $preferredEntry = $pendingEntries | Select-Object -First 1
-        $defaultEmployeeCode = if ($preferredEntry) { [string]$preferredEntry.employeeCode } elseif ($snapshot.employees.Count -gt 0) { [string]$snapshot.employees[0].code } else { "" }
+        $pendingRows = @($pending | Sort-Object { Get-EntryDateTimeOrMin -Entry $_.entry } -Descending | Select-Object -First 6)
+        $activeRows = @($active | Sort-Object { Get-EntryDateTimeOrMin -Entry $_.entry } -Descending | Select-Object -First 6)
+        $defaultEmployeeCode = if ($pendingRows.Count) { [string]$pendingRows[0].source.employee.code } elseif ($employees.Count) { [string]$employees[0].code } else { "" }
         $resolvedEmployeeCode = if ([string]::IsNullOrWhiteSpace([string]$SelectedEmployeeCode)) { $defaultEmployeeCode } else { [string]$SelectedEmployeeCode }
-        if ($resolvedEmployeeCode -and -not $snapshot.entriesByEmployee.ContainsKey($resolvedEmployeeCode)) {
+        if ($resolvedEmployeeCode -and -not $visibleByCode.ContainsKey($resolvedEmployeeCode)) {
             $resolvedEmployeeCode = $defaultEmployeeCode
         }
-        $selectedEmployeeEntries = if ($resolvedEmployeeCode -and $snapshot.entriesByEmployee.ContainsKey($resolvedEmployeeCode)) { @($snapshot.entriesByEmployee[$resolvedEmployeeCode]) } else { @() }
+        $projectRow = {
+            param($Entry, $Source)
+            New-EmployeeEntryProjectionForAccessModel -EmployeeCode ([string]$Source.employee.code) -EmployeeName ([string]$Source.employee.name) `
+                -Entry $Entry -ModifyProjectCodeSet $modifyAccessModel.ProjectCodeSet -EmployeeRole ([string]$Source.employee.role) `
+                -IsSuperAdmin:$isSuperAdmin -CanApproveEmployeeRole:([bool]$Source.canApproveRole) -IsOwnEntry:([bool]$Source.isOwn)
+        }
+        $selectedEmployeeEntries = if ($resolvedEmployeeCode) {
+            $source = $visibleByCode[$resolvedEmployeeCode]
+            @(foreach ($entry in $source.entries) { & $projectRow $entry $source })
+        } else { @() }
 
         return [PSCustomObject]@{
-            employees             = $snapshot.employees
+            employees             = @($employees.ToArray())
             totalOvertime         = Convert-SecondsToTimeText -Seconds $totalSeconds
             pendingApprovals      = $pending.Count
             actionableCount       = $actionableCount
             activeEmployees       = $active.Count
-            trackedEmployees      = $snapshot.employees.Count
+            trackedEmployees      = $employees.Count
             projects              = @(Get-ProjectsForCurrentUser -CurrentUser $CurrentUser -Scope "all")
-            pendingQueue          = $pendingEntries
-            activeSessions        = $activeEntries
+            pendingQueue          = @(foreach ($row in $pendingRows) { & $projectRow $row.entry $row.source })
+            activeSessions        = @(foreach ($row in $activeRows) { & $projectRow $row.entry $row.source })
             recentHistory         = @()
             defaultEmployeeCode   = $defaultEmployeeCode
             selectedEmployeeCode  = $resolvedEmployeeCode
