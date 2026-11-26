@@ -34,7 +34,10 @@ const employeesViewState = {
   },
 };
 let pendingEmployeeAnalyticsFrameId = null;
+let peopleEntryInspector = null;
+let peopleEntryInspectorFrame = 0;
 window.resetEmployeesViewData = function () {
+  closePeopleEntryInspector();
   employeesViewState.loadSequence++;
   employeesViewState.entryGeneration++;
   employeesViewState.detailRequests = {};
@@ -62,7 +65,9 @@ window.invalidateEmployeesViewEntryCache = function (resource) {
     employeesViewState.entryVersions[employeeCode] = (employeesViewState.entryVersions[employeeCode] || 0) + 1;
     delete employeesViewState.detailRequests[employeeCode];
     employeesViewState.entriesByEmployee[employeeCode] = undefined;
-    employeesViewState.currentMonthByEmployee[employeeCode] = undefined;
+    if (peopleEntryInspector?.employeeCode !== employeeCode) {
+      employeesViewState.currentMonthByEmployee[employeeCode] = undefined;
+    }
   }
   employeesViewState.employeeAnalyticsSignature = "";
 };
@@ -2331,14 +2336,14 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
       const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
       const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
       const statusAttribute = ` data-status="${escapeHtml(entry.status || "pending")}"`;
-      const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
+      const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"${renderEntryNoteMetadataAttributes(entry)}`;
       const employeeCodeAttribute = ` data-employee-code="${escapeHtml(normalizedEmployeeCode)}"`;
       const reviewButtons = isPending && !isOpen && !isEntryForgottenClockOut(entry) && canApprove
         ? `
           <button type="button" class="btn btn-success btn-sm action-btn people-project-entry-action people-calendar-approve"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.approve"))}">
             <i class="fa-solid fa-check"></i>
           </button>
-          <button type="button" class="btn btn-danger btn-sm action-btn people-project-entry-action people-calendar-reject"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.reject"))}">
+          <button type="button" class="btn btn-danger btn-sm action-btn people-project-entry-action people-calendar-reject"${employeeCodeAttribute} data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}"${entryIdAttribute} title="${escapeHtml(t("action.reject"))}">
             <i class="fa-solid fa-ban"></i>
           </button>
         `
@@ -2358,12 +2363,16 @@ function renderPeopleProjectEntryRows(entries, employeeCode) {
         : "";
       return `
         <article class="people-project-entry-row">
-          <div class="people-project-entry-date">${escapeHtml(formatDateLabel(entry.date))}</div>
           <div class="people-project-entry-main">
-            <div class="people-project-entry-time time-value">${getEntryRoundedTimeRangeMarkup(entry)}</div>
-            ${exactTimeLabel ? `<div class="panel-note">${escapeHtml(exactTimeLabel)}</div>` : ""}
-            <div class="people-project-entry-context">${escapeHtml(getPeopleProjectEntryContext(entry))}</div>
-            ${renderEntryNotesPreview(entry)}
+            <div class="people-project-entry-when">
+              <div class="people-project-entry-date">${escapeHtml(formatDateLabel(entry.date))}</div>
+              <div class="people-project-entry-time time-value">${getEntryRoundedTimeRangeMarkup(entry)}</div>
+            </div>
+            <div class="people-project-entry-subline">
+              ${exactTimeLabel ? `<span class="panel-note">${escapeHtml(exactTimeLabel)}</span>` : ""}
+              <span class="people-project-entry-context">${escapeHtml(getPeopleProjectEntryContext(entry))}</span>
+              ${renderEntryNotesPreview(entry, { iconOnly: true })}
+            </div>
           </div>
           <div class="people-project-entry-side">
             <span class="inline-code-pill">${escapeHtml(duration)}</span>
@@ -2671,6 +2680,32 @@ function buildEmployeeMonthBoard(entries, activeMonthKey) {
   });
 }
 
+function renderPeopleCalendarManageButtons(entry, employeeCode, showLabels = false) {
+  if (!canModifyEntry(entry)) return "";
+  const entryIdAttribute = ` data-entryid="${escapeHtml(entry.entryId || "")}"`;
+  const exactPunchInAttribute = ` data-exactpunchin="${escapeHtml(getEntryExactPunchIn(entry))}"`;
+  const exactPunchOutAttribute = ` data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`;
+  const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
+  const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
+  const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
+  const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
+  const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}" data-holidaynotscheduled="${typeof entry.holidayNotScheduledWorkday === "boolean" ? entry.holidayNotScheduledWorkday : ""}"`;
+  const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
+  const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
+  const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
+  const statusAttribute = ` data-status="${escapeHtml(entry.status || "pending")}"`;
+  const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"${renderEntryNoteMetadataAttributes(entry)}`;
+  return `
+    <div class="calendar-action-pair">
+      <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn people-calendar-edit" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${workScheduleAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} aria-label="${escapeHtml(t("action.edit"))}" title="${escapeHtml(t("action.edit"))}">
+        <i class="fa-solid fa-pen" aria-hidden="true"></i>${showLabels ? escapeHtml(t("action.edit")) : ""}
+      </button>
+      <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn people-calendar-delete" data-employee-code="${escapeHtml(employeeCode)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} aria-label="${escapeHtml(t("action.delete"))}" title="${escapeHtml(t("action.delete"))}">
+        <i class="fa-solid fa-trash" aria-hidden="true"></i>${showLabels ? escapeHtml(t("action.delete")) : ""}
+      </button>
+    </div>`;
+}
+
 function buildEmployeeCalendarDays(entries, activeMonthKey) {
   return window.Saphir.calendarDays.buildMonth(entries, activeMonthKey, {
     getEntryDate(entry) {
@@ -2767,9 +2802,337 @@ function renderEmployeesDirectory(employees) {
   renderEmployeeDetail(getEmployeeByCode(employeesViewState.selectedEmployeeCode));
 }
 
+async function handlePeopleEntryAction(event) {
+  const approveButton = event.target.closest(".people-calendar-approve");
+  if (approveButton) {
+    const employeeCode = approveButton.getAttribute("data-employee-code");
+    if (employeeCode) {
+      const actionKey = `people-entry-action:${employeeCode}:${approveButton.getAttribute("data-entryid") || `${approveButton.getAttribute("data-date")}:${approveButton.getAttribute("data-punchin")}`}`;
+      await runButtonAction(approveButton, async () => {
+        try {
+          const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              entryId: approveButton.getAttribute("data-entryid") || "",
+              date: approveButton.getAttribute("data-date"),
+              punchIn: approveButton.getAttribute("data-punchin"),
+              status: "approved",
+              message: "",
+            }),
+          });
+          await parseResponse(response);
+          showToast(t("dashboard.entryUpdated"), "success");
+          await refreshPeopleEmployeeDetail(employeeCode);
+          markEntryRelatedViewsStaleFromPeople();
+        } catch (error) {
+          console.error("Error approving entry from calendar:", error);
+          showToast(t("dashboard.approvalError", { message: error.message }), "error");
+        }
+      }, { key: actionKey });
+    }
+    return true;
+  }
+
+  const rejectButton = event.target.closest(".people-calendar-reject");
+  if (rejectButton) {
+    const employeeCode = rejectButton.getAttribute("data-employee-code");
+    const managerMessage = await requestEntryRejectionNote(rejectButton, employeeCode, getEmployeeByCode(employeeCode)?.name);
+    if (managerMessage === null) return true;
+    if (employeeCode) {
+      const actionKey = `people-entry-action:${employeeCode}:${rejectButton.getAttribute("data-entryid") || `${rejectButton.getAttribute("data-date")}:${rejectButton.getAttribute("data-punchin")}`}`;
+      await runButtonAction(rejectButton, async () => {
+        try {
+          const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              entryId: rejectButton.getAttribute("data-entryid") || "",
+              date: rejectButton.getAttribute("data-date"),
+              punchIn: rejectButton.getAttribute("data-punchin"),
+              status: "rejected",
+              message: managerMessage.trim(),
+            }),
+          });
+          await parseResponse(response);
+          showToast(t("dashboard.entryUpdated"), "success");
+          await refreshPeopleEmployeeDetail(employeeCode);
+          markEntryRelatedViewsStaleFromPeople();
+        } catch (error) {
+          console.error("Error rejecting entry from calendar:", error);
+          showToast(t("dashboard.approvalError", { message: error.message }), "error");
+        }
+      }, { key: actionKey });
+    }
+    return true;
+  }
+
+  const deleteButton = event.target.closest(".people-calendar-delete");
+  if (deleteButton) {
+    const employeeCode = deleteButton.getAttribute("data-employee-code");
+    const managerMessage = window.prompt(t("dashboard.deleteManagerMessagePrompt"), "");
+    if (!window.confirm(t("dashboard.deleteConfirm"))) {
+      return true;
+    }
+    if (managerMessage === null) {
+      return true;
+    }
+    if (!String(managerMessage).trim()) {
+      showToast(t("dashboard.managerMessageRequired"), "error");
+      return true;
+    }
+    if (employeeCode) {
+      const actionKey = `people-entry-action:${employeeCode}:${deleteButton.getAttribute("data-entryid") || `${deleteButton.getAttribute("data-date")}:${deleteButton.getAttribute("data-punchin")}`}`;
+      await runButtonAction(deleteButton, async () => {
+        try {
+          const response = await fetch(apiUrl + "employee/" + employeeCode, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              entryId: deleteButton.getAttribute("data-entryid") || "",
+              date: deleteButton.getAttribute("data-date"),
+              punchIn: deleteButton.getAttribute("data-punchin"),
+              message: managerMessage.trim(),
+            }),
+          });
+          await parseResponse(response);
+          showToast(t("dashboard.entryDeleted"), "success");
+          await refreshPeopleEmployeeDetail(employeeCode);
+          markEntryRelatedViewsStaleFromPeople();
+        } catch (error) {
+          console.error("Error deleting entry from calendar:", error);
+          showToast(t("dashboard.entryDeleteError", { message: error.message }), "error");
+        }
+      }, { key: actionKey });
+    }
+    return true;
+  }
+
+  const entryEditButton = event.target.closest(".people-calendar-edit");
+  if (entryEditButton) {
+    const employeeCode = entryEditButton.getAttribute("data-employee-code");
+    if (employeeCode) {
+      setDashboardEmployeeContext(employeeCode);
+      if (typeof openUpdateModal === "function") {
+        await openUpdateModal(entryEditButton, employeeCode);
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+function getPeopleCalendarEntryKey(entry) {
+  return entry.entryId ? `id:${entry.entryId}` : JSON.stringify([entry.date, entry.punchIn, entry.punchOut]);
+}
+
+function getPeopleCalendarEntryProject(entry) {
+  return findProjectByCode(employeesViewState.entryLookups?.projects, entry.projectCode);
+}
+
+function renderPeopleCalendarEntrySummary(entry, employeeCode) {
+  const project = getPeopleCalendarEntryProject(entry);
+  const projectLabel = project?.projectName && project.projectName !== entry.projectCode ? project.projectName : entry.projectCode;
+  const schedule = getEntryWorkSchedule(entry);
+  const compressed = schedule === "compressed";
+  const statusTone = getStatusTone(entry);
+  return `
+    <button type="button" class="calendar-entry people-calendar-entry-trigger"
+      data-entryid="${escapeHtml(entry.entryId || "")}" data-entry-key="${escapeHtml(getPeopleCalendarEntryKey(entry))}"
+      data-employee-code="${escapeHtml(employeeCode)}" data-entry-status="${escapeHtml(String(entry.status || "pending").toLowerCase())}"
+      aria-haspopup="dialog" aria-expanded="false" aria-controls="peopleEntryInspector">
+      <span class="calendar-entry-main${compressed ? " has-compressed-schedule" : ""}">
+        <span class="calendar-entry-time time-value">${getEntryRoundedTimeRangeMarkup(entry)}</span>
+        ${compressed ? renderEntryWorkScheduleBadge(entry) : ""}
+      </span>
+      <span class="people-calendar-project" title="${escapeHtml(project ? formatProjectCodeAndName(project) : projectLabel || "")}">
+        ${!isDiverseEntry(entry) && projectLabel ? renderProjectColorDot(project || entry.projectCode) : ""}
+        <span>${escapeHtml(projectLabel || getEntryContextLabel(entry))}</span>
+      </span>
+      <span class="people-calendar-entry-status">
+        <span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>
+        ${compressed ? "" : renderEntryWorkScheduleBadge(entry)}
+      </span>
+    </button>`;
+}
+
+function renderPeopleEntryInspector(panel, entry, employeeCode) {
+  const entryId = escapeHtml(entry.entryId || "");
+  const date = escapeHtml(entry.date || "");
+  const punchIn = escapeHtml(entry.punchIn || "");
+  const punchOut = escapeHtml(entry.punchOut || "");
+  const reviewAttributes = `data-employee-code="${escapeHtml(employeeCode)}" data-entryid="${entryId}" data-date="${date}" data-punchin="${punchIn}" data-punchout="${punchOut}"`;
+  const canReview = String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry) && !isEntryForgottenClockOut(entry) && canApproveEntry(entry);
+  const canManage = canModifyEntry(entry);
+  const permission = getEntryPermissionBadgeMarkup(entry);
+  const project = getPeopleCalendarEntryProject(entry);
+  const notes = getEntryNotes(entry);
+  const exactTime = getEntryExactTimeLabel(entry);
+  panel.innerHTML = `
+    <header class="people-entry-inspector-header">
+      <div class="people-entry-inspector-heading">
+        <span class="panel-note">${escapeHtml(formatDateLabel(entry.date))}</span>
+        <h3 id="peopleEntryInspectorTitle" class="time-value" aria-label="${escapeHtml(t("employees.calendarEntryDetails") + " · " + getEntryRoundedTimeRange(entry))}">${getEntryRoundedTimeRangeMarkup(entry)}</h3>
+        <span class="people-entry-inspector-project">${escapeHtml((project && formatProjectCodeAndName(project)) || entry.projectCode || getEntryContextLabel(entry))}</span>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary people-entry-inspector-close" aria-label="${escapeHtml(t("shared.close"))}">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+    </header>
+    <div class="people-entry-inspector-body">
+      <div class="people-entry-inspector-status">
+        <span class="status-badge ${escapeHtml(getStatusTone(entry))}">${escapeHtml(getEntryStatusLabel(entry))}</span>
+        ${renderEntryWorkScheduleBadge(entry)}
+        <span class="panel-note duration-value">${escapeHtml(secondsToDurationLabel(getEntryDurationSeconds(entry)))}</span>
+        ${renderMonetaryEntryValue(entry)}
+        ${permission}
+      </div>
+      ${exactTime ? `<div class="panel-note">${escapeHtml(exactTime)}</div>` : ""}
+      ${!isDiverseEntry(entry) ? `<div class="panel-note">${escapeHtml(getPeopleProjectEntryContext(entry))}</div>` : ""}
+      ${renderEntryWorkComment(entry)}
+      ${notes.supervisorNote ? `<div class="people-entry-inspector-note"><div class="entry-work-comment-label">${escapeHtml(getEntrySupervisorNoteLabel(entry))}</div><div class="entry-work-comment-text">${escapeHtml(notes.supervisorNote)}</div></div>` : ""}
+    </div>
+    ${canReview || canManage ? `<footer class="people-entry-inspector-footer">
+      ${canReview ? `
+        <button type="button" class="btn btn-success btn-sm people-calendar-approve" ${reviewAttributes}>${escapeHtml(t("action.approve"))}</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm people-calendar-reject" ${reviewAttributes}>${escapeHtml(t("action.reject"))}</button>` : ""}
+      ${canManage ? `<details class="people-entry-inspector-more">
+        <summary class="btn btn-outline-secondary btn-sm" title="${escapeHtml(t("action.more"))}" aria-label="${escapeHtml(t("action.more"))}"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></summary>
+        <div class="people-entry-inspector-menu">${renderPeopleCalendarManageButtons(entry, employeeCode, true)}</div>
+      </details>` : ""}
+    </footer>` : ""}`;
+}
+
+const PEOPLE_ENTRY_INSPECTOR_MARGIN = 12;
+
+function getPeopleEntryInspectorPosition(anchor, panel, width, height) {
+  const margin = PEOPLE_ENTRY_INSPECTOR_MARGIN, gap = 8;
+  if (width < 640) return { placement: "sheet" };
+  const clampX = value => Math.max(margin, Math.min(value, width - panel.width - margin));
+  const availableRight = Math.floor(width - anchor.right - gap - margin);
+  const availableLeft = Math.floor(anchor.left - gap - margin);
+  // Prefer keeping the two top edges aligned over dropping a full-width panel below the entry.
+  const onRight = availableRight >= panel.width || availableRight >= availableLeft;
+  const sideWidth = Math.min(panel.width, onRight ? availableRight : availableLeft);
+  if (sideWidth >= Math.min(panel.width, 248)) {
+    return {
+      placement: onRight ? "right" : "left",
+      left: onRight ? anchor.right + gap : anchor.left - sideWidth - gap,
+      sideWidth,
+    };
+  }
+  if (anchor.top >= panel.height + gap + margin) return { placement: "above", left: clampX(anchor.left), top: anchor.top - panel.height - gap };
+  if (height - anchor.bottom >= panel.height + gap + margin) return { placement: "below", left: clampX(anchor.left), top: anchor.bottom + gap };
+  return { placement: "sheet" };
+}
+
+function positionPeopleEntryInspector() {
+  if (!peopleEntryInspector) return;
+  const { panel, trigger } = peopleEntryInspector;
+  if (!trigger.isConnected) { panel.hidden = true; return; }
+  const anchor = trigger.getBoundingClientRect();
+  if (!anchor.width || anchor.bottom <= 0 || anchor.top >= window.innerHeight) {
+    closePeopleEntryInspector();
+    return;
+  }
+  panel.hidden = false;
+  delete panel.dataset.placement;
+  panel.style.maxWidth = "";
+  const next = getPeopleEntryInspectorPosition(anchor, panel.getBoundingClientRect(), document.documentElement.clientWidth, window.innerHeight);
+  panel.dataset.placement = next.placement;
+  let top = next.top;
+  if (next.sideWidth != null) {
+    panel.style.maxWidth = `${next.sideWidth}px`;
+    const margin = PEOPLE_ENTRY_INSPECTOR_MARGIN;
+    top = Math.max(margin, Math.min(anchor.top, window.innerHeight - panel.offsetHeight - margin));
+  }
+  panel.style.left = next.left == null ? "" : `${Math.round(next.left)}px`;
+  panel.style.top = top == null ? "" : `${Math.round(top)}px`;
+}
+
+function schedulePeopleEntryInspectorPosition() {
+  if (!peopleEntryInspector || peopleEntryInspectorFrame) return;
+  peopleEntryInspectorFrame = window.requestAnimationFrame(() => {
+    peopleEntryInspectorFrame = 0;
+    positionPeopleEntryInspector();
+  });
+}
+
+function closePeopleEntryInspector({ restoreFocus = false } = {}) {
+  if (!peopleEntryInspector) return;
+  const { trigger, panel } = peopleEntryInspector;
+  peopleEntryInspector = null;
+  if (peopleEntryInspectorFrame) {
+    window.cancelAnimationFrame(peopleEntryInspectorFrame);
+    peopleEntryInspectorFrame = 0;
+  }
+  trigger.setAttribute("aria-expanded", "false");
+  panel.remove();
+  if (restoreFocus && trigger.isConnected) trigger.focus({ preventScroll: true });
+}
+window.closePeopleEntryInspector = closePeopleEntryInspector;
+
+function openPeopleEntryInspector(trigger) {
+  if (peopleEntryInspector?.trigger === trigger) { closePeopleEntryInspector({ restoreFocus: true }); return; }
+  closePeopleEntryInspector();
+  closeEntryNotesPopover();
+  const { employeeCode, entryKey } = trigger.dataset;
+  const entry = getVisibleEmployeeEntries(employeeCode).find(row => getPeopleCalendarEntryKey(row) === entryKey);
+  if (!entry) return;
+  const panel = document.createElement("aside");
+  panel.id = "peopleEntryInspector";
+  panel.className = "people-entry-inspector";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-labelledby", "peopleEntryInspectorTitle");
+  panel.addEventListener("click", event => {
+    if (event.target.closest(".people-entry-inspector-close")) closePeopleEntryInspector({ restoreFocus: true });
+    else void handlePeopleEntryAction(event);
+  });
+  renderPeopleEntryInspector(panel, entry, employeeCode);
+  peopleEntryInspector = { employeeCode, entryKey, trigger, panel };
+  trigger.setAttribute("aria-expanded", "true");
+  document.body.appendChild(panel);
+  positionPeopleEntryInspector();
+  if (!panel.hidden) panel.querySelector(".people-entry-inspector-close")?.focus({ preventScroll: true });
+}
+
+function refreshPeopleEntryInspector(container, employeeCode, entries) {
+  if (!peopleEntryInspector) return;
+  const current = peopleEntryInspector;
+  const trigger = current.employeeCode === employeeCode && Array.from(container.querySelectorAll(".people-calendar-entry-trigger"))
+    .find(node => node.dataset.entryKey === current.entryKey);
+  const entry = trigger && entries.find(row => getPeopleCalendarEntryKey(row) === current.entryKey);
+  if (!entry) { closePeopleEntryInspector(); return; }
+  const focusWithin = current.panel.contains(document.activeElement) || document.activeElement === document.body;
+  current.trigger = trigger;
+  trigger.setAttribute("aria-expanded", "true");
+  renderPeopleEntryInspector(current.panel, entry, employeeCode);
+  positionPeopleEntryInspector();
+  if (focusWithin && !current.panel.hidden) current.panel.querySelector(".people-entry-inspector-close")?.focus({ preventScroll: true });
+}
+
+document.addEventListener("pointerdown", event => {
+  if (!peopleEntryInspector || document.body.classList.contains("modal-open")) return;
+  if (!peopleEntryInspector.panel.contains(event.target) && !event.target.closest(".people-calendar-entry-trigger")) closePeopleEntryInspector();
+});
+document.addEventListener("keydown", event => {
+  if (event.key !== "Escape" || !peopleEntryInspector || document.body.classList.contains("modal-open")) return;
+  event.preventDefault();
+  const menu = peopleEntryInspector.panel.querySelector(".people-entry-inspector-more[open]");
+  if (menu) {
+    menu.open = false;
+    menu.querySelector("summary")?.focus({ preventScroll: true });
+    return;
+  }
+  closePeopleEntryInspector({ restoreFocus: true });
+});
+window.addEventListener("resize", schedulePeopleEntryInspectorPosition);
+window.addEventListener("scroll", schedulePeopleEntryInspectorPosition, { capture: true, passive: true });
+
 function renderEmployeeDetail(employee) {
   const container = document.getElementById("employeeDetailContainer");
   if (!employee) {
+    closePeopleEntryInspector();
     container.innerHTML = "";
     return;
   }
@@ -2811,63 +3174,7 @@ function renderEmployeeDetail(employee) {
     const dayEntries = day.entries;
     const isCurrentMonth = day.isCurrentMonth;
     const totalDaySeconds = day.totalSeconds;
-    const entryPreview = dayEntries.map(entry => {
-      const statusTone = getStatusTone(entry);
-      const canModify = canModifyEntry(entry);
-      const canApprove = canApproveEntry(entry);
-      const permissionBadge = getEntryPermissionBadgeMarkup(entry);
-      const calendarProject = findProjectByCode(employeesViewState.entryLookups && employeesViewState.entryLookups.projects, entry.projectCode) || entry.projectCode;
-      const calendarContext = !isDiverseEntry(entry) && entry.projectCode
-        ? `${renderProjectIdentityPill(calendarProject, entry.projectCode)}<span>${escapeHtml([entry.overtimeCode, entry.paymentOption ? formatPaymentOptionValue(entry.paymentOption) : "", entry.reasonCode].filter(Boolean).join(" | "))}</span>`
-        : escapeHtml(getEntryContextLabel(entry));
-
-      const entryIdAttribute = ` data-entryid="${escapeHtml(entry.entryId || "")}"`;
-      const exactPunchInAttribute = ` data-exactpunchin="${escapeHtml(getEntryExactPunchIn(entry))}"`;
-      const exactPunchOutAttribute = ` data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`;
-      const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
-      const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
-      const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
-      const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
-      const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}" data-holidaynotscheduled="${typeof entry.holidayNotScheduledWorkday === "boolean" ? entry.holidayNotScheduledWorkday : ""}"`;
-      const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
-      const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
-      const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
-      const statusAttribute = ` data-status="${escapeHtml(entry.status || "pending")}"`;
-      const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
-      const reviewButtons = String(entry.status || "pending").toLowerCase() === "pending" && !isEntryOpen(entry) && !isEntryForgottenClockOut(entry) && canApprove
-        ? `
-          <button type="button" class="btn btn-success btn-sm action-btn calendar-entry-action-btn calendar-review-btn people-calendar-approve" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.approve"))}">
-            <i class="fa-solid fa-check"></i>
-          </button>
-          <button type="button" class="btn btn-danger btn-sm action-btn calendar-entry-action-btn calendar-review-btn people-calendar-reject" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.reject"))}">
-            <i class="fa-solid fa-ban"></i>
-          </button>
-        `
-        : "";
-
-      return `
-        <div class="calendar-entry" data-entryid="${escapeHtml(entry.entryId || "")}" data-entry-status="${escapeHtml(String(entry.status || "pending").toLowerCase())}">
-          <div class="calendar-entry-main">
-            <span class="calendar-entry-time">${getEntryRoundedTimeRangeMarkup(entry)}</span>
-            <span class="calendar-entry-badges"><span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>${renderEntryWorkScheduleBadge(entry)}</span>
-          </div>
-          <div class="calendar-entry-meta project-entry-context">${calendarContext}</div>
-          ${renderEntryNotesPreview(entry)}
-          ${reviewButtons ? `<div class="calendar-entry-actions calendar-entry-actions-review">${reviewButtons}</div>` : ""}
-          <div class="calendar-entry-actions calendar-entry-actions-manage">
-            ${canModify ? `
-              <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${workScheduleAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
-                <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
-              </button>
-              <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
-                <i class="fa-solid fa-trash"></i> <span class="calendar-action-label">${escapeHtml(t("action.delete"))}</span>
-              </button>
-            ` : ""}
-            ${permissionBadge}
-          </div>
-        </div>
-      `;
-    }).join("");
+    const entryPreview = dayEntries.map(entry => renderPeopleCalendarEntrySummary(entry, employee.code)).join("");
 
     dayCells.push(`
       <div class="calendar-day${isCurrentMonth ? "" : " is-muted"}${dayEntries.length > 0 ? " has-entries" : ""}">
@@ -2887,37 +3194,13 @@ function renderEmployeeDetail(employee) {
       <div class="calendar-live-strip">
         ${liveEntries.map(entry => {
           const elapsedSeconds = getEntryDurationSeconds(entry);
-          const entryIdAttribute = ` data-entryid="${escapeHtml(entry.entryId || "")}"`;
-          const exactPunchInAttribute = ` data-exactpunchin="${escapeHtml(getEntryExactPunchIn(entry))}"`;
-          const exactPunchOutAttribute = ` data-exactpunchout="${escapeHtml(getEntryExactPunchOut(entry))}"`;
-          const overtimeCodeAttribute = ` data-overtimecode="${escapeHtml(entry.overtimeCode || "")}"`;
-          const paymentOptionAttribute = ` data-paymentoption="${escapeHtml(entry.paymentOption || "cash")}"`;
-          const reasonCodeAttribute = ` data-reasoncode="${escapeHtml(entry.reasonCode || "")}"`;
-          const entryTypeAttribute = ` data-entrytype="${escapeHtml(getEntryType(entry))}"`;
-          const workScheduleAttribute = ` data-workschedule="${escapeHtml(getEntryWorkSchedule(entry))}" data-holidaynotscheduled="${typeof entry.holidayNotScheduledWorkday === "boolean" ? entry.holidayNotScheduledWorkday : ""}"`;
-          const diverseReasonAttribute = ` data-diversereason="${escapeHtml(entry.diverseReason || "")}"`;
-          const diverseSummaryAttribute = ` data-diversesummary="${escapeHtml(entry.diverseSummary || "")}"`;
-          const workCommentAttribute = ` data-workcomment="${escapeHtml(entry.workComment || "")}"`;
-          const statusAttribute = ` data-status="${escapeHtml(entry.status || "pending")}"`;
-          const messageAttribute = ` data-message="${escapeHtml(entry.message || "")}"`;
-          const canModify = canModifyEntry(entry);
           const permissionBadge = getEntryPermissionBadgeMarkup(entry);
           return `
             <article class="calendar-live-card">
-              <div class="calendar-entry-main">
-                <span class="calendar-entry-time">${escapeHtml(formatDateLabel(entry.date))} | ${buildTimeRangeMarkup(formatTimeString(getEntryExactPunchIn(entry)), t("shared.inProgress"))}</span>
-                <span class="calendar-entry-badges"><span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>${renderEntryWorkScheduleBadge(entry)}</span>
-              </div>
+              ${renderCalendarEntryHeader(entry, `${escapeHtml(formatDateLabel(entry.date))} | ${buildTimeRangeMarkup(formatTimeString(getEntryExactPunchIn(entry)), t("shared.inProgress"))}`, "approved", t("shared.live"))}
               <div class="calendar-entry-meta">${escapeHtml(getEntryContextLabel(entry))}</div>
               <div class="calendar-entry-actions calendar-entry-actions-manage">
-                ${canModify ? `
-                  <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-edit" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}" data-punchout="${escapeHtml(entry.punchOut || "")}" data-projectcode="${escapeHtml(entry.projectCode || "")}"${entryTypeAttribute}${workScheduleAttribute}${diverseReasonAttribute}${diverseSummaryAttribute}${workCommentAttribute}${overtimeCodeAttribute}${paymentOptionAttribute}${reasonCodeAttribute}${statusAttribute}${entryIdAttribute}${messageAttribute}${exactPunchInAttribute}${exactPunchOutAttribute} title="${escapeHtml(t("action.edit"))}">
-                    <i class="fa-solid fa-pen"></i> <span class="calendar-action-label">${escapeHtml(t("action.edit"))}</span>
-                  </button>
-                  <button type="button" class="btn btn-outline-secondary btn-sm action-btn calendar-entry-action-btn calendar-manage-btn people-calendar-delete" data-employee-code="${escapeHtml(employee.code)}" data-date="${escapeHtml(entry.date)}" data-punchin="${escapeHtml(entry.punchIn)}"${entryIdAttribute} title="${escapeHtml(t("action.delete"))}">
-                    <i class="fa-solid fa-trash"></i> <span class="calendar-action-label">${escapeHtml(t("action.delete"))}</span>
-                  </button>
-                ` : ""}
+                ${renderPeopleCalendarManageButtons(entry, employee.code)}
                 ${permissionBadge}
                 <span class="inline-code-pill duration-value">${escapeHtml(secondsToDurationLabel(elapsedSeconds))}</span>
               </div>
@@ -2927,8 +3210,7 @@ function renderEmployeeDetail(employee) {
       </div>
     `
     : "";
-  const calendarMarkup = monthEntries.length > 0
-    ? `
+  const calendarMarkup = `
       <div class="employee-calendar-header">
         <div class="employee-calendar-nav">
           <button type="button" class="btn btn-outline-secondary btn-sm employee-calendar-year-button" data-calendar-year-nav="prev" data-employee-code="${escapeHtml(employee.code)}">
@@ -2940,13 +3222,14 @@ function renderEmployeeDetail(employee) {
           </button>
         </div>
         <div class="employee-calendar-actions">
-          <div class="employee-calendar-summary">${escapeHtml(t("employees.calendarSummary", { count: monthEntries.length, duration: secondsToDurationLabel(monthTotalSeconds) }))}</div>
+          ${monthEntries.length ? `<div class="employee-calendar-summary">${escapeHtml(t("employees.calendarSummary", { count: monthEntries.length, duration: secondsToDurationLabel(monthTotalSeconds) }))}</div>` : ""}
           ${monthlyScheduleControl}
           <button type="button" class="btn btn-outline-secondary btn-sm people-gc179-fdf-button" data-employee-code="${escapeHtml(employee.code)}" data-export-month="${escapeHtml(activeMonthKey)}">
-            <i class="fa-solid fa-file-export"></i> ${escapeHtml(t("export.downloadGc179Fdf"))}
+            <i class="fa-solid fa-file-export" aria-hidden="true"></i> ${escapeHtml(t("export.downloadGc179Fdf", { month: formatCalendarMonthLabel(activeMonthKey) }))}
           </button>
         </div>
       </div>
+      ${renderGc179ExportReceipt({ employeeCode: employee.code, monthKey: activeMonthKey })}
       <div class="employee-month-board-shell">
         <div class="employee-month-board">
           ${monthBoard.map(month => `
@@ -2958,40 +3241,10 @@ function renderEmployeeDetail(employee) {
         </div>
       </div>
       ${liveEntriesMarkup}
-      <div class="employee-calendar-grid">
+      ${monthEntries.length ? `<div class="employee-calendar-grid">
         ${getCalendarWeekdayLabels().map(label => `<div class="calendar-weekday">${escapeHtml(label)}</div>`).join("")}
         ${dayCells.join("")}
-      </div>
-    `
-    : `
-      <div class="employee-calendar-header">
-        <div class="employee-calendar-nav">
-          <button type="button" class="btn btn-outline-secondary btn-sm employee-calendar-year-button" data-calendar-year-nav="prev" data-employee-code="${escapeHtml(employee.code)}">
-            <i class="fa-solid fa-chevron-left"></i>
-          </button>
-          <div class="employee-calendar-label">${escapeHtml(String(activeYear))}</div>
-          <button type="button" class="btn btn-outline-secondary btn-sm employee-calendar-year-button" data-calendar-year-nav="next" data-employee-code="${escapeHtml(employee.code)}">
-            <i class="fa-solid fa-chevron-right"></i>
-          </button>
-        </div>
-        <div class="employee-calendar-actions">
-          <button type="button" class="btn btn-outline-secondary btn-sm people-gc179-fdf-button" data-employee-code="${escapeHtml(employee.code)}" data-export-month="${escapeHtml(activeMonthKey)}">
-            <i class="fa-solid fa-file-export"></i> ${escapeHtml(t("export.downloadGc179Fdf"))}
-          </button>
-        </div>
-      </div>
-      <div class="employee-month-board-shell">
-        <div class="employee-month-board">
-          ${monthBoard.map(month => `
-            <button type="button" class="employee-month-chip${month.active ? " is-active" : ""}${month.count > 0 ? " has-entries" : ""}" data-month-key="${escapeHtml(month.monthKey)}" data-employee-code="${escapeHtml(employee.code)}">
-              <span class="employee-month-chip-label">${escapeHtml(month.label)}</span>
-              <span class="employee-month-chip-count">${escapeHtml(String(month.count))}</span>
-            </button>
-          `).join("")}
-        </div>
-      </div>
-      ${liveEntriesMarkup}
-      ${createEmptyState(t("employees.noEntriesForMonth"))}
+      </div>` : createEmptyState(t("employees.noEntriesForMonth"))}
     `;
 
   container.innerHTML = `
@@ -3030,6 +3283,7 @@ function renderEmployeeDetail(employee) {
       </div>
     </section>
   `;
+  refreshPeopleEntryInspector(container, employee.code, entries);
 }
 
 async function loadEmployeeDetail(employeeCode) {
@@ -3047,7 +3301,10 @@ async function loadEmployeeDetail(employeeCode) {
   const generation = employeesViewState.entryGeneration;
   const version = employeesViewState.entryVersions[employeeCode] || 0;
 
-  setLoadingState("employeeDetailContainer", "detail", 1);
+  // Keep an open entry anchored while its employee snapshot refreshes.
+  if (peopleEntryInspector?.employeeCode !== employeeCode || !peopleEntryInspector.trigger.isConnected) {
+    setLoadingState("employeeDetailContainer", "detail", 1);
+  }
 
   const request = (async () => { try {
     const entries = await fetchEmployeeDetailEntries(employeeCode);
@@ -3058,6 +3315,7 @@ async function loadEmployeeDetail(employeeCode) {
   } catch (error) {
     if (generation !== employeesViewState.entryGeneration || version !== (employeesViewState.entryVersions[employeeCode] || 0)) return false;
     console.error("Error loading employee detail entries:", error);
+    if (peopleEntryInspector?.employeeCode === employeeCode) closePeopleEntryInspector();
     container.innerHTML = createEmptyState(t("dashboard.timelineLoadError"));
     return false;
   } })();
@@ -3113,7 +3371,8 @@ function loadEmployeesView({ rethrowOnError = false } = {}) {
   setLoadingState("employeesDirectoryContainer", "grid", 4);
   if (employeesViewState.statisticsRequested && !document.getElementById("employeeAnalyticsBody")?.classList.contains("d-none")) setEmployeeAnalyticsLoadingState();
   employeesViewState.employeeAnalyticsSignature = "";
-  document.getElementById("employeeDetailContainer").innerHTML = "";
+  const detailContainer = document.getElementById("employeeDetailContainer");
+  if (!peopleEntryInspector?.trigger.isConnected) detailContainer.replaceChildren();
   const scope = document.getElementById("employeesScopeSelect").value || "active";
   const includeStats = employeesViewState.statisticsRequested || Boolean(employeesViewState.selectedProjectCode);
   return fetch(apiUrl + "employees/bootstrap?scope=" + encodeURIComponent(scope) + (includeStats ? "&includeStats=true" : ""))
@@ -3136,6 +3395,8 @@ function loadEmployeesView({ rethrowOnError = false } = {}) {
       if (employeesViewState.selectedEmployeeCode && getEmployeeByCode(employeesViewState.selectedEmployeeCode)) {
         return (await loadEmployeeDetail(employeesViewState.selectedEmployeeCode)) !== false;
       }
+      closePeopleEntryInspector();
+      detailContainer.replaceChildren();
       return true;
     })
     .catch(error => {
@@ -3280,6 +3541,7 @@ async function openEmployeeDetailFromDirectory(employeeCode) {
   if (!normalizedEmployeeCode) {
     return false;
   }
+  if (peopleEntryInspector && peopleEntryInspector.employeeCode !== normalizedEmployeeCode) closePeopleEntryInspector();
 
   employeesViewState.selectedEmployeeCode = normalizedEmployeeCode;
   updateActiveEmployeeDirectoryCard();
@@ -3346,6 +3608,9 @@ document.getElementById("employeeDetailContainer").addEventListener("change", ev
 });
 
 document.getElementById("employeeDetailContainer").addEventListener("click", async event => {
+  const entryTrigger = event.target.closest(".people-calendar-entry-trigger");
+  if (entryTrigger) { openPeopleEntryInspector(entryTrigger); return; }
+  if (handleGc179ExportReceiptClick(event)) return;
   const rejectedTimeButton = event.target.closest(".employee-rejected-time-action");
   if (rejectedTimeButton) {
     const employeeCode = String(rejectedTimeButton.getAttribute("data-employee-code") || "").trim();
@@ -3440,116 +3705,7 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
     return;
   }
 
-  const approveButton = event.target.closest(".people-calendar-approve");
-  if (approveButton) {
-    const employeeCode = approveButton.getAttribute("data-employee-code");
-    if (employeeCode) {
-      const actionKey = `people-entry-action:${employeeCode}:${approveButton.getAttribute("data-entryid") || `${approveButton.getAttribute("data-date")}:${approveButton.getAttribute("data-punchin")}`}`;
-      await runButtonAction(approveButton, async () => {
-        try {
-          const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              entryId: approveButton.getAttribute("data-entryid") || "",
-              date: approveButton.getAttribute("data-date"),
-              punchIn: approveButton.getAttribute("data-punchin"),
-              status: "approved",
-              message: "",
-            }),
-          });
-          await parseResponse(response);
-          showToast(t("dashboard.entryUpdated"), "success");
-          await refreshPeopleEmployeeDetail(employeeCode);
-          markEntryRelatedViewsStaleFromPeople();
-        } catch (error) {
-          console.error("Error approving entry from calendar:", error);
-          showToast(t("dashboard.approvalError", { message: error.message }), "error");
-        }
-      }, { key: actionKey });
-    }
-    return;
-  }
-
-  const rejectButton = event.target.closest(".people-calendar-reject");
-  if (rejectButton) {
-    const employeeCode = rejectButton.getAttribute("data-employee-code");
-    const managerMessage = window.prompt(t("dashboard.rejectManagerMessagePrompt"), "");
-    if (managerMessage === null) {
-      return;
-    }
-    if (!String(managerMessage).trim()) {
-      showToast(t("dashboard.managerMessageRequired"), "error");
-      return;
-    }
-    if (employeeCode) {
-      const actionKey = `people-entry-action:${employeeCode}:${rejectButton.getAttribute("data-entryid") || `${rejectButton.getAttribute("data-date")}:${rejectButton.getAttribute("data-punchin")}`}`;
-      await runButtonAction(rejectButton, async () => {
-        try {
-          const response = await fetch(apiUrl + "employee/approval/" + employeeCode, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              entryId: rejectButton.getAttribute("data-entryid") || "",
-              date: rejectButton.getAttribute("data-date"),
-              punchIn: rejectButton.getAttribute("data-punchin"),
-              status: "rejected",
-              message: managerMessage.trim(),
-            }),
-          });
-          await parseResponse(response);
-          showToast(t("dashboard.entryUpdated"), "success");
-          await refreshPeopleEmployeeDetail(employeeCode);
-          markEntryRelatedViewsStaleFromPeople();
-        } catch (error) {
-          console.error("Error rejecting entry from calendar:", error);
-          showToast(t("dashboard.approvalError", { message: error.message }), "error");
-        }
-      }, { key: actionKey });
-    }
-    return;
-  }
-
-  const deleteButton = event.target.closest(".people-calendar-delete");
-  if (deleteButton) {
-    const employeeCode = deleteButton.getAttribute("data-employee-code");
-    const managerMessage = window.prompt(t("dashboard.deleteManagerMessagePrompt"), "");
-    if (!window.confirm(t("dashboard.deleteConfirm"))) {
-      return;
-    }
-    if (managerMessage === null) {
-      return;
-    }
-    if (!String(managerMessage).trim()) {
-      showToast(t("dashboard.managerMessageRequired"), "error");
-      return;
-    }
-    if (employeeCode) {
-      const actionKey = `people-entry-action:${employeeCode}:${deleteButton.getAttribute("data-entryid") || `${deleteButton.getAttribute("data-date")}:${deleteButton.getAttribute("data-punchin")}`}`;
-      await runButtonAction(deleteButton, async () => {
-        try {
-          const response = await fetch(apiUrl + "employee/" + employeeCode, {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              entryId: deleteButton.getAttribute("data-entryid") || "",
-              date: deleteButton.getAttribute("data-date"),
-              punchIn: deleteButton.getAttribute("data-punchin"),
-              message: managerMessage.trim(),
-            }),
-          });
-          await parseResponse(response);
-          showToast(t("dashboard.entryDeleted"), "success");
-          await refreshPeopleEmployeeDetail(employeeCode);
-          markEntryRelatedViewsStaleFromPeople();
-        } catch (error) {
-          console.error("Error deleting entry from calendar:", error);
-          showToast(t("dashboard.entryDeleteError", { message: error.message }), "error");
-        }
-      }, { key: actionKey });
-    }
-    return;
-  }
+  if (await handlePeopleEntryAction(event)) return;
 
   const editButton = event.target.closest(".employee-edit-button");
   if (editButton) {
@@ -3581,16 +3737,6 @@ document.getElementById("employeeDetailContainer").addEventListener("click", asy
     return;
   }
 
-  const entryEditButton = event.target.closest(".people-calendar-edit");
-  if (entryEditButton) {
-    const employeeCode = entryEditButton.getAttribute("data-employee-code");
-    if (employeeCode) {
-      setDashboardEmployeeContext(employeeCode);
-      if (typeof openUpdateModal === "function") {
-        await openUpdateModal(entryEditButton, employeeCode);
-      }
-    }
-  }
 });
 
 document.getElementById("addEmployeeButton").addEventListener("click", event => {

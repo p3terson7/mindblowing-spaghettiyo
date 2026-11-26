@@ -27,13 +27,26 @@ try {
     function Get-RecentHistoryEntriesSnapshot { throw "Dashboard must not load retired recent activity." }
     $manager = Get-UserByUsername "audit-super"
     $admin = Get-UserByUsername "audit-limited"
+    $normalize = (Get-Command Convert-ToNormalizedEntryObject).ScriptBlock
+    function Convert-ToNormalizedEntryObject { param($Entry) $script:entryNormalizations++; & $normalize -Entry $Entry }
+    $hasRawReads = (Get-Command Get-CachedEmployeeEntriesForFile).Parameters.ContainsKey("Raw")
     $expected = ""
     foreach ($level in @(1, 2, 4, 8)) {
         $env:SAPHIR_EMPLOYEE_READ_CONCURRENCY = [string]$level
         Reset-ColdCaches
+        $script:entryNormalizations = 0
         $result = Get-DashboardBootstrapModel -CurrentUser $manager
         Assert-Cold ($result.trackedEmployees -eq 32 -and $result.pendingApprovals -eq 32 -and $result.totalOvertime -eq "32:00:00") "Cold totals changed at concurrency $level : employees=$($result.trackedEmployees), pending=$($result.pendingApprovals), hours=$($result.totalOvertime)."
         Assert-Cold ($result.pendingQueue.Count -eq 6 -and $result.activeSessions.Count -eq 0 -and $result.selectedEmployeeEntries.Count -eq 1) "Cold queues/selected employee changed."
+        if ($hasRawReads) {
+            Assert-Cold ($script:entryNormalizations -le 7) "Dashboard normalized entries outside the visible queues and selected employee."
+            $targetPath = Join-Path $fixture "000710001_data.json"
+            $cacheBefore = $script:EmployeeEntryFileCache[$targetPath]
+            $_stored = @(Get-CachedEmployeeEntriesForFile -DataFile $targetPath)
+            $cacheAfter = $script:EmployeeEntryFileCache[$targetPath]
+            Assert-Cold ([object]::ReferenceEquals($cacheBefore, $cacheAfter) -and $_stored.Count -eq 1 -and $null -ne $cacheAfter.Entries) "Raw and full reads did not reuse a single parsed file cache entry."
+        }
+        Assert-Cold (@($script:ReadModelCache.Keys | Where-Object { $_ -like "scoped-employee-data-snapshot|*" -or $_ -like "scoped-employee-contribution|*" }).Count -eq 0) "Dashboard rebuilt the full scoped entry projections."
         $serialized = ConvertTo-Json -InputObject $result -Depth 12 -Compress
         if ($expected) { Assert-Cold ($expected -ceq $serialized) "Parallel DTO differs from sequential projection at level $level." }
         $expected = $serialized

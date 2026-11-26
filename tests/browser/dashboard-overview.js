@@ -6,6 +6,7 @@ const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
 const root = path.resolve(__dirname, "../../app/frontend");
 const user = { username: "preview", displayName: "Aperçu", role: "superAdmin", employeeCode: null, mustChangePassword: false };
+const preview = Array.from({ length: 6 }, (_, i) => ({ employeeCode: "000000001", employeeName: "Équipe de démo", date: "2026-11-01", punchIn: "17:00:00", punchOut: "18:00:00", overtime: "01:00:00", status: "pending", canApprove: i < 3 }));
 const requests = [];
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
@@ -13,7 +14,7 @@ const server = http.createServer((req, res) => {
   let data;
   if (url.pathname === "/auth/me") data = user;
   else if (url.pathname === "/sync/status") data = { version: 1, changeId: "preview", category: "history" };
-  else if (url.pathname === "/dashboard/bootstrap") data = { employees: [], projects: [], totalOvertime: "00:00:00", pendingApprovals: 0, activeEmployees: 0, trackedEmployees: 0, pendingQueue: [], activeSessions: [], recentHistory: [{ message: "Must not render" }], selectedEmployeeEntries: [] };
+  else if (url.pathname === "/dashboard/bootstrap") data = { employees: [], projects: [], totalOvertime: "00:00:00", pendingApprovals: 9, actionableCount: 3, activeEmployees: 2, trackedEmployees: 0, pendingQueue: preview, activeSessions: [], recentHistory: [{ message: "Must not render" }], selectedEmployeeEntries: [] };
   else if (url.pathname === "/review/bootstrap") data = { approvals: [], projects: [], employees: [], tab: "pending", page: 1, pageSize: 25, total: 0, totalPages: 1, counts: {}, actionableCount: 0 };
   else if (url.pathname === "/history") data = { items: [{ timestamp: "2026-11-01 10:00:00", action: "Add", message: "Historique conservé" }], page: 1, totalPages: 1, total: 1, counts: { all: 1, add: 1 } };
   if (data !== undefined) { res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(data)); return; }
@@ -41,14 +42,22 @@ const server = http.createServer((req, res) => {
     await page.waitForFunction(() => typeof dashboardState !== "undefined" && dashboardState.bootstrap !== null);
     assert.equal(await page.locator("#dashboardRecentActivity, .dashboard-activity-rail").count(), 0);
     assert(!requests.some(request => request.path === "/history"));
+    assert(!requests.some(request => request.path === "/review/bootstrap"), "Dashboard must not prefetch Review.");
+    assert.equal(await page.locator("#pendingApprovals").textContent(), "9");
+    assert.equal(await page.locator("#activeEmployees").textContent(), "2");
+    assert.equal(await page.locator("#dashboardActionableCount").textContent(), "À traiter par vous : 3");
+    assert.equal(await page.locator("#dashboardPendingQueueMeta").textContent(), "Aperçu : 6 sur 9");
     const widths = await page.evaluate(() => [document.querySelector(".dashboard-layout").clientWidth, document.querySelector(".dashboard-main-stack").clientWidth]);
     assert(Math.abs(widths[0] - widths[1]) < 2, "The removed history rail left an empty column.");
     assert(await page.locator("#dashboardApprovalQueue").isVisible());
     assert(await page.locator("#dashboardActiveList").isVisible());
     await page.setViewportSize({ width: 375, height: 900 });
     assert(!await page.locator("#dashboardView").evaluate(element => element.scrollWidth > element.clientWidth + 1));
-    await page.locator("#navAdmin").click();
+    await page.locator("#dashboardOpenPendingReview").click();
     await page.waitForSelector("#adminView.active");
+    await page.waitForFunction(() => document.getElementById("pending-tab") === document.activeElement);
+    assert.equal(requests.filter(request => request.path === "/review/bootstrap").length, 1);
+    assert(!requests.some(request => request.path === "/history"));
     await page.locator("#loadHistoryBtn").click();
     await page.waitForFunction(() => document.getElementById("historyWorkspace").textContent.includes("Historique conservé"));
     assert.equal(requests.filter(request => request.path === "/history").length, 1);

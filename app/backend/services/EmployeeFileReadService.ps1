@@ -1,7 +1,31 @@
+function Test-EmployeeDataOnWindowsFixedDrive {
+    param([string]$Path)
+
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or
+        [string]::IsNullOrWhiteSpace($Path) -or $Path.StartsWith('\\')) {
+        return $false
+    }
+
+    # Mapped SMB drives report Network, even though they look like C:\.
+    # Keep parallel reads for the share and for any path we cannot classify.
+    try {
+        $root = [IO.Path]::GetPathRoot($Path)
+        return ([IO.DriveInfo]::new($root).DriveType -eq [IO.DriveType]::Fixed)
+    }
+    catch { return $false }
+}
+
 function Get-EmployeeFileReadConcurrency {
     $configured = 0
     [int]::TryParse([string]$env:SAPHIR_EMPLOYEE_READ_CONCURRENCY, [ref]$configured) | Out-Null
     if ($configured -in @(1, 2, 4, 8)) { return $configured }
+    if ($script:EmployeeFileReadPath -cne [string]$sharedFolder) {
+        $script:EmployeeFileReadPath = [string]$sharedFolder
+        $script:EmployeeFileReadIsWindowsLocal = Test-EmployeeDataOnWindowsFixedDrive -Path $script:EmployeeFileReadPath
+    }
+    # Local Windows reads do not need an extra PowerShell pool that only
+    # preloads text; the original runspace still parses and normalizes it.
+    if ($script:EmployeeFileReadIsWindowsLocal) { return 1 }
     # The repeated SMB experiment showed useful gains through 8 readers.
     # Operators can select 1/2/4/8; never infer an unbounded thread count.
     return 8
@@ -28,7 +52,7 @@ function Merge-EmployeeFileReadMetrics {
 }
 
 function Prefetch-EmployeeFileText {
-    param([string[]]$Paths)
+    param([string[]]$Paths, [switch]$ParseEntries)
     $concurrency = Get-EmployeeFileReadConcurrency
     if ($concurrency -eq 1) { return }
     $cold = @($Paths | Where-Object {
@@ -62,7 +86,8 @@ function Prefetch-EmployeeFileText {
                 $shell = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Runspaces.CreateInvocation" -Component "Runspaces" -Type "infrastructure" -Action { [Management.Automation.PowerShell]::Create() } } else { [Management.Automation.PowerShell]::Create() }
                 $shell.RunspacePool = $pool
                 [void]$shell.AddScript($worker).AddArgument($path).AddArgument([string]$sharedFolder).AddArgument($backendRoot).AddArgument($metadata).AddArgument($validated).AddArgument([int]$script:SharedDataReadRetryCount).AddArgument([int]$script:SharedDataRetryDelayMs).AddArgument([bool]$script:SaphirPerformanceEnabled)
-                if ($span) { [void]$shell.AddArgument((Get-SaphirPerformanceWorkerContext -Parent $batchSpan -Index $index -Path $path)) }
+                $context = if ($span) { Get-SaphirPerformanceWorkerContext -Parent $batchSpan -Index $index -Path $path } else { $null }
+                [void]$shell.AddArgument($context).AddArgument([bool]$ParseEntries)
                 try {
                     $handle = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "Runspaces.ScheduleWorker" -Component "Runspaces" -Type "infrastructure" -Path $path -Action { $shell.BeginInvoke() } } else { $shell.BeginInvoke() }
                 }
@@ -90,14 +115,26 @@ function Prefetch-EmployeeFileText {
             $jobs.Clear()
             if ($batchSpan) { Stop-SaphirPerformanceSpan $batchSpan }
         }
-        # Publish raw cache observations ONLY after every worker succeeded.
-        # JSON validation, normalization, projections and registration still
-        # happen on the HTTP runspace. Writer reads never use this preloader.
+        # Publish only after the entire batch succeeded. Workers can parse
+        # plain JSON; only the HTTP runspace handles projections and dependency
+        # registration. Writer reads never use this preloader.
         $mergeSpan = if ($script:SaphirPerformanceEnabled) { Start-SaphirPerformanceSpan -Name "Runspaces.MergeResults" -Component "Runspaces" -Type "infrastructure" } else { $null }
         foreach ($result in $results) {
-            if ($null -eq $result.metadata) { Clear-CachedFileContent -Path $result.path; continue }
+            if ($null -eq $result.metadata) {
+                Clear-CachedFileContent -Path $result.path
+                if ($ParseEntries) { [void]$script:EmployeeEntryFileCache.Remove($result.path) }
+                continue
+            }
             $script:FileMetadataCache[$result.path] = [PSCustomObject]@{ Metadata = $result.metadata; ValidatedAtUtc = $result.validatedAtUtc }
             $script:TextFileCache[$result.path] = [PSCustomObject]@{ LastWriteTicks = $result.metadata.LastWriteTicks; Length = $result.metadata.Length; Content = $result.content }
+            if ($ParseEntries) {
+                $script:EmployeeEntryFileCache[$result.path] = [PSCustomObject]@{
+                    LastWriteTicks = $result.metadata.LastWriteTicks
+                    Length         = $result.metadata.Length
+                    RawEntries     = $result.entries
+                    Entries        = $null
+                }
+            }
         }
         if ($mergeSpan) { Stop-SaphirPerformanceSpan $mergeSpan }
         if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.employee-prefetch.completed" }

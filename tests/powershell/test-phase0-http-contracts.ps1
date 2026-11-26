@@ -529,6 +529,9 @@ try {
     Assert-True -Condition ($null -ne $shortReviewEntry) -Message "Review bootstrap did not include the short manual entry."
     Assert-True -Condition ([bool]$shortReviewEntry.hasReviewIssues) -Message "Short manual entry did not set the Review attention flag."
     Assert-Equal -Expected "shortOvertime" -Actual ([string]$shortReviewEntry.reviewIssues[0].code) -Message "Review bootstrap returned the wrong short-entry warning."
+    $eligibleReview = Invoke-TestHttpRequest -Method "GET" -Uri "$baseUri/review/bootstrap?actionableOnly=true" -Token $token
+    Assert-Equal -Expected 200 -Actual $eligibleReview.StatusCode -Message "The actionable Review query failed."
+    Assert-Equal -Expected $reviewBootstrap.Json.actionableCount -Actual $eligibleReview.Json.total -Message "The actionable Review route did not apply the filter."
 
     $beforeApproval = $afterAdd
     $approval = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/employee/approval/$employeeCode" -Token $token -Body @{
@@ -562,7 +565,55 @@ try {
     Assert-Equal -Expected "employee-classification-missing" -Actual ([string]$savedAfterApproval[0].compensationSnapshot.unavailableReason) -Message "Approval stored the wrong missing-compensation reason."
     Assert-Equal -Expected "pending" -Actual ([string]$savedAfterApproval[1].status) -Message "Approval modified the wrong entry."
 
-    Write-Host "Phase-zero HTTP contracts passed: auth, dashboard, employee read, add, approval, and strict isolated-DATA diffs are stable."
+    $entryCommentPayload = @{
+        entryId = $entryId
+        commentId = "01010101010101010101010101010101"
+        text = "Complément du travail."
+    }
+    $anonymousComment = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/self/entries/comment" -Body $entryCommentPayload
+    Assert-Equal -Expected 401 -Actual $anonymousComment.StatusCode -Message "An anonymous user added an entry comment."
+    $managerComment = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/self/entries/comment" -Token $token -Body ($entryCommentPayload + @{ employeeCode = $employeeCode })
+    Assert-Equal -Expected 403 -Actual $managerComment.StatusCode -Message "A supervisor impersonated the entry owner."
+    $employeeLogin = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/auth/login" -Body @{ username = $employeeCode; password = "Employee-Password-123!" }
+    Assert-Equal -Expected 200 -Actual $employeeLogin.StatusCode -Message "Could not sign in as the entry owner."
+    $employeeToken = [string]$employeeLogin.Json.token
+    $missingTarget = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/self/entries/comment" -Token $employeeToken -Body @{
+        entryId = "wrong-id"; date = "2026-07-15"; punchIn = "16:00:00"; commentId = $entryCommentPayload.commentId; text = $entryCommentPayload.text
+    }
+    Assert-Equal -Expected 404 -Actual $missingTarget.StatusCode -Message "An incorrect entry ID silently fell back to another entry."
+    $comment = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/self/entries/comment" -Token $employeeToken -Body $entryCommentPayload
+    Assert-Equal -Expected 200 -Actual $comment.StatusCode -Message "The entry owner could not append a comment. Response: $($comment.Body)"
+    Assert-True -Condition ($comment.Json.employeeCommentAdditions -is [array]) -Message "The additions result must remain an array even for one item."
+    Assert-Equal -Expected 1 -Actual @($comment.Json.employeeCommentAdditions).Count -Message "The addition result is not an array with one item."
+    Assert-True -Condition ($null -ne $comment.Json.employeeCommentAdditions[0].createdAtUtc) -Message "The supplement is missing its server timestamp."
+    $afterComment = Get-TestDataFolderSnapshot -RootPath $testDataRoot -ForbiddenRootPath $productionDataRoot
+    $retry = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/self/entries/comment" -Token $employeeToken -Body $entryCommentPayload
+    Assert-Equal -Expected 200 -Actual $retry.StatusCode -Message "Retrying an already saved addition failed."
+    $afterCommentRetry = Get-TestDataFolderSnapshot -RootPath $testDataRoot -ForbiddenRootPath $productionDataRoot
+    @(Assert-TestDataFolderChanges -Before $afterComment -After $afterCommentRetry -Description "Retrying a comment" -AllowedChanges @{}) | Out-Null
+    $secondComment = Invoke-TestHttpRequest -Method "POST" -Uri "$baseUri/self/entries/comment" -Token $employeeToken -Body @{
+        entryId = $entryId; commentId = "02020202020202020202020202020202"; text = "Deuxième complément."
+    }
+    Assert-Equal -Expected 200 -Actual $secondComment.StatusCode -Message "A second supplement could not be appended."
+    Assert-Equal -Expected "Complément du travail.,Deuxième complément." -Actual ($secondComment.Json.employeeCommentAdditions.text -join ",") -Message "Supplements were replaced or reordered."
+    $selfAfterComment = Invoke-TestHttpRequest -Method "GET" -Uri "$baseUri/self/bootstrap" -Token $employeeToken
+    Assert-Equal -Expected 200 -Actual $selfAfterComment.StatusCode -Message "The employee's calendar could not reload after the comment."
+    $ownCalendarEntry = @($selfAfterComment.Json.entries | Where-Object { $_.entryId -eq $entryId })[0]
+    Assert-Equal -Expected 2 -Actual @($ownCalendarEntry.employeeCommentAdditions).Count -Message "Saved supplements were missing from the employee's reloaded calendar."
+
+    $noteOnlyUpdate = Invoke-TestHttpRequest -Method "PUT" -Uri "$baseUri/employee/message/$employeeCode" -Token $token -Body @{
+        entryId = $entryId; message = "Note révisée."
+    }
+    Assert-Equal -Expected 200 -Actual $noteOnlyUpdate.StatusCode -Message "The supervisor note did not save independently."
+    $latest = Invoke-TestHttpRequest -Method "GET" -Uri "$baseUri/employee/$employeeCode" -Token $token
+    $updatedEntry = @($latest.Json | Where-Object { $_.entryId -eq $entryId })[0]
+    Assert-Equal -Expected "Preparation du test de contrat." -Actual $updatedEntry.workComment -Message "The original comment was changed."
+    Assert-Equal -Expected 2 -Actual @($updatedEntry.employeeCommentAdditions).Count -Message "The signed-in supervisor cannot read the additions."
+    Assert-Equal -Expected "Note révisée." -Actual $updatedEntry.message -Message "The supervisor note did not persist."
+    Assert-Equal -Expected "Phase Zero Admin" -Actual $updatedEntry.messageAuthorName -Message "The supervisor note lost its author."
+    Assert-True -Condition (-not [string]::IsNullOrWhiteSpace([string]$updatedEntry.messageUpdatedAt)) -Message "The supervisor note is missing its timestamp."
+
+    Write-Host "Phase-zero HTTP contracts passed: auth, dashboards, employee reads, entry mutations, append-only comments, supervisor attribution, and isolated writes."
 }
 finally {
     $env:SAPHIR_INSTANCE_TOKEN = $previousInstanceToken

@@ -1,3 +1,13 @@
+function ConvertTo-SaphirNearestQuarterHourTime {
+    param([Parameter(Mandatory = $true)][datetime]$Time)
+
+    # Display rounds at minutes 08, 23, 38 and 53, without moving a punch
+    # to the next day. Paid duration is a separate rule based on exact times.
+    $minuteOfDay = 60 * $Time.Hour + $Time.Minute
+    $roundedMinute = [math]::Min(23 * 60 + 45, 15 * [math]::Floor(($minuteOfDay + 7) / 15))
+    return $Time.Date.AddMinutes($roundedMinute).ToString("HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
 function New-QuarterHourCreditSummary {
     param(
         [bool]$IsValid = $false,
@@ -15,6 +25,8 @@ function New-QuarterHourCreditSummary {
     }
 }
 
+$script:QuarterHourTimeFormats = [string[]]@("HH:mm:ss", "H:mm:ss", "HH:mm", "H:mm")
+
 function Get-QuarterHourCreditSummary {
     <#
         Each clock-aligned quarter-hour only earns fifteen minutes when the
@@ -24,74 +36,50 @@ function Get-QuarterHourCreditSummary {
     param(
         [Parameter(Mandatory = $true)][string]$Date,
         [Parameter(Mandatory = $true)][string]$PunchIn,
-        [Parameter(Mandatory = $true)][string]$PunchOut
+        [Parameter(Mandatory = $true)][string]$PunchOut,
+        # List-level checks need only the numeric result (-1 means invalid).
+        [switch]$CreditedSecondsOnly
     )
 
     $culture = [System.Globalization.CultureInfo]::InvariantCulture
+    $styles = [System.Globalization.DateTimeStyles]::None
     $dateValue = [DateTime]::MinValue
-    try {
-        $dateValue = [DateTime]::ParseExact(([string]$Date).Trim(), "yyyy-MM-dd", $culture)
-    }
-    catch {
+    if (-not [DateTime]::TryParseExact($Date.Trim(), "yyyy-MM-dd", $culture, $styles, [ref]$dateValue)) {
+        if ($CreditedSecondsOnly) { return -1 }
         return (New-QuarterHourCreditSummary)
     }
 
     $punchInValue = [DateTime]::MinValue
     $punchOutValue = [DateTime]::MinValue
-    $timeFormats = @("HH:mm:ss", "H:mm:ss", "HH:mm", "H:mm")
-    $hasPunchIn = $false
-    $hasPunchOut = $false
-    foreach ($format in $timeFormats) {
-        if (-not $hasPunchIn) {
-            try {
-                $punchInValue = [DateTime]::ParseExact(([string]$PunchIn).Trim(), $format, $culture)
-                $hasPunchIn = $true
-            }
-            catch {
-                # Continue through the supported legacy time formats.
-            }
-        }
-        if (-not $hasPunchOut) {
-            try {
-                $punchOutValue = [DateTime]::ParseExact(([string]$PunchOut).Trim(), $format, $culture)
-                $hasPunchOut = $true
-            }
-            catch {
-                # Continue through the supported legacy time formats.
-            }
-        }
-    }
-
-    if (-not $hasPunchIn -or -not $hasPunchOut) {
+    if (-not [DateTime]::TryParseExact($PunchIn.Trim(), $script:QuarterHourTimeFormats, $culture, $styles, [ref]$punchInValue) -or
+        -not [DateTime]::TryParseExact($PunchOut.Trim(), $script:QuarterHourTimeFormats, $culture, $styles, [ref]$punchOutValue)) {
+        if ($CreditedSecondsOnly) { return -1 }
         return (New-QuarterHourCreditSummary)
     }
 
-    $start = $dateValue.Date.Add($punchInValue.TimeOfDay)
-    $end = $dateValue.Date.Add($punchOutValue.TimeOfDay)
-    if ($end -le $start) {
+    $start = [int]$punchInValue.TimeOfDay.TotalSeconds
+    $end = [int]$punchOutValue.TimeOfDay.TotalSeconds
+    $actualSeconds = $end - $start
+    if ($actualSeconds -le 0) {
+        if ($CreditedSecondsOnly) { return -1 }
         return (New-QuarterHourCreditSummary)
     }
 
-    $actualSeconds = [int]($end - $start).TotalSeconds
-    $quarterMinute = [int]([math]::Floor($start.Minute / 15.0) * 15)
-    $quarterStart = $start.Date.AddHours($start.Hour).AddMinutes($quarterMinute)
-    $creditedSeconds = 0
-    $qualifyingQuarterCount = 0
-
-    while ($quarterStart -lt $end) {
-        $quarterEnd = $quarterStart.AddMinutes(15)
-        $overlapStart = if ($start -gt $quarterStart) { $start } else { $quarterStart }
-        $overlapEnd = if ($end -lt $quarterEnd) { $end } else { $quarterEnd }
-        $overlapSeconds = [int]($overlapEnd - $overlapStart).TotalSeconds
-
-        if ($overlapSeconds -ge 600) {
-            $creditedSeconds += 900
-            $qualifyingQuarterCount++
-        }
-
-        $quarterStart = $quarterEnd
+    # Only the edge quarters can be partial. The end is exclusive, so
+    # a punch right on a boundary belongs to the preceding bucket.
+    $first = [int][math]::Floor($start / 900.0)
+    $last = [int][math]::Floor(($end - 1) / 900.0)
+    if ($first -eq $last) {
+        $qualifyingQuarterCount = [int]($actualSeconds -ge 600)
+    }
+    else {
+        $qualifyingQuarterCount = $last - $first - 1
+        if ((($first + 1) * 900 - $start) -ge 600) { $qualifyingQuarterCount++ }
+        if (($end - $last * 900) -ge 600) { $qualifyingQuarterCount++ }
     }
 
+    $creditedSeconds = 900 * $qualifyingQuarterCount
+    if ($CreditedSecondsOnly) { return $creditedSeconds }
     return (New-QuarterHourCreditSummary `
         -IsValid $true `
         -ActualSeconds $actualSeconds `
@@ -100,5 +88,6 @@ function Get-QuarterHourCreditSummary {
 }
 
 Export-ModuleMember -Function @(
+    "ConvertTo-SaphirNearestQuarterHourTime",
     "Get-QuarterHourCreditSummary"
 )

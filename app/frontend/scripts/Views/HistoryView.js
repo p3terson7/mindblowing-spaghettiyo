@@ -2,12 +2,17 @@ let allHistoryEntries = [];
 let filteredHistoryEntriesByCategory = createEmptyHistoryCategories();
 let historyFilterTimerId = null;
 const historyPageState = { requested: false, stale: true, page: 1, sequence: 0, key: "", pending: null };
+function setReviewHistoryOpen(open) {
+  document.getElementById("historySection")?.classList.toggle("d-none", !open);
+  document.getElementById("historyWorkspace")?.classList.toggle("d-none", !open);
+  document.getElementById("loadHistoryBtn")?.setAttribute("aria-expanded", String(open));
+}
+window.closeReviewHistory = () => setReviewHistoryOpen(false);
 window.resetReviewHistory = function () {
   historyPageState.sequence++;
   Object.assign(historyPageState, { requested: false, stale: true, page: 1, key: "", pending: null });
   allHistoryEntries = [];
-  document.getElementById("historyWorkspace")?.classList.add("d-none");
-  document.getElementById("loadHistoryBtn")?.setAttribute("aria-expanded", "false");
+  setReviewHistoryOpen(false);
   Object.values(HISTORY_TAB_CONFIG).forEach(config => document.getElementById(config.containerId)?.replaceChildren());
 };
 window.invalidateReviewHistory = function () {
@@ -315,19 +320,26 @@ document.getElementById("historyTabs").addEventListener("shown.bs.tab", event =>
 
 document.getElementById("refreshHistoryBtn").addEventListener("click", async event => {
   await runButtonAction(event.currentTarget, async () => {
-    document.getElementById("historyWorkspace")?.classList.remove("d-none");
-    document.getElementById("loadHistoryBtn")?.setAttribute("aria-expanded", "true");
+    setReviewHistoryOpen(true);
     historyPageState.stale = true;
     await fetchHistory();
   }, { key: "review-refresh" });
 });
 updateHistoryTabLabels([], [], [], [], []);
-document.getElementById("loadHistoryBtn")?.addEventListener("click", async event => {
+document.getElementById("loadHistoryBtn")?.addEventListener("click", async () => {
   const workspace = document.getElementById("historyWorkspace");
   const opening = workspace.classList.contains("d-none");
-  workspace.classList.toggle("d-none", !opening);
-  event.currentTarget.setAttribute("aria-expanded", String(opening));
-  if (opening) await fetchHistory(historyPageState.page);
+  setReviewHistoryOpen(opening);
+  if (opening) {
+    const heading = document.getElementById("reviewHistoryHeading");
+    heading?.scrollIntoView({ block: "center" });
+    heading?.focus({ preventScroll: true });
+    await fetchHistory(historyPageState.page);
+  }
+});
+document.getElementById("closeHistoryBtn")?.addEventListener("click", () => {
+  setReviewHistoryOpen(false);
+  document.getElementById("loadHistoryBtn")?.focus();
 });
 document.getElementById("historyPagination")?.addEventListener("click", event => {
   const button = event.target.closest("[data-history-page]");

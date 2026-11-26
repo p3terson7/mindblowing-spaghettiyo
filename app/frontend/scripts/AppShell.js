@@ -147,11 +147,11 @@ const ROLE_VIEW_MAP = {
 const MANAGER_VIEW_IDS = ["dashboardView", "employeesView", "adminView", "projectsView"];
 const MANAGER_SCRIPT_SOURCE = {
   chart: "assets/vendor/chart.umd.min.js?v=20260603-empty-timeline",
-  employees: "scripts/Views/EmployeesView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-dashboard-history-v1-it-v1",
-  dashboard: "scripts/Views/DashboardView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-history-v1-it-v1",
-  approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1-views-20261015-v1-money-v1-review-cards-v1-review-pages-v1-no-dashboard-history-v1-it-v1",
-  history: "scripts/Views/HistoryView.js?v=20261008-loading-performance-v1-views-20261015-v1-project-audit-v1",
-  projects: "scripts/Views/ProjectsView.js?v=20261008-loading-performance-v1-projects-lite-v1-period-nav-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1-project-audit-v1",
+  employees: "scripts/Views/EmployeesView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-dashboard-history-v1-it-v1-punch-ux-v1-gc179-receipt-v1-schedule-icons-v1-entry-notes-layout-v1-calendar-actions-v1-entry-inspector-v2",
+  dashboard: "scripts/Views/DashboardView.js?v=20261008-loading-performance-v1-views-20261015-v1-no-history-v1-it-v1-punch-ux-v1-review-ux-v1-entry-notes-layout-v1",
+  approvals: "scripts/Views/ApprovalsView.js?v=20261008-loading-performance-v1-views-20261015-v1-money-v1-review-cards-v1-review-pages-v1-no-dashboard-history-v1-it-v1-punch-ux-v1-review-ux-v1-workflow-recovery-v1-card-meta-v1-entry-notes-layout-v1",
+  history: "scripts/Views/HistoryView.js?v=20261008-loading-performance-v1-views-20261015-v1-project-audit-v1-review-ux-v1",
+  projects: "scripts/Views/ProjectsView.js?v=20261008-loading-performance-v1-projects-lite-v1-period-nav-v1-main-echarts-v1-chart-polish-v1-flat-summary-v1-project-audit-v1-review-ux-v1",
 };
 const MANAGER_VIEW_SCRIPT_SOURCES = {
   dashboardView: [MANAGER_SCRIPT_SOURCE.dashboard],
@@ -391,6 +391,9 @@ function ensureManagerAssetsForView(viewId, user = getCurrentUser()) {
 
 function resetViewState() {
   appShellState.viewState = {};
+  window.resetGc179Exports?.();
+  window.resetSelfPunchUi?.();
+  window.cancelEntryRejection?.();
   window.resetReviewHistory?.();
   window.resetReviewWorkspace?.();
   window.resetEmployeesViewData?.();
@@ -798,29 +801,32 @@ function renderSettingsHealth(payload) {
       <span class="status-badge ${status === "ok" ? "approved" : "pending"}">${escapeHtml(statusLabel)}</span>
       <span class="panel-note">${escapeHtml(formatAppDateTime(payload && payload.serverTimeUtc))}</span>
     </div>
-    <div class="settings-health-grid">
-      ${rows.map(([label, value]) => `
-        <div class="settings-health-item" title="${escapeHtml(value)}">
-          <span class="settings-health-label">${escapeHtml(label)}</span>
-          <span class="settings-health-value">${escapeHtml(value)}</span>
+    <details class="settings-health-details">
+      <summary>${escapeHtml(t("settings.healthDetails"))}</summary>
+      <dl class="settings-health-grid">
+        ${rows.map(([label, value]) => `
+          <div class="settings-health-item">
+            <dt class="settings-health-label">${escapeHtml(label)}</dt>
+            <dd class="settings-health-value">${escapeHtml(value)}</dd>
+          </div>
+        `).join("")}
+      </dl>
+      ${checks.length > 0 ? `
+        <div class="settings-health-checks">
+          ${checks.map(check => {
+            const isOk = Boolean(check?.ok);
+            const label = check?.label || "";
+            const detail = check?.detail || "";
+            return `
+              <div class="settings-health-check ${isOk ? "is-ok" : "is-warning"}">
+                <i class="fa-solid ${isOk ? "fa-check" : "fa-triangle-exclamation"}" aria-hidden="true"></i>
+                <span>${escapeHtml(label)}${detail && detail !== payload?.dataFolder ? ` · ${escapeHtml(detail)}` : ""}</span>
+              </div>
+            `;
+          }).join("")}
         </div>
-      `).join("")}
-    </div>
-    ${checks.length > 0 ? `
-      <div class="settings-health-checks">
-        ${checks.map(check => {
-          const isOk = Boolean(check && check.ok);
-          const label = check && check.label ? check.label : "";
-          const detail = check && check.detail ? check.detail : "";
-          return `
-            <div class="settings-health-check ${isOk ? "is-ok" : "is-warning"}" title="${escapeHtml(detail)}">
-              <i class="fa-solid ${isOk ? "fa-check" : "fa-triangle-exclamation"}"></i>
-              <span>${escapeHtml(label)}${detail ? ` | ${escapeHtml(detail)}` : ""}</span>
-            </div>
-          `;
-        }).join("")}
-      </div>
-    ` : ""}
+      ` : ""}
+    </details>
   `;
 }
 
@@ -1975,6 +1981,19 @@ async function openEmployeeEntryInPeopleView(employeeCode, projectCode = "", ent
 
 window.openEmployeeEntryInPeopleView = openEmployeeEntryInPeopleView;
 
+window.openPendingReviewFromDashboard = async function () {
+  await ensureManagerAssetsForView("adminView");
+  if (!isManagerUser(getCurrentUser())) return false;
+  window.closeReviewHistory?.();
+  window.resetReviewWorkspace?.();
+  if (showView("adminView") !== "adminView") return false;
+  const loaded = await refreshViewById("adminView", { force: true });
+  const pendingTab = document.getElementById("pending-tab");
+  pendingTab?.scrollIntoView({ block: "center" });
+  pendingTab?.focus({ preventScroll: true });
+  return loaded;
+};
+
 async function openProjectInReview(projectCode) {
   const normalizedProjectCode = String(projectCode || "").trim();
   if (!normalizedProjectCode) {
@@ -2224,7 +2243,9 @@ function installFetchWrapper() {
 
     requestOptions.headers = headers;
     const method = String(requestOptions.method || (resource && resource.method) || "GET").toUpperCase();
-    const shouldCoalesceGet = method === "GET" && isApiRequestUrl(targetUrl);
+    // An explicit reconciliation must not join a read that started before
+    // the operation with an uncertain outcome.
+    const shouldCoalesceGet = method === "GET" && requestOptions.cache !== "reload" && isApiRequestUrl(targetUrl);
     const requestCacheKey = shouldCoalesceGet
       ? `${requestToken || token || ""}|${new URL(targetUrl, window.location.href).href}`
       : "";

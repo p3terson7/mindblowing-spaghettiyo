@@ -117,6 +117,10 @@ function detail(code) {
     assert.equal(await page.locator("#projectInsightsSummary .project-insight-stat").count(), 5);
     assert(await page.locator("#projectAnalyticsExportButton").isVisible());
     assert(await page.locator("#projectDepartmentAnalyticsExportButton").isVisible());
+    const beforeFind = dataRequests().length;
+    await page.locator("#projectFindShortcut").click();
+    assert(await page.locator("#projectPortfolioSearchInput").evaluate(input => input === document.activeElement));
+    assert.equal(dataRequests().length, beforeFind, "The project search shortcut should not fetch another portfolio.");
     await page.locator("#projectAnalyticsBar").screenshot({ path: "/tmp/saphir-project-summary-compact.png" });
     await page.locator("#projectChartContainer").screenshot({ path: "/tmp/saphir-project-chart-readable.png" });
     const interactive = await page.evaluate(() => {

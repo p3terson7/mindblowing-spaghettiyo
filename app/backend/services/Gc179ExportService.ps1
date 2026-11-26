@@ -1,6 +1,7 @@
 ﻿$overtimeCompensationModuleManifest = Join-Path -Path $PSScriptRoot -ChildPath "../modules/Saphir.OvertimeCompensation.psd1"
 Import-Module -Name $overtimeCompensationModuleManifest -Force -ErrorAction Stop | Out-Null
 Remove-Variable -Name overtimeCompensationModuleManifest -ErrorAction SilentlyContinue
+Import-Module -Name (Join-Path $PSScriptRoot "../modules/Saphir.EntryDuration.psd1") -ErrorAction Stop | Out-Null
 
 function ConvertTo-Gc179MonthParts {
     param([Parameter(Mandatory = $true)][string]$MonthKey)
@@ -230,7 +231,8 @@ function ConvertTo-Gc179TimeText {
         return ""
     }
 
-    return $normalized.Substring(0, 5)
+    $time = [datetime]::ParseExact($normalized, "HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture)
+    return (Saphir.EntryDuration\ConvertTo-SaphirNearestQuarterHourTime -Time $time).Substring(0, 5)
 }
 
 function ConvertTo-Gc179DayText {
@@ -623,16 +625,16 @@ function ConvertTo-Gc179ExportRows {
 
         try {
             $start = [DateTime]::ParseExact(
-                ("{0} {1}" -f $entry.date, (Convert-ToNormalizedTimeText -TimeText ([string]$entry.punchIn))),
-                "yyyy-MM-dd HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture)
+                ("{0} {1}" -f $entry.date, (ConvertTo-Gc179TimeText -TimeText ([string]$entry.punchIn))),
+                "yyyy-MM-dd HH:mm", [System.Globalization.CultureInfo]::InvariantCulture)
             $end = [DateTime]::ParseExact(
-                ("{0} {1}" -f $entry.date, (Convert-ToNormalizedTimeText -TimeText ([string]$entry.punchOut))),
-                "yyyy-MM-dd HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture)
+                ("{0} {1}" -f $entry.date, (ConvertTo-Gc179TimeText -TimeText ([string]$entry.punchOut))),
+                "yyyy-MM-dd HH:mm", [System.Globalization.CultureInfo]::InvariantCulture)
         }
         catch { $entry; continue }
 
-        # This is a same-day form layout rule, not a new overnight or payroll
-        # interpretation. Leave existing cross-midnight handling unchanged.
+        # Split on the times the form will display, so rounding cannot leave
+        # an empty second row. This does not change overnight handling.
         if (($end - $start).TotalHours -le 7.5) { $entry; continue }
 
         $boundary = $start.AddHours(7.5)
@@ -1006,6 +1008,14 @@ foreach ($fdfFile in $fdfFiles) {
 }
 
 function Get-Gc179LocalExportRoot {
+    $appConfig = Get-Variable -Name config -ValueOnly -ErrorAction SilentlyContinue
+    $configuredPath = if ($appConfig) { [string]$appConfig.Gc179LocalExportPath } else { "" }
+    if (-not [string]::IsNullOrWhiteSpace($configuredPath)) {
+        if ([System.IO.Path]::IsPathRooted($configuredPath)) {
+            return [System.IO.Path]::GetFullPath($configuredPath)
+        }
+        return [System.IO.Path]::GetFullPath((Join-Path $backendRoot $configuredPath))
+    }
     if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
         $basePath = [string]$env:LOCALAPPDATA
         if ([string]::IsNullOrWhiteSpace($basePath)) {
@@ -1134,14 +1144,14 @@ function Start-Gc179LocalExportWorkspace {
     $process = $null
     if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
         try {
-            $process = Start-Process -FilePath $powershellPath -ArgumentList $argumentList -WorkingDirectory $FolderPath -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
+            $process = Start-Process -FilePath $powershellPath -ArgumentList $argumentList -WorkingDirectory $FolderPath -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru -ErrorAction Stop
         }
         catch {
-            $process = Start-Process -FilePath $powershellPath -ArgumentList $argumentList -WorkingDirectory $FolderPath -PassThru
+            $process = Start-Process -FilePath $powershellPath -ArgumentList $argumentList -WorkingDirectory $FolderPath -PassThru -ErrorAction Stop
         }
     }
     else {
-        $process = Start-Process -FilePath $powershellPath -ArgumentList $argumentList -WorkingDirectory $FolderPath -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
+        $process = Start-Process -FilePath $powershellPath -ArgumentList $argumentList -WorkingDirectory $FolderPath -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru -ErrorAction Stop
     }
 
     $processId = if ($null -ne $process) { [int]$process.Id } else { 0 }
@@ -1161,16 +1171,37 @@ function Start-Gc179LocalExport {
     $exportSet = New-Gc179FdfExportSet -EmployeeCode $EmployeeCode -MonthKey $MonthKey
     $folderPath = New-Gc179LocalExportFolder -EmployeeCode $EmployeeCode -MonthKey ([string]$exportSet.MonthParts.MonthKey)
     Write-Gc179LocalExportWorkspace -FolderPath $folderPath -ExportSet $exportSet
-    $launch = Start-Gc179LocalExportWorkspace -FolderPath $folderPath
+
+    # From here on the files have been saved. An opening failure must not
+    # hide them or imply that the employee has to generate a new copy.
+    $launch = $null
+    try {
+        $launch = Start-Gc179LocalExportWorkspace -FolderPath $folderPath
+    }
+    catch {
+        Write-Warning "GC179 export saved but the local opening process could not be started."
+    }
+    $openingRequested = ($null -ne $launch -and $launch.ProcessId -gt 0)
+    $pendingCount = 0
+    foreach ($entry in $exportSet.Entries) {
+        $status = ([string]$entry.status).Trim()
+        if ($status -eq "" -or $status -eq "pending") { $pendingCount++ }
+    }
+    $rowCount = 0
+    foreach ($part in $exportSet.Exports) { $rowCount += $part.RowCount }
 
     return [PSCustomObject]@{
-        launched     = $true
+        prepared     = $true
+        launched     = $openingRequested
+        monthKey     = [string]$exportSet.MonthParts.MonthKey
         folderPath   = $folderPath
-        logPath      = [string]$launch.LogPath
-        errorLogPath = [string]$launch.ErrorLogPath
-        processId    = [int]$launch.ProcessId
+        logPath      = if ($null -ne $launch) { [string]$launch.LogPath } else { "" }
+        errorLogPath = if ($null -ne $launch) { [string]$launch.ErrorLogPath } else { "" }
+        processId    = if ($null -ne $launch) { [int]$launch.ProcessId } else { 0 }
         entryCount   = @($exportSet.Entries).Count
+        pendingCount = $pendingCount
+        rowCount     = $rowCount
         partCount    = @($exportSet.Exports).Count
-        message      = "GC179 export prepared and launched locally."
+        message      = if ($openingRequested) { "GC179 export prepared; local opening requested." } else { "GC179 export prepared; local opening could not be started." }
     }
 }

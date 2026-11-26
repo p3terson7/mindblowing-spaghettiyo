@@ -260,7 +260,8 @@ function getEntryWorkComment(entry) {
 
 function renderEntryWorkComment(entry, options = {}) {
   const comment = getEntryWorkComment(entry);
-  if (!comment) {
+  const additions = Array.isArray(entry?.employeeCommentAdditions) ? entry.employeeCommentAdditions : [];
+  if (!comment && !additions.length) {
     return "";
   }
 
@@ -268,9 +269,25 @@ function renderEntryWorkComment(entry, options = {}) {
   return `
     <div class="entry-work-comment${compactClass}" role="note" aria-label="${escapeHtml(t("shared.employeeWorkComment"))}">
       <div class="entry-work-comment-label"><i class="fa-regular fa-comment" aria-hidden="true"></i> ${escapeHtml(t("shared.employeeWorkComment"))}</div>
-      <div class="entry-work-comment-text">${escapeHtml(comment)}</div>
+      ${renderEmployeeCommentRows(comment, additions)}
     </div>
   `;
+}
+
+function formatEntryNoteTimestamp(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return date.toLocaleString(getCurrentLocale(), { dateStyle: "medium", timeStyle: "short" });
+}
+
+function renderEmployeeCommentRows(comment, additions = []) {
+  return (comment ? `<div class="entry-work-comment-text">${escapeHtml(comment)}</div>` : "") +
+    additions.map(addition => `
+      <div class="entry-comment-addition">
+        <div class="entry-work-comment-label">${escapeHtml([t("shared.employeeCommentAddition"), formatEntryNoteTimestamp(addition.createdAtUtc)].filter(Boolean).join(" · "))}</div>
+        <div class="entry-work-comment-text">${escapeHtml(addition.text)}</div>
+      </div>`).join("");
 }
 
 function getEntryNotes(entry) {
@@ -278,22 +295,33 @@ function getEntryNotes(entry) {
   const employeeComment = getEntryWorkComment(safeEntry);
   const supervisorNote = String(safeEntry.message || "").trim();
   const supervisorNoteAuthor = String(safeEntry.messageAuthorName || safeEntry.messageAuthorUsername || "").trim();
-  const count = Number(Boolean(employeeComment)) + Number(Boolean(supervisorNote));
+  const additions = Array.isArray(safeEntry.employeeCommentAdditions) ? safeEntry.employeeCommentAdditions : [];
+  const count = Number(Boolean(employeeComment)) + Number(Boolean(supervisorNote)) + additions.length;
 
   return {
     employeeComment,
     supervisorNote,
     supervisorNoteAuthor,
+    supervisorNoteTimestamp: safeEntry.messageUpdatedAt || "",
+    additions,
     count,
-    preview: employeeComment || supervisorNote,
+    preview: employeeComment || additions[0]?.text || supervisorNote,
   };
 }
 
 function getEntrySupervisorNoteLabel(entry) {
   const notes = getEntryNotes(entry);
-  return notes.supervisorNoteAuthor
+  const label = notes.supervisorNoteAuthor
     ? t("shared.managerMessageBy", { name: notes.supervisorNoteAuthor })
     : t("shared.managerMessage");
+  return [label, formatEntryNoteTimestamp(notes.supervisorNoteTimestamp)].filter(Boolean).join(" · ");
+}
+
+function renderEntryNoteMetadataAttributes(entry) {
+  const notes = getEntryNotes(entry);
+  return (notes.supervisorNoteAuthor ? ` data-entry-supervisor-note-author="${escapeHtml(encodeEntryNoteData(notes.supervisorNoteAuthor))}"` : "") +
+    (notes.supervisorNoteTimestamp ? ` data-entry-supervisor-note-timestamp="${escapeHtml(encodeEntryNoteData(notes.supervisorNoteTimestamp))}"` : "") +
+    (notes.additions.length ? ` data-entry-comment-additions="${escapeHtml(encodeEntryNoteData(JSON.stringify(notes.additions)))}"` : "");
 }
 
 function encodeEntryNoteData(value) {
@@ -310,7 +338,8 @@ function decodeEntryNoteData(value) {
 
 function renderEntryNotesPreview(entry, options = {}) {
   const notes = getEntryNotes(entry);
-  if (notes.count === 0) {
+  const canAdd = options.allowEmployeeAddition && !isEntryOpen(entry) && (entry.entryId || (entry.date && entry.punchIn));
+  if (notes.count === 0 && !canAdd) {
     return options.showEmpty === true
       ? `<span class="entry-notes-empty" aria-label="${escapeHtml(t("shared.noEntryNotes"))}">-</span>`
       : "";
@@ -319,17 +348,18 @@ function renderEntryNotesPreview(entry, options = {}) {
   return `
     <button
       type="button"
-      class="entry-notes-preview"
+      class="entry-notes-preview${options.iconOnly ? " is-icon-only" : ""}"
       data-entry-notes-trigger
       data-entry-employee-comment="${escapeHtml(encodeEntryNoteData(notes.employeeComment))}"
       data-entry-supervisor-note="${escapeHtml(encodeEntryNoteData(notes.supervisorNote))}"
-      data-entry-supervisor-note-author="${escapeHtml(encodeEntryNoteData(notes.supervisorNoteAuthor))}"
+      ${renderEntryNoteMetadataAttributes(entry)}
+      ${canAdd ? `data-self-comment-entry="${escapeHtml(encodeEntryNoteData(JSON.stringify({ entryId: entry.entryId || "", date: entry.date, punchIn: entry.punchIn })))}"` : ""}
       aria-expanded="false"
       aria-label="${escapeHtml(t("action.viewEntryNotes"))}"
       title="${escapeHtml(t("action.viewEntryNotes"))}"
     >
       <i class="fa-regular fa-comment" aria-hidden="true"></i>
-      <span class="entry-notes-preview-text">${escapeHtml(notes.preview)}</span>
+      ${options.iconOnly ? "" : `<span class="entry-notes-preview-text">${escapeHtml(notes.preview || t("action.addEntryComment"))}</span>`}
       ${notes.count > 1 ? `<span class="entry-notes-count" aria-hidden="true">${notes.count}</span>` : ""}
     </button>
   `;
@@ -341,10 +371,17 @@ let entryNotesPopoverInitialized = false;
 let entryNotesPopoverSequence = 0;
 
 function getEntryNotesFromTrigger(trigger) {
+  let additions = [];
+  try {
+    const data = JSON.parse(decodeEntryNoteData(trigger.getAttribute("data-entry-comment-additions")));
+    if (Array.isArray(data)) additions = data;
+  } catch { /* Legacy entries have no supplements. */ }
   return {
     employeeComment: decodeEntryNoteData(trigger && trigger.getAttribute("data-entry-employee-comment")),
     supervisorNote: decodeEntryNoteData(trigger && trigger.getAttribute("data-entry-supervisor-note")),
     supervisorNoteAuthor: decodeEntryNoteData(trigger && trigger.getAttribute("data-entry-supervisor-note-author")),
+    supervisorNoteTimestamp: decodeEntryNoteData(trigger && trigger.getAttribute("data-entry-supervisor-note-timestamp")),
+    additions,
   };
 }
 
@@ -352,19 +389,17 @@ function buildEntryNotesPopoverContent(trigger) {
   const notes = getEntryNotesFromTrigger(trigger);
   const sections = [];
 
-  if (notes.employeeComment) {
+  if (notes.employeeComment || notes.additions.length) {
     sections.push(`
       <div class="entry-notes-reader-section">
         <div class="entry-notes-reader-label"><i class="fa-regular fa-comment" aria-hidden="true"></i> ${escapeHtml(t("shared.employeeWorkComment"))}</div>
-        <div class="entry-notes-reader-text">${escapeHtml(notes.employeeComment)}</div>
+        ${renderEmployeeCommentRows(notes.employeeComment, notes.additions)}
       </div>
     `);
   }
 
   if (notes.supervisorNote) {
-    const supervisorNoteLabel = notes.supervisorNoteAuthor
-      ? t("shared.managerMessageBy", { name: notes.supervisorNoteAuthor })
-      : t("shared.managerMessage");
+    const supervisorNoteLabel = getEntrySupervisorNoteLabel({ messageAuthorName: notes.supervisorNoteAuthor, messageUpdatedAt: notes.supervisorNoteTimestamp });
     sections.push(`
       <div class="entry-notes-reader-section">
         <div class="entry-notes-reader-label"><i class="fa-regular fa-note-sticky" aria-hidden="true"></i> ${escapeHtml(supervisorNoteLabel)}</div>
@@ -373,7 +408,9 @@ function buildEntryNotesPopoverContent(trigger) {
     `);
   }
 
-  return `<div class="entry-notes-reader" role="note">${sections.join("")}</div>`;
+  return `<div class="entry-notes-reader">${sections.join("")}
+    ${trigger.hasAttribute?.("data-self-comment-entry") ? `<button type="button" class="btn btn-outline-secondary btn-sm" data-open-self-comment>${escapeHtml(t("action.addEntryComment"))}</button>` : ""}
+  </div>`;
 }
 
 function closeEntryNotesPopover(options = {}) {
@@ -443,7 +480,7 @@ function toggleEntryNotesPopover(trigger) {
 
   closeEntryNotesPopover();
   const notes = getEntryNotesFromTrigger(trigger);
-  if (!notes.employeeComment && !notes.supervisorNote) {
+  if (!notes.employeeComment && !notes.supervisorNote && !notes.additions.length && !trigger.hasAttribute("data-self-comment-entry")) {
     return;
   }
 
@@ -491,6 +528,13 @@ function initializeEntryNotesPopover() {
     if (target && target.closest("[data-entry-notes-close]")) {
       event.preventDefault();
       closeEntryNotesPopover({ restoreFocus: true });
+      return;
+    }
+
+    if (target?.closest("[data-open-self-comment]") && activeEntryNotesTrigger) {
+      const trigger = activeEntryNotesTrigger;
+      closeEntryNotesPopover();
+      window.openSelfEntryCommentEditor?.(trigger);
       return;
     }
 
@@ -1466,6 +1510,14 @@ function createEmptyState(message) {
   return `<div class="empty-state">${escapeHtml(message)}</div>`;
 }
 
+function renderViewLoadError(container, message, onRetry) {
+  container.innerHTML = `<div class="view-load-error">
+    <span role="alert">${escapeHtml(message)}</span>
+    <button type="button" class="btn btn-outline-secondary btn-sm">${escapeHtml(t("action.retry"))}</button>
+  </div>`;
+  container.querySelector("button").addEventListener("click", onRetry);
+}
+
 function createLoadingState(variant = "list", count = 3) {
   const safeCount = Math.max(1, Number(count) || 1);
 
@@ -1583,8 +1635,10 @@ function setChartLoadingState(containerId, variant = "chart") {
 }
 
 function getStatusTone(status) {
-  if (status && typeof status === "object" && isEntryForgottenClockOut(status)) {
-    return "attention";
+  if (status && typeof status === "object") {
+    const state = getEntryDisplayState(status);
+    if (state === "missingEnd" || state === "closedNeedsReview") return "attention";
+    if (state === "active") return "live";
   }
 
   const statusValue = status && typeof status === "object" ? status.status : status;
@@ -1644,12 +1698,34 @@ function isEntryForgottenClockOut(entry) {
   return normalized === "true" || normalized === "1" || normalized === "yes";
 }
 
-function getEntryStatusLabel(entry) {
-  if (isEntryForgottenClockOut(entry)) {
-    return t("status.clockOutMissing");
+// Presentation only. Review eligibility, duration calculation and persisted
+// status remain authoritative on the server.
+function getEntryDisplayState(entry) {
+  if (isEntryForgottenClockOut(entry)) return "missingEnd";
+  if (isEntryOpen(entry)) return "active";
+  const status = String(entry?.status || "pending").trim().toLowerCase();
+  if (status === "approved" || status === "rejected") return status;
+  if (entry?.punchOut && (entry.hasReviewIssues === true || entry.reviewIssues?.length > 0)) {
+    return "closedNeedsReview";
   }
+  return "pending";
+}
 
-  return translateStatus(entry && entry.status ? entry.status : "pending");
+function getEntryStatusLabel(entry) {
+  switch (getEntryDisplayState(entry)) {
+    case "missingEnd": return t("status.clockOutMissing");
+    case "closedNeedsReview": return t("status.closedNeedsReview");
+    case "active": return t(isDiverseEntry(entry) ? "self.hero.liveDiverse" : "status.clockedIn");
+    default: return translateStatus(entry?.status || "pending");
+  }
+}
+
+function formatEntryRecordedDuration(entry) {
+  if (isEntryOpen(entry)) return t("shared.waitingForPunchOut");
+  const duration = String(entry?.overtime || "").trim();
+  return duration && duration.toUpperCase() !== "N/A" && !isEntryForgottenClockOut(entry)
+    ? secondsToDurationLabel(timeStringToSeconds(duration))
+    : "—";
 }
 
 function formatRelativeTime(timestamp) {
@@ -1715,20 +1791,34 @@ function getEntryWorkSchedule(entry) {
   return "unconfirmed";
 }
 
-function getEntryWorkScheduleLabel(entry) {
-  const schedule = getEntryWorkSchedule(entry);
-  const translationKey = schedule === "compressed"
-    ? "shared.workScheduleCompressed"
-    : schedule === "regular"
-      ? "shared.workScheduleRegular"
-      : "shared.workScheduleUnconfirmed";
-  return t(translationKey);
+function renderWorkScheduleIndicator(schedule) {
+  if (schedule === "regular") return "";
+
+  const icon = '<i class="fa-solid fa-calendar-days" aria-hidden="true"></i>';
+  if (schedule === "compressed") {
+    const label = escapeHtml(t("shared.workScheduleCompressed"));
+    return `<span class="work-schedule-icon" role="img" aria-label="${label}" title="${label}">${icon}</span>`;
+  }
+
+  const label = escapeHtml(t("shared.workScheduleUnconfirmed"));
+  return `<span class="work-schedule-badge unconfirmed" title="${label}">${icon}<span>${label}</span></span>`;
 }
 
 function renderEntryWorkScheduleBadge(entry) {
   const schedule = getEntryWorkSchedule(entry);
-  const label = getEntryWorkScheduleLabel(entry);
-  return `<span class="work-schedule-badge ${escapeHtml(schedule)}" title="${escapeHtml(label)}"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i><span>${escapeHtml(label)}</span></span>`;
+  return renderWorkScheduleIndicator(schedule);
+}
+
+function renderCalendarEntryHeader(entry, timeMarkup, statusTone, statusLabel) {
+  const schedule = getEntryWorkSchedule(entry);
+  const indicator = renderWorkScheduleIndicator(schedule);
+  const compressed = schedule === "compressed";
+  return `
+    <div class="calendar-entry-main${compressed ? " has-compressed-schedule" : ""}">
+      <span class="calendar-entry-time">${timeMarkup}</span>
+      ${compressed ? indicator : ""}
+      <span class="calendar-entry-badges"><span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(statusLabel)}</span>${compressed ? "" : indicator}</span>
+    </div>`;
 }
 
 function isDiverseEntry(entry) {
@@ -1953,7 +2043,7 @@ function renderProjectIdentityPill(projectOrCode, label = "", extraClass = "", t
   const safeExtraClass = String(extraClass || "").replace(/[^A-Za-z0-9 _-]/g, "").trim();
   const classes = `project-identity-pill${safeExtraClass ? ` ${safeExtraClass}` : ""}`;
   const titleAttribute = String(title || "").trim() ? ` title="${escapeHtml(title)}"` : "";
-  return `<span class="${classes}" style="${getProjectColorStyle(projectOrCode)}"${titleAttribute}>${renderProjectColorDot(projectOrCode)}<span>${escapeHtml(displayLabel)}</span></span>`;
+  return `<span class="${classes}" style="${getProjectColorStyle(projectOrCode)}"${titleAttribute}>${renderProjectColorDot(projectOrCode)}<span class="project-identity-label">${escapeHtml(displayLabel)}</span></span>`;
 }
 
 function formatProjectCodeAndName(project) {
@@ -2078,6 +2168,110 @@ function formatPaymentOptionValue(code) {
   return normalizedCode;
 }
 
+const gc179ExportReceipts = new Map();
+let gc179ExportSession = 0;
+
+window.resetGc179Exports = function () {
+  gc179ExportSession++;
+  gc179ExportReceipts.clear();
+  document.querySelectorAll("[data-gc179-receipt]").forEach(receipt => {
+    receipt.classList.add("d-none");
+    receipt.replaceChildren();
+  });
+};
+
+function getGc179ExportKey({ self, employeeCode, monthKey }) {
+  return self ? `self:${monthKey}` : `employee:${employeeCode}:${monthKey}`;
+}
+
+function renderGc179ExportResult(result) {
+  if (!result) return "";
+  const month = formatCalendarMonthLabel(result.monthKey);
+  const title = t(result.errorKey || "export.gc179Prepared", { month });
+  const detailParts = [];
+  if (result.errorKey) {
+    if (result.detail) detailParts.push(result.detail);
+  } else {
+    detailParts.push(result.entryCount ? tn("export.gc179IncludedEntries", result.entryCount) : t("export.gc179BlankForm"));
+    if (Number.isInteger(result.rowCount) && result.rowCount !== result.entryCount) {
+      detailParts.push(tn("export.gc179FormRows", result.rowCount));
+    }
+    detailParts.push(tn("export.gc179Forms", result.partCount));
+    detailParts.push(t(result.launched ? "export.gc179OpeningRequested" : "export.gc179OpeningFailed"));
+    if (result.pendingCount > 0) detailParts.push(t("export.gc179PendingIncluded", { count: result.pendingCount }));
+  }
+  const close = escapeHtml(t("shared.close"));
+  return `
+    <div class="gc179-receipt-main">
+      <strong data-gc179-receipt-heading tabindex="-1">${escapeHtml(title)}</strong>
+      ${detailParts.length ? `<p>${escapeHtml(detailParts.join(" · "))}</p>` : ""}
+    </div>
+    <div class="gc179-receipt-actions">
+      ${result.errorKey ? "" : `
+        <span data-gc179-copy-status role="status"></span>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-gc179-receipt-copy>${escapeHtml(t("export.gc179CopyFolder"))}</button>
+      `}
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-gc179-receipt-close aria-label="${close}" title="${close}"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+    ${result.errorKey ? "" : `<code class="gc179-receipt-path" data-gc179-receipt-path tabindex="-1" hidden></code>`}
+  `;
+}
+
+function renderGc179ExportReceipt(config) {
+  const key = getGc179ExportKey(config);
+  const result = gc179ExportReceipts.get(key);
+  return `<section class="gc179-receipt${result ? "" : " d-none"}" data-gc179-receipt="${escapeHtml(key)}" aria-label="${escapeHtml(t("export.gc179Receipt"))}">${renderGc179ExportResult(result)}</section>`;
+}
+
+function updateGc179ExportReceipt(key, focus = false) {
+  const result = gc179ExportReceipts.get(key);
+  for (const receipt of document.querySelectorAll("[data-gc179-receipt]")) {
+    if (receipt.dataset.gc179Receipt !== key) continue;
+    receipt.innerHTML = renderGc179ExportResult(result);
+    receipt.classList.toggle("d-none", !result);
+    if (focus && result && receipt.getClientRects().length && document.activeElement === document.body) {
+      receipt.querySelector("[data-gc179-receipt-heading]").focus();
+    }
+  }
+}
+
+function handleGc179ExportReceiptClick(event) {
+  const button = event.target.closest("[data-gc179-receipt-close], [data-gc179-receipt-copy]");
+  const receipt = button?.closest("[data-gc179-receipt]");
+  if (!receipt) return false;
+  if (button.hasAttribute("data-gc179-receipt-close")) {
+    gc179ExportReceipts.delete(receipt.dataset.gc179Receipt);
+    const exportButton = receipt.previousElementSibling?.querySelector(".self-gc179-fdf-button, .people-gc179-fdf-button");
+    updateGc179ExportReceipt(receipt.dataset.gc179Receipt);
+    exportButton?.focus();
+  } else {
+    const folderPath = gc179ExportReceipts.get(receipt.dataset.gc179Receipt)?.folderPath;
+    if (!folderPath) return true;
+    const path = receipt.querySelector("[data-gc179-receipt-path]");
+    const status = receipt.querySelector("[data-gc179-copy-status]");
+    void (async () => {
+      try {
+        await navigator.clipboard.writeText(folderPath);
+        path.hidden = true;
+        path.textContent = "";
+        status.textContent = t("export.gc179FolderCopied");
+      } catch {
+        if (!path.isConnected) return;
+        path.textContent = folderPath;
+        path.hidden = false;
+        path.focus();
+        const range = document.createRange();
+        range.selectNodeContents(path);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        status.textContent = t("export.gc179FolderCopyManually");
+      }
+    })();
+  }
+  return true;
+}
+
 async function downloadGc179FdfExport(config) {
   const monthKey = String(config && config.monthKey || "").trim();
   const employeeCode = String(config && config.employeeCode || "").trim();
@@ -2086,22 +2280,48 @@ async function downloadGc179FdfExport(config) {
     ? `self/gc179-open?month=${encodeURIComponent(monthKey)}`
     : `employee/${encodeURIComponent(employeeCode)}/gc179-open?month=${encodeURIComponent(monthKey)}`;
 
-  if (!monthKey || (!isSelfExport && !employeeCode)) {
-    showToast(t("export.gc179DownloadError", { message: t("error.missingRequiredFields") }), "error");
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey) || (!isSelfExport && !employeeCode)) {
+    showToast(t("error.missingRequiredFields"), "error");
     return false;
   }
 
+  const key = getGc179ExportKey({ self: isSelfExport, employeeCode, monthKey });
+  const session = gc179ExportSession;
+  let response;
+  let result;
   try {
-    const response = await fetch(apiUrl + path, { method: "POST" });
+    response = await fetch(apiUrl + path, { method: "POST" });
     const payload = await parseResponse(response);
-    showToast(t("export.gc179LaunchSuccess", {
-      count: payload && payload.partCount ? payload.partCount : 1,
-    }), "success");
-    return true;
+    const prepared = payload?.prepared === true || (payload?.prepared == null && payload?.launched === true);
+    if (!prepared || !String(payload.folderPath || "").trim()
+        || !Number.isInteger(payload.entryCount) || !Number.isInteger(payload.partCount)
+        || (payload.monthKey && payload.monthKey !== monthKey)) {
+      throw new Error("Missing or invalid GC179 export receipt.");
+    }
+    result = {
+      monthKey,
+      folderPath: String(payload.folderPath),
+      launched: payload.launched === true,
+      entryCount: payload.entryCount,
+      pendingCount: payload.pendingCount,
+      partCount: payload.partCount,
+      rowCount: payload.rowCount,
+    };
   } catch (error) {
-    showToast(t("export.gc179DownloadError", { message: error.message || error }), "error");
-    return false;
+    const rejected = response && !response.ok && response.status < 500;
+    result = {
+      monthKey,
+      errorKey: rejected ? "export.gc179PreparationFailed" : "export.gc179PreparationUnconfirmed",
+      detail: rejected ? error.message : "",
+    };
   }
+  if (session !== gc179ExportSession) return false;
+  // Keep recent results in memory only. Never retain a local path across sessions.
+  gc179ExportReceipts.delete(key);
+  gc179ExportReceipts.set(key, result);
+  if (gc179ExportReceipts.size > 8) gc179ExportReceipts.delete(gc179ExportReceipts.keys().next().value);
+  updateGc179ExportReceipt(key, true);
+  return !result.errorKey;
 }
 
 async function fetchOvertimeEntryLookups(forceRefresh = false) {

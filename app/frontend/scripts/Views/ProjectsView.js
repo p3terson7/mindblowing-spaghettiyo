@@ -3233,6 +3233,11 @@ document.getElementById("projectsSummaryContainer").addEventListener("click", ev
   }
 });
 
+document.getElementById("projectFindShortcut")?.addEventListener("click", () => {
+  const search = document.getElementById("projectPortfolioSearchInput");
+  search.scrollIntoView({ block: "center" });
+  search.focus({ preventScroll: true });
+});
 document.getElementById("projectPortfolioSearchInput").addEventListener("input", () => {
   if (projectPortfolioSearchTimerId !== null) {
     window.clearTimeout(projectPortfolioSearchTimerId);

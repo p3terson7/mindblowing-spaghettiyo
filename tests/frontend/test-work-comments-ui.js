@@ -23,6 +23,7 @@ const helperEnd = utilitiesSource.indexOf("function formatTimeString", helperSta
 assert(helperStart >= 0 && helperEnd > helperStart, "Unable to locate the work-comment helpers.");
 
 const context = {
+  getCurrentLocale: () => "en-CA",
   String,
   escapeHtml(value) {
     return String(value)
@@ -141,11 +142,27 @@ assert.match(popoverMarkup, /&lt;script&gt;/, "Popover content must escape store
 assert.doesNotMatch(popoverMarkup, /<script>/, "Raw note HTML reached the popover.");
 assert.match(popoverMarkup, /vérifié/, "Unicode note content must survive attribute encoding.");
 
+const datedEntry = {
+  workComment: "Original text",
+  employeeCommentAdditions: [{ id: "test", text: "Added <later>", createdAtUtc: "2026-11-24T18:32:00Z" }],
+  message: "Reviewed",
+  messageAuthorName: "Marie Tremblay",
+  messageUpdatedAt: "2026-11-24T18:44:00Z",
+};
+const datedLabel = context.workCommentApi.getEntrySupervisorNoteLabel(datedEntry);
+assert.match(datedLabel, /Marie Tremblay · .*2026.*\d[:h]\d/);
+assert.match(context.workCommentApi.renderEntryWorkComment(datedEntry), /Original text[\s\S]*?2026[\s\S]*?Added &lt;later&gt;/);
+const iconOnlyMarkup = context.workCommentApi.renderEntryNotesPreview(datedEntry, { iconOnly: true });
+assert.match(iconOnlyMarkup, /is-icon-only/);
+assert.doesNotMatch(iconOnlyMarkup, /entry-notes-preview-text/);
+assert.match(iconOnlyMarkup, /data-entry-comment-additions=/);
+
 assert.match(utilitiesSource, /entry\.workComment/, "Entry search must include overtime comments.");
 assert.match(indexSource, /id="selfWorkCommentInput"[\s\S]*?required[\s\S]*?aria-required="true"/, "Clock-out needs an accessible required comment field.");
-assert.match(indexSource, /id="updateWorkComment"/, "The manager editor must expose overtime comments.");
+assert.match(indexSource, /id="updateEmployeeCommentHistory" class="entry-comment-readonly"/, "The manager editor must display employee comments as read-only.");
+assert.doesNotMatch(indexSource, /id="(?:updateWorkComment|updateDiverseSummary)"/, "Admin editing must not expose a field to rewrite the employee's comments.");
 assert.doesNotMatch(indexSource, /id="selfDiverseSummaryInput"/, "The clock-out input must not remain Diverse-only.");
-for (const textareaId of ["selfWorkCommentInput", "updateWorkComment", "updateDiverseSummary"]) {
+for (const textareaId of ["selfWorkCommentInput", "selfEntryCommentText", "updateManagerMessage"]) {
   assert.match(indexSource, new RegExp(`id="${textareaId}"[^>]*maxlength="1000"`), `${textareaId} must enforce the shared comment length limit.`);
 }
 
@@ -153,7 +170,7 @@ assert.match(selfSource, /if \(type === "out" && !workComment\)/, "Every clock-o
 assert.match(selfSource, /punchPayload\.workComment = workComment/, "Normal overtime clock-out must send workComment to the backend.");
 assert.match(selfSource, /punchPayload\.diverseSummary = workComment/, "Diverse clock-out must preserve the diverseSummary contract.");
 assert.match(selfSource, /JSON\.stringify\(punchPayload\)/, "Clock-out must submit the type-specific comment payload.");
-assert.match(selfSource, /renderEntryNotesPreview\(entry\)/, "Employees must get the unified notes preview in their calendar.");
+assert.match(selfSource, /renderEntryNotesPreview\(entry, \{ allowEmployeeAddition: true \}\)/, "Employees can add a supplement from the calendar notes reader.");
 assert.doesNotMatch(selfSource, /expandedNotes|calendar-note-toggle|calendar-entry-note/, "The self calendar still carries the old inline expansion system.");
 
 assert.match(dashboardSource, /renderDashboardApprovalQueue[\s\S]*?renderEntryWorkComment\(entry\)/, "Dashboard approvals must show employee comments.");
@@ -163,12 +180,14 @@ assert.match(dashboardSource, /class="dashboard-note-edit-button"[\s\S]*?action\
 assert.match(dashboardSource, /closest\("\.dashboard-note-edit-button"\)/, "The inspector pencil must remain wired to the existing editor.");
 assert.doesNotMatch(dashboardSource, /getDashboardNotePreview|dashboard-note-trigger/, "The old inline dashboard note preview remains in use.");
 assert.match(dashboardSource, /data-workcomment=/, "Entry edit buttons must carry the saved overtime comment.");
-assert.match(dashboardSource, /workComment === originalWorkComment/, "Comment edits must participate in change detection.");
-assert.match(dashboardSource, /reasonCode, workComment, status:/, "Normal entry updates must persist workComment.");
+assert.match(dashboardSource, /fieldsUnchanged && !noteChanged/, "Supervisor note edits must participate in change detection.");
+assert.match(dashboardSource, /requestPath = fieldsUnchanged \? "employee\/message\//, "Note-only edits must not recompute the entry.");
+assert.doesNotMatch(dashboardSource.slice(dashboardSource.indexOf('document.getElementById("saveUpdateBtn").addEventListener')), /reasonCode, workComment|workComment:|diverseSummary:/, "Updating times or status must not write employee comments.");
 assert.match(approvalsSource, /buildApprovalCard[\s\S]*?renderEntryWorkComment\(entry\)/, "Review cards must show employee comments.");
 assert.match(approvalsSource, /buildApprovalCard[\s\S]*?getEntrySupervisorNoteLabel\(entry\)/, "Review cards must show supervisor attribution.");
-assert.match(employeesSource, /renderPeopleProjectEntryRows[\s\S]*?renderEntryNotesPreview\(entry\)/, "Employee project rows must use the compact notes reader.");
-assert.match(employeesSource, /entryPreview = dayEntries\.map[\s\S]*?renderEntryNotesPreview\(entry\)/, "The administrative employee calendar must use the compact notes reader.");
+assert.match(employeesSource, /renderPeopleProjectEntryRows[\s\S]*?renderEntryNotesPreview\(entry, \{ iconOnly: true \}\)/, "Employee project rows must use the compact notes reader.");
+assert.match(employeesSource, /function renderPeopleEntryInspector[\s\S]*?renderEntryWorkComment\(entry\)/, "Calendar notes belong in the inspector, not in every day cell.");
+assert.match(employeesSource, /entryPreview = dayEntries\.map\(entry => renderPeopleCalendarEntrySummary\(entry, employee.code\)\)/, "Calendar cells should only render an entry summary.");
 assert.doesNotMatch(employeesSource, /expandedNotes|calendar-note-toggle|calendar-entry-note/, "The administrative calendar still carries the old inline expansion system.");
 assert.match(employeesSource, /data-workcomment=/, "Employee calendar edit buttons must retain the comment contract.");
 assert.match(projectsSource, /renderProjectWorkspaceRecentEntries[\s\S]*?renderEntryNotesPreview\(entry\)/, "Project workspaces must use the compact notes reader.");

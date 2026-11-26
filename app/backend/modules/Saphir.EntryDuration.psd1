@@ -5,9 +5,10 @@
     Author            = "SAPHIR"
     CompanyName       = "SAPHIR"
     Copyright         = "Copyright SAPHIR"
-    Description       = "Pure quarter-hour credit calculation for SAPHIR overtime entries."
+    Description       = "Pure quarter-hour display and credit rules for SAPHIR overtime entries."
     PowerShellVersion = "5.1"
     FunctionsToExport = @(
+        "ConvertTo-SaphirNearestQuarterHourTime",
         "Get-QuarterHourCreditSummary"
     )
     CmdletsToExport   = @()

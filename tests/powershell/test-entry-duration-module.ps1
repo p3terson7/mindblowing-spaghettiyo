@@ -40,7 +40,7 @@ foreach ($path in @($manifestPath, $modulePath, $entryServicePath, $readModelSer
 $manifest = Import-PowerShellDataFile -LiteralPath $manifestPath
 Assert-Equal -Expected "Saphir.EntryDuration.psm1" -Actual ([string]$manifest.RootModule) -Message "EntryDuration RootModule changed."
 Assert-Equal -Expected "5.1" -Actual ([string]$manifest.PowerShellVersion) -Message "EntryDuration must support Windows PowerShell 5.1."
-Assert-Equal -Expected "Get-QuarterHourCreditSummary" -Actual (@($manifest.FunctionsToExport) -join "|") -Message "EntryDuration export contract changed."
+Assert-Equal -Expected "ConvertTo-SaphirNearestQuarterHourTime|Get-QuarterHourCreditSummary" -Actual (@($manifest.FunctionsToExport) -join "|") -Message "EntryDuration export contract changed."
 Test-ModuleManifest -Path $manifestPath -ErrorAction Stop | Out-Null
 
 $moduleTokens = $null
@@ -75,9 +75,46 @@ foreach ($case in $creditCases) {
     $summary = Saphir.EntryDuration\Get-QuarterHourCreditSummary -Date "2026-08-24" -PunchIn $case.PunchIn -PunchOut $case.PunchOut
     Assert-Equal -Expected $case.IsValid -Actual ([bool]$summary.isValid) -Message ("Duration validity changed for {0}." -f $case.Label)
     Assert-Equal -Expected $case.Expected -Actual ([string]$summary.creditedOvertime) -Message ("Quarter credit changed for {0}." -f $case.Label)
+    $credit = Saphir.EntryDuration\Get-QuarterHourCreditSummary -Date "2026-08-24" -PunchIn $case.PunchIn -PunchOut $case.PunchOut -CreditedSecondsOnly
+    $expectedCredit = if ($case.IsValid) { $summary.creditedSeconds } else { -1 }
+    Assert-Equal -Expected $expectedCredit -Actual $credit -Message "Numeric credit disagrees with the full summary for $($case.Label)."
 }
 
+# Use the original bucket-by-bucket rule as an independent oracle. Cover both
+# sides of the ten-minute threshold, exact boundaries and many full quarters.
+$dayStart = [DateTime]::new(2026, 8, 24, 0, 0, 0)
+foreach ($offset in @(0, 1, 299, 300, 301, 599, 600, 601, 899)) {
+    foreach ($length in @(1, 299, 599, 600, 601, 899, 900, 901, 1199, 1200, 1800, 36000)) {
+        $end = $offset + $length
+        $count = 0
+        for ($quarter = 0; $quarter -lt $end; $quarter += 900) {
+            if (([Math]::Min($quarter + 900, $end) - [Math]::Max($quarter, $offset)) -ge 600) { $count++ }
+        }
+        $summary = Saphir.EntryDuration\Get-QuarterHourCreditSummary -Date "2026-08-24" -PunchIn $dayStart.AddSeconds($offset).ToString("HH:mm:ss") -PunchOut $dayStart.AddSeconds($end).ToString("HH:mm:ss")
+        Assert-Equal -Expected $length -Actual $summary.actualSeconds -Message "Actual seconds changed for ${offset}+ $length."
+        Assert-Equal -Expected $count -Actual $summary.qualifyingQuarterCount -Message "Quarter count changed for ${offset}+ $length."
+        Assert-Equal -Expected ($count * 900) -Actual $summary.creditedSeconds -Message "Credited seconds changed for ${offset}+ $length."
+    }
+}
+$legacy = Saphir.EntryDuration\Get-QuarterHourCreditSummary -Date " 2026-08-24 " -PunchIn " 9:20 " -PunchOut " 9:30 "
+Assert-Equal -Expected "00:15:00" -Actual $legacy.creditedOvertime -Message "Legacy short time formats no longer parse."
+$invalid = Saphir.EntryDuration\Get-QuarterHourCreditSummary -Date "2026-02-30" -PunchIn "09:00" -PunchOut "10:00"
+Assert-Equal -Expected $false -Actual $invalid.isValid -Message "Invalid calendar date was accepted."
+
 . $entryServicePath
+$roundingCases = [ordered]@{
+    "14:07:59" = "14:00:00"
+    "14:08:00" = "14:15:00"
+    "14:22:59" = "14:15:00"
+    "14:23:00" = "14:30:00"
+    "14:38:00" = "14:45:00"
+    "14:53:00" = "15:00:00"
+    "23:58:00" = "23:45:00"
+}
+foreach ($exact in $roundingCases.Keys) {
+    $rounded = Convert-ToNearestQuarterHourText -Date "2026-08-24" -TimeText $exact
+    Assert-Equal -Expected $roundingCases[$exact] -Actual $rounded -Message "Display quarter-hour boundary changed for $exact."
+}
 $facadeSummary = Get-QuarterHourCreditSummary -Date "2026-08-24" -PunchIn "14:04:00" -PunchOut "14:08:00"
 Assert-Equal -Expected "00:00:00" -Actual ([string]$facadeSummary.creditedOvertime) -Message "EntryService facade did not use exact quarter credit."
 
@@ -126,6 +163,9 @@ $invalidEntry = $shortEntry.PSObject.Copy()
 $invalidEntry.exactPunchOut = "not-a-time"
 $invalidIssues = @(Get-EntryReviewIssues -Entry $invalidEntry)
 Assert-Equal -Expected "invalidPunchTimes" -Actual ([string]$invalidIssues[0].code) -Message "Malformed completed punch times did not expose a review issue."
+foreach ($candidate in @($shortEntry, $forgottenEntry, $activeEntry, $importedShortEntry, $invalidEntry, $null)) {
+    Assert-Equal -Expected (@(Get-EntryReviewIssues -Entry $candidate).Count -gt 0) -Actual (Get-EntryReviewIssues -Entry $candidate -AsBoolean) -Message "Fast attention status disagreed with the visible issues."
+}
 
 function Get-NormalizedRoleName {
     param([string]$Role)

@@ -20,6 +20,7 @@
             $newDate = if ($newDateProvided) { [string]$payload.newDate } else { "" }
             $originalPunchIn = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "originalPunchIn")) { [string]$payload.originalPunchIn } else { "" }
             $managerMessage = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "message")) { [string]$payload.message } else { "" }
+            $replaceManagerMessage = $null -ne $payload -and ($payload.messageChanged -isnot [bool] -or $payload.messageChanged)
             $statusProvided = ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "status"))
             $requestedStatus = ""
             $payloadEntryType = if ($null -ne $payload -and ($payload.PSObject.Properties.Name -contains "entryType")) { ([string]$payload.entryType).Trim().ToLowerInvariant() } else { "" }
@@ -58,6 +59,10 @@
 
             if ([string]::IsNullOrWhiteSpace($managerMessage)) {
                 respondWithError $response 400 "A manager message is required when updating an entry."
+                continue
+            }
+            if ($managerMessage.Trim().Length -gt 1000) {
+                respondWithError $response 400 "Supervisor notes cannot exceed 1000 characters."
                 continue
             }
 
@@ -174,8 +179,7 @@
                 $originalOvertimeCode = if ($existingEntry.overtimeCode) { [string]$existingEntry.overtimeCode } else { "" }
                 $originalPaymentOption = if ($existingEntry.paymentOption) { [string]$existingEntry.paymentOption } else { "cash" }
                 $originalReasonCode = if ($existingEntry.reasonCode) { [string]$existingEntry.reasonCode } else { "" }
-                $workCommentExists = ($existingEntry.PSObject.Properties.Name -contains "workComment")
-                $originalWorkComment = if ($workCommentExists) { ([string]$existingEntry.workComment).Trim() } else { "" }
+                $originalWorkComment = if ($existingEntry.PSObject.Properties.Name -contains "workComment") { ([string]$existingEntry.workComment).Trim() } else { "" }
                 $originalStatus = if ($existingEntry.status) { ([string]$existingEntry.status).ToLowerInvariant() } else { "pending" }
                 $existingEntryType = if ($existingEntry.PSObject.Properties.Name -contains "entryType" -and -not [string]::IsNullOrWhiteSpace([string]$existingEntry.entryType)) { ([string]$existingEntry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
                 $originalWorkSchedule = if ($existingEntry.PSObject.Properties.Name -contains "workSchedule" -and ([string]$existingEntry.workSchedule).Trim().ToLowerInvariant() -in @("regular", "compressed")) { ([string]$existingEntry.workSchedule).Trim().ToLowerInvariant() } else { "unconfirmed" }
@@ -192,11 +196,12 @@
                     continue
                 }
 
-                $submittedComment = if ($existingEntryType -eq "diverse") { $payloadDiverseSummary } else { $payloadWorkComment }
-                $originalComment = if ($existingEntryType -eq "diverse") { $originalDiverseSummary } else { $originalWorkComment }
-                $commentProvided = if ($existingEntryType -eq "diverse") { $diverseSummaryProvided } else { $workCommentProvided }
-                if ($commentProvided -and $submittedComment.Length -gt 1000 -and $submittedComment -ne $originalComment) {
-                    respondWithError $response 400 "Work comments cannot exceed 1000 characters."
+                # Old clients may echo the original text, but neither manager
+                # role can replace or clear employee-authored text.
+                if (($workCommentProvided -and $payloadWorkComment -cne $originalWorkComment) -or
+                    ($diverseSummaryProvided -and $payloadDiverseSummary -cne $originalDiverseSummary) -or
+                    ($payload.PSObject.Properties.Name -contains "employeeCommentAdditions")) {
+                    respondWithError $response 403 "Employee comments are read-only."
                     continue
                 }
 
@@ -257,19 +262,6 @@
                     continue
                 }
 
-                if ($existingEntryType -eq "diverse" -and $newRoundedPunchOut) {
-                    $nextDiverseSummary = if ($diverseSummaryProvided) { $payloadDiverseSummary } else { $originalDiverseSummary }
-                    if ([string]::IsNullOrWhiteSpace($nextDiverseSummary)) {
-                        respondWithError $response 400 "Completed diverse entries require a work summary."
-                        continue
-                    }
-                }
-                if ($existingEntryType -ne "diverse" -and $newRoundedPunchOut -and $workCommentProvided -and
-                    -not [string]::IsNullOrWhiteSpace($originalWorkComment) -and [string]::IsNullOrWhiteSpace($payloadWorkComment)) {
-                    respondWithError $response 400 "An existing work comment cannot be cleared from a completed overtime entry."
-                    continue
-                }
-
                 $messages = @()
                 if ($originalEntryDate -ne $updatedEntryDate) {
                     $messages += "Date from <strong>$originalEntryDate</strong> to <strong>$updatedEntryDate</strong>."
@@ -303,16 +295,8 @@
                     $messages += "Reason code updated."
                 }
 
-                if ($existingEntryType -ne "diverse" -and $workCommentProvided -and $originalWorkComment -ne $payloadWorkComment) {
-                    $messages += "Work comment updated."
-                }
-
                 if ($existingEntryType -eq "diverse" -and $payload.PSObject.Properties.Name -contains "diverseReason" -and $originalDiverseReason -ne [string]$payload.diverseReason) {
                     $messages += "Diverse reason updated."
-                }
-
-                if ($existingEntryType -eq "diverse" -and $diverseSummaryProvided -and $originalDiverseSummary -ne $payloadDiverseSummary) {
-                    $messages += "Diverse summary updated."
                 }
 
                 if ($statusProvided -and $originalStatus -ne $requestedStatus) {
@@ -343,10 +327,6 @@
                 if ($existingEntryType -ne "diverse" -and $payload.PSObject.Properties.Name -contains "reasonCode") {
                     Set-EntryPropertyValue -Entry $existingEntry -Name "reasonCode" -Value ([string]$payload.reasonCode)
                 }
-                if ($existingEntryType -ne "diverse" -and $workCommentProvided -and
-                    ($workCommentExists -or -not [string]::IsNullOrWhiteSpace($payloadWorkComment))) {
-                    Set-EntryPropertyValue -Entry $existingEntry -Name "workComment" -Value $payloadWorkComment
-                }
                 if ($existingEntryType -eq "diverse") {
                     Set-EntryPropertyValue -Entry $existingEntry -Name "entryType" -Value "diverse"
                     Set-EntryPropertyValue -Entry $existingEntry -Name "projectCode" -Value ""
@@ -356,9 +336,6 @@
                     if ($payload.PSObject.Properties.Name -contains "diverseReason") {
                         Set-EntryPropertyValue -Entry $existingEntry -Name "diverseReason" -Value ([string]$payload.diverseReason)
                     }
-                    if ($diverseSummaryProvided) {
-                        Set-EntryPropertyValue -Entry $existingEntry -Name "diverseSummary" -Value $payloadDiverseSummary
-                    }
                 }
                 if ($statusProvided) {
                     $existingEntry.status = $requestedStatus
@@ -367,7 +344,9 @@
                     Set-EntryPropertyValue -Entry $existingEntry -Name "workSchedule" -Value $requestedWorkSchedule
                     Set-EntryPropertyValue -Entry $existingEntry -Name "workScheduleSource" -Value "supervisor-edit"
                 }
-                Set-EntrySupervisorNote -Entry $existingEntry -Note $managerMessage -CurrentUser $currentUser | Out-Null
+                if ($replaceManagerMessage -and ([string]$existingEntry.message).Trim() -cne $managerMessage.Trim()) {
+                    Set-EntrySupervisorNote -Entry $existingEntry -Note $managerMessage -CurrentUser $currentUser | Out-Null
+                }
                 if ($holidayScheduleProvided -and $existingEntryType -ne "diverse") {
                     Set-EntryPropertyValue -Entry $existingEntry -Name "holidayNotScheduledWorkday" -Value $payload.holidayNotScheduledWorkday
                     $messages += "IT holiday schedule confirmed or reset."

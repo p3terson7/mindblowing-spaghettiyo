@@ -52,8 +52,25 @@ const server = http.createServer(async (req, res) => {
     await page.evaluate(async () => {
       await loadCompensationGrid();
       document.getElementById("compensationGridSettingsSection").classList.remove("d-none");
+      renderSettingsHealth({
+        status: "ok", dataFolder: "/démo/" + "nom-de-dossier-très-long-".repeat(12),
+        dataFolderWritable: true, checks: [{ label: "Test d’écriture", detail: "Autorisé", ok: true }],
+      });
       bootstrap.Modal.getOrCreateInstance(document.getElementById("selfSettingsModal")).show();
     });
+    const settings = page.locator("#selfSettingsModal");
+    const technical = settings.locator(".settings-health-details");
+    assert.equal(await technical.getAttribute("open"), null);
+    assert(await technical.locator("dd").first().isHidden(), "Long paths must not crowd everyday settings.");
+    assert(await settings.locator(".settings-appearance").evaluate(group => group.offsetHeight < 85), "Appearance must not stretch to the diagnostics height.");
+    await technical.locator("summary").click();
+    await technical.getByText("Test d’écriture").waitFor();
+    assert(await technical.locator("dd").first().isVisible());
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert(await settings.locator(".modal-body").evaluate(body => body.scrollWidth <= body.clientWidth + 1), "Settings should fit small screens with long paths visible.");
+    await technical.locator("summary").click();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.locator("#compensationGridSettingsSection > summary").click();
     await page.locator("#compensationGridAddIT02Button").click();
     assert.equal(await page.locator("#compensationGridSettingsRows tr[data-compensation-band-id]").count(), 18);
     const values = await page.locator("#compensationGridSettingsRows tr[data-compensation-band-id]").evaluateAll(rows => rows.filter(row => row.querySelector(".compensation-grid-group-input").value === "IT").map(row => row.querySelector(".compensation-grid-salary-input").value));

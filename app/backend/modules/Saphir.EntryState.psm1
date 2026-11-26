@@ -23,11 +23,11 @@ function Test-EntryForgottenClockOut {
     $forgottenFlag = $false
     $reviewFlag = $false
 
-    if ($Entry.PSObject.Properties.Name -contains "forgottenClockOut") {
+    if ($null -ne $Entry.PSObject.Properties["forgottenClockOut"]) {
         $forgottenFlag = ConvertTo-BooleanFlag -Value $Entry.forgottenClockOut
     }
 
-    if ($Entry.PSObject.Properties.Name -contains "needsClockOutReview") {
+    if ($null -ne $Entry.PSObject.Properties["needsClockOutReview"]) {
         $reviewFlag = ConvertTo-BooleanFlag -Value $Entry.needsClockOutReview
     }
 

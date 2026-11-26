@@ -80,33 +80,7 @@ function Convert-ToNearestQuarterHourText {
     }
 
     $dateTime = [DateTime]::ParseExact(("{0} {1}" -f $Date, $normalizedTime), "yyyy-MM-dd HH:mm:ss", $null)
-    $roundedHour = $dateTime.Hour
-    $roundedMinute = 0
-
-    if ($dateTime.Minute -lt 8) {
-        $roundedMinute = 0
-    }
-    elseif ($dateTime.Minute -lt 23) {
-        $roundedMinute = 15
-    }
-    elseif ($dateTime.Minute -lt 38) {
-        $roundedMinute = 30
-    }
-    elseif ($dateTime.Minute -lt 53) {
-        $roundedMinute = 45
-    }
-    else {
-        if ($dateTime.Hour -lt 23) {
-            $roundedHour = $dateTime.Hour + 1
-            $roundedMinute = 0
-        }
-        else {
-            $roundedHour = 23
-            $roundedMinute = 45
-        }
-    }
-
-    return (Get-Date -Year $dateTime.Year -Month $dateTime.Month -Day $dateTime.Day -Hour $roundedHour -Minute $roundedMinute -Second 0).ToString("HH:mm:ss")
+    return (Saphir.EntryDuration\ConvertTo-SaphirNearestQuarterHourTime -Time $dateTime)
 }
 
 function Get-EntryIdentifierValue {
@@ -128,11 +102,11 @@ function Get-EntryExactPunchOutText {
         return $null
     }
 
-    if ($Entry.PSObject.Properties.Name -contains "exactPunchOut" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.exactPunchOut)) {
+    if (($null -ne $Entry.PSObject.Properties["exactPunchOut"]) -and -not [string]::IsNullOrWhiteSpace([string]$Entry.exactPunchOut)) {
         return [string]$Entry.exactPunchOut
     }
 
-    if ($Entry.PSObject.Properties.Name -contains "punchOut" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.punchOut)) {
+    if (($null -ne $Entry.PSObject.Properties["punchOut"]) -and -not [string]::IsNullOrWhiteSpace([string]$Entry.punchOut)) {
         return [string]$Entry.punchOut
     }
 
@@ -194,38 +168,39 @@ function Test-EntryGc179Import {
 }
 
 function Get-EntryReviewIssues {
-    param($Entry)
+    param($Entry, [switch]$AsBoolean)
 
-    $issues = New-Object System.Collections.ArrayList
     if ($null -eq $Entry) {
-        return @($issues.ToArray())
+        if ($AsBoolean) { return $false }
+        return
     }
-
     if (Test-EntryForgottenClockOut -Entry $Entry) {
-        [void]$issues.Add([PSCustomObject]@{ code = "clockOutMissing" })
+        if ($AsBoolean) { return $true }
+        [PSCustomObject]@{ code = "clockOutMissing" }
     }
 
     $exactPunchIn = Get-EntryExactPunchInText -Entry $Entry
     $exactPunchOut = Get-EntryExactPunchOutText -Entry $Entry
     if ([string]::IsNullOrWhiteSpace($exactPunchIn) -or [string]::IsNullOrWhiteSpace($exactPunchOut)) {
-        return @($issues.ToArray())
+        if ($AsBoolean) { return $false }
+        return
     }
 
-    $creditSummary = Get-QuarterHourCreditSummary -Date ([string]$Entry.date) -PunchIn $exactPunchIn -PunchOut $exactPunchOut
-    if (-not [bool]$creditSummary.isValid) {
-        [void]$issues.Add([PSCustomObject]@{ code = "invalidPunchTimes" })
+    $credit = Saphir.EntryDuration\Get-QuarterHourCreditSummary -Date ([string]$Entry.date) -PunchIn $exactPunchIn -PunchOut $exactPunchOut -CreditedSecondsOnly:$AsBoolean
+    $creditedSeconds = if ($AsBoolean) { $credit } elseif ($credit.isValid) { $credit.creditedSeconds } else { -1 }
+    if ($creditedSeconds -lt 0) {
+        if ($AsBoolean) { return $true }
+        [PSCustomObject]@{ code = "invalidPunchTimes" }
     }
-    elseif (-not (Test-EntryGc179Import -Entry $Entry) -and
-        [int]$creditSummary.actualSeconds -gt 0 -and
-        [int]$creditSummary.creditedSeconds -eq 0) {
-        [void]$issues.Add([PSCustomObject]@{
+    elseif ($creditedSeconds -eq 0 -and -not (Test-EntryGc179Import -Entry $Entry)) {
+        if ($AsBoolean) { return $true }
+        [PSCustomObject]@{
             code            = "shortOvertime"
-            actualSeconds   = [int]$creditSummary.actualSeconds
-            creditedSeconds = [int]$creditSummary.creditedSeconds
-        })
+            actualSeconds   = [int]$credit.actualSeconds
+            creditedSeconds = [int]$creditedSeconds
+        }
     }
-
-    return @($issues.ToArray())
+    if ($AsBoolean) { return $false }
 }
 
 function Get-LatestActiveEntry {
@@ -337,6 +312,28 @@ function Set-EntrySupervisorNote {
     return $Entry
 }
 
+function ConvertTo-EntryNoteTimestamp {
+    param($Value)
+    if ($Value -is [datetime] -or $Value -is [datetimeoffset]) {
+        return $Value.ToUniversalTime().ToString("o")
+    }
+    return [string]$Value
+}
+
+function Get-EntryEmployeeCommentAdditions {
+    param($Entry)
+    if ($null -eq $Entry.PSObject.Properties["employeeCommentAdditions"]) { return }
+    foreach ($addition in @($Entry.employeeCommentAdditions)) {
+        if ($null -ne $addition -and -not [string]::IsNullOrWhiteSpace([string]$addition.text)) {
+            [PSCustomObject]@{
+                id = [string]$addition.id
+                text = [string]$addition.text
+                createdAtUtc = ConvertTo-EntryNoteTimestamp $addition.createdAtUtc
+            }
+        }
+    }
+}
+
 function Convert-ToNormalizedEntryObject {
     param($Entry)
 
@@ -344,14 +341,16 @@ function Convert-ToNormalizedEntryObject {
         return $null
     }
 
-    $entryType = Saphir.BusinessRules\ConvertTo-SaphirEntryType -Value $(if ($Entry.PSObject.Properties.Name -contains "entryType") { [string]$Entry.entryType } else { "" })
-    $workSchedule = Saphir.BusinessRules\ConvertTo-SaphirWorkSchedule -Value $(if ($Entry.PSObject.Properties.Name -contains "workSchedule") { [string]$Entry.workSchedule } else { "" })
+    $properties = $Entry.PSObject.Properties
+    $entryType = Saphir.BusinessRules\ConvertTo-SaphirEntryType -Value $(if ($null -ne $properties["entryType"]) { [string]$Entry.entryType } else { "" })
+    $workSchedule = Saphir.BusinessRules\ConvertTo-SaphirWorkSchedule -Value $(if ($null -ne $properties["workSchedule"]) { [string]$Entry.workSchedule } else { "" })
+    $forgottenClockOut = Test-EntryForgottenClockOut -Entry $Entry
 
     $normalizedEntry = [PSCustomObject]@{
         entryId       = Get-EntryIdentifierValue -Entry $Entry
         entryType     = $entryType
         workSchedule  = $workSchedule
-        workScheduleSource = if ($Entry.PSObject.Properties.Name -contains "workScheduleSource") { [string]$Entry.workScheduleSource } else { "" }
+        workScheduleSource = if ($null -ne $properties["workScheduleSource"]) { [string]$Entry.workScheduleSource } else { "" }
         name          = if ($null -ne $Entry.name) { [string]$Entry.name } else { "" }
         date          = if ($null -ne $Entry.date) { [string]$Entry.date } else { "" }
         punchIn       = if ($null -ne $Entry.punchIn) { [string]$Entry.punchIn } else { "" }
@@ -361,27 +360,30 @@ function Convert-ToNormalizedEntryObject {
         overtime      = if ($null -ne $Entry.overtime -and -not [string]::IsNullOrWhiteSpace([string]$Entry.overtime)) { [string]$Entry.overtime } else { $null }
         status        = if ($null -ne $Entry.status -and -not [string]::IsNullOrWhiteSpace([string]$Entry.status)) { [string]$Entry.status } else { "pending" }
         message       = if ($null -ne $Entry.message) { [string]$Entry.message } else { "" }
-        messageAuthorName = if ($Entry.PSObject.Properties.Name -contains "messageAuthorName") { [string]$Entry.messageAuthorName } else { "" }
-        messageAuthorUsername = if ($Entry.PSObject.Properties.Name -contains "messageAuthorUsername") { [string]$Entry.messageAuthorUsername } else { "" }
-        messageUpdatedAt = if ($Entry.PSObject.Properties.Name -contains "messageUpdatedAt") { [string]$Entry.messageUpdatedAt } else { "" }
+        messageAuthorName = if ($null -ne $properties["messageAuthorName"]) { [string]$Entry.messageAuthorName } else { "" }
+        messageAuthorUsername = if ($null -ne $properties["messageAuthorUsername"]) { [string]$Entry.messageAuthorUsername } else { "" }
+        messageUpdatedAt = if ($null -ne $properties["messageUpdatedAt"]) { ConvertTo-EntryNoteTimestamp $Entry.messageUpdatedAt } else { "" }
         projectCode   = if ($null -ne $Entry.projectCode) { [string]$Entry.projectCode } else { "" }
         overtimeCode  = if ($null -ne $Entry.overtimeCode) { [string]$Entry.overtimeCode } else { "" }
         paymentOption = if ($null -ne $Entry.paymentOption -and -not [string]::IsNullOrWhiteSpace([string]$Entry.paymentOption)) { [string]$Entry.paymentOption } elseif ($entryType -eq "diverse") { "" } else { "cash" }
         reasonCode    = if ($null -ne $Entry.reasonCode) { [string]$Entry.reasonCode } else { "" }
-        workComment   = if ($Entry.PSObject.Properties.Name -contains "workComment") { [string]$Entry.workComment } else { "" }
-        diverseReason = if ($Entry.PSObject.Properties.Name -contains "diverseReason") { [string]$Entry.diverseReason } else { "" }
-        diverseSummary = if ($Entry.PSObject.Properties.Name -contains "diverseSummary") { [string]$Entry.diverseSummary } else { "" }
-        overtimeCalculationRule = if ($Entry.PSObject.Properties.Name -contains "overtimeCalculationRule") { [string]$Entry.overtimeCalculationRule } else { "" }
-        gc179ImportBatchId = if ($Entry.PSObject.Properties.Name -contains "gc179ImportBatchId") { [string]$Entry.gc179ImportBatchId } else { "" }
-        gc179ImportedAtUtc = if ($Entry.PSObject.Properties.Name -contains "gc179ImportedAtUtc") { [string]$Entry.gc179ImportedAtUtc } else { "" }
-        gc179SourceFile = if ($Entry.PSObject.Properties.Name -contains "gc179SourceFile") { [string]$Entry.gc179SourceFile } else { "" }
-        forgottenClockOut = Test-EntryForgottenClockOut -Entry $Entry
-        needsClockOutReview = Test-EntryForgottenClockOut -Entry $Entry
-        forgottenClockOutAttemptedDate = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedDate") { [string]$Entry.forgottenClockOutAttemptedDate } else { "" }
-        forgottenClockOutAttemptedTime = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedTime") { [string]$Entry.forgottenClockOutAttemptedTime } else { "" }
-        forgottenClockOutDetectedAtUtc = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutDetectedAtUtc") { [string]$Entry.forgottenClockOutDetectedAtUtc } else { "" }
+        workComment   = if ($null -ne $properties["workComment"]) { [string]$Entry.workComment } else { "" }
+        diverseReason = if ($null -ne $properties["diverseReason"]) { [string]$Entry.diverseReason } else { "" }
+        diverseSummary = if ($null -ne $properties["diverseSummary"]) { [string]$Entry.diverseSummary } else { "" }
+        overtimeCalculationRule = if ($null -ne $properties["overtimeCalculationRule"]) { [string]$Entry.overtimeCalculationRule } else { "" }
+        gc179ImportBatchId = if ($null -ne $properties["gc179ImportBatchId"]) { [string]$Entry.gc179ImportBatchId } else { "" }
+        gc179ImportedAtUtc = if ($null -ne $properties["gc179ImportedAtUtc"]) { [string]$Entry.gc179ImportedAtUtc } else { "" }
+        gc179SourceFile = if ($null -ne $properties["gc179SourceFile"]) { [string]$Entry.gc179SourceFile } else { "" }
+        forgottenClockOut = $forgottenClockOut
+        needsClockOutReview = $forgottenClockOut
+        forgottenClockOutAttemptedDate = if ($null -ne $properties["forgottenClockOutAttemptedDate"]) { [string]$Entry.forgottenClockOutAttemptedDate } else { "" }
+        forgottenClockOutAttemptedTime = if ($null -ne $properties["forgottenClockOutAttemptedTime"]) { [string]$Entry.forgottenClockOutAttemptedTime } else { "" }
+        forgottenClockOutDetectedAtUtc = if ($null -ne $properties["forgottenClockOutDetectedAtUtc"]) { [string]$Entry.forgottenClockOutDetectedAtUtc } else { "" }
     }
-    if ($Entry.PSObject.Properties.Name -contains "holidayNotScheduledWorkday" -and $Entry.holidayNotScheduledWorkday -is [bool]) {
+    if ($null -ne $properties["employeeCommentAdditions"]) {
+        $normalizedEntry | Add-Member -NotePropertyName employeeCommentAdditions -NotePropertyValue @(Get-EntryEmployeeCommentAdditions $Entry)
+    }
+    if (($null -ne $properties["holidayNotScheduledWorkday"]) -and $Entry.holidayNotScheduledWorkday -is [bool]) {
         $normalizedEntry | Add-Member -NotePropertyName holidayNotScheduledWorkday -NotePropertyValue ([bool]$Entry.holidayNotScheduledWorkday)
     }
     return $normalizedEntry

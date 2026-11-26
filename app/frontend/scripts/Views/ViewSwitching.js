@@ -94,6 +94,7 @@ function showView(viewId) {
 
   document.querySelectorAll(".view").forEach(view => view.classList.remove("active"));
   const targetView = document.getElementById(resolvedViewId);
+  if (resolvedViewId !== "employeesView") window.closePeopleEntryInspector?.();
   if (targetView) {
     targetView.classList.add("active");
   }

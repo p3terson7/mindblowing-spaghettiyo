@@ -63,8 +63,61 @@ try {
         Assert-Prefetch ($originalStamp.ObservedAtUtc -eq $observed) "A worker mutated its parent's metadata object."
         Assert-Prefetch ($script:ReadModelCache.Count -eq 0 -and $script:ReadModelDependencies.Count -eq 0) "Worker/controller registered models outside the owning factory."
     }
+    # Production enters a read-model factory (and reconciles) before prefetch.
+    # Match that order so the first sync does not discard the fixture's cache.
+    Sync-ReadModelCaches
+    $script:TextFileCache = @{}; $script:EmployeeEntryFileCache = @{}
+    Prime-EmployeeFileMetadata $paths
+    Prefetch-EmployeeFileText $paths -ParseEntries
+    Assert-Prefetch ($script:EmployeeEntryFileCache.Count -eq 12) "Existing readers did not publish a parsed file for each employee."
+    foreach ($path in $paths) {
+        $parsed = $script:EmployeeEntryFileCache[$path]
+        $expected = @([IO.File]::ReadAllText($path) | ConvertFrom-Json)
+        Assert-Prefetch ($parsed.RawEntries -is [array] -and $parsed.RawEntries.Count -eq 1 -and $null -eq $parsed.Entries) "Worker collapsed a single entry or normalized UI fields."
+        Assert-Prefetch ((ConvertTo-Json -InputObject $parsed.RawEntries -Depth 12 -Compress) -ceq (ConvertTo-Json -InputObject $expected -Depth 12 -Compress)) "Worker JSON shape changed after crossing runspaces."
+        Assert-Prefetch ($parsed.LastWriteTicks -eq $script:TextFileCache[$path].LastWriteTicks) "Parsed and text cache stamps diverged."
+    }
+    $readJson = (Get-Command Read-JsonArrayFile).ScriptBlock
+    function Read-JsonArrayFile {
+        param([string]$Path)
+        if ($paths -contains $Path) { throw "A file already parsed by an existing worker was parsed again." }
+        & $readJson -Path $Path
+    }
+    try {
+        $reused = @(Get-CachedEmployeeEntriesForFile -DataFile $paths[0] -Raw)
+        Assert-Prefetch ($reused.Count -eq 1 -and [object]::ReferenceEquals($reused[0], $script:EmployeeEntryFileCache[$paths[0]].RawEntries[0])) "The HTTP runspace did not reuse the parsed entry."
+    } finally { Set-Item Function:Read-JsonArrayFile -Value $readJson }
+    # An invalid file in the last batch must not publish earlier successful
+    # observations or turn corruption into a successful empty view.
+    $corruptPath = $paths[-1]
+    $originalContent = [IO.File]::ReadAllText($corruptPath)
+    [IO.File]::WriteAllText($corruptPath, "{invalid-json")
+    $script:TextFileCache = @{}; $script:EmployeeEntryFileCache = @{}
+    Clear-FileMetadataValidationCache -Path $corruptPath
+    try {
+        $failure = $null
+        try { Prefetch-EmployeeFileText $paths -ParseEntries } catch { $failure = $_.Exception }
+        Assert-Prefetch ($failure -is [IO.InvalidDataException] -and $script:TextFileCache.Count -eq 0 -and $script:EmployeeEntryFileCache.Count -eq 0) "Invalid JSON was hidden or published a partial batch."
+    } finally {
+        [IO.File]::WriteAllText($corruptPath, $originalContent)
+        Clear-FileMetadataValidationCache -Path $corruptPath
+    }
     $env:SAPHIR_EMPLOYEE_READ_CONCURRENCY = "9999"
-    Assert-Prefetch ((Get-EmployeeFileReadConcurrency) -in @(1, 4, 8)) "An invalid setting allowed unbounded workers."
+    # Exercise the defaults without needing a mapped drive or Windows on CI.
+    function Test-EmployeeDataOnWindowsFixedDrive {
+        param([string]$Path)
+        return $Path -eq "C:\SAPHIR\DATA"
+    }
+    $originalSharedFolder = $sharedFolder
+    try {
+        $sharedFolder = "C:\SAPHIR\DATA"
+        Assert-Prefetch ((Get-EmployeeFileReadConcurrency) -eq 1) "Windows fixed-disk data did not default to sequential reads."
+        $env:SAPHIR_EMPLOYEE_READ_CONCURRENCY = "4"
+        Assert-Prefetch ((Get-EmployeeFileReadConcurrency) -eq 4) "An explicit worker setting was ignored on a fixed disk."
+        $env:SAPHIR_EMPLOYEE_READ_CONCURRENCY = ""
+        $sharedFolder = "R:\SAPHIR\DATA"
+        Assert-Prefetch ((Get-EmployeeFileReadConcurrency) -eq 8) "Mapped share lost parallel prefetch by default."
+    } finally { $sharedFolder = $originalSharedFolder }
 
     # All-or-nothing raw cache publication on terminal I/O failure. No actual
     # share is disconnected; this is only our owned temporary fixture root.

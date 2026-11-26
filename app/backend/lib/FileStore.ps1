@@ -178,10 +178,10 @@ function Get-SaphirChildFilesWithRetry {
 }
 
 function Read-TextFileWithRetry {
-    param([Parameter(Mandatory = $true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path, [int]$MaxAttempts = $script:SharedDataReadRetryCount)
 
     $lastError = $null
-    for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         try {
             if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.read" -Path $Path }
             if ($script:SaphirPerformanceEnabled) { return (Invoke-SaphirDiagnosticCall -Name "FileStore.ReadText" -Path $Path -RetryCount ($attempt - 1) -Action { [IO.File]::ReadAllText($Path) }) }
@@ -189,7 +189,7 @@ function Read-TextFileWithRetry {
         }
         catch {
             $lastError = $_
-            if ($attempt -lt $script:SharedDataReadRetryCount) {
+            if ($attempt -lt $MaxAttempts) {
                 Start-SharedDataRetryDelay -Attempt $attempt
             }
         }
@@ -199,10 +199,10 @@ function Read-TextFileWithRetry {
 }
 
 function Read-FileBytesWithRetry {
-    param([Parameter(Mandatory = $true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path, [int]$MaxAttempts = $script:SharedDataReadRetryCount)
 
     $lastError = $null
-    for ($attempt = 1; $attempt -le $script:SharedDataReadRetryCount; $attempt++) {
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         try {
             if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "fs.read" -Path $Path }
             if ($script:SaphirPerformanceEnabled) { return (Invoke-SaphirDiagnosticCall -Name "FileStore.ReadBytes" -Path $Path -RetryCount ($attempt - 1) -Action { [IO.File]::ReadAllBytes($Path) }) }
@@ -210,7 +210,7 @@ function Read-FileBytesWithRetry {
         }
         catch {
             $lastError = $_
-            if ($attempt -lt $script:SharedDataReadRetryCount) {
+            if ($attempt -lt $MaxAttempts) {
                 Start-SharedDataRetryDelay -Attempt $attempt
             }
         }
@@ -371,7 +371,9 @@ function Read-TextFileCached {
 
         try {
             if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.text.miss" -Path $Path -Fields @{ cacheSize = $script:TextFileCache.Count; fileSizeBytes = $metadata.Length; reason = "absent-or-file-revision" } }
-            $content = Read-TextFileWithRetry -Path $Path
+            # This loop owns the retry budget and refreshes metadata between
+            # attempts; a nested retry would multiply filesystem waits.
+            $content = Read-TextFileWithRetry -Path $Path -MaxAttempts 1
             $script:TextFileCache[$Path] = [PSCustomObject]@{
                 LastWriteTicks = $metadata.LastWriteTicks
                 Length         = $metadata.Length
@@ -409,7 +411,7 @@ function Read-FileBytesCached {
 
         try {
             if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.bytes.miss" -Path $Path -Fields @{ cacheSize = $script:BinaryFileCache.Count; fileSizeBytes = $metadata.Length } }
-            $bytes = Read-FileBytesWithRetry -Path $Path
+            $bytes = Read-FileBytesWithRetry -Path $Path -MaxAttempts 1
             $script:BinaryFileCache[$Path] = [PSCustomObject]@{
                 LastWriteTicks = $metadata.LastWriteTicks
                 Length         = $metadata.Length
@@ -793,13 +795,20 @@ function Read-JsonArrayFile {
     # Read-TextFileCached already performs the metadata/existence lookup.
     # Repeating Test-Path here added another shared-drive operation.
     $raw = Read-TextFileCached -Path $Path
-    if ([string]::IsNullOrWhiteSpace($raw) -or $raw.Trim() -eq "null") {
+    ConvertFrom-StoredJsonArray -Content $raw -Path $Path
+}
+
+function ConvertFrom-StoredJsonArray {
+    param([AllowNull()][string]$Content, [string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Content) -or $Content.Trim() -eq "null") {
         return @()
     }
 
     try {
         if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "json.parse.storage" }
-        $parsed = if ($script:SaphirPerformanceEnabled) { Invoke-SaphirDiagnosticCall -Name "FileStore.ParseJson" -Type "json" -Path $Path -Action { $raw | ConvertFrom-Json -ErrorAction Stop } } else { $raw | ConvertFrom-Json -ErrorAction Stop }
+        $parsed = if ($script:SaphirPerformanceEnabled) {
+            Invoke-SaphirDiagnosticCall -Name "FileStore.ParseJson" -Type "json" -Path $Path -Action { ConvertFrom-Json -InputObject $Content -ErrorAction Stop }
+        } else { ConvertFrom-Json -InputObject $Content -ErrorAction Stop }
     }
     catch {
         $parseError = $_.Exception

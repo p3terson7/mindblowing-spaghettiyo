@@ -479,6 +479,16 @@ function Test-EntryOpen {
     return (Saphir.EntryState\Test-EntryOpen -Entry $Entry)
 }
 
+function Test-EntryPendingApproval {
+    param($Entry)
+
+    # A missing end time belongs to the attention queue, not the approval
+    # queue. A closed entry can still carry a duration warning.
+    return (-not [string]::IsNullOrWhiteSpace([string]$Entry.punchOut) -and
+        ([string]$Entry.status).Trim() -in @("pending", "") -and
+        -not (Test-EntryForgottenClockOut -Entry $Entry))
+}
+
 function New-EmployeeEntryProjection {
     param(
         [Parameter(Mandatory = $true)][string]$EmployeeCode,
@@ -487,15 +497,17 @@ function New-EmployeeEntryProjection {
         [string]$EmployeeRole = "employee"
     )
 
-    $entryType = Saphir.BusinessRules\ConvertTo-SaphirEntryType -Value $(if ($Entry.PSObject.Properties.Name -contains "entryType") { [string]$Entry.entryType } else { "" })
-    $workSchedule = Saphir.BusinessRules\ConvertTo-SaphirWorkSchedule -Value $(if ($Entry.PSObject.Properties.Name -contains "workSchedule") { [string]$Entry.workSchedule } else { "" })
+    $properties = $Entry.PSObject.Properties
+    $entryType = Saphir.BusinessRules\ConvertTo-SaphirEntryType -Value $(if ($null -ne $properties["entryType"]) { [string]$Entry.entryType } else { "" })
+    $workSchedule = Saphir.BusinessRules\ConvertTo-SaphirWorkSchedule -Value $(if ($null -ne $properties["workSchedule"]) { [string]$Entry.workSchedule } else { "" })
     $reviewIssues = @(Get-EntryReviewIssues -Entry $Entry)
+    $forgottenClockOut = Test-EntryForgottenClockOut -Entry $Entry
 
     $projection = [PSCustomObject]@{
         entryId       = Get-EntryIdentifierValue -Entry $Entry
         entryType     = $entryType
         workSchedule  = $workSchedule
-        workScheduleSource = if ($Entry.PSObject.Properties.Name -contains "workScheduleSource") { [string]$Entry.workScheduleSource } else { "" }
+        workScheduleSource = if ($null -ne $properties["workScheduleSource"]) { [string]$Entry.workScheduleSource } else { "" }
         name          = [string]$Entry.name
         date          = [string]$Entry.date
         punchIn       = [string]$Entry.punchIn
@@ -507,27 +519,30 @@ function New-EmployeeEntryProjection {
         hasReviewIssues = ($reviewIssues.Count -gt 0)
         status        = if ($null -ne $Entry.status) { [string]$Entry.status } else { "pending" }
         message       = if ($null -ne $Entry.message) { [string]$Entry.message } else { "" }
-        messageAuthorName = if ($Entry.PSObject.Properties.Name -contains "messageAuthorName") { [string]$Entry.messageAuthorName } else { "" }
-        messageAuthorUsername = if ($Entry.PSObject.Properties.Name -contains "messageAuthorUsername") { [string]$Entry.messageAuthorUsername } else { "" }
-        messageUpdatedAt = if ($Entry.PSObject.Properties.Name -contains "messageUpdatedAt") { [string]$Entry.messageUpdatedAt } else { "" }
+        messageAuthorName = if ($null -ne $properties["messageAuthorName"]) { [string]$Entry.messageAuthorName } else { "" }
+        messageAuthorUsername = if ($null -ne $properties["messageAuthorUsername"]) { [string]$Entry.messageAuthorUsername } else { "" }
+        messageUpdatedAt = if ($null -ne $properties["messageUpdatedAt"]) { ConvertTo-EntryNoteTimestamp $Entry.messageUpdatedAt } else { "" }
         projectCode   = if ($null -ne $Entry.projectCode) { [string]$Entry.projectCode } else { "" }
         overtimeCode  = if ($null -ne $Entry.overtimeCode) { [string]$Entry.overtimeCode } else { "" }
         paymentOption = if ($null -ne $Entry.paymentOption -and -not [string]::IsNullOrWhiteSpace([string]$Entry.paymentOption)) { [string]$Entry.paymentOption } elseif ($entryType -eq "diverse") { "" } else { "cash" }
         reasonCode    = if ($null -ne $Entry.reasonCode) { [string]$Entry.reasonCode } else { "" }
-        workComment   = if ($Entry.PSObject.Properties.Name -contains "workComment") { [string]$Entry.workComment } else { "" }
-        diverseReason = if ($Entry.PSObject.Properties.Name -contains "diverseReason") { [string]$Entry.diverseReason } else { "" }
-        diverseSummary = if ($Entry.PSObject.Properties.Name -contains "diverseSummary") { [string]$Entry.diverseSummary } else { "" }
-        forgottenClockOut = Test-EntryForgottenClockOut -Entry $Entry
-        needsClockOutReview = Test-EntryForgottenClockOut -Entry $Entry
-        forgottenClockOutAttemptedDate = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedDate") { [string]$Entry.forgottenClockOutAttemptedDate } else { "" }
-        forgottenClockOutAttemptedTime = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutAttemptedTime") { [string]$Entry.forgottenClockOutAttemptedTime } else { "" }
-        forgottenClockOutDetectedAtUtc = if ($Entry.PSObject.Properties.Name -contains "forgottenClockOutDetectedAtUtc") { [string]$Entry.forgottenClockOutDetectedAtUtc } else { "" }
+        workComment   = if ($null -ne $properties["workComment"]) { [string]$Entry.workComment } else { "" }
+        diverseReason = if ($null -ne $properties["diverseReason"]) { [string]$Entry.diverseReason } else { "" }
+        diverseSummary = if ($null -ne $properties["diverseSummary"]) { [string]$Entry.diverseSummary } else { "" }
+        forgottenClockOut = $forgottenClockOut
+        needsClockOutReview = $forgottenClockOut
+        forgottenClockOutAttemptedDate = if ($null -ne $properties["forgottenClockOutAttemptedDate"]) { [string]$Entry.forgottenClockOutAttemptedDate } else { "" }
+        forgottenClockOutAttemptedTime = if ($null -ne $properties["forgottenClockOutAttemptedTime"]) { [string]$Entry.forgottenClockOutAttemptedTime } else { "" }
+        forgottenClockOutDetectedAtUtc = if ($null -ne $properties["forgottenClockOutDetectedAtUtc"]) { [string]$Entry.forgottenClockOutDetectedAtUtc } else { "" }
         employeeCode  = $EmployeeCode
         employeeName  = $EmployeeName
         employeeRole  = Get-NormalizedRoleName -Role $EmployeeRole
     }
-    if ($Entry.PSObject.Properties.Name -contains "holidayNotScheduledWorkday" -and $Entry.holidayNotScheduledWorkday -is [bool]) {
-        $projection | Add-Member -NotePropertyName holidayNotScheduledWorkday -NotePropertyValue ([bool]$Entry.holidayNotScheduledWorkday)
+    if ($null -ne $properties["employeeCommentAdditions"]) {
+        $projection.PSObject.Properties.Add([Management.Automation.PSNoteProperty]::new("employeeCommentAdditions", @(Get-EntryEmployeeCommentAdditions $Entry)))
+    }
+    if (($null -ne $properties["holidayNotScheduledWorkday"]) -and $Entry.holidayNotScheduledWorkday -is [bool]) {
+        $projection.PSObject.Properties.Add([Management.Automation.PSNoteProperty]::new("holidayNotScheduledWorkday", [bool]$Entry.holidayNotScheduledWorkday))
     }
     return $projection
 }
@@ -541,13 +556,13 @@ function New-EntryMonetaryReadModel {
     #>
     param([Parameter(Mandatory = $true)]$Entry)
 
-    $entryType = Saphir.BusinessRules\ConvertTo-SaphirEntryType -Value $(if ($Entry.PSObject.Properties.Name -contains "entryType") { [string]$Entry.entryType } else { "" })
-    $status = if ($Entry.PSObject.Properties.Name -contains "status") { ([string]$Entry.status).Trim().ToLowerInvariant() } else { "pending" }
+    $entryType = Saphir.BusinessRules\ConvertTo-SaphirEntryType -Value ([string]$Entry.entryType)
+    $status = ([string]$Entry.status).Trim().ToLowerInvariant()
     if ($entryType -ne "overtime" -or $status -ne "approved") {
         return $null
     }
 
-    $snapshot = if ($Entry.PSObject.Properties.Name -contains "compensationSnapshot") { $Entry.compensationSnapshot } else { $null }
+    $snapshot = $Entry.compensationSnapshot
     if ($null -eq $snapshot) {
         return [PSCustomObject][ordered]@{
             status                      = "unavailable"
@@ -564,20 +579,20 @@ function New-EntryMonetaryReadModel {
         }
     }
 
-    $snapshotStatus = if ($snapshot.PSObject.Properties.Name -contains "snapshotStatus") { ([string]$snapshot.snapshotStatus).Trim().ToLowerInvariant() } else { "unavailable" }
-    $isFinal = ($snapshotStatus -eq "final")
+    $isFinal = (([string]$snapshot.snapshotStatus).Trim().ToLowerInvariant() -eq "final")
+    $properties = $snapshot.PSObject.Properties
     return [PSCustomObject][ordered]@{
         status                      = if ($isFinal) { "final" } else { "unavailable" }
-        currency                    = if ($snapshot.PSObject.Properties.Name -contains "currency" -and -not [string]::IsNullOrWhiteSpace([string]$snapshot.currency)) { [string]$snapshot.currency } else { "CAD" }
-        estimateOnly                = if ($snapshot.PSObject.Properties.Name -contains "estimateOnly") { [bool]$snapshot.estimateOnly } else { $true }
-        costBasis                   = if ($snapshot.PSObject.Properties.Name -contains "costBasis") { [string]$snapshot.costBasis } else { "salary-only" }
-        includesEmployerCosts       = if ($snapshot.PSObject.Properties.Name -contains "includesEmployerCosts") { [bool]$snapshot.includesEmployerCosts } else { $false }
-        paymentOption               = if ($snapshot.PSObject.Properties.Name -contains "paymentOption" -and ([string]$snapshot.paymentOption).Trim().ToLowerInvariant() -eq "leave") { "leave" } else { "cash" }
-        totalAmountCents            = if ($isFinal -and $snapshot.PSObject.Properties.Name -contains "totalAmountCents") { [long]$snapshot.totalAmountCents } else { $null }
-        cashAmountCents             = if ($isFinal -and $snapshot.PSObject.Properties.Name -contains "cashAmountCents") { [long]$snapshot.cashAmountCents } else { $null }
-        compensatoryLeaveValueCents = if ($isFinal -and $snapshot.PSObject.Properties.Name -contains "compensatoryLeaveValueCents") { [long]$snapshot.compensatoryLeaveValueCents } else { $null }
-        unavailableReason           = if ($isFinal) { $null } elseif ($snapshot.PSObject.Properties.Name -contains "unavailableReason") { [string]$snapshot.unavailableReason } else { "snapshot-unavailable" }
-        calculationVersion          = if ($snapshot.PSObject.Properties.Name -contains "calculationVersion") { [string]$snapshot.calculationVersion } else { "" }
+        currency                    = if (-not [string]::IsNullOrWhiteSpace([string]$snapshot.currency)) { [string]$snapshot.currency } else { "CAD" }
+        estimateOnly                = if ($null -ne $properties["estimateOnly"]) { [bool]$snapshot.estimateOnly } else { $true }
+        costBasis                   = if ($null -ne $properties["costBasis"]) { [string]$snapshot.costBasis } else { "salary-only" }
+        includesEmployerCosts       = [bool]$snapshot.includesEmployerCosts
+        paymentOption               = if (([string]$snapshot.paymentOption).Trim().ToLowerInvariant() -eq "leave") { "leave" } else { "cash" }
+        totalAmountCents            = if ($isFinal -and $null -ne $properties["totalAmountCents"]) { [long]$snapshot.totalAmountCents } else { $null }
+        cashAmountCents             = if ($isFinal -and $null -ne $properties["cashAmountCents"]) { [long]$snapshot.cashAmountCents } else { $null }
+        compensatoryLeaveValueCents = if ($isFinal -and $null -ne $properties["compensatoryLeaveValueCents"]) { [long]$snapshot.compensatoryLeaveValueCents } else { $null }
+        unavailableReason           = if ($isFinal) { $null } elseif ($null -ne $properties["unavailableReason"]) { [string]$snapshot.unavailableReason } else { "snapshot-unavailable" }
+        calculationVersion          = [string]$snapshot.calculationVersion
     }
 }
 
@@ -659,10 +674,18 @@ function Add-EntryPermissionProjection {
         $permissionReason = "superAdminApproval"
     }
 
-    $Entry | Add-Member -NotePropertyName canModify -NotePropertyValue ([bool]$canModify) -Force
-    $Entry | Add-Member -NotePropertyName canApprove -NotePropertyValue ([bool]$canApprove) -Force
-    $Entry | Add-Member -NotePropertyName permissionReason -NotePropertyValue $permissionReason -Force
+    $Entry.PSObject.Properties.Add([Management.Automation.PSNoteProperty]::new("canModify", [bool]$canModify))
+    $Entry.PSObject.Properties.Add([Management.Automation.PSNoteProperty]::new("canApprove", [bool]$canApprove))
+    $Entry.PSObject.Properties.Add([Management.Automation.PSNoteProperty]::new("permissionReason", $permissionReason))
     return $Entry
+}
+
+function Test-EntryModifiableFromAccessModel {
+    param($Entry, $ModifyProjectCodeSet, [bool]$IsSuperAdmin)
+    if ($IsSuperAdmin) { return $true }
+    $entryType = ([string]$Entry.entryType).Trim().ToLowerInvariant()
+    $projectCode = [string]$Entry.projectCode
+    return ($entryType -ne "diverse" -and -not [string]::IsNullOrWhiteSpace($projectCode) -and $ModifyProjectCodeSet.ContainsKey($projectCode))
 }
 
 function Add-EntryPermissionProjectionFromAccessModel {
@@ -670,33 +693,28 @@ function Add-EntryPermissionProjectionFromAccessModel {
         [Parameter(Mandatory = $true)]$Entry,
         [Parameter(Mandatory = $true)]$ModifyProjectCodeSet,
         [bool]$IsSuperAdmin = $false,
-        [bool]$CanApproveEmployeeRole = $true
+        [bool]$CanApproveEmployeeRole = $true,
+        [bool]$IsOwnEntry = $false
     )
 
-    $entryType = if ($Entry.PSObject.Properties.Name -contains "entryType") { ([string]$Entry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
-    $projectCode = if ($Entry.PSObject.Properties.Name -contains "projectCode") { [string]$Entry.projectCode } else { "" }
-    $canModify = $false
+    $canModify = Test-EntryModifiableFromAccessModel -Entry $Entry -ModifyProjectCodeSet $ModifyProjectCodeSet -IsSuperAdmin:$IsSuperAdmin
 
-    if ($IsSuperAdmin) {
-        $canModify = $true
-    }
-    elseif ($entryType -ne "diverse" -and -not [string]::IsNullOrWhiteSpace($projectCode)) {
-        $canModify = $ModifyProjectCodeSet.ContainsKey($projectCode)
-    }
-
-    $canApprove = ($canModify -and $CanApproveEmployeeRole)
+    $canApprove = ($canModify -and $CanApproveEmployeeRole -and -not $IsOwnEntry)
     $permissionReason = "editable"
 
     if (-not $canModify) {
         $permissionReason = "readOnlyProject"
     }
+    elseif ($IsOwnEntry) {
+        $permissionReason = "ownEntry"
+    }
     elseif (-not $CanApproveEmployeeRole) {
         $permissionReason = "superAdminApproval"
     }
 
-    $Entry | Add-Member -NotePropertyName canModify -NotePropertyValue ([bool]$canModify) -Force
-    $Entry | Add-Member -NotePropertyName canApprove -NotePropertyValue ([bool]$canApprove) -Force
-    $Entry | Add-Member -NotePropertyName permissionReason -NotePropertyValue $permissionReason -Force
+    $Entry.PSObject.Properties.Add([Management.Automation.PSNoteProperty]::new("canModify", [bool]$canModify))
+    $Entry.PSObject.Properties.Add([Management.Automation.PSNoteProperty]::new("canApprove", [bool]$canApprove))
+    $Entry.PSObject.Properties.Add([Management.Automation.PSNoteProperty]::new("permissionReason", $permissionReason))
     return $Entry
 }
 
@@ -714,7 +732,7 @@ function New-EmployeeEntryProjectionForCurrentUser {
     if (Test-CurrentUserManager -CurrentUser $CurrentUser) {
         $monetary = New-EntryMonetaryReadModel -Entry $Entry
         if ($null -ne $monetary) {
-            $projection | Add-Member -NotePropertyName monetary -NotePropertyValue $monetary -Force
+            $projection.PSObject.Properties.Add([Management.Automation.PSNoteProperty]::new("monetary", $monetary))
         }
     }
     return $projection
@@ -729,20 +747,31 @@ function New-EmployeeEntryProjectionForAccessModel {
         [string]$EmployeeRole = "employee",
         [bool]$IsSuperAdmin = $false,
         [bool]$CanApproveEmployeeRole = $true,
-        [bool]$IncludeMonetary = $true
+        [bool]$IncludeMonetary = $true,
+        [bool]$IsOwnEntry = $false
     )
 
     $projection = New-EmployeeEntryProjection -EmployeeCode $EmployeeCode -EmployeeName $EmployeeName -Entry $Entry -EmployeeRole $EmployeeRole
-    $projection = Add-EntryPermissionProjectionFromAccessModel -Entry $projection -ModifyProjectCodeSet $ModifyProjectCodeSet -IsSuperAdmin:$IsSuperAdmin -CanApproveEmployeeRole:$CanApproveEmployeeRole
+    $projection = Add-EntryPermissionProjectionFromAccessModel -Entry $projection -ModifyProjectCodeSet $ModifyProjectCodeSet -IsSuperAdmin:$IsSuperAdmin -CanApproveEmployeeRole:$CanApproveEmployeeRole -IsOwnEntry:$IsOwnEntry
     $monetary = if ($IncludeMonetary) { New-EntryMonetaryReadModel -Entry $Entry } else { $null }
     if ($null -ne $monetary) {
-        $projection | Add-Member -NotePropertyName monetary -NotePropertyValue $monetary -Force
+        $projection.PSObject.Properties.Add([Management.Automation.PSNoteProperty]::new("monetary", $monetary))
     }
     return $projection
 }
 
+function ConvertTo-EmployeeFileReadEntry {
+    param($Entry)
+    $normalized = Convert-ToNormalizedEntryObject -Entry $Entry
+    # Private snapshot: only the manager projection may expose its public amounts.
+    if ($null -ne $normalized -and $null -ne $Entry.PSObject.Properties["compensationSnapshot"]) {
+        $normalized.PSObject.Properties.Add([Management.Automation.PSNoteProperty]::new("compensationSnapshot", $Entry.compensationSnapshot))
+    }
+    return $normalized
+}
+
 function Get-CachedEmployeeEntriesForFile {
-    param([Parameter(Mandatory = $true)][string]$DataFile, [switch]$IncludeMonetary)
+    param([Parameter(Mandatory = $true)][string]$DataFile, [switch]$IncludeMonetary, [switch]$Raw)
 
     # Invoke-ReadModelCache reconciles once before entering a model factory.
     # Avoid repeating the same sync-state lookup for every employee in a
@@ -759,37 +788,31 @@ function Get-CachedEmployeeEntriesForFile {
     }
 
     $cacheEntry = $script:EmployeeEntryFileCache[$DataFile]
-    if ($cacheEntry -and $cacheEntry.LastWriteTicks -eq $metadata.LastWriteTicks -and $cacheEntry.Length -eq $metadata.Length) {
-        return $cacheEntry.Entries
-    }
-
-    $entriesList = New-Object System.Collections.ArrayList
-    foreach ($entry in @(Read-JsonArrayFile -Path $DataFile)) {
-        $normalizedEntry = Convert-ToNormalizedEntryObject -Entry $entry
-        # This cache is internal. Preserve the private snapshot here so the
-        # manager projections can expose only its permitted monetary fields.
-        # Public employee responses must still pass through a safe projection.
-        if ($null -ne $entry -and $entry.PSObject.Properties.Name -contains "compensationSnapshot") {
-            $normalizedEntry | Add-Member -NotePropertyName compensationSnapshot -NotePropertyValue $entry.compensationSnapshot -Force
+    if (-not $cacheEntry -or $cacheEntry.LastWriteTicks -ne $metadata.LastWriteTicks -or $cacheEntry.Length -ne $metadata.Length) {
+        $cacheEntry = [PSCustomObject]@{
+            LastWriteTicks = $metadata.LastWriteTicks
+            Length         = $metadata.Length
+            RawEntries     = @(Read-JsonArrayFile -Path $DataFile)
+            Entries        = $null
         }
-        [void]$entriesList.Add($normalizedEntry)
+        $script:EmployeeEntryFileCache[$DataFile] = $cacheEntry
     }
-    $entries = @($entriesList.ToArray())
-    $script:EmployeeEntryFileCache[$DataFile] = [PSCustomObject]@{
-        LastWriteTicks = $metadata.LastWriteTicks
-        Length         = $metadata.Length
-        Entries        = $entries
+    # Aggregate readers reuse parsed, private records without normalizing UI
+    # fields. Both forms share a single stamp and invalidate together.
+    if ($Raw) { return $cacheEntry.RawEntries }
+    if ($null -eq $cacheEntry.Entries) {
+        $cacheEntry.Entries = @(foreach ($entry in $cacheEntry.RawEntries) { ConvertTo-EmployeeFileReadEntry -Entry $entry })
     }
-
-    # IncludeMonetary remains accepted for existing callers. Both modes read
-    # exactly the same persisted snapshot; no salary/settings lookup occurs.
-    return $entries
+    # IncludeMonetary stays compatible; neither form reads salary settings.
+    return $cacheEntry.Entries
 }
 
 function Get-EmployeeDataSnapshot {
-    param([switch]$IncludeMonetary, [switch]$SkipProjection)
+    param([switch]$IncludeMonetary, [switch]$SkipProjection, [switch]$RawEntries)
+    if ($RawEntries) { $SkipProjection = $true }
     $cacheKey = if ($IncludeMonetary) { "employee-data-snapshot|monetary" } else { "employee-data-snapshot" }
     if ($SkipProjection) { $cacheKey += "|raw" }
+    if ($RawEntries) { $cacheKey += "|stored" }
     return (Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth") -Factory {
         if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.snapshot.assembled" }
         $employeesList = New-Object System.Collections.ArrayList
@@ -799,10 +822,10 @@ function Get-EmployeeDataSnapshot {
 
         $filePaths = @($users | ForEach-Object { Get-EmployeeDataFilePath -EmployeeCode (Get-UserEmployeeCodeValue $_) })
         Prime-EmployeeFileMetadata -Paths $filePaths
-        Prefetch-EmployeeFileText -Paths $filePaths
+        Prefetch-EmployeeFileText -Paths $filePaths -ParseEntries
 
         foreach ($user in $users) {
-            $contribution = Get-EmployeeReadContribution -User $user -IncludeMonetary:$IncludeMonetary -SkipProjection:$SkipProjection
+            $contribution = Get-EmployeeReadContribution -User $user -IncludeMonetary:$IncludeMonetary -SkipProjection:$SkipProjection -RawEntries:$RawEntries
             [void]$employeesList.Add($contribution.employee)
             $entriesByEmployee[[string]$contribution.employee.code] = @($contribution.entries)
             foreach ($entry in @($contribution.projectedEntries)) { [void]$flattenedEntriesList.Add($entry) }
@@ -1088,52 +1111,98 @@ function Get-DashboardBootstrapModel {
 
     $accessModel = Get-ProjectAccessModelForCurrentUser -CurrentUser $CurrentUser
     $modifyAccessModel = Get-ProjectModificationAccessModelForCurrentUser -CurrentUser $CurrentUser
-    $scopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@($accessModel.ProjectCodes) -join ",") }
-    $modifyScopeKey = if (Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
+    $isSuperAdmin = Test-CurrentUserSuperAdmin -CurrentUser $CurrentUser
+    $scopeKey = if ($isSuperAdmin) { "global" } else { (@($accessModel.ProjectCodes) -join ",") }
+    $modifyScopeKey = if ($isSuperAdmin) { "global" } else { (@($modifyAccessModel.ProjectCodes) -join ",") }
     $userScopeKey = Get-ProjectAccessCacheUserKey -CurrentUser $CurrentUser
     $cacheKey = "dashboard-bootstrap|{0}|{1}|{2}|{3}" -f [string]$SelectedEmployeeCode, $scopeKey, $modifyScopeKey, $userScopeKey
     $cacheKey += "|" + (Get-Date -Format "yyyy-MM")
     $dashboard = Invoke-ReadModelCache -Key $cacheKey -Dependencies @("directory", "auth", "projects") -Factory {
-        $snapshot = Get-ScopedEmployeeDataSnapshot -CurrentUser $CurrentUser
-        $flattenedEntries = @($snapshot.flattenedEntries)
+        # Count from the stored entries. Only build full public projections
+        # for the two visible queues and for the employee shown in the inspector.
+        $employees = New-Object Collections.ArrayList
+        $visibleByCode = @{}
         $now = Get-Date
+        $monthPrefix = $now.ToString("yyyy-MM") + "-"
         $totalSeconds = 0
+        $actionableCount = 0
+        $pending = New-Object Collections.ArrayList
+        $active = New-Object Collections.ArrayList
 
-        foreach ($entry in $flattenedEntries) {
-            $entryType = if ($entry.PSObject.Properties.Name -contains "entryType") { ([string]$entry.entryType).Trim().ToLowerInvariant() } else { "overtime" }
-            if ($entryType -eq "diverse") {
-                continue
-            }
-
-            $entryDate = Get-EntryDateOrNull -Entry $entry
-            if ($null -eq $entryDate) {
-                continue
-            }
-
-            if ($entryDate.Month -eq $now.Month -and $entryDate.Year -eq $now.Year) {
-                $totalSeconds += Get-OvertimeSecondsFromText -Value ([string]$entry.overtime)
+        if ((Test-CurrentUserManager -CurrentUser $CurrentUser) -and ($isSuperAdmin -or $accessModel.ProjectCodes.Count -gt 0)) {
+            $snapshot = Get-EmployeeDataSnapshot -RawEntries
+            foreach ($employee in $snapshot.employees) {
+                $code = [string]$employee.code
+                $entries = $snapshot.entriesByEmployee[$code]
+                if (-not $isSuperAdmin) {
+                    $entries = @($entries | Where-Object { $accessModel.ProjectCodeSet.ContainsKey([string]$_.projectCode) })
+                }
+                if (-not $entries.Count) { continue }
+                $codes = if ($isSuperAdmin) { ,$employee.projectCodes } else {
+                    ,@($entries | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.projectCode) } | ForEach-Object { [string]$_.projectCode } | Sort-Object -Unique)
+                }
+                [void]$employees.Add([PSCustomObject]@{
+                    code = $code; name = $employee.name; entryCount = $entries.Count
+                    projectCodes = $codes; role = $employee.role; timeEntryTypes = $employee.timeEntryTypes
+                })
+                $source = [PSCustomObject]@{
+                    employee = $employee; entries = $entries
+                    canApproveRole = Test-CurrentUserCanApproveEmployeeRole -CurrentUser $CurrentUser -EmployeeRole ([string]$employee.role)
+                    isOwn = Test-CurrentUserMatchesEmployeeCode -CurrentUser $CurrentUser -EmployeeCode $code
+                }
+                $visibleByCode[$code] = $source
+                foreach ($entry in $entries) {
+                    # Closed entries with a known final status cannot be pending.
+                    $status = [string]$entry.status
+                    if ($status -cne "approved" -and $status -cne "rejected" -and
+                        (Test-EntryPendingApproval -Entry $entry)) {
+                        [void]$pending.Add([PSCustomObject]@{ entry = $entry; source = $source })
+                        if ($source.canApproveRole -and -not $source.isOwn -and
+                            (Test-EntryModifiableFromAccessModel -Entry $entry -ModifyProjectCodeSet $modifyAccessModel.ProjectCodeSet -IsSuperAdmin:$isSuperAdmin)) {
+                            $actionableCount++
+                        }
+                    }
+                    elseif ([string]::IsNullOrWhiteSpace([string]$entry.punchOut) -and (Test-EntryOpen $entry)) {
+                        [void]$active.Add([PSCustomObject]@{ entry = $entry; source = $source })
+                    }
+                    if (([string]$entry.date).StartsWith($monthPrefix, [StringComparison]::Ordinal) -and
+                        ([string]$entry.entryType).Trim().ToLowerInvariant() -ne "diverse" -and
+                        ($null -ne (Get-EntryDateOrNull -Entry $entry))) {
+                        $totalSeconds += Get-OvertimeSecondsFromText -Value ([string]$entry.overtime)
+                    }
+                }
             }
         }
 
-        $pendingEntries = @($flattenedEntries | Where-Object { [string]$_.status -eq "pending" -and -not (Test-EntryOpen $_) } | Sort-Object { Get-EntryDateTimeOrMin -Entry $_ } -Descending)
-        $activeEntries = @($flattenedEntries | Where-Object { Test-EntryOpen $_ } | Sort-Object { Get-EntryDateTimeOrMin -Entry $_ } -Descending)
-        $preferredEntry = $pendingEntries | Select-Object -First 1
-        $defaultEmployeeCode = if ($preferredEntry) { [string]$preferredEntry.employeeCode } elseif ($snapshot.employees.Count -gt 0) { [string]$snapshot.employees[0].code } else { "" }
+        $pendingRows = @($pending | Sort-Object { Get-EntryDateTimeOrMin -Entry $_.entry } -Descending | Select-Object -First 6)
+        $activeRows = @($active | Sort-Object { Get-EntryDateTimeOrMin -Entry $_.entry } -Descending | Select-Object -First 6)
+        $defaultEmployeeCode = if ($pendingRows.Count) { [string]$pendingRows[0].source.employee.code } elseif ($employees.Count) { [string]$employees[0].code } else { "" }
         $resolvedEmployeeCode = if ([string]::IsNullOrWhiteSpace([string]$SelectedEmployeeCode)) { $defaultEmployeeCode } else { [string]$SelectedEmployeeCode }
-        if ($resolvedEmployeeCode -and -not $snapshot.entriesByEmployee.ContainsKey($resolvedEmployeeCode)) {
+        if ($resolvedEmployeeCode -and -not $visibleByCode.ContainsKey($resolvedEmployeeCode)) {
             $resolvedEmployeeCode = $defaultEmployeeCode
         }
-        $selectedEmployeeEntries = if ($resolvedEmployeeCode -and $snapshot.entriesByEmployee.ContainsKey($resolvedEmployeeCode)) { @($snapshot.entriesByEmployee[$resolvedEmployeeCode]) } else { @() }
+        $projectRow = {
+            param($Entry, $Source)
+            $normalized = ConvertTo-EmployeeFileReadEntry -Entry $Entry
+            New-EmployeeEntryProjectionForAccessModel -EmployeeCode ([string]$Source.employee.code) -EmployeeName ([string]$Source.employee.name) `
+                -Entry $normalized -ModifyProjectCodeSet $modifyAccessModel.ProjectCodeSet -EmployeeRole ([string]$Source.employee.role) `
+                -IsSuperAdmin:$isSuperAdmin -CanApproveEmployeeRole:([bool]$Source.canApproveRole) -IsOwnEntry:([bool]$Source.isOwn)
+        }
+        $selectedEmployeeEntries = if ($resolvedEmployeeCode) {
+            $source = $visibleByCode[$resolvedEmployeeCode]
+            @(foreach ($entry in $source.entries) { & $projectRow $entry $source })
+        } else { @() }
 
         return [PSCustomObject]@{
-            employees             = $snapshot.employees
+            employees             = @($employees.ToArray())
             totalOvertime         = Convert-SecondsToTimeText -Seconds $totalSeconds
-            pendingApprovals      = @($flattenedEntries | Where-Object { [string]$_.status -eq "pending" }).Count
-            activeEmployees       = $activeEntries.Count
-            trackedEmployees      = $snapshot.employees.Count
+            pendingApprovals      = $pending.Count
+            actionableCount       = $actionableCount
+            activeEmployees       = $active.Count
+            trackedEmployees      = $employees.Count
             projects              = @(Get-ProjectsForCurrentUser -CurrentUser $CurrentUser -Scope "all")
-            pendingQueue          = @($pendingEntries | Select-Object -First 6)
-            activeSessions        = @($activeEntries | Select-Object -First 6)
+            pendingQueue          = @(foreach ($row in $pendingRows) { & $projectRow $row.entry $row.source })
+            activeSessions        = @(foreach ($row in $activeRows) { & $projectRow $row.entry $row.source })
             recentHistory         = @()
             defaultEmployeeCode   = $defaultEmployeeCode
             selectedEmployeeCode  = $resolvedEmployeeCode
@@ -1161,7 +1230,7 @@ function Get-ApprovalsEntriesModel {
 function Get-ProjectEntryType {
     param($Entry)
 
-    if ($null -eq $Entry -or -not ($Entry.PSObject.Properties.Name -contains "entryType") -or [string]::IsNullOrWhiteSpace([string]$Entry.entryType)) {
+    if ($null -eq $Entry -or [string]::IsNullOrWhiteSpace([string]$Entry.entryType)) {
         return "overtime"
     }
 
@@ -1171,7 +1240,7 @@ function Get-ProjectEntryType {
 function Get-ProjectEntryStatus {
     param($Entry)
 
-    if ($null -eq $Entry -or -not ($Entry.PSObject.Properties.Name -contains "status") -or [string]::IsNullOrWhiteSpace([string]$Entry.status)) {
+    if ($null -eq $Entry -or [string]::IsNullOrWhiteSpace([string]$Entry.status)) {
         return "pending"
     }
 
@@ -1181,10 +1250,8 @@ function Get-ProjectEntryStatus {
 function Test-ProjectEntryClosed {
     param($Entry)
 
-    if ($null -ne $Entry -and $Entry.PSObject.Properties.Name -contains "rawEntry") { $Entry = $Entry.rawEntry }
-    if ($null -eq $Entry -or
-        -not ($Entry.PSObject.Properties.Name -contains "punchOut") -or
-        [string]::IsNullOrWhiteSpace([string]$Entry.punchOut)) {
+    if ($null -ne $Entry -and $null -ne $Entry.PSObject.Properties["rawEntry"]) { $Entry = $Entry.rawEntry }
+    if ($null -eq $Entry -or [string]::IsNullOrWhiteSpace([string]$Entry.punchOut)) {
         return $false
     }
 
@@ -1309,13 +1376,16 @@ function New-ProjectEntryDetailProjection {
         message          = if ($Entry.PSObject.Properties.Name -contains "message") { [string]$Entry.message } else { "" }
         messageAuthorName = if ($Entry.PSObject.Properties.Name -contains "messageAuthorName") { [string]$Entry.messageAuthorName } else { "" }
         messageAuthorUsername = if ($Entry.PSObject.Properties.Name -contains "messageAuthorUsername") { [string]$Entry.messageAuthorUsername } else { "" }
-        messageUpdatedAt = if ($Entry.PSObject.Properties.Name -contains "messageUpdatedAt") { [string]$Entry.messageUpdatedAt } else { "" }
+        messageUpdatedAt = if ($Entry.PSObject.Properties.Name -contains "messageUpdatedAt") { ConvertTo-EntryNoteTimestamp $Entry.messageUpdatedAt } else { "" }
         paymentOption    = if ($Entry.PSObject.Properties.Name -contains "paymentOption") { [string]$Entry.paymentOption } else { "" }
         overtimeCode     = if ($Entry.PSObject.Properties.Name -contains "overtimeCode") { [string]$Entry.overtimeCode } else { "" }
         reasonCode       = if ($Entry.PSObject.Properties.Name -contains "reasonCode") { [string]$Entry.reasonCode } else { "" }
         canModify        = if ($Entry.PSObject.Properties.Name -contains "canModify") { [bool]$Entry.canModify } else { $false }
         canApprove       = if ($Entry.PSObject.Properties.Name -contains "canApprove") { [bool]$Entry.canApprove } else { $false }
         permissionReason = if ($Entry.PSObject.Properties.Name -contains "permissionReason") { [string]$Entry.permissionReason } else { "readOnlyProject" }
+    }
+    if ($Entry.PSObject.Properties.Name -contains "employeeCommentAdditions") {
+        $projection | Add-Member -NotePropertyName employeeCommentAdditions -NotePropertyValue @(Get-EntryEmployeeCommentAdditions $Entry)
     }
     if ($Entry.PSObject.Properties.Name -contains "monetary" -and $null -ne $Entry.monetary) {
         $projection | Add-Member -NotePropertyName monetary -NotePropertyValue $Entry.monetary -Force

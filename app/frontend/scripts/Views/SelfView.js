@@ -8,6 +8,10 @@ const selfViewState = {
   compressedWorkWeek: false,
   workScheduleSaving: false,
   lookupsLoaded: false,
+  bootstrapFailed: false,
+  punchVerification: null,
+  sessionVersion: 0,
+  refreshVersion: 0,
   selectedEntryType: localStorage.getItem("selfSelectedEntryType") || "overtime",
   selectedProjectCode: localStorage.getItem("selfSelectedProjectCode") || "",
   selectedOvertimeCode: localStorage.getItem("selfSelectedOvertimeCode") || "",
@@ -31,24 +35,59 @@ const SELF_REASON_CODE_STORAGE_KEY = "selfSelectedReasonCode";
 const SELF_STATS_RANGE_STORAGE_KEY = "selfStatsRange";
 
 function showSelfConfirmationModal(title, message, callback) {
+  const modalElement = document.getElementById("selfConfirmModal");
   const modalTitle = document.getElementById("selfConfirmModalLabel");
   const modalBody = document.getElementById("selfConfirmModalBody");
   const confirmButton = document.getElementById("selfConfirmModalConfirmBtn");
+  const errorBox = document.getElementById("selfConfirmModalError");
+  const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+  const sessionVersion = selfViewState.sessionVersion;
 
   modalTitle.innerText = title;
   modalBody.innerHTML = message;
 
   const replacementButton = confirmButton.cloneNode(true);
   confirmButton.parentNode.replaceChild(replacementButton, confirmButton);
+  replacementButton.disabled = false;
+  const updateConfirmation = (feedback = "") => {
+    errorBox.textContent = feedback ? t(feedback) : "";
+    errorBox.classList.toggle("d-none", !feedback);
+    replacementButton.textContent = selfViewState.punchVerification
+      ? t("self.verifyPunch")
+      : feedback ? t("self.retryPunch") : title;
+  };
+  updateConfirmation(selfViewState.punchVerification?.message);
 
   replacementButton.addEventListener("click", async () => {
-    await runButtonAction(replacementButton, callback, { key: "self-punch" });
-    const confirmModal = bootstrap.Modal.getInstance(document.getElementById("selfConfirmModal"));
-    confirmModal.hide();
+    if (replacementButton.disabled || sessionVersion !== selfViewState.sessionVersion) return;
+    const keepOpen = event => event.preventDefault();
+    modalElement.addEventListener("hide.bs.modal", keepOpen);
+    let feedback;
+    try {
+      feedback = await runButtonAction(replacementButton, () => selfViewState.punchVerification
+        ? verifySelfPunch()
+        : callback(), { key: "self-punch", disableWhileRunning: () => modalElement.querySelectorAll("[data-bs-dismiss]") });
+    } finally {
+      modalElement.removeEventListener("hide.bs.modal", keepOpen);
+    }
+    if (sessionVersion !== selfViewState.sessionVersion) {
+      modal.hide();
+      return;
+    }
+    if (feedback) {
+      updateConfirmation(feedback);
+    } else {
+      replacementButton.disabled = true;
+      modal.hide();
+    }
   });
 
-  const confirmModal = new bootstrap.Modal(document.getElementById("selfConfirmModal"));
-  confirmModal.show();
+  modalElement.addEventListener("hidden.bs.modal", () => {
+    if (sessionVersion !== selfViewState.sessionVersion) return;
+    const primary = document.getElementById("selfPrimaryPunchButton");
+    if (!primary.disabled) primary.focus({ preventScroll: true });
+  }, { once: true });
+  modal.show();
 }
 
 function formatPromptTime(date) {
@@ -107,22 +146,37 @@ function getAllowedSelfEntryTypes() {
 function updateSelfPunchAvailability() {
   const primaryButton = document.getElementById("selfPrimaryPunchButton");
   const punchType = primaryButton.getAttribute("data-punch-type") || "in";
+  let requirement = "";
 
-  if (punchType === "out") {
+  if (selfViewState.punchVerification) {
+    primaryButton.textContent = t("self.verifyPunch");
+    requirement = selfViewState.punchVerification.message;
+  } else if (selfViewState.bootstrapFailed) {
+    requirement = "self.loadEntriesError";
+  } else if (!selfViewState.lookupsLoaded) {
+    requirement = "self.punchOptionsLoading";
+  } else if (punchType === "out") {
     const workCommentInput = document.getElementById("selfWorkCommentInput");
-    primaryButton.disabled = !workCommentInput || !String(workCommentInput.value || "").trim();
-    return;
+    if (!String(workCommentInput?.value || "").trim()) {
+      requirement = workCommentInput?.dataset.entryType === "diverse" ? "self.diverseSummaryRequired" : "self.workCommentRequired";
+    }
+  } else if (selfViewState.selectedEntryType === "diverse") {
+    if (!String(document.getElementById("selfDiverseReasonInput")?.value || "").trim()) {
+      requirement = "self.diverseReasonRequired";
+    }
+  } else {
+    const { selectedProjectCode, selectedPaymentOption } = selfViewState;
+    if (!selectedProjectCode) requirement = selectedPaymentOption ? "self.projectRequired" : "self.selectionRequired";
+    else if (!selectedPaymentOption) requirement = "self.paymentRequired";
   }
 
-  if (selfViewState.selectedEntryType === "diverse") {
-    const reasonInput = document.getElementById("selfDiverseReasonInput");
-    primaryButton.disabled = !selfViewState.lookupsLoaded || !reasonInput || !String(reasonInput.value || "").trim();
-    return;
+  primaryButton.disabled = Boolean(requirement && !selfViewState.punchVerification);
+  const hint = document.getElementById("selfPunchRequirement");
+  if (hint) {
+    const text = requirement ? t(requirement) : "";
+    if (hint.textContent !== text) hint.textContent = text;
+    hint.classList.toggle("d-none", !requirement);
   }
-
-  primaryButton.disabled = !selfViewState.lookupsLoaded
-    || !selfViewState.selectedProjectCode
-    || !selfViewState.selectedPaymentOption;
 }
 
 function isSelfEntryTypeAllowed(entryType) {
@@ -255,7 +309,7 @@ function syncSelfWorkScheduleControl() {
     toggle.setAttribute("aria-busy", selfViewState.workScheduleSaving ? "true" : "false");
   }
   if (stateLabel) {
-    stateLabel.textContent = t(isCompressed ? "shared.workScheduleCompressed" : "shared.workScheduleRegular");
+    stateLabel.textContent = t(isCompressed ? "self.workScheduleCompressed" : "self.workScheduleRegular");
   }
   if (hint) {
     hint.textContent = t(hasActiveEntry ? "self.compressedScheduleNextHint" : "self.compressedScheduleHint");
@@ -345,7 +399,26 @@ function buildSelfCalendarDays(entries, activeMonthKey) {
 }
 
 function getSelfActiveEntry(entries) {
-  return sortEntriesByDateTime(entries || [], true).find(entry => isEntryOpen(entry)) || null;
+  return getSelfStatusEntries(entries).activeEntry;
+}
+
+function getSelfStatusEntries(entries) {
+  let latestEntry = null, activeEntry = null, missingEndEntry = null, rejectedEntry = null;
+  let latestAt = -Infinity, activeAt = -Infinity, missingEndAt = -Infinity, rejectedAt = -Infinity;
+  for (const entry of entries || []) {
+    if (!entry) continue;
+    const timestamp = toEntryDateTime(entry).getTime();
+    const time = Number.isFinite(timestamp) ? timestamp : -Infinity;
+    if (!latestEntry || time > latestAt) { latestEntry = entry; latestAt = time; }
+    if ((!missingEndEntry || time > missingEndAt) && isEntryForgottenClockOut(entry)) {
+      missingEndEntry = entry; missingEndAt = time;
+    }
+    if ((!activeEntry || time > activeAt) && isEntryOpen(entry)) { activeEntry = entry; activeAt = time; }
+    if ((!rejectedEntry || time > rejectedAt) && String(entry.status).trim().toLowerCase() === "rejected" && getEntryDisplayState(entry) === "rejected") {
+      rejectedEntry = entry; rejectedAt = time;
+    }
+  }
+  return { latestEntry, activeEntry, missingEndEntry, rejectedEntry };
 }
 
 function getSelfStatsDateRange() {
@@ -550,19 +623,43 @@ function renderSelfStats(entries) {
 }
 
 function updateSelfSummaryMetrics(allEntries) {
-  const now = new Date();
-  const currentMonthEntries = allEntries.filter(entry => {
-    if (isDiverseEntry(entry)) {
-      return false;
+  const monthPrefix = toCalendarMonthKey(new Date()) + "-";
+  let pendingCount = 0;
+  let totalMonthSeconds = 0;
+  for (const entry of allEntries) {
+    if (!entry.punchOut || isEntryForgottenClockOut(entry)) continue;
+    const status = (String(entry.status || "").trim() || "pending").toLowerCase();
+    if (status === "pending") pendingCount++;
+    if ((status === "approved" || status === "pending") && String(entry.date).startsWith(monthPrefix) && !isDiverseEntry(entry)) {
+      totalMonthSeconds += timeStringToSeconds(entry.overtime);
     }
-    const entryDate = new Date(`${entry.date}T00:00:00`);
-    return entryDate.getMonth() === now.getMonth() && entryDate.getFullYear() === now.getFullYear();
-  });
-  const totalMonthSeconds = currentMonthEntries.reduce((accumulator, entry) => accumulator + timeStringToSeconds(entry.overtime), 0);
-  const pendingCount = allEntries.filter(entry => String(entry.status || "pending").toLowerCase() === "pending").length;
+  }
 
   document.getElementById("selfTotalOvertime").innerText = secondsToDurationLabel(totalMonthSeconds);
   document.getElementById("selfPendingApprovals").innerText = pendingCount;
+}
+
+function renderSelfStatusNotices(rejectedEntry, missingEndEntry) {
+  const notice = document.getElementById("selfMissingEndNotice");
+  const missingEndText = document.getElementById("selfMissingEndText");
+  const message = missingEndEntry ? t("self.missingEndNotice", { date: formatDateLabel(missingEndEntry.date) }) : "";
+  if (missingEndText.textContent !== message) missingEndText.textContent = message;
+  notice.classList.toggle("d-none", !missingEndEntry);
+
+  const details = document.getElementById("selfRejectionDetails");
+  const summary = document.getElementById("selfRejectionSummary");
+  const notes = document.getElementById("selfRejectionNote");
+  const author = document.getElementById("selfRejectionAuthor");
+  const entryKey = rejectedEntry ? JSON.stringify([rejectedEntry.entryId, rejectedEntry.date, rejectedEntry.punchIn]) : "";
+  if (details.dataset.entryKey !== entryKey) details.open = false;
+  details.dataset.entryKey = entryKey;
+  const summaryText = rejectedEntry ? t("self.viewRejectionForDate", { date: formatDateLabel(rejectedEntry.date) }) : "";
+  if (summary.textContent !== summaryText) summary.textContent = summaryText;
+  const note = rejectedEntry ? (String(rejectedEntry.message || "").trim() || t("self.noRejectionReason")) : "";
+  if (notes.textContent !== note) notes.textContent = note;
+  author.textContent = rejectedEntry ? getEntrySupervisorNoteLabel(rejectedEntry) : "";
+  details.classList.toggle("d-none", !rejectedEntry);
+  document.getElementById("selfFollowUp").classList.toggle("d-none", !rejectedEntry && !missingEndEntry);
 }
 
 function updateSelfStatus(entries) {
@@ -577,18 +674,20 @@ function updateSelfStatus(entries) {
   const selectionSummary = document.getElementById("selfSelectionSummary");
   const punchSelectors = document.getElementById("selfPunchSelectors");
   const workCommentFields = document.getElementById("selfWorkCommentFields");
-  const latestEntry = getLatestEntry(entries);
-  const activeEntry = getSelfActiveEntry(entries);
+  const { latestEntry, activeEntry, missingEndEntry, rejectedEntry } = getSelfStatusEntries(entries);
+  renderSelfStatusNotices(rejectedEntry, missingEndEntry);
 
   if (trackingCard) {
     trackingCard.classList.toggle("is-live", Boolean(activeEntry));
   }
 
   if (activeEntry) {
+    const diverse = isDiverseEntry(activeEntry);
     const startedAt = toEntryDateTime(activeEntry);
     const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
-    primaryButton.textContent = isDiverseEntry(activeEntry) ? t("self.endDiverse") : t("self.endOvertime");
+    primaryButton.textContent = diverse ? t("self.endDiverse") : t("self.endOvertime");
     primaryButton.dataset.punchType = "out";
+    document.getElementById("selfWorkCommentInput").dataset.entryType = diverse ? "diverse" : "overtime";
     if (lastEntryShell) {
       lastEntryShell.classList.remove("d-none");
     }
@@ -602,7 +701,7 @@ function updateSelfStatus(entries) {
       statusMessage.textContent = t("self.openDuration", { duration: secondsToDurationLabel(elapsedSeconds) });
     }
     if (currentStatusValue) {
-      currentStatusValue.textContent = t("status.clockedIn");
+      currentStatusValue.textContent = t(diverse ? "self.hero.liveDiverse" : "status.clockedIn");
     }
     if (currentStatusHint) {
       currentStatusHint.textContent = getEntryContextLabel(activeEntry);
@@ -615,7 +714,7 @@ function updateSelfStatus(entries) {
       workCommentFields.classList.remove("d-none");
     }
     if (heroText) {
-      heroText.textContent = t("self.hero.live");
+      heroText.textContent = t(diverse ? "self.hero.liveDiverse" : "self.hero.live");
     }
     updateSelfPunchAvailability();
     return;
@@ -630,7 +729,7 @@ function updateSelfStatus(entries) {
   syncSelfEntryTypeControls();
   if (selectionSummary) {
     const selectionParts = [
-      selfViewState.selectedEntryType === "diverse" ? t("shared.diverse") : selfViewState.selectedProjectCode,
+      selfViewState.selectedEntryType === "diverse" ? t("shared.diverse") : getSelfProjectName(selfViewState.selectedProjectCode),
       selfViewState.selectedEntryType === "diverse" ? document.getElementById("selfDiverseReasonInput")?.value : selfViewState.selectedOvertimeCode,
       selfViewState.selectedEntryType === "diverse" ? "" : (selfViewState.selectedPaymentOption ? formatPaymentOptionValue(selfViewState.selectedPaymentOption) : ""),
       selfViewState.selectedEntryType === "diverse" ? "" : selfViewState.selectedReasonCode,
@@ -663,7 +762,7 @@ function updateSelfStatus(entries) {
     return;
   }
 
-  const latestStatus = String(latestEntry.status || "pending").toLowerCase();
+  const latestStatus = getEntryDisplayState(latestEntry);
   const timeRange = latestEntry.punchOut
     ? buildTimeRangeText(formatTimeString(getEntryExactPunchIn(latestEntry)), formatTimeString(getEntryExactPunchOut(latestEntry)))
     : formatTimeString(getEntryExactPunchIn(latestEntry));
@@ -675,6 +774,14 @@ function updateSelfStatus(entries) {
       date: formatDateLabel(latestEntry.date),
       timeRange,
     });
+  }
+  if (latestStatus === "missingEnd" || latestStatus === "closedNeedsReview") {
+    if (currentStatusValue) currentStatusValue.textContent = getEntryStatusLabel(latestEntry);
+    if (currentStatusHint) currentStatusHint.textContent = t(latestStatus === "missingEnd" ? "self.supervisorMustConfirmEnd" : "shared.reviewRequired");
+    if (statusMessage) statusMessage.textContent = t(latestStatus === "missingEnd" ? "status.clockOutMissing" : "self.clockOutRecorded");
+    if (heroText) heroText.textContent = t(latestStatus === "missingEnd" ? "self.supervisorMustConfirmEnd" : "status.closedNeedsReview");
+    updateSelfPunchAvailability();
+    return;
   }
   if (currentStatusValue) {
     currentStatusValue.textContent = latestStatus === "rejected"
@@ -692,7 +799,7 @@ function updateSelfStatus(entries) {
   }
   if (statusMessage) {
     statusMessage.textContent = latestStatus === "rejected"
-      ? t("shared.reviewRequired")
+      ? t("status.rejected")
       : latestStatus === "approved"
         ? t("shared.ready")
         : t("shared.waiting");
@@ -707,7 +814,7 @@ function updateSelfStatus(entries) {
   updateSelfPunchAvailability();
 }
 
-function renderSelfEntries(entries) {
+function renderSelfEntries(entries, focusEntry = null) {
   const container = document.getElementById("selfEntriesContainer");
   const allEntries = Array.isArray(entries) ? sortEntriesByDateTime(entries, true) : [];
   const liveEntries = sortEntriesByDateTime(allEntries.filter(entry => isEntryOpen(entry)), true);
@@ -734,14 +841,11 @@ function renderSelfEntries(entries) {
         : "";
 
       return `
-        <div class="calendar-entry">
-          <div class="calendar-entry-main">
-            <span class="calendar-entry-time">${getEntryRoundedTimeRangeMarkup(entry)}</span>
-            <span class="calendar-entry-badges"><span class="status-badge ${escapeHtml(statusTone)}">${escapeHtml(getEntryStatusLabel(entry))}</span>${renderEntryWorkScheduleBadge(entry)}</span>
-          </div>
+        <div class="calendar-entry"${entry === focusEntry ? ' data-self-follow-up-target tabindex="-1"' : ""}>
+          ${renderCalendarEntryHeader(entry, getEntryRoundedTimeRangeMarkup(entry), statusTone, getEntryStatusLabel(entry))}
           <div class="calendar-entry-meta project-entry-context">${projectIdentity}${projectIdentity ? `<span>${escapeHtml([entry.overtimeCode, entry.paymentOption ? formatPaymentOptionValue(entry.paymentOption) : "", entry.reasonCode].filter(Boolean).join(" | "))}</span>` : escapeHtml(getEntryContextLabel(entry))}</div>
           ${exactTimeLabel ? `<div class="calendar-entry-meta">${escapeHtml(exactTimeLabel)}</div>` : ""}
-          ${renderEntryNotesPreview(entry)}
+          ${renderEntryNotesPreview(entry, { allowEmployeeAddition: true })}
         </div>
       `;
     }).join("");
@@ -763,10 +867,7 @@ function renderSelfEntries(entries) {
       <div class="calendar-live-strip">
         ${liveEntries.map(entry => `
           <article class="calendar-live-card">
-            <div class="calendar-entry-main">
-              <span class="calendar-entry-time">${escapeHtml(formatDateLabel(entry.date))} | ${buildTimeRangeMarkup(formatTimeString(getEntryExactPunchIn(entry)), t("shared.inProgress"))}</span>
-              <span class="calendar-entry-badges"><span class="status-badge approved">${escapeHtml(t("shared.live"))}</span>${renderEntryWorkScheduleBadge(entry)}</span>
-            </div>
+            ${renderCalendarEntryHeader(entry, `${escapeHtml(formatDateLabel(entry.date))} | ${buildTimeRangeMarkup(formatTimeString(getEntryExactPunchIn(entry)), t("shared.inProgress"))}`, "approved", t("shared.live"))}
             <div class="calendar-entry-meta project-entry-context">${!isDiverseEntry(entry) && entry.projectCode ? renderProjectIdentityPill(getSelfProjectByCode(entry.projectCode) || entry.projectCode, entry.projectCode) : escapeHtml(getEntryContextLabel(entry))}</div>
             <div class="calendar-entry-meta">${escapeHtml(secondsToDurationLabel(getEntryDurationSeconds(entry)))}</div>
           </article>
@@ -785,10 +886,11 @@ function renderSelfEntries(entries) {
       <div class="employee-calendar-actions">
         <div class="employee-calendar-summary">${escapeHtml(t("employees.calendarSummary", { count: monthEntries.length, duration: secondsToDurationLabel(monthTotalSeconds) }))}</div>
         <button type="button" class="btn btn-outline-secondary btn-sm self-gc179-fdf-button" data-self-gc179-month="${escapeHtml(activeMonthKey)}">
-          <i class="fa-solid fa-file-export"></i> ${escapeHtml(t("export.downloadGc179Fdf"))}
+          <i class="fa-solid fa-file-export" aria-hidden="true"></i> ${escapeHtml(t("export.downloadGc179Fdf", { month: formatCalendarMonthLabel(activeMonthKey) }))}
         </button>
       </div>
     </div>
+    ${renderGc179ExportReceipt({ self: true, monthKey: activeMonthKey })}
     <div class="employee-month-board-shell">
       <div class="employee-month-board">
         ${monthBoard.map(month => `
@@ -818,33 +920,200 @@ function renderSelfState(entries) {
   syncSelfWorkScheduleControl();
 }
 
-async function refreshSelfView() {
+async function refreshSelfView({ reconcile = false } = {}) {
+  const sessionVersion = selfViewState.sessionVersion;
+  const refreshVersion = ++selfViewState.refreshVersion;
+  const isCurrent = () => sessionVersion === selfViewState.sessionVersion
+    && refreshVersion === selfViewState.refreshVersion;
   initializeSelfView();
 
   try {
-    setLoadingState("selfEntriesContainer", "detail", 1);
-    const response = await fetch(apiUrl + "self/bootstrap");
+    if (!selfViewState.lookupsLoaded) setLoadingState("selfEntriesContainer", "detail", 1);
+    const response = await fetch(apiUrl + "self/bootstrap", reconcile ? { cache: "reload" } : undefined);
     const payload = await parseResponse(response);
+    if (!isCurrent()) return false;
     applySelfBootstrap(payload);
+    selfViewState.bootstrapFailed = false;
+    renderSelfLoadError();
     const entries = Array.isArray(payload && payload.entries) ? payload.entries : [];
     selfViewState.entries = entries;
     renderSelfState(entries);
     return true;
   } catch (error) {
     console.error("Error fetching self-service entries:", error);
-    showToast(t("self.fetchError", { message: error.message }), "error");
+    if (isCurrent()) {
+      selfViewState.bootstrapFailed = true;
+      if (!selfViewState.lookupsLoaded) document.getElementById("selfEntriesContainer").replaceChildren();
+      renderSelfLoadError();
+      updateSelfPunchAvailability();
+    }
     return false;
   }
 }
 
 window.refreshSelfView = refreshSelfView;
 
+function renderSelfLoadError() {
+  const container = document.getElementById("selfLoadError");
+  container.classList.toggle("d-none", !selfViewState.bootstrapFailed);
+  if (selfViewState.bootstrapFailed) {
+    renderViewLoadError(container, t(selfViewState.lookupsLoaded ? "self.refreshEntriesError" : "self.loadEntriesError"), async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      const loaded = await (window.refreshAppViewById
+        ? window.refreshAppViewById("selfView", { force: true })
+        : refreshSelfView());
+      if (loaded && document.getElementById("selfView").classList.contains("active") && document.activeElement === document.body) {
+        document.getElementById("selfTrackingCard").focus();
+      } else if (selfViewState.bootstrapFailed && document.activeElement === document.body) {
+        container.querySelector("button")?.focus();
+      }
+    });
+  } else {
+    container.replaceChildren();
+  }
+}
+
+window.resetSelfPunchUi = function () {
+  selfViewState.sessionVersion++;
+  selfEntryCommentDraft = null;
+  bootstrap.Modal.getInstance(document.getElementById("selfEntryCommentModal"))?.hide();
+  document.getElementById("selfEntryCommentText").value = "";
+  if (!selfViewState.lookupsLoaded && !selfViewState.punchVerification && !selfViewState.bootstrapFailed) return;
+  selfViewState.entries = [];
+  selfViewState.lookupsLoaded = false;
+  selfViewState.bootstrapFailed = false;
+  selfViewState.punchVerification = null;
+  document.getElementById("selfWorkCommentInput").value = "";
+  document.getElementById("selfDiverseReasonInput").value = "";
+  document.getElementById("selfConfirmModalBody").textContent = "";
+  document.getElementById("selfConfirmModalError").textContent = "";
+  bootstrap.Modal.getInstance(document.getElementById("selfConfirmModal"))?.hide();
+  renderSelfStatusNotices(null, null);
+  renderSelfLoadError();
+  document.getElementById("selfEntriesContainer").replaceChildren();
+  updateSelfPunchAvailability();
+};
+
+let selfEntryCommentDraft = null;
+const selfEntryCommentModal = document.getElementById("selfEntryCommentModal");
+
+function findSelfCommentEntry(key) {
+  return selfViewState.entries.find(entry => key.entryId
+    ? entry.entryId === key.entryId
+    : entry.date === key.date && entry.punchIn === key.punchIn);
+}
+
+function setSelfEntryCommentError(message = "") {
+  const host = document.getElementById("selfEntryCommentError");
+  host.textContent = message;
+  host.classList.toggle("d-none", !message);
+}
+
+window.openSelfEntryCommentEditor = function (trigger) {
+  let key;
+  try { key = JSON.parse(decodeEntryNoteData(trigger.dataset.selfCommentEntry)); } catch { return; }
+  const entry = findSelfCommentEntry(key);
+  if (!entry || isEntryOpen(entry)) return;
+  selfEntryCommentDraft = { key, trigger, session: selfViewState.sessionVersion };
+  document.getElementById("selfEntryCommentContext").textContent =
+    `${formatDateLabel(entry.date)} · ${getEntryRoundedTimeRange(entry)}`;
+  const history = document.getElementById("selfEntryCommentHistory");
+  const notes = getEntryNotes(entry);
+  history.innerHTML = renderEmployeeCommentRows(notes.employeeComment, notes.additions);
+  history.classList.toggle("d-none", !history.innerHTML);
+  document.getElementById("selfEntryCommentText").value = "";
+  setSelfEntryCommentError();
+  bootstrap.Modal.getOrCreateInstance(selfEntryCommentModal).show();
+};
+
+selfEntryCommentModal.addEventListener("shown.bs.modal", () => {
+  document.getElementById("selfEntryCommentText").focus();
+});
+selfEntryCommentModal.addEventListener("hidden.bs.modal", () => {
+  const draft = selfEntryCommentDraft;
+  selfEntryCommentDraft = null;
+  if (!draft || draft.session !== selfViewState.sessionVersion) return;
+  const original = draft.trigger;
+  const trigger = original.isConnected ? original : Array.from(document.querySelectorAll("[data-self-comment-entry]"))
+    .find(button => button.dataset.selfCommentEntry === original.dataset.selfCommentEntry);
+  trigger?.focus({ preventScroll: true });
+});
+
+document.getElementById("selfEntryCommentForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const draft = selfEntryCommentDraft;
+  const field = document.getElementById("selfEntryCommentText");
+  const text = field.value.trim();
+  if (!draft || !text || text.length > 1000) {
+    setSelfEntryCommentError(t("self.entryCommentRequired"));
+    return;
+  }
+  // Use the same id when retrying an identical draft after a lost response.
+  if (draft.submittedText !== text) {
+    draft.submittedText = text;
+    draft.commentId = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
+  }
+  setSelfEntryCommentError();
+  try {
+    await runButtonAction(document.getElementById("saveSelfEntryComment"), async () => {
+      const response = await fetch(apiUrl + "self/entries/comment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...draft.key, text, commentId: draft.commentId }),
+      });
+      const result = await parseResponse(response);
+      if (draft.session !== selfViewState.sessionVersion) return;
+      if (!Array.isArray(result.employeeCommentAdditions)) throw new Error("Missing employee comment result.");
+      const entry = findSelfCommentEntry(draft.key);
+      if (entry) {
+        entry.employeeCommentAdditions = result.employeeCommentAdditions;
+        renderSelfEntries(selfViewState.entries);
+      }
+      if (selfEntryCommentDraft === draft) bootstrap.Modal.getInstance(selfEntryCommentModal)?.hide();
+      showToast(t("self.entryCommentSaved"), "success");
+    }, { key: "self-entry-comment", disableWhileRunning: [field, ...selfEntryCommentModal.querySelectorAll("[data-bs-dismiss]")] });
+  } catch (error) {
+    if (selfEntryCommentDraft === draft) setSelfEntryCommentError(t("self.entryCommentError", { message: error.message }));
+  }
+});
+
 window.rerenderSelfViewForLanguageChange = function () {
   initializeSelfView();
+  renderSelfLoadError();
+  if (selfViewState.bootstrapFailed && !selfViewState.lookupsLoaded) return;
   renderSelfState(selfViewState.entries || []);
 };
 
-async function submitSelfPunch(type) {
+function isSameSelfPunchEntry(a, b) {
+  if (!a || !b) return a === b;
+  if (a.entryId && b.entryId) return a.entryId === b.entryId;
+  return a.date === b.date && getEntryExactPunchIn(a) === getEntryExactPunchIn(b);
+}
+
+function requireSelfPunchVerification(entry, message) {
+  selfViewState.punchVerification = { entry, message };
+  updateSelfPunchAvailability();
+  return message;
+}
+
+async function verifySelfPunch() {
+  const { entry } = selfViewState.punchVerification;
+  if (!await refreshSelfView({ reconcile: true })) return "self.punchVerificationFailed";
+  const active = getSelfActiveEntry(selfViewState.entries);
+  if (entry && !isSameSelfPunchEntry(entry, active)) {
+    document.getElementById("selfWorkCommentInput").value = "";
+  }
+  selfViewState.punchVerification = null;
+  updateSelfStatus(selfViewState.entries);
+  showToast(t("self.punchStateRefreshed"), "info");
+}
+
+function submitSelfPunch(type) {
+  if (selfViewState.punchVerification) {
+    showSelfConfirmationModal(t("self.verifyPunch"), escapeHtml(t("self.punchVerificationExplain")));
+    return;
+  }
   const activeEntry = getSelfActiveEntry(selfViewState.entries);
   const selectedEntryType = type === "out" && activeEntry ? getEntryType(activeEntry) : selfViewState.selectedEntryType;
   const actionLabel = type === "in"
@@ -891,10 +1160,10 @@ async function submitSelfPunch(type) {
     : type === "in"
     ? t("self.startConfirm", {
       time: escapeHtml(promptTime),
-      project: escapeHtml(projectCode),
-      code: escapeHtml(overtimeCode || t("shared.overtimeCode")),
+      project: escapeHtml(getSelfProjectName(projectCode)),
+      code: escapeHtml(overtimeCode || t("self.fieldNotSet")),
       payment: escapeHtml(formatPaymentOptionValue(paymentOption)),
-      reason: escapeHtml(reasonCode || t("shared.reasonCode")),
+      reason: escapeHtml(reasonCode || t("self.fieldNotSet")),
     })
     : selectedEntryType === "diverse"
       ? t("self.endDiverseConfirm", { time: escapeHtml(promptTime), comment: escapeHtml(workComment) })
@@ -904,30 +1173,39 @@ async function submitSelfPunch(type) {
     actionLabel,
     confirmationMessage,
     async () => {
+      const sessionVersion = selfViewState.sessionVersion;
+      if (!isSameSelfPunchEntry(activeEntry, getSelfActiveEntry(selfViewState.entries))) {
+        return requireSelfPunchVerification(activeEntry, "self.punchStateChanged");
+      }
+      let response;
+      let result;
       try {
-        const response = await fetch(apiUrl + "self/punch", {
+        response = await fetch(apiUrl + "self/punch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(punchPayload),
         });
-        const result = await parseResponse(response);
-        const formattedTime = formatTimeString(result.time);
-        const statusMessage = result && result.requiresClockOutReview
-          ? t("self.clockOutNeedsReview", { date: formatDateLabel(result.reviewEntryDate) })
-          : t("self.punchSuccess", { action: actionLabel, time: formattedTime });
-
-        const statusMessageElement = document.getElementById("selfStatusMessage");
-        if (statusMessageElement) {
-          statusMessageElement.textContent = statusMessage;
-        }
-        showToast(statusMessage, result && result.requiresClockOutReview ? "warning" : "success");
-        if (type === "out") {
-          document.getElementById("selfWorkCommentInput").value = "";
-        }
-        await refreshSelfView();
+        result = await parseResponse(response);
       } catch (error) {
+        if (sessionVersion !== selfViewState.sessionVersion) return;
         console.error(`Error during ${actionLabel.toLowerCase()}:`, error);
-        showToast(t("self.actionError", { action: actionLabel.toLowerCase(), message: error.message }), "error");
+        if (response?.status === 403) {
+          return type === "out" ? "self.clockOutFailed" : "self.clockInFailed";
+        }
+        if ([400, 404, 409].includes(response?.status)) {
+          return requireSelfPunchVerification(activeEntry, "self.punchStateChanged");
+        }
+        return requireSelfPunchVerification(activeEntry, "self.punchOutcomeUnknown");
+      }
+      if (sessionVersion !== selfViewState.sessionVersion) return;
+      const needsReview = Boolean(result?.requiresClockOutReview);
+      showToast(needsReview
+        ? t("self.clockOutNeedsReview", { date: formatDateLabel(result.reviewEntryDate) })
+        : t("self.punchSuccess", { action: actionLabel, time: formatTimeString(result?.time) }),
+      needsReview ? "warning" : "success");
+      if (type === "out") document.getElementById("selfWorkCommentInput").value = "";
+      if (!await refreshSelfView() && sessionVersion === selfViewState.sessionVersion) {
+        return requireSelfPunchVerification(activeEntry, "self.punchSavedNeedsRefresh");
       }
     }
   );
@@ -936,6 +1214,19 @@ async function submitSelfPunch(type) {
 document.getElementById("selfPrimaryPunchButton").addEventListener("click", event => {
   const type = event.currentTarget.getAttribute("data-punch-type") || "in";
   submitSelfPunch(type);
+});
+
+document.getElementById("selfFollowUp").addEventListener("click", event => {
+  const button = event.target.closest("[data-self-follow-up]");
+  if (!button) return;
+  const { missingEndEntry, rejectedEntry } = getSelfStatusEntries(selfViewState.entries);
+  const entry = button.dataset.selfFollowUp === "missingEndEntry" ? missingEndEntry : rejectedEntry;
+  if (!entry) return;
+  selfViewState.currentMonthKey = toCalendarMonthKey(entry.date);
+  renderSelfEntries(selfViewState.entries, entry);
+  const target = document.querySelector("#selfEntriesContainer [data-self-follow-up-target]");
+  target?.focus({ preventScroll: true });
+  target?.scrollIntoView({ block: "center" });
 });
 
 document.getElementById("selfCompressedScheduleToggle").addEventListener("change", event => {
@@ -1023,6 +1314,7 @@ document.getElementById("selfStatsResetFiltersBtn").addEventListener("click", ()
 });
 
 document.getElementById("selfEntriesContainer").addEventListener("click", event => {
+  if (handleGc179ExportReceiptClick(event)) return;
   const gc179Button = event.target.closest(".self-gc179-fdf-button");
   if (gc179Button) {
     const monthKey = gc179Button.getAttribute("data-self-gc179-month") || selfViewState.currentMonthKey;

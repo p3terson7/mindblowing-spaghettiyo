@@ -1,10 +1,12 @@
-# Cache normalized employee contributions, not delta arithmetic on totals.
-# Aggregates concatenate/re-sort these immutable-by-convention projections.
-# Entry writes never consume these cached values.
+# Cache employee contributions, not delta arithmetic on totals.
+# Aggregate-only consumers can reuse private stored entries without building
+# public projections. Entry writes never consume these cached values.
 function Get-EmployeeReadContribution {
-    param([Parameter(Mandatory = $true)]$User, [switch]$IncludeMonetary, [switch]$SkipProjection)
+    param([Parameter(Mandatory = $true)]$User, [switch]$IncludeMonetary, [switch]$SkipProjection, [switch]$RawEntries)
+    if ($RawEntries) { $SkipProjection = $true }
     $employeeCode = Get-UserEmployeeCodeValue -UserRecord $User
     $key = "employee-contribution|$employeeCode|$([bool]$IncludeMonetary)|$([bool]$SkipProjection)"
+    if ($RawEntries) { $key += "|stored" }
     $sources = @("employee:$employeeCode", "directory", "auth")
     if ($IncludeMonetary) { $sources += "compensation" }
     return (Invoke-ReadModelCache -Key $key -Dependencies $sources -Factory {
@@ -12,8 +14,12 @@ function Get-EmployeeReadContribution {
         $name = if ($User.displayName) { [string]$User.displayName } else { [string](Get-EmployeeName $employeeCode) }
         $role = Get-EffectiveUserRole -UserRecord $User
         $dataFile = Get-EmployeeDataFilePath -EmployeeCode $employeeCode
-        $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile -IncludeMonetary:$IncludeMonetary)
-        $projectCodes = @($entries | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.projectCode) } | ForEach-Object { [string]$_.projectCode } | Sort-Object -Unique)
+        $entries = @(Get-CachedEmployeeEntriesForFile -DataFile $dataFile -IncludeMonetary:$IncludeMonetary -Raw:$RawEntries)
+        $entryProjectCodes = @(foreach ($entry in $entries) {
+            $code = [string]$entry.projectCode
+            if (-not [string]::IsNullOrWhiteSpace($code)) { $code }
+        })
+        $projectCodes = @($entryProjectCodes | Sort-Object -Unique)
         $projected = if ($SkipProjection) { @() } else { @($entries | ForEach-Object { New-EmployeeEntryProjection -EmployeeCode $employeeCode -EmployeeName $name -Entry $_ -EmployeeRole $role }) }
         $types = Get-EmployeeTimeEntryTypesFromUserRecord -UserRecord $User
         return [PSCustomObject]@{
@@ -44,8 +50,9 @@ function Get-ScopedEmployeeReadContribution {
         if ($script:SaphirPerformanceEnabled) { Add-SaphirPerformanceOperation -Kind "cache.employee-scope.recomputed" }
         $visible = @($Contribution.entries | Where-Object { $IsSuperAdmin -or $AccessModel.ProjectCodeSet.ContainsKey([string]$_.projectCode) })
         $canApprove = Test-CurrentUserCanApproveEmployeeRole -CurrentUser $CurrentUser -EmployeeRole ([string]$employee.role)
+        $ownEntry = Test-CurrentUserMatchesEmployeeCode -CurrentUser $CurrentUser -EmployeeCode $employeeCode
         $projected = @(foreach ($entry in $visible) {
-            $projection = New-EmployeeEntryProjectionForAccessModel -EmployeeCode $employeeCode -EmployeeName ([string]$employee.name) -Entry $entry -ModifyProjectCodeSet $ModifyAccessModel.ProjectCodeSet -EmployeeRole ([string]$employee.role) -IsSuperAdmin:$IsSuperAdmin -CanApproveEmployeeRole:$canApprove
+            $projection = New-EmployeeEntryProjectionForAccessModel -EmployeeCode $employeeCode -EmployeeName ([string]$employee.name) -Entry $entry -ModifyProjectCodeSet $ModifyAccessModel.ProjectCodeSet -EmployeeRole ([string]$employee.role) -IsSuperAdmin:$IsSuperAdmin -CanApproveEmployeeRole:$canApprove -IsOwnEntry:$ownEntry
             if ($IncludeMonetary) { $projection | Add-Member -NotePropertyName employeeArchived -NotePropertyValue $Archived -Force }
             $projection
         })

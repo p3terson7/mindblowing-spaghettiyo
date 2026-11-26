@@ -122,6 +122,81 @@
             continue
         }
 
+        if ($request.Url.AbsolutePath -eq "/self/entries/comment" -and $request.HttpMethod -eq "POST") {
+            $currentUser = Get-AuthenticatedUserFromRequest -Request $request
+            if ($null -eq $currentUser) {
+                respondWithError $response 401 "Authentication required."
+                continue
+            }
+            $employeeCode = [string]$currentUser.employeeCode
+            if ($employeeCode -notmatch '^\d+$') {
+                respondWithError $response 403 "Employee access is required."
+                continue
+            }
+
+            $payload = Read-JsonRequestBody -Request $request
+            $entryId = ([string]$payload.entryId).Trim()
+            $date = Convert-ToNormalizedDateText -DateText ([string]$payload.date)
+            $punchIn = Convert-ToNormalizedTimeText -TimeText ([string]$payload.punchIn)
+            $commentId = ([string]$payload.commentId).Trim().ToLowerInvariant()
+            $text = if ($payload.text -is [string]) { $payload.text.Trim() } else { "" }
+            if ($commentId -notmatch '^[a-f0-9]{32}$' -or -not $text -or $text.Length -gt 1000 -or
+                (-not $entryId -and (-not $date -or -not $punchIn))) {
+                respondWithError $response 400 "An entry and a comment of 1 to 1000 characters are required."
+                continue
+            }
+
+            # The employee code always comes from the session, never the body.
+            $dataFile = Join-Path -Path $sharedFolder -ChildPath ("${employeeCode}_data.json")
+            $committed = $false
+            $lock = Acquire-ResourceLock -ResourcePath $dataFile
+            try {
+                $entries = @(Read-JsonArrayFile -Path $dataFile)
+                $index = if ($entryId) { Find-EntryIndex -Entries $entries -EntryId $entryId } else { Find-EntryIndex -Entries $entries -Date $date -PunchIn $punchIn }
+                if ($index -lt 0) {
+                    respondWithError $response 404 "Entry not found."
+                    continue
+                }
+                $entry = $entries[$index]
+                if (-not $entry.punchOut -and -not (Test-EntryForgottenClockOut -Entry $entry)) {
+                    respondWithError $response 409 "Finish the entry before adding a comment."
+                    continue
+                }
+                $additions = if ($entry.PSObject.Properties.Name -contains "employeeCommentAdditions" -and $null -ne $entry.employeeCommentAdditions) { @($entry.employeeCommentAdditions) }
+                $existing = @($additions | Where-Object { $_.id -eq $commentId } | Select-Object -First 1)
+                if ($existing.Count -gt 0) {
+                    if ([string]$existing[0].text -cne $text) {
+                        respondWithError $response 409 "This comment identifier was already used."
+                        continue
+                    }
+                }
+                else {
+                    if (@($additions | Where-Object { $null -ne $_ }).Count -ge 25) {
+                        respondWithError $response 409 "This entry has reached its comment limit."
+                        continue
+                    }
+                    $addition = [PSCustomObject]@{ id = $commentId; text = $text; createdAtUtc = (Get-Date).ToUniversalTime().ToString("o") }
+                    Set-EntryPropertyValue -Entry $entry -Name "employeeCommentAdditions" -Value @(@($additions | Where-Object { $null -ne $_ }) + $addition)
+                    Write-JsonArrayAtomic -Path $dataFile -Items $entries -Depth 10
+                    $committed = $true
+                }
+                $savedAdditions = @(Get-EntryEmployeeCommentAdditions $entry)
+            }
+            finally {
+                Release-ResourceLock -LockHandle $lock
+            }
+
+            $warnings = @()
+            if ($committed) {
+                $warning = Invoke-PostCommitActionSafely -Description "Entry comment saved, but cross-machine refresh publication failed" -Action {
+                    Publish-DataChange -Category "employee" -Resource $employeeCode | Out-Null
+                }
+                if ($warning) { $warnings += $warning }
+            }
+            respondWithSuccess $response (([PSCustomObject]@{ employeeCommentAdditions = $savedAdditions; warnings = $warnings }) | ConvertTo-Json -Depth 5)
+            continue
+        }
+
         if ($request.Url.AbsolutePath -eq "/self/entries" -and $request.HttpMethod -eq "GET") {
             $currentUser = Get-AuthenticatedUserFromRequest -Request $request
             if ($null -eq $currentUser) {

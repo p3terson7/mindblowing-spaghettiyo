@@ -39,6 +39,8 @@ try {
     $projection = (Get-Command New-EmployeeEntryProjectionForAccessModel).ScriptBlock
     $reviewIssues = (Get-Command Get-EntryReviewIssues).ScriptBlock
     $script:projectProjectionIds = @()
+    $normalize = (Get-Command Convert-ToNormalizedEntryObject).ScriptBlock
+    function Convert-ToNormalizedEntryObject { throw "The portfolio must not normalize full entries." }
     function New-EmployeeEntryProjectionForAccessModel { throw "The portfolio must not project entry details." }
     function Get-EntryReviewIssues { throw "The portfolio must not compute review issues." }
     $initial = Get-ProjectsBootstrapModel -Scope all -IncludeDetail:$false -StartDate $start -EndDate $end -CurrentUser $manager
@@ -49,7 +51,27 @@ try {
     Assert-ProjectLoading ($initial.trends.P1[0].seconds -eq 10800) "Trends do not match approved totals."
     Assert-ProjectLoading ($null -eq $initial.selectedProject) "Initial portfolio eagerly loaded a detail."
     Assert-ProjectLoading (@(Get-ProjectStatisticsEntriesSnapshot -CurrentUser $ordinaryEmployee).Count -eq 0) "An employee reused a manager's internal snapshot."
+    $periodFacts = @($script:ReadModelCache.Keys | Where-Object { $_ -like "project-entry-facts|*" -and $null -ne $script:ReadModelCache[$_] })
+    Assert-ProjectLoading ($periodFacts.Count -eq 4) "The portfolio did not share one set of facts per employee."
+    foreach ($key in $periodFacts) {
+        $facts = @($script:ReadModelCache[$key])
+        Assert-ProjectLoading ($facts.Count -eq 1 -and $facts[0].date -eq "2026-10-05") "The portfolio materialized facts outside its period."
+    }
 
+    $dateParser = (Get-Command Get-EntryDateOrNull).ScriptBlock
+    $script:parsedProjectDates = @()
+    function Get-EntryDateOrNull {
+        param($Entry)
+        $script:parsedProjectDates += [string]$Entry.date
+        & $dateParser -Entry $Entry
+    }
+    $oneDay = @(Get-ProjectStatisticsEntriesForPeriod -StartDate "2026-10-05" -EndDate "2026-10-05" -CurrentUser $manager)
+    Assert-ProjectLoading ($oneDay.Count -eq 4) "An entry on an inclusive period boundary was lost."
+    if ([Globalization.CultureInfo]::CurrentCulture.Calendar -is [Globalization.GregorianCalendar]) {
+        Assert-ProjectLoading ($script:parsedProjectDates.Count -eq 4 -and @($script:parsedProjectDates | Where-Object { $_ -ne "2026-10-05" }).Count -eq 0) "Period filtering parsed dates outside the requested range."
+    }
+    function Get-EntryDateOrNull { param($Entry) & $dateParser -Entry $Entry }
+    function Convert-ToNormalizedEntryObject { param($Entry) & $normalize -Entry $Entry }
     function Get-EntryReviewIssues { param($Entry) & $reviewIssues -Entry $Entry }
     function New-EmployeeEntryProjectionForAccessModel {
         param($EmployeeCode, $EmployeeName, $Entry, $ModifyProjectCodeSet, $EmployeeRole, [bool]$IsSuperAdmin, [bool]$CanApproveEmployeeRole)
@@ -75,7 +97,7 @@ try {
     $adminEntry = @($limitedP1.recentEntries | Where-Object employeeCode -eq "000710003")[0]
     Assert-ProjectLoading ($adminEntry.canModify -and -not $adminEntry.canApprove -and $adminEntry.permissionReason -eq "superAdminApproval") "Supervisor approval permissions changed."
 
-    $unchangedFact = @(Get-ProjectStatisticsEntriesSnapshot -CurrentUser $manager | Where-Object entryId -eq "000710002-10")[0]
+    $unchangedFact = @(Get-ProjectStatisticsEntriesForPeriod -CurrentUser $manager -StartDate $start -EndDate $end | Where-Object entryId -eq "000710002-10")[0]
     $path = Join-Path $owned "000710001_data.json"
     $entries = @(Read-JsonArrayFile $path)
     $entries[-1].overtime = "02:00:00"
@@ -83,7 +105,7 @@ try {
     Publish-DataChange -Category employee -Resource "000710001" | Out-Null
     $updated = Get-ProjectDetailModel -ProjectCode P1 -StartDate $start -EndDate $end -CurrentUser $manager
     Assert-ProjectLoading ($updated.totalSeconds -eq 14400 -and -not [object]::ReferenceEquals($detail, $updated)) "An employee change did not invalidate cached project totals/details."
-    $sameFact = @(Get-ProjectStatisticsEntriesSnapshot -CurrentUser $manager | Where-Object entryId -eq "000710002-10")[0]
+    $sameFact = @(Get-ProjectStatisticsEntriesForPeriod -CurrentUser $manager -StartDate $start -EndDate $end | Where-Object entryId -eq "000710002-10")[0]
     Assert-ProjectLoading ([object]::ReferenceEquals($unchangedFact, $sameFact)) "Changing one employee rebuilt another employee's facts."
 
     # Forgotten clock-out flags must remain open/excluded from approved totals,

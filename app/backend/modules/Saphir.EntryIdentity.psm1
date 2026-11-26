@@ -5,7 +5,7 @@ function Get-EntryIdentifierValue {
         return $null
     }
 
-    if ($Entry.PSObject.Properties.Name -contains "entryId" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.entryId)) {
+    if (($null -ne $Entry.PSObject.Properties["entryId"]) -and -not [string]::IsNullOrWhiteSpace([string]$Entry.entryId)) {
         return [string]$Entry.entryId
     }
 
@@ -19,11 +19,11 @@ function Get-EntryExactPunchInText {
         return $null
     }
 
-    if ($Entry.PSObject.Properties.Name -contains "exactPunchIn" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.exactPunchIn)) {
+    if (($null -ne $Entry.PSObject.Properties["exactPunchIn"]) -and -not [string]::IsNullOrWhiteSpace([string]$Entry.exactPunchIn)) {
         return [string]$Entry.exactPunchIn
     }
 
-    if ($Entry.PSObject.Properties.Name -contains "punchIn" -and -not [string]::IsNullOrWhiteSpace([string]$Entry.punchIn)) {
+    if (($null -ne $Entry.PSObject.Properties["punchIn"]) -and -not [string]::IsNullOrWhiteSpace([string]$Entry.punchIn)) {
         return [string]$Entry.punchIn
     }
 
